@@ -7,12 +7,17 @@ import { getPortalJwtSecret } from './portal-jwt-secret.util';
 
 @Module({
   imports: [
-    // Secreto propio, distinto al de AuthModule: los tokens del portal del paciente y los
-    // de staff son dominios de confianza separados y no deben poder verificarse entre sí.
-    JwtModule.register({ secret: getPortalJwtSecret(), signOptions: { expiresIn: '30m' } }),
+    JwtModule.register({
+      secret: getPortalJwtSecret(),
+      signOptions: { expiresIn: '30m' },
+    }),
   ],
   controllers: [PortalController],
   providers: [PortalService, PortalGuard],
+  exports: [
+    JwtModule,
+    PortalGuard,
+    PortalService,
+  ],
 })
 export class PortalModule {}
-
