@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CI configuration
+        run: npm run test:ci-config
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Security and integration tests
+        run: npm --workspace @asepsico/api run test:security
+
+      - name: Build
+        run: npm run build
+
+  postgres-integration:
+    name: PostgreSQL migrations and real HTTP smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: asepsico
+          POSTGRES_PASSWORD: asepsico
+          POSTGRES_DB: asepsico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U asepsico -d asepsico"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    env:
+      DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
+      JWT_SECRET: ci-staff-jwt-secret-with-more-than-32-characters
+      PORTAL_JWT_SECRET: ci-portal-jwt-secret-different-and-over-32-chars
+      API_PORT: 4000
+      WEB_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+      ASEPSICO_API_URL: http://127.0.0.1:4000/api/v1
+      ASEPSICO_SMOKE_EMAIL: demo@asepsico.es
+      ASEPSICO_SMOKE_PASSWORD: AsePsico2026!
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for PostgreSQL
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U asepsico -d asepsico; then
+              exit 0
+            fi
+            echo "PostgreSQL todavía no está listo (intento ${attempt}/30)"
+            sleep 2
+          done
+          echo "PostgreSQL no llegó a estar disponible" >&2
+          exit 1
+
+      - name: Generate Prisma Client (db:generate)
+        run: npm run db:generate
+
+      - name: Apply migrations to real PostgreSQL (db:migrate)
+        run: npm run db:migrate:ci
+
+      - name: Seed smoke-test account
+        run: npm run db:seed
+
+      - name: Start API
+        shell: bash
+        run: |
+          npm --workspace @asepsico/api run start > "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/asepsico-api.pid"
+
+      - name: Wait for API health endpoint
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4000/api/v1/health > "$RUNNER_TEMP/health.json"; then
+              cat "$RUNNER_TEMP/health.json"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null; then
+              echo "La API terminó antes de estar saludable" >&2
+              cat "$RUNNER_TEMP/asepsico-api.log" >&2
+              exit 1
+            fi
+            echo "API todavía no disponible (intento ${attempt}/60)"
+            sleep 2
+          done
+          echo "La API no respondió a tiempo" >&2
+          cat "$RUNNER_TEMP/asepsico-api.log" >&2
+          exit 1
+
+      - name: Run real HTTP smoke test
+        run: npm run test:smoke
+
+      - name: Stop API
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/asepsico-api.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload API logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asepsico-api-ci-logs
+          path: |
+            ${{ runner.temp }}/asepsico-api.log
+            ${{ runner.temp }}/health.json
+          if-no-files-found: ignore
+          retention-days: 7

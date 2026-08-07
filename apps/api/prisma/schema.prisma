@@ -1,0 +1,755 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  THERAPIST
+  ASSISTANT
+}
+
+enum PatientStatus {
+  ACTIVE
+  PAUSED
+  DISCHARGED
+  ARCHIVED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ClinicalProcessStatus {
+  ACTIVE
+  PAUSED
+  DISCHARGED
+  CLOSED
+}
+
+enum TherapyModality {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum TherapyGoalStatus {
+  ACTIVE
+  ACHIEVED
+  PAUSED
+  CANCELLED
+}
+
+enum TherapeuticTaskStatus {
+  DRAFT
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  CHANGES_REQUESTED
+  COMPLETED
+  CANCELLED
+}
+
+
+enum PatientDocumentType {
+  CLINICAL
+  REFERRAL
+  ADMINISTRATIVE
+  EXTERNAL_REPORT
+  OTHER
+}
+
+enum ConsentType {
+  DATA_PROCESSING
+  INFORMED_CONSENT
+  TELEPSYCHOLOGY
+  MINOR_GUARDIAN
+  COMMUNICATIONS
+  OTHER
+}
+
+enum ConsentStatus {
+  PENDING
+  SIGNED
+  REVOKED
+  EXPIRED
+}
+
+enum ClinicalReportType {
+  EVOLUTION
+  DISCHARGE
+  REFERRAL
+  CERTIFICATE
+  CUSTOM
+}
+
+enum ClinicalReportStatus {
+  DRAFT
+  FINAL
+  VOID
+}
+
+enum ResourceType {
+  LINK
+  FILE
+}
+
+enum ResourceCategory {
+  PSYCHOEDUCATION
+  EXERCISE
+  WORKSHEET
+  AUDIO
+  VIDEO
+  READING
+  OTHER
+}
+
+enum SessionType {
+  INDIVIDUAL
+  COUPLE
+  FAMILY
+  GROUP
+  FOLLOW_UP
+  ASSESSMENT
+}
+
+model Workspace {
+  id                String            @id @default(cuid())
+  name              String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  members           WorkspaceMember[]
+  patients          Patient[]
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  clinicalProcesses ClinicalProcess[]
+  patientDocuments  PatientDocument[]
+  consentRecords    ConsentRecord[]
+  clinicalReports   ClinicalReport[]
+  invoices          Invoice[]
+  payments          Payment[]
+  portalAccounts    PatientPortalAccount[]
+  therapeuticResources TherapeuticResource[]
+  resourceShares    ResourceShare[]
+  conversations     Conversation[]
+}
+
+model User {
+  id                           String            @id @default(cuid())
+  email                        String            @unique
+  passwordHash                 String
+  firstName                    String
+  lastName                     String
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime          @updatedAt
+  memberships                  WorkspaceMember[]
+  auditLogs                    AuditLog[]        @relation("AuditActor")
+  refreshTokens                RefreshToken[]
+  sessionsAsTherapist          Session[]
+  clinicalProcessesAsTherapist ClinicalProcess[]
+  patientDocumentsCreated       PatientDocument[]
+  consentRecordsCreated         ConsentRecord[]
+  clinicalReportsCreated        ClinicalReport[]
+  invoicesCreated               Invoice[]
+  paymentsRecorded              Payment[]
+  resourcesCreated              TherapeuticResource[]
+  messagesSent                  Message[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(THERAPIST)
+  createdAt   DateTime      @default(now())
+  onboardingStep Int        @default(0)
+  onboardingCompletedAt DateTime?
+  onboardingDismissedAt DateTime?
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Patient {
+  id                 String            @id @default(cuid())
+  workspaceId        String
+  firstName          String
+  lastName           String
+  email              String?
+  phone              String?
+  birthDate          DateTime?
+  consultationReason String?
+  status             PatientStatus     @default(ACTIVE)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  deletedAt          DateTime?
+  workspace          Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  sessions           Session[]
+  clinicalProcesses  ClinicalProcess[]
+  clinicalHistory    ClinicalHistory?
+  therapyGoals       TherapyGoal[]
+  therapeuticTasks   TherapeuticTask[]
+  clinicalAssessments ClinicalAssessment[]
+  patientDocuments    PatientDocument[]
+  consentRecords      ConsentRecord[]
+  clinicalReports     ClinicalReport[]
+  invoices            Invoice[]
+  payments            Payment[]
+  portalAccount       PatientPortalAccount?
+  resourceShares      ResourceShare[]
+  conversations       Conversation[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, lastName, firstName])
+}
+
+model ClinicalHistory {
+  id                     String   @id @default(cuid())
+  patientId              String   @unique
+  reasonForConsultation  String?
+  currentProblem         String?
+  personalHistory        String?
+  familyHistory          String?
+  medicalHistory         String?
+  currentMedication      String?
+  primaryDiagnosis       String?
+  riskFactors            String?
+  protectiveFactors      String?
+  clinicalObservations   String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  patient                Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+model TherapyGoal {
+  id          String            @id @default(cuid())
+  patientId   String
+  title       String
+  description String?
+  status      TherapyGoalStatus @default(ACTIVE)
+  targetDate  DateTime?
+  achievedAt  DateTime?
+  priority    Int               @default(2)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tasks       TherapeuticTask[]
+
+  @@index([patientId, status])
+  @@index([patientId, priority])
+}
+
+
+model TherapeuticTaskTemplate {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  title        String
+  instructions String?
+  category     String?
+  isActive     Boolean  @default(true)
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, isActive])
+  @@index([workspaceId, title])
+}
+
+model TherapeuticTask {
+  id             String                @id @default(cuid())
+  patientId      String
+  therapyGoalId  String?
+  sessionId      String?
+  title          String
+  instructions   String?
+  status         TherapeuticTaskStatus @default(PENDING)
+  dueDate        DateTime?
+  assignedAt     DateTime?
+  startedAt      DateTime?
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+  completedAt    DateTime?
+  patientFeedback String?
+  clinicianNotes String?
+  reviewComment  String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  patient        Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  therapyGoal    TherapyGoal?          @relation(fields: [therapyGoalId], references: [id], onDelete: SetNull)
+  session        Session?              @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, status])
+  @@index([patientId, dueDate])
+  @@index([therapyGoalId])
+  @@index([sessionId])
+}
+
+model ClinicalAssessment {
+  id              String   @id @default(cuid())
+  patientId       String
+  scaleCode       String
+  scaleName       String
+  answers         Json
+  totalScore      Int
+  severity        String
+  interpretation  String
+  riskFlag        Boolean  @default(false)
+  clinicalNotes   String?
+  administeredAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, administeredAt])
+  @@index([patientId, scaleCode])
+}
+
+model RefreshToken {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  tokenHash   String    @unique
+  family      String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  createdAt   DateTime  @default(now())
+  ipAddress   String?
+  userAgent   String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([family])
+}
+
+model Session {
+  id                String        @id @default(cuid())
+  workspaceId       String
+  patientId         String
+  therapistId       String
+  clinicalProcessId String?
+  startsAt          DateTime
+  endsAt            DateTime
+  status            SessionStatus @default(SCHEDULED)
+  type              SessionType   @default(INDIVIDUAL)
+  location          String?
+  videoCallUrl      String?
+  notes             String?
+  internalSummary   String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist       User             @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+  clinicalProcess ClinicalProcess? @relation(fields: [clinicalProcessId], references: [id], onDelete: SetNull)
+  therapeuticTasks TherapeuticTask[]
+
+  @@index([workspaceId, startsAt])
+  @@index([therapistId, startsAt])
+  @@index([patientId, startsAt])
+  @@index([clinicalProcessId, startsAt])
+}
+
+model ClinicalProcess {
+  id                 String                @id @default(cuid())
+  workspaceId        String
+  patientId          String
+  therapistId        String
+  title              String
+  consultationReason String?
+  goals              String?
+  internalNotes      String?
+  modality           TherapyModality       @default(IN_PERSON)
+  frequency          String?
+  status             ClinicalProcessStatus @default(ACTIVE)
+  startedAt          DateTime              @default(now())
+  endedAt            DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+  sessions  Session[]
+
+  @@index([workspaceId, status])
+  @@index([patientId, status])
+  @@index([therapistId, status])
+}
+
+
+model TherapeuticResource {
+  id          String           @id @default(cuid())
+  workspaceId String
+  title       String
+  description String?
+  type        ResourceType
+  category    ResourceCategory @default(OTHER)
+  url         String?
+  fileName    String?
+  mimeType    String?
+  storageKey  String?
+  createdById String
+  archivedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  createdBy   User             @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  shares      ResourceShare[]
+
+  @@index([workspaceId, archivedAt, category])
+  @@index([workspaceId, title])
+}
+
+model ResourceShare {
+  id          String              @id @default(cuid())
+  workspaceId String
+  resourceId  String
+  patientId   String
+  sharedAt    DateTime            @default(now())
+  revokedAt   DateTime?
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  resource    TherapeuticResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  patient     Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, patientId])
+  @@index([workspaceId, patientId, revokedAt])
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  actorId     String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  actor       User?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([entityType, entityId])
+}
+
+
+model PatientDocument {
+  id          String              @id @default(cuid())
+  workspaceId String
+  patientId   String
+  title       String
+  type        PatientDocumentType
+  description String?
+  fileName    String?
+  mimeType    String?
+  storageKey  String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient     Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdBy   User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, patientId, createdAt])
+}
+
+model ConsentRecord {
+  id          String        @id @default(cuid())
+  workspaceId String
+  patientId   String
+  type        ConsentType
+  title       String
+  status      ConsentStatus @default(PENDING)
+  signedAt    DateTime?
+  expiresAt   DateTime?
+  signedBy    String?
+  notes       String?
+  createdById String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient     Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, patientId, status])
+}
+
+model ClinicalReport {
+  id          String               @id @default(cuid())
+  workspaceId String
+  patientId   String
+  title       String
+  type        ClinicalReportType
+  status      ClinicalReportStatus @default(DRAFT)
+  content     String
+  finalizedAt DateTime?
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient     Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdBy   User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, patientId, status])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+  OVERDUE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  BIZUM
+  DIRECT_DEBIT
+  OTHER
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  patientId      String
+  sequence       Int
+  invoiceNumber  String
+  status         InvoiceStatus @default(DRAFT)
+  currency       String        @default("EUR")
+  issueDate      DateTime?
+  dueDate        DateTime?
+  subtotalCents  Int
+  taxCents       Int           @default(0)
+  totalCents     Int
+  paidCents      Int           @default(0)
+  notes          String?
+  voidReason     String?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  createdBy      User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines          InvoiceLine[]
+  payments       Payment[]
+
+  @@unique([workspaceId, sequence])
+  @@unique([workspaceId, invoiceNumber])
+  @@index([workspaceId, status, dueDate])
+  @@index([patientId, createdAt])
+}
+
+model InvoiceLine {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  description    String
+  quantity       Int      @default(1)
+  unitPriceCents Int
+  taxRateBps     Int      @default(0)
+  lineSubtotalCents Int
+  lineTaxCents   Int
+  lineTotalCents Int
+  createdAt      DateTime @default(now())
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  patientId      String
+  invoiceId      String
+  amountCents    Int
+  method         PaymentMethod
+  paidAt         DateTime      @default(now())
+  reference      String?
+  idempotencyKey String?
+  notes          String?
+  recordedById   String
+  reversedAt     DateTime?
+  reversalReason String?
+  createdAt      DateTime      @default(now())
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  recordedBy     User          @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, paidAt])
+  @@index([invoiceId, paidAt])
+  @@index([patientId, paidAt])
+}
+
+
+model PatientPortalAccount {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  patientId       String    @unique
+  email           String
+  passwordHash    String
+  isActive        Boolean   @default(true)
+  mustChangePassword Boolean @default(true)
+  failedLoginAttempts Int    @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([email])
+  @@index([workspaceId, isActive])
+}
+
+enum NotificationAudience {
+  PROFESSIONAL
+  PATIENT
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  READ
+  CANCELLED
+  FAILED
+}
+
+enum NotificationType {
+  APPOINTMENT_REMINDER
+  TASK_DUE
+  CONSENT_EXPIRING
+  INVOICE_DUE
+  SYSTEM
+}
+
+model NotificationPreference {
+  id                   String   @id @default(cuid())
+  workspaceId          String
+  patientId            String?  @unique
+  userId               String?  @unique
+  appointmentReminders Boolean  @default(true)
+  taskReminders        Boolean  @default(true)
+  consentReminders     Boolean  @default(true)
+  invoiceReminders     Boolean  @default(true)
+  emailEnabled         Boolean  @default(false)
+  smsEnabled           Boolean  @default(false)
+  reminderHoursBefore  Int      @default(24)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([workspaceId])
+}
+
+model Notification {
+  id          String               @id @default(cuid())
+  workspaceId String
+  audience    NotificationAudience
+  userId      String?
+  patientId   String?
+  type        NotificationType
+  title       String
+  body        String
+  actionUrl   String?
+  status      NotificationStatus   @default(PENDING)
+  scheduledAt DateTime
+  sentAt      DateTime?
+  readAt      DateTime?
+  dedupeKey   String               @unique
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deliveries  NotificationDelivery[]
+
+  @@index([workspaceId, audience, status, scheduledAt])
+  @@index([userId, status, createdAt])
+  @@index([patientId, status, createdAt])
+}
+
+model NotificationDelivery {
+  id             String              @id @default(cuid())
+  notificationId String
+  channel        NotificationChannel
+  status         NotificationStatus  @default(PENDING)
+  providerRef    String?
+  attemptedAt    DateTime?
+  errorCode      String?
+  createdAt      DateTime            @default(now())
+  notification   Notification        @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, channel])
+  @@index([status, createdAt])
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum MessageSenderType {
+  PROFESSIONAL
+  PATIENT
+}
+
+model Conversation {
+  id             String             @id @default(cuid())
+  workspaceId    String
+  patientId      String
+  status         ConversationStatus @default(OPEN)
+  patientCanReply Boolean            @default(true)
+  closedAt       DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient        Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages       Message[]
+
+  @@unique([workspaceId, patientId])
+  @@index([workspaceId, status, updatedAt])
+  @@index([patientId, updatedAt])
+}
+
+model Message {
+  id             String            @id @default(cuid())
+  conversationId String
+  senderType     MessageSenderType
+  senderUserId   String?
+  body           String
+  attachmentName String?
+  attachmentKey  String?
+  mimeType       String?
+  readByProfessionalAt DateTime?
+  readByPatientAt DateTime?
+  createdAt      DateTime          @default(now())
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser     User?             @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId])
+}

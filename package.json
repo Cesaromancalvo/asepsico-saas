@@ -1,0 +1,26 @@
+{
+  "name": "asepsico",
+  "version": "1.0.0-alpha.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace @asepsico/api run start:dev",
+    "dev:web": "npm --workspace @asepsico/web run dev",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:generate": "npm --workspace @asepsico/api run prisma:generate",
+    "db:migrate": "npm --workspace @asepsico/api run prisma:migrate",
+    "db:seed": "npm --workspace @asepsico/api run prisma:seed",
+    "test:smoke": "node scripts/smoke-live.mjs",
+    "db:migrate:ci": "npm --workspace @asepsico/api run prisma:migrate:deploy",
+    "test:ci-config": "node scripts/verify-ci-postgres.mjs"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}
