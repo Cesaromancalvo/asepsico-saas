@@ -9,7 +9,7 @@ ALTER TABLE "TherapeuticTask"
   ADD COLUMN "reviewedAt" TIMESTAMP(3),
   ADD COLUMN "reviewComment" TEXT;
 
-UPDATE "TherapeuticTask" SET "assignedAt" = "createdAt" WHERE "status" <> 'DRAFT' AND "assignedAt" IS NULL;
+UPDATE "TherapeuticTask" SET "assignedAt" = "createdAt" WHERE "assignedAt" IS NULL;
 UPDATE "TherapeuticTask" SET "startedAt" = "updatedAt" WHERE "status" = 'IN_PROGRESS' AND "startedAt" IS NULL;
 UPDATE "TherapeuticTask" SET "reviewedAt" = COALESCE("completedAt", "updatedAt") WHERE "status" = 'COMPLETED' AND "reviewedAt" IS NULL;
 

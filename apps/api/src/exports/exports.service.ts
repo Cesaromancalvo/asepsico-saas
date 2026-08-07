@@ -109,7 +109,7 @@ export class ExportsService {
       this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, deletedAt: null } }),
       this.prisma.session.count({ where: { workspaceId: user.workspaceId, startsAt: { gt: new Date() }, status: 'SCHEDULED' } }),
-      this.prisma.patientPortalAccount.count({ where: { workspaceId: user.workspaceId, disabledAt: null } }),
+      this.prisma.patientPortalAccount.count({ where: { workspaceId: user.workspaceId, isActive: true } }),
       this.prisma.consentRecord.count({ where: { workspaceId: user.workspaceId, status: 'PENDING' } }),
       this.prisma.invoice.count({ where: { workspaceId: user.workspaceId, status: 'OVERDUE' } }),
     ]);
