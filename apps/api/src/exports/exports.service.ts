@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 
@@ -15,6 +16,19 @@ export class ExportsService {
 
   private assertAdmin(user: AuthUser) {
     if (!ADMIN_ROLES.includes(user.role)) throw new ForbiddenException('Solo propietarios y administradores pueden exportar el workspace');
+  }
+
+  /**
+   * "Step-up authentication": exportar es la acción de mayor impacto de toda la app (saca
+   * datos clínicos o administrativos completos fuera del sistema), así que además del rol
+   * exigimos volver a confirmar la contraseña justo antes. Esto también obliga a que el
+   * endpoint sea POST (no GET), lo que lo protege con el guard de CSRF que ya usa el resto
+   * de acciones que modifican o exponen algo sensible — un GET nunca pasa por ese guard.
+   */
+  private async assertPasswordConfirmed(user: AuthUser, password: string) {
+    const account = await this.prisma.user.findUnique({ where: { id: user.sub }, select: { passwordHash: true } });
+    const passwordOk = account ? await compare(password, account.passwordHash) : false;
+    if (!passwordOk) throw new UnauthorizedException('Contraseña incorrecta');
   }
 
   private async assertPatientAccess(user: AuthUser, patientId: string) {
@@ -38,8 +52,9 @@ export class ExportsService {
     });
   }
 
-  async exportPatient(user: AuthUser, patientId: string) {
+  async exportPatient(user: AuthUser, patientId: string, password: string) {
     this.assertClinical(user);
+    await this.assertPasswordConfirmed(user, password);
     await this.assertPatientAccess(user, patientId);
 
     const patient = await this.prisma.patient.findFirst({
@@ -72,8 +87,10 @@ export class ExportsService {
     };
   }
 
-  async exportWorkspace(user: AuthUser) {
+  async exportWorkspace(user: AuthUser, password: string) {
     this.assertAdmin(user);
+    await this.assertPasswordConfirmed(user, password);
+
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: user.workspaceId },
       include: {
