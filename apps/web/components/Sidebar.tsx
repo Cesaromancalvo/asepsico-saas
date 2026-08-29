@@ -32,6 +32,11 @@ const navigation = [
     icon: '✉',
   },
   {
+    href: '/library',
+    label: 'Biblioteca',
+    icon: '✦',
+  },
+  {
     href: '/notifications',
     label: 'Avisos',
     icon: '◌',
