@@ -14,6 +14,16 @@ function downloadJson(filename: string, value: unknown) {
   URL.revokeObjectURL(url);
 }
 
+// Las exportaciones ahora exigen confirmar la contraseña (step-up auth): son la acción de
+// mayor impacto de la app, y esto además obliga a que la petición sea POST, protegida por
+// CSRF (un GET nunca pasa por ese guard). Si el usuario cancela el prompt o lo deja vacío,
+// no se llega a llamar a la API.
+function askPassword(): string | null {
+  const password = window.prompt('Confirma tu contraseña para continuar con la exportación');
+  if (!password) return null;
+  return password;
+}
+
 export default function DataSettingsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState('');
@@ -32,15 +42,27 @@ export default function DataSettingsPage() {
 
   async function exportPatient() {
     if (!patientId) return;
+    const password = askPassword();
+    if (!password) return;
     setBusy(true); setError('');
-    try { const data = await api(`/exports/patients/${patientId}`); downloadJson(`asepsico-paciente-${patientId}.json`, data); }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo exportar'); } finally { setBusy(false); }
+    try {
+      const data = await api(`/exports/patients/${patientId}`, { method: 'POST', body: JSON.stringify({ password }) });
+      downloadJson(`asepsico-paciente-${patientId}.json`, data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo exportar');
+    } finally { setBusy(false); }
   }
 
   async function exportWorkspace() {
+    const password = askPassword();
+    if (!password) return;
     setBusy(true); setError('');
-    try { const data = await api('/exports/workspace'); downloadJson(`asepsico-workspace-${new Date().toISOString().slice(0,10)}.json`, data); }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo exportar'); } finally { setBusy(false); }
+    try {
+      const data = await api('/exports/workspace', { method: 'POST', body: JSON.stringify({ password }) });
+      downloadJson(`asepsico-workspace-${new Date().toISOString().slice(0,10)}.json`, data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo exportar');
+    } finally { setBusy(false); }
   }
 
   return <div className="app-layout"><Sidebar/><main className="patient-record-page">
@@ -48,9 +70,9 @@ export default function DataSettingsPage() {
     {error && <div className="agenda-error">{error}</div>}
     <section className="patient-card"><h2>Exportar expediente de un paciente</h2><p>Incluye historia, procesos, sesiones, objetivos, tareas, escalas, consentimientos, informes, documentos, facturas y recursos compartidos.</p>
       <div className="billing-form"><label>Paciente<select value={patientId} onChange={(e)=>setPatientId(e.target.value)}>{patients.map(p=><option value={p.id} key={p.id}>{p.firstName} {p.lastName}</option>)}</select></label><button className="button primary" disabled={busy||!patientId} onClick={exportPatient}>Descargar JSON</button></div>
-      <small>El archivo contiene información clínica confidencial. Protégelo fuera de AsePsico.</small>
+      <small>El archivo contiene información clínica confidencial. Protégelo fuera de AsePsico. Se te pedirá tu contraseña antes de descargar.</small>
     </section>
-    <section className="patient-card"><h2>Exportación administrativa del workspace</h2><p>Inventario de miembros, pacientes, actividad y últimos eventos de auditoría. Solo disponible para propietario y administración.</p><button className="button" disabled={busy} onClick={exportWorkspace}>Descargar exportación</button></section>
+    <section className="patient-card"><h2>Exportación administrativa del workspace</h2><p>Inventario de miembros, pacientes, actividad y últimos eventos de auditoría. Solo disponible para propietario y administración.</p><button className="button" disabled={busy} onClick={exportWorkspace}>Descargar exportación</button><br/><small>Se te pedirá tu contraseña antes de descargar.</small></section>
     <section className="patient-card"><h2>Checklist de preparación del piloto</h2><div className="billing-list">{checks.map(check=><article className="billing-row" key={check.key}><div><strong>{check.label}</strong><small>{check.detail}</small></div><span className={`status-pill ${check.status.toLowerCase()}`}>{check.status}</span></article>)}</div></section>
   </main></div>;
 }
