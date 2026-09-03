@@ -15,6 +15,11 @@ export class BillingService {
     }
   }
 
+  // Límite de seguridad independiente de los del DTO: aunque cambien los máximos ahí, o
+  // Update reutilice tipos distintos, esto evita que un total calculado se acerque al
+  // límite del tipo Int de PostgreSQL (~2.147 millones) y reviente al guardar.
+  private static readonly MAX_SAFE_TOTAL_CENTS = 500_000_000; // 5 millones de euros
+
   private calculate(lines: CreateInvoiceLineDto[]) {
     const calculated = lines.map((line) => {
       const lineSubtotalCents = line.quantity * line.unitPriceCents;
@@ -22,11 +27,15 @@ export class BillingService {
       const lineTaxCents = Math.round((lineSubtotalCents * taxRateBps) / 10_000);
       return { ...line, taxRateBps, lineSubtotalCents, lineTaxCents, lineTotalCents: lineSubtotalCents + lineTaxCents };
     });
+    const totalCents = calculated.reduce((sum, line) => sum + line.lineTotalCents, 0);
+    if (totalCents > BillingService.MAX_SAFE_TOTAL_CENTS) {
+      throw new BadRequestException('El importe total de la factura supera el máximo permitido');
+    }
     return {
       lines: calculated,
       subtotalCents: calculated.reduce((sum, line) => sum + line.lineSubtotalCents, 0),
       taxCents: calculated.reduce((sum, line) => sum + line.lineTaxCents, 0),
-      totalCents: calculated.reduce((sum, line) => sum + line.lineTotalCents, 0),
+      totalCents,
     };
   }
 
