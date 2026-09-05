@@ -12,6 +12,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
@@ -23,6 +24,16 @@ const THERAPIST_CAPABLE_ROLES = [
   'ADMIN',
   'THERAPIST',
 ];
+
+// notes e internalSummary se cifran en reposo (ver common/crypto/field-encryption.ts).
+// Centralizado aquí para no olvidar ninguno de los dos al tocar esto en el futuro.
+function decryptSession<T extends { notes?: string | null; internalSummary?: string | null }>(session: T): T {
+  return {
+    ...session,
+    notes: decryptField(session.notes) ?? null,
+    internalSummary: decryptField(session.internalSummary) ?? null,
+  };
+}
 
 @Injectable()
 export class SessionsService {
@@ -114,7 +125,7 @@ export class SessionsService {
     ]);
 
     return {
-      data,
+      data: data.map(decryptSession),
       meta: {
         page,
         pageSize,
@@ -184,7 +195,7 @@ export class SessionsService {
       throw new ForbiddenException('No puedes acceder a la sesión de otro profesional');
     }
 
-    return session;
+    return decryptSession(session);
   }
 
   async create(
@@ -273,9 +284,10 @@ export class SessionsService {
                 videoCallUrl:
                   dto.videoCallUrl?.trim() ||
                   undefined,
-                notes:
+                notes: encryptField(
                   dto.notes?.trim() ||
-                  undefined,
+                    undefined,
+                ),
               },
             });
 
@@ -362,6 +374,11 @@ export class SessionsService {
       );
     }
 
+    // session.notes ya viene descifrado (session = this.get(...) más arriba), así que si no
+    // hay dto.notes nuevo, hay que volver a cifrar el mismo texto antes de guardarlo — nunca
+    // se escribe en la base de datos sin pasar por encryptField().
+    const nextNotes = dto.notes ?? session.notes ?? undefined;
+
     const updated =
       await this.prisma.session.update({
         where: {
@@ -371,9 +388,7 @@ export class SessionsService {
         data: {
           startsAt,
           endsAt,
-          notes:
-            dto.notes ??
-            session.notes,
+          notes: encryptField(nextNotes),
         },
       });
 
@@ -442,17 +457,17 @@ export class SessionsService {
         data: {
           ...(dto.notes !== undefined
             ? {
-                notes:
-                  dto.notes.trim() ||
-                  null,
+                notes: encryptField(
+                  dto.notes.trim() || null,
+                ),
               }
             : {}),
 
           ...(dto.internalSummary !== undefined
             ? {
-                internalSummary:
-                  dto.internalSummary.trim() ||
-                  null,
+                internalSummary: encryptField(
+                  dto.internalSummary.trim() || null,
+                ),
               }
             : {}),
         },
