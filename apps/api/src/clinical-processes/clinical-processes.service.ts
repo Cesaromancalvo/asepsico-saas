@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { ClinicalProcessStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
@@ -19,6 +20,18 @@ const ALLOWED_TRANSITIONS: Record<ClinicalProcessStatus, ClinicalProcessStatusVa
   DISCHARGED: ['ACTIVE'],
   CLOSED: [],
 };
+
+// Los tres campos de contenido clínico narrativo se cifran en reposo (ver
+// common/crypto/field-encryption.ts). Centralizado aquí para no repetir la lista de campos
+// en cada método y no olvidar ninguno al tocar esto en el futuro.
+function decryptProcess<T extends { consultationReason?: string | null; goals?: string | null; internalNotes?: string | null }>(process: T): T {
+  return {
+    ...process,
+    consultationReason: decryptField(process.consultationReason) ?? null,
+    goals: decryptField(process.goals) ?? null,
+    internalNotes: decryptField(process.internalNotes) ?? null,
+  };
+}
 
 @Injectable()
 export class ClinicalProcessesService {
@@ -40,7 +53,11 @@ export class ClinicalProcessesService {
         ? {
             OR: [
               { title: { contains: query.q, mode: 'insensitive' } },
-              { consultationReason: { contains: query.q, mode: 'insensitive' } },
+              // No se busca dentro de consultationReason: al estar cifrado en la base de
+              // datos, un "contains" sobre el texto cifrado nunca encontraría coincidencias
+              // reales y daría resultados silenciosamente incompletos. Si en el futuro hace
+              // falta buscar por contenido clínico, se necesita un índice de búsqueda aparte
+              // (p. ej. tokens con hash determinista), no comparar contra el cifrado directo.
               {
                 patient: {
                   OR: [
@@ -70,7 +87,7 @@ export class ClinicalProcessesService {
       this.prisma.clinicalProcess.count({ where }),
     ]);
 
-    return { data, meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
+    return { data: data.map(decryptProcess), meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
   }
 
   async get(workspaceId: string, actor: AuthUser, id: string) {
@@ -86,7 +103,7 @@ export class ClinicalProcessesService {
     });
     if (!process) throw new NotFoundException('Proceso clínico no encontrado');
     this.assertCanManage(actor, process.therapistId);
-    return process;
+    return decryptProcess(process);
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateClinicalProcessDto) {
@@ -105,9 +122,9 @@ export class ClinicalProcessesService {
           patientId: dto.patientId,
           therapistId,
           title: dto.title,
-          consultationReason: dto.consultationReason,
-          goals: dto.goals,
-          internalNotes: dto.internalNotes,
+          consultationReason: encryptField(dto.consultationReason),
+          goals: encryptField(dto.goals),
+          internalNotes: encryptField(dto.internalNotes),
           modality: dto.modality,
           frequency: dto.frequency,
           startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
@@ -116,7 +133,7 @@ export class ClinicalProcessesService {
       await tx.auditLog.create({
         data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId } },
       });
-      return process;
+      return decryptProcess(process);
     });
   }
 
@@ -130,9 +147,9 @@ export class ClinicalProcessesService {
 
     const data: Prisma.ClinicalProcessUncheckedUpdateManyInput = {
       title: dto.title,
-      consultationReason: dto.consultationReason,
-      goals: dto.goals,
-      internalNotes: dto.internalNotes,
+      consultationReason: dto.consultationReason !== undefined ? encryptField(dto.consultationReason) : undefined,
+      goals: dto.goals !== undefined ? encryptField(dto.goals) : undefined,
+      internalNotes: dto.internalNotes !== undefined ? encryptField(dto.internalNotes) : undefined,
       modality: dto.modality,
       frequency: dto.frequency,
       startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
@@ -152,7 +169,7 @@ export class ClinicalProcessesService {
     if (count === 0) throw new NotFoundException('Proceso clínico no encontrado');
 
     await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_UPDATED', entityType: 'ClinicalProcess', entityId: id } });
-    return this.getRaw(workspaceId, id);
+    return decryptProcess(await this.getRaw(workspaceId, id));
   }
 
   async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue) {
@@ -160,7 +177,7 @@ export class ClinicalProcessesService {
     const process = await this.getRaw(workspaceId, id);
     this.assertCanManage(actor, process.therapistId);
 
-    if (process.status === status) return process;
+    if (process.status === status) return decryptProcess(process);
 
     const allowed = ALLOWED_TRANSITIONS[process.status] ?? [];
     if (!allowed.includes(status)) {
@@ -174,7 +191,7 @@ export class ClinicalProcessesService {
     await this.prisma.auditLog.create({
       data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_STATUS_CHANGED', entityType: 'ClinicalProcess', entityId: id, metadata: { from: process.status, to: status } },
     });
-    return this.getRaw(workspaceId, id);
+    return decryptProcess(await this.getRaw(workspaceId, id));
   }
 
   private assertClinicalAccess(actor: AuthUser) {
@@ -190,7 +207,12 @@ export class ClinicalProcessesService {
     }
   }
 
-  /** Como get(), pero sin el include pesado: para uso interno cuando el caller ya validó el rol. */
+  /**
+   * Como get(), pero sin el include pesado: para uso interno cuando el caller ya validó el rol.
+   * Devuelve los campos todavía cifrados a propósito — quien llame a getRaw() para volver a
+   * escribir (update/changeStatus) no debe descifrar y recifrar sin necesidad; solo se
+   * descifra en el punto final antes de devolver la respuesta al cliente.
+   */
   private async getRaw(workspaceId: string, id: string) {
     const process = await this.prisma.clinicalProcess.findFirst({ where: { id, workspaceId } });
     if (!process) throw new NotFoundException('Proceso clínico no encontrado');
