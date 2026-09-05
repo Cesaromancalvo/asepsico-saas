@@ -3,6 +3,7 @@ import { PatientStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
@@ -14,6 +15,14 @@ const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   DISCHARGED: ['ACTIVE'],
   ARCHIVED: [],
 };
+
+// consultationReason se cifra en reposo (ver common/crypto/field-encryption.ts). Centralizado
+// aquí porque hay varios puntos de retorno distintos en este servicio (get(), pero también
+// create(), changeStatus() y restore() devuelven el registro sin pasar por get()) y es fácil
+// olvidar descifrar en alguno de ellos si no está en un único sitio.
+function decryptPatient<T extends { consultationReason?: string | null }>(patient: T): T {
+  return { ...patient, consultationReason: decryptField(patient.consultationReason) ?? null };
+}
 
 @Injectable()
 export class PatientCoreService {
@@ -70,12 +79,9 @@ export class PatientCoreService {
                   mode: 'insensitive',
                 },
               },
-              {
-                consultationReason: {
-                  contains: query.q,
-                  mode: 'insensitive',
-                },
-              },
+              // consultationReason ya no se incluye en la búsqueda: al estar cifrado en la
+              // base de datos, un "contains" sobre el texto cifrado nunca encontraría
+              // coincidencias reales y daría resultados incompletos sin avisar.
             ],
           }
         : {}),
@@ -213,7 +219,7 @@ export class PatientCoreService {
         clinicalProcesses[0] ?? null;
 
       return {
-        ...patientData,
+        ...decryptPatient(patientData),
 
         summary: {
           processCount: _count.clinicalProcesses,
@@ -313,7 +319,7 @@ export class PatientCoreService {
         .sort((first, second) => new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime())[0] ?? null;
 
     return {
-      ...patientData,
+      ...decryptPatient(patientData),
       summary: {
         processCount: _count.clinicalProcesses,
         sessionCount: _count.sessions,
@@ -344,8 +350,9 @@ export class PatientCoreService {
           birthDate: dto.birthDate
             ? new Date(dto.birthDate)
             : undefined,
-          consultationReason:
+          consultationReason: encryptField(
             dto.consultationReason,
+          ),
         },
       });
 
@@ -359,7 +366,7 @@ export class PatientCoreService {
         },
       });
 
-      return patient;
+      return decryptPatient(patient);
     });
   }
 
@@ -379,6 +386,9 @@ export class PatientCoreService {
         },
         data: {
           ...dto,
+          consultationReason: dto.consultationReason !== undefined
+            ? encryptField(dto.consultationReason)
+            : undefined,
           birthDate: dto.birthDate
             ? new Date(dto.birthDate)
             : undefined,
@@ -453,7 +463,7 @@ export class PatientCoreService {
       },
     });
 
-    return updated;
+    return decryptPatient(updated);
   }
 
   async archive(
@@ -534,7 +544,7 @@ export class PatientCoreService {
       },
     });
 
-    return restored;
+    return decryptPatient(restored);
   }
 
   private async assertActive(
