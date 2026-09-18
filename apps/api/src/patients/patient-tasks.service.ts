@@ -1,10 +1,29 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
 import { CreateTherapeuticTaskDto } from './dto/create-therapeutic-task.dto';
 import { UpdateTherapeuticTaskDto, TherapeuticTaskStatusValue } from './dto/update-therapeutic-task.dto';
 import { CreateTaskTemplateDto, UpdateTaskTemplateDto } from './dto/task-template.dto';
+
+// instructions, clinicianNotes y reviewComment se cifran en reposo. patientFeedback se
+// incluye también en el descifrado (aunque todavía se escriba en texto plano desde el
+// portal del paciente, en portal.service.ts) para que en cuanto se cifre ahí también,
+// este helper ya lo lea sin cambios adicionales.
+function decryptTask<T extends { instructions?: string | null; clinicianNotes?: string | null; reviewComment?: string | null; patientFeedback?: string | null }>(task: T): T {
+  return {
+    ...task,
+    instructions: decryptField(task.instructions) ?? null,
+    clinicianNotes: decryptField(task.clinicianNotes) ?? null,
+    reviewComment: decryptField(task.reviewComment) ?? null,
+    patientFeedback: decryptField(task.patientFeedback) ?? null,
+  };
+}
+
+function decryptGoalDescription(description: string | null | undefined): string | null {
+  return decryptField(description) ?? null;
+}
 
 @Injectable()
 export class PatientTasksService {
@@ -42,7 +61,8 @@ export class PatientTasksService {
 
   async getTherapeuticTasks(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.therapeuticTask.findMany({ where:{patientId}, orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+    const tasks = await this.prisma.therapeuticTask.findMany({ where:{patientId}, orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+    return tasks.map(decryptTask);
   }
 
   async createTherapeuticTask(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateTherapeuticTaskDto) {
@@ -51,8 +71,8 @@ export class PatientTasksService {
     if(dto.therapyGoalId && !(await this.prisma.therapyGoal.findFirst({where:{id:dto.therapyGoalId,patientId}}))) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
     const status:any=dto.saveAsDraft?'DRAFT':'PENDING';
     return this.prisma.$transaction(async tx=>{
-      const task=await tx.therapeuticTask.create({data:{patientId,title:dto.title.trim(),instructions:dto.instructions?.trim()||null,dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
-      await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:dto.saveAsDraft?'THERAPEUTIC_TASK_DRAFTED':'THERAPEUTIC_TASK_ASSIGNED',entityType:'TherapeuticTask',entityId:task.id,metadata:{patientId}}}); return task;
+      const task=await tx.therapeuticTask.create({data:{patientId,title:dto.title.trim(),instructions:encryptField(dto.instructions?.trim()||null),dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
+      await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:dto.saveAsDraft?'THERAPEUTIC_TASK_DRAFTED':'THERAPEUTIC_TASK_ASSIGNED',entityType:'TherapeuticTask',entityId:task.id,metadata:{patientId}}}); return decryptTask(task);
     });
   }
 
@@ -60,13 +80,17 @@ export class PatientTasksService {
     const patient=await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId); if(patient.status==='ARCHIVED')throw new BadRequestException('El paciente está archivado');
     const existing:any=await this.prisma.therapeuticTask.findFirst({where:{id:taskId,patientId}}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
     if(dto.status)this.assertTaskTransition(existing.status,dto.status);
-    const data:any={}; for(const k of ['title','instructions','clinicianNotes','reviewComment','therapyGoalId','sessionId']) if((dto as any)[k]!==undefined)data[k]=typeof (dto as any)[k]==='string'?((dto as any)[k].trim()||null):(dto as any)[k];
+    const ENCRYPTED_FIELDS = new Set(['instructions', 'clinicianNotes', 'reviewComment']);
+    const data:any={}; for(const k of ['title','instructions','clinicianNotes','reviewComment','therapyGoalId','sessionId']) if((dto as any)[k]!==undefined){
+      const trimmed = typeof (dto as any)[k]==='string'?((dto as any)[k].trim()||null):(dto as any)[k];
+      data[k] = ENCRYPTED_FIELDS.has(k) ? encryptField(trimmed) : trimmed;
+    }
     if(dto.dueDate!==undefined)data.dueDate=dto.dueDate?new Date(dto.dueDate):null;
     if(dto.status){data.status=dto.status; const now=new Date(); if(dto.status==='PENDING')data.assignedAt=now; if(dto.status==='IN_PROGRESS')data.startedAt=now; if(dto.status==='CHANGES_REQUESTED'||dto.status==='COMPLETED')data.reviewedAt=now; if(dto.status==='COMPLETED')data.completedAt=now;}
     return this.prisma.$transaction(async tx=>{
       const task=await tx.therapeuticTask.update({where:{id:taskId},data});
       await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:'THERAPEUTIC_TASK_UPDATED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId,from:existing.status,to:dto.status||existing.status,updatedFields:Object.keys(dto)}}});
-      return task;
+      return decryptTask(task);
     });
   }
 
@@ -95,8 +119,15 @@ export class PatientTasksService {
     for (const process of processes) events.push({ id:`process-${process.id}`, type:'PROCESS', date:process.startedAt, title:`Proceso: ${process.title}`, description:'Evento del proceso terapéutico.', status:process.status });
     for (const session of sessions) events.push({ id:`session-${session.id}`, type:'SESSION', date:session.startsAt, title:session.status === 'COMPLETED' ? 'Sesión completada' : session.status === 'CANCELLED' ? 'Sesión cancelada' : 'Sesión programada', description:session.type.replaceAll('_',' '), status:session.status, href:`/agenda/${session.id}` });
     if (history?.updatedAt) events.push({ id:`history-${history.id}`, type:'HISTORY', date:history.updatedAt, title:'Historia clínica actualizada', description:'Se guardaron cambios en la historia clínica.' });
-    for (const goal of goals) events.push({ id:`goal-${goal.id}`, type:'GOAL', date:goal.achievedAt || goal.updatedAt, title:goal.status === 'ACHIEVED' ? `Objetivo alcanzado: ${goal.title}` : `Objetivo terapéutico: ${goal.title}`, description:goal.description || 'Objetivo añadido al plan terapéutico.', status:goal.status });
-    for (const task of tasks) { const taskTitle=task.status==='SUBMITTED'?`Tarea entregada: ${task.title}`:task.status==='CHANGES_REQUESTED'?`Cambios solicitados: ${task.title}`:task.status==='COMPLETED'?`Tarea completada: ${task.title}`:`Tarea terapéutica: ${task.title}`; events.push({ id:`task-${task.id}`, type:'TASK', date:(task as any).submittedAt || task.completedAt || task.updatedAt, title:taskTitle, description:(task as any).reviewComment || task.instructions || 'Tarea añadida al seguimiento entre sesiones.', status:task.status, href:`/patients/${patientId}/tasks` }); }
+    // goal.description está cifrado (ver patient-care.service.ts) — se descifra aquí antes
+    // de usarlo como texto del timeline, o se vería el blob cifrado en vez de la descripción.
+    for (const goal of goals) events.push({ id:`goal-${goal.id}`, type:'GOAL', date:goal.achievedAt || goal.updatedAt, title:goal.status === 'ACHIEVED' ? `Objetivo alcanzado: ${goal.title}` : `Objetivo terapéutico: ${goal.title}`, description:decryptGoalDescription(goal.description) || 'Objetivo añadido al plan terapéutico.', status:goal.status });
+    // task.instructions / task.reviewComment también están cifrados — mismo motivo.
+    for (const task of tasks) {
+      const decryptedTask = decryptTask(task as any);
+      const taskTitle=task.status==='SUBMITTED'?`Tarea entregada: ${task.title}`:task.status==='CHANGES_REQUESTED'?`Cambios solicitados: ${task.title}`:task.status==='COMPLETED'?`Tarea completada: ${task.title}`:`Tarea terapéutica: ${task.title}`;
+      events.push({ id:`task-${task.id}`, type:'TASK', date:(task as any).submittedAt || task.completedAt || task.updatedAt, title:taskTitle, description:decryptedTask.reviewComment || decryptedTask.instructions || 'Tarea añadida al seguimiento entre sesiones.', status:task.status, href:`/patients/${patientId}/tasks` });
+    }
     for (const assessment of assessments) events.push({ id:`assessment-${assessment.id}`, type:'ASSESSMENT', date:assessment.administeredAt, title:`${assessment.scaleName}: ${assessment.totalScore} puntos`, description:assessment.severity, href:`/patients/${patientId}/assessments` });
     for (const document of documents) events.push({ id:`document-${document.id}`, type:'DOCUMENT', date:document.createdAt, title:`Documento: ${document.title}`, description:document.type.replaceAll('_',' '), href:`/patients/${patientId}/documents` });
     for (const consent of consents) events.push({ id:`consent-${consent.id}`, type:'CONSENT', date:consent.updatedAt, title:`Consentimiento: ${consent.title}`, description:consent.status, href:`/patients/${patientId}/documents` });
