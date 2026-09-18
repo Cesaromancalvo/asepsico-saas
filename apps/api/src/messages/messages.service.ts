@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { SendMessageDto, UpdateConversationDto } from './dto/message.dto';
 
 @Injectable()
@@ -41,6 +42,13 @@ export class MessagesService {
     };
   }
 
+  // El cuerpo del mensaje se cifra en reposo. Se centraliza aquí porque tanto list() (el
+  // último mensaje de cada conversación, para la vista previa) como thread()/portalThread()
+  // (el historial completo) necesitan el mismo descifrado.
+  private decryptMessage<T extends { body: string }>(message: T): T {
+    return { ...message, body: decryptField(message.body) ?? '' };
+  }
+
   async list(workspaceId: string, actor: AuthUser, q?: string) {
     this.assertClinicalRole(actor);
     const where: any = { workspaceId, status: { not: 'ARCHIVED' } };
@@ -53,17 +61,22 @@ export class MessagesService {
       select: { conversationId: true },
     });
     const counts = unread.reduce((map: Map<string, number>, item: any) => map.set(item.conversationId, (map.get(item.conversationId) || 0) + 1), new Map<string, number>());
-    return rows.map((row: any) => ({ ...row, unreadCount: counts.get(row.id) || 0 }));
+    return rows.map((row: any) => ({
+      ...row,
+      messages: row.messages.map((message: any) => this.decryptMessage(message)),
+      unreadCount: counts.get(row.id) || 0,
+    }));
   }
 
   async getOrCreate(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.assertPatientAccess(workspaceId, actor, patientId);
-    return this.p().conversation.upsert({
+    const conversation = await this.p().conversation.upsert({
       where: { workspaceId_patientId: { workspaceId, patientId } },
       create: { workspaceId, patientId },
       update: { archivedAt: null, status: 'OPEN' },
       select: this.conversationSelect(),
     });
+    return { ...conversation, messages: conversation.messages.map((message: any) => this.decryptMessage(message)) };
   }
 
   async thread(workspaceId: string, actor: AuthUser, conversationId: string) {
@@ -75,7 +88,7 @@ export class MessagesService {
     if (!conversation) throw new NotFoundException('Conversación no encontrada');
     await this.assertPatientAccess(workspaceId, actor, conversation.patientId);
     await this.p().message.updateMany({ where: { conversationId, senderType: 'PATIENT', readByProfessionalAt: null }, data: { readByProfessionalAt: new Date() } });
-    return conversation;
+    return { ...conversation, messages: conversation.messages.map((message: any) => this.decryptMessage(message)) };
   }
 
   async send(workspaceId: string, actor: AuthUser, conversationId: string, dto: SendMessageDto) {
@@ -87,11 +100,11 @@ export class MessagesService {
     if (conversation.status !== 'OPEN') throw new BadRequestException('La conversación está cerrada');
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('El mensaje no puede estar vacío');
-    const message = await this.p().message.create({ data: { conversationId, senderType: 'PROFESSIONAL', senderUserId: actor.sub, body, attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByProfessionalAt: new Date() } });
+    const message = await this.p().message.create({ data: { conversationId, senderType: 'PROFESSIONAL', senderUserId: actor.sub, body: encryptField(body), attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByProfessionalAt: new Date() } });
     await this.p().conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
     await this.p().notification.createMany({ data: [{ workspaceId, audience: 'PATIENT', patientId: conversation.patientId, type: 'SYSTEM', title: 'Nuevo mensaje', body: 'Tienes un nuevo mensaje de tu profesional.', actionUrl: '/portal', status: 'SENT', scheduledAt: new Date(), sentAt: new Date(), dedupeKey: `message:${message.id}:patient` }], skipDuplicates: true });
     await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'MESSAGE_SENT', entityType: 'Message', entityId: message.id, metadata: { conversationId, patientId: conversation.patientId, hasAttachment: Boolean(dto.attachmentKey) } } });
-    return message;
+    return this.decryptMessage(message);
   }
 
   async update(workspaceId: string, actor: AuthUser, conversationId: string, dto: UpdateConversationDto) {
@@ -115,7 +128,7 @@ export class MessagesService {
     const conversation = await this.p().conversation.findFirst({ where: { workspaceId: portal.workspaceId, patientId: portal.patientId, status: { not: 'ARCHIVED' } }, include: { messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderType: true, body: true, attachmentName: true, mimeType: true, createdAt: true, readByPatientAt: true } } } });
     if (!conversation) return null;
     await this.p().message.updateMany({ where: { conversationId: conversation.id, senderType: 'PROFESSIONAL', readByPatientAt: null }, data: { readByPatientAt: new Date() } });
-    return conversation;
+    return { ...conversation, messages: conversation.messages.map((message: any) => this.decryptMessage(message)) };
   }
 
   async portalSend(portal: any, dto: SendMessageDto) {
@@ -125,12 +138,12 @@ export class MessagesService {
     if (conversation.status !== 'OPEN' || !conversation.patientCanReply) throw new ForbiddenException('La mensajería está cerrada por tu profesional');
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('El mensaje no puede estar vacío');
-    const message = await this.p().message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body, attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByPatientAt: new Date() } });
+    const message = await this.p().message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body: encryptField(body), attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByPatientAt: new Date() } });
     await this.p().conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
     const processes = await this.prisma.clinicalProcess.findMany({ where: { workspaceId: portal.workspaceId, patientId: portal.patientId, status: 'ACTIVE' }, select: { therapistId: true } });
     const recipients = [...new Set(processes.map((process: any) => process.therapistId).filter(Boolean))];
     if (recipients.length) await this.p().notification.createMany({ data: recipients.map((userId: string) => ({ workspaceId: portal.workspaceId, audience: 'PROFESSIONAL', userId, type: 'SYSTEM', title: 'Nuevo mensaje de paciente', body: 'Un paciente ha enviado un mensaje.', actionUrl: `/messages?patientId=${portal.patientId}`, status: 'SENT', scheduledAt: new Date(), sentAt: new Date(), dedupeKey: `message:${message.id}:professional:${userId}` })), skipDuplicates: true });
     await this.prisma.auditLog.create({ data: { workspaceId: portal.workspaceId, actorId: null, action: 'PATIENT_MESSAGE_SENT', entityType: 'Message', entityId: message.id, metadata: { conversationId: conversation.id, patientId: portal.patientId, hasAttachment: Boolean(dto.attachmentKey) } } });
-    return message;
+    return this.decryptMessage(message);
   }
 }
