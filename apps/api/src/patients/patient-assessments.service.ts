@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
 import { CreateClinicalAssessmentDto } from './dto/create-clinical-assessment.dto';
 
@@ -36,7 +37,30 @@ const CLINICAL_SCALES = {
   },
 } as const;
 
+// answers es un campo Json (array de números), no texto simple, así que se cifra distinto:
+// se serializa a JSON, se cifra ese string, y se guarda el string cifrado dentro de la
+// columna Json (una columna Json puede contener perfectamente un valor de tipo string).
+// Al leer, si el valor sigue siendo un array (dato de antes de activar el cifrado), se
+// devuelve tal cual sin intentar descifrarlo — igual que con los campos de texto.
+function encryptAnswers(answers: number[]): string {
+  return encryptField(JSON.stringify(answers))!;
+}
+function decryptAnswers(raw: unknown): number[] {
+  if (Array.isArray(raw)) return raw as number[];
+  if (typeof raw === 'string') {
+    try { return JSON.parse(decryptField(raw) ?? '[]'); } catch { return []; }
+  }
+  return [];
+}
 
+function decryptAssessment<T extends { answers: unknown; clinicalNotes?: string | null; interpretation: string }>(assessment: T): T {
+  return {
+    ...assessment,
+    answers: decryptAnswers(assessment.answers),
+    clinicalNotes: decryptField(assessment.clinicalNotes) ?? null,
+    interpretation: decryptField(assessment.interpretation) ?? '',
+  };
+}
 
 @Injectable()
 export class PatientAssessmentsService {
@@ -53,10 +77,11 @@ export class PatientAssessmentsService {
 
   async getClinicalAssessments(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.clinicalAssessment.findMany({
+    const assessments = await this.prisma.clinicalAssessment.findMany({
       where: { patientId },
       orderBy: [{ administeredAt: 'desc' }, { createdAt: 'desc' }],
     });
+    return assessments.map(decryptAssessment);
   }
 
   async createClinicalAssessment(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateClinicalAssessmentDto) {
@@ -81,21 +106,25 @@ export class PatientAssessmentsService {
           patientId,
           scaleCode: scale.code,
           scaleName: scale.name,
-          answers: dto.answers,
+          answers: encryptAnswers(dto.answers),
           totalScore,
           severity,
-          interpretation,
+          interpretation: encryptField(interpretation)!,
           riskFlag,
-          clinicalNotes: dto.clinicalNotes?.trim() || null,
+          clinicalNotes: encryptField(dto.clinicalNotes?.trim() || null),
           administeredAt: dto.administeredAt ? new Date(dto.administeredAt) : new Date(),
         },
       });
       await tx.auditLog.create({ data: {
         workspaceId, actorId: actor.sub, action: 'CLINICAL_ASSESSMENT_CREATED',
         entityType: 'ClinicalAssessment', entityId: assessment.id,
+        // El audit log guarda severity/riskFlag/totalScore en claro a propósito: son
+        // metadatos operativos de bajo detalle (igual que ya se hacía antes de cifrar
+        // nada), no el contenido narrativo. No incluyen ni las respuestas ni la
+        // interpretación completa.
         metadata: { patientId, scaleCode: scale.code, totalScore, severity, riskFlag },
       }});
-      return assessment;
+      return decryptAssessment(assessment);
     });
   }
 
