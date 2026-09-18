@@ -1,1 +1,3 @@
 {"name":"@asepsico/contracts","version":"1.0.0-alpha.1","private":true,"type":"module","main":"src/index.ts"}
+"otplib": "^13.5.0",
+"qrcode": "^1.5.4",
