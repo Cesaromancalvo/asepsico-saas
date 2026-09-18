@@ -15,8 +15,6 @@ function meta(req: Request) {
   return { ip: req.ip, userAgent: req.get('user-agent') ?? undefined };
 }
 
-// Límites deliberadamente estrictos: login/registro son los endpoints más atacados
-// (credential stuffing, cuentas duplicadas). 5 intentos por minuto por IP.
 const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 @ApiTags('auth')
@@ -38,16 +36,12 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const result = await this.auth.login(dto, meta(req));
     if (result.mfaRequired) {
-      // Sin cookies todavía: la sesión de verdad no se emite hasta que se verifique el
-      // segundo factor en /auth/login/mfa.
       return { mfaRequired: true, pendingToken: result.pendingToken };
     }
     setAuthCookies(res, result);
     return { mfaRequired: false, user: result.user, workspaceId: result.workspaceId, role: result.role };
   }
 
-  // Mismo límite que el login normal: un código de 6 dígitos es fuerza-bruteable si no se
-  // limitan los intentos (1 millón de combinaciones, pero cada código solo vale 30s).
   @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
   @Post('login/mfa')
@@ -76,8 +70,6 @@ export class AuthController {
     clearAuthCookies(res);
     return { success: true };
   }
-
-  // --- MFA: solo para una sesión ya iniciada (activar/desactivar el segundo factor propio) ---
 
   @UseGuards(JwtAuthGuard, CsrfGuard)
   @Post('mfa/setup')
