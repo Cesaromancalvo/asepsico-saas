@@ -47,6 +47,11 @@ const navigation = [
     icon: '€',
   },
   {
+    href: '/settings/security',
+    label: 'Seguridad',
+    icon: '⛨',
+  },
+  {
     href: '/settings/data',
     label: 'Datos y piloto',
     icon: '⇩',
