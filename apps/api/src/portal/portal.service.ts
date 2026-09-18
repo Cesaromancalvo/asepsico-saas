@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
 
@@ -64,22 +65,33 @@ export class PortalService {
       (this.prisma as any).resourceShare.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId, revokedAt:null, resource:{ archivedAt:null } }, orderBy:{ sharedAt:'desc' }, select:{ id:true, sharedAt:true, resource:{ select:{ id:true,title:true,description:true,type:true,category:true,url:true,fileName:true,mimeType:true } } } }),
     ]);
     if (!patient) throw new NotFoundException();
-    return { patient, sessions, tasks, consents, invoices, resources, mustChangePassword: Boolean(account.mustChangePassword) };
+    // instructions/patientFeedback/reviewComment están cifrados en reposo (ver
+    // patient-tasks.service.ts) — hay que descifrarlos aquí o el paciente vería el texto
+    // cifrado en bruto en vez de sus propias tareas.
+    const decryptedTasks = tasks.map((task: any) => ({
+      ...task,
+      instructions: decryptField(task.instructions) ?? null,
+      patientFeedback: decryptField(task.patientFeedback) ?? null,
+      reviewComment: decryptField(task.reviewComment) ?? null,
+    }));
+    return { patient, sessions, tasks: decryptedTasks, consents, invoices, resources, mustChangePassword: Boolean(account.mustChangePassword) };
   }
 
   async saveTaskProgress(portal:any, taskId:string, dto:SaveTaskProgressDto) {
     const task:any=await (this.prisma as any).therapeuticTask.findFirst({where:{id:taskId,patientId:portal.patientId,patient:{workspaceId:portal.workspaceId},status:{in:['PENDING','IN_PROGRESS','CHANGES_REQUESTED']}}});
     if(!task)throw new NotFoundException('Tarea no disponible');
-    const now=new Date(); const updated=await (this.prisma as any).therapeuticTask.update({where:{id:taskId},data:{patientFeedback:dto.patientFeedback.trim(),status:'IN_PROGRESS',startedAt:task.startedAt||now}});
-    await this.prisma.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_PROGRESS_SAVED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId}}}); return updated;
+    const now=new Date(); const updated=await (this.prisma as any).therapeuticTask.update({where:{id:taskId},data:{patientFeedback:encryptField(dto.patientFeedback.trim()),status:'IN_PROGRESS',startedAt:task.startedAt||now}});
+    await this.prisma.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_PROGRESS_SAVED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId}}});
+    return { ...updated, patientFeedback: decryptField(updated.patientFeedback) ?? null };
   }
 
   async submitTask(portal:any, taskId:string) {
     const task:any=await (this.prisma as any).therapeuticTask.findFirst({where:{id:taskId,patientId:portal.patientId,patient:{workspaceId:portal.workspaceId},status:{in:['IN_PROGRESS','CHANGES_REQUESTED']}}});
     if(!task)throw new BadRequestException('La tarea no puede enviarse en su estado actual');
-    if(!task.patientFeedback?.trim())throw new BadRequestException('Añade una respuesta antes de enviar la tarea');
+    if(!decryptField(task.patientFeedback)?.trim())throw new BadRequestException('Añade una respuesta antes de enviar la tarea');
     const updated=await (this.prisma as any).therapeuticTask.update({where:{id:taskId},data:{status:'SUBMITTED',submittedAt:new Date()}});
-    await this.prisma.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_SUBMITTED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId}}}); return updated;
+    await this.prisma.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_SUBMITTED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId}}});
+    return { ...updated, patientFeedback: decryptField(updated.patientFeedback) ?? null };
   }
 
   async changePassword(portal:any, dto:ChangePortalPasswordDto) {
