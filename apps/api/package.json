@@ -34,7 +34,9 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4",
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -51,6 +53,7 @@
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
+    "@types/qrcode": "^1.5.5",
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
