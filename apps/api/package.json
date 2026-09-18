@@ -36,7 +36,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "otplib": "^13.5.0",
-    "qrcode": "^1.5.4",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
