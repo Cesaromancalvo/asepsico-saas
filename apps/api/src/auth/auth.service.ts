@@ -11,9 +11,9 @@ import { generateTotpSecret, getTotpUri, getTotpQrCodeDataUrl, verifyTotpCode } 
 import { generateRecoveryCodes, hashRecoveryCodes, findMatchingRecoveryCodeIndex } from './recovery-codes.util';
 
 const REFRESH_TOKEN_TTL_DAYS = 7;
-// El token intermedio de "falta el segundo factor" vive muy poco tiempo a propósito: si
-// alguien lo intercepta, la ventana para usarlo es mínima.
 const MFA_PENDING_TTL = '5m';
+
+type SessionUser = { id: string; email: string; firstName: string; lastName: string; totpEnabled: boolean };
 
 export type IssuedSession = {
   accessToken: string;
@@ -50,16 +50,11 @@ export class AuthService {
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string }): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: { memberships: { take: 1 } } });
-    // Comparación constante-en-tiempo incluso si el usuario no existe, para no filtrar por timing qué correos están registrados.
     const passwordHash = user?.passwordHash ?? '$2a$12$invalidinvalidinvaliduinvalidinvalidinvalidinvalidinva';
     const passwordOk = await compare(dto.password, passwordHash);
     if (!user || !passwordOk || !user.memberships[0]) throw new UnauthorizedException('Credenciales incorrectas');
 
     if (user.totpEnabled) {
-      // No se emite sesión todavía: solo un token de un solo propósito, sin workspaceId ni
-      // role, que el JwtStrategy de staff ya rechaza por forma si alguien intentara usarlo
-      // directamente contra un endpoint normal (mismo mecanismo que protege del token del
-      // portal del paciente).
       const pendingToken = await this.jwt.signAsync(
         { sub: user.id, kind: 'mfa_pending' },
         { expiresIn: MFA_PENDING_TTL },
@@ -71,7 +66,6 @@ export class AuthService {
     return { mfaRequired: false, ...session };
   }
 
-  /** Segundo paso del login cuando el usuario tiene MFA activo: valida el código TOTP (o un código de recuperación) y, si es correcto, emite la sesión de verdad. */
   async verifyMfaLogin(pendingToken: string, code: string, meta: { ip?: string; userAgent?: string }): Promise<IssuedSession> {
     let payload: { sub?: string; kind?: string };
     try {
@@ -92,7 +86,6 @@ export class AuthService {
     const totpValid = await verifyTotpCode(secret, code);
 
     if (!totpValid) {
-      // No era un código TOTP válido: probamos si es un código de recuperación de un solo uso.
       const matchIndex = await findMatchingRecoveryCodeIndex(code, user.mfaRecoveryCodes);
       if (matchIndex === -1) throw new UnauthorizedException('Código no válido');
       const remainingCodes = user.mfaRecoveryCodes.filter((_, i) => i !== matchIndex);
@@ -102,7 +95,6 @@ export class AuthService {
     return this.issueSession(user, user.memberships[0].workspaceId, user.memberships[0].role, meta);
   }
 
-  /** Genera un secreto TOTP nuevo (todavía no activo) y el QR para escanearlo. */
   async setupMfa(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
@@ -113,7 +105,6 @@ export class AuthService {
     return { qrCodeDataUrl, secret };
   }
 
-  /** Confirma que el usuario configuró bien su app de autenticación, activa MFA de verdad y entrega los códigos de recuperación (solo se muestran esta vez). */
   async confirmMfaSetup(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user?.totpSecret) throw new BadRequestException('Primero tienes que iniciar la configuración de MFA');
@@ -127,7 +118,6 @@ export class AuthService {
     return { recoveryCodes };
   }
 
-  /** Exige contraseña + un código válido para desactivar MFA: es una acción que reduce la seguridad de la cuenta, así que se le pide la misma fricción que a exportar datos. */
   async disableMfa(userId: string, password: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
@@ -144,11 +134,6 @@ export class AuthService {
     return { success: true };
   }
 
-  /**
-   * Rota el refresh token. Si el token presentado ya estaba revocado, se interpreta como
-   * reutilización de un token robado/filtrado: se revoca toda la familia de tokens del usuario
-   * (todas las sesiones derivadas del mismo login) y se fuerza a re-autenticar.
-   */
   async refresh(rawToken: string, meta: { ip?: string; userAgent?: string }): Promise<IssuedSession> {
     if (!rawToken) throw new UnauthorizedException('Sesión no válida');
     const tokenHash = hashToken(rawToken);
@@ -165,8 +150,6 @@ export class AuthService {
       throw new UnauthorizedException('Sesión no válida, vuelve a iniciar sesión');
     }
 
-    // Reclama el token de forma atómica antes de emitir el siguiente. Así, dos peticiones
-    // concurrentes con el mismo refresh token no pueden crear dos sesiones válidas.
     const claimedAt = new Date();
     const claim = await this.prisma.refreshToken.updateMany({
       where: {
@@ -206,13 +189,21 @@ export class AuthService {
   }
 
   private async issueSession(
-    user: { id: string; email: string; firstName: string; lastName: string },
+    user: SessionUser,
     workspaceId: string,
     role: string,
     meta: { ip?: string; userAgent?: string },
     family?: string,
   ): Promise<IssuedSession> {
-    const accessToken = await this.jwt.signAsync({ sub: user.id, email: user.email, workspaceId, role });
+    const accessToken = await this.jwt.signAsync({
+      sub: user.id,
+      email: user.email,
+      workspaceId,
+      role,
+      // Necesario para que JwtAuthGuard pueda exigir MFA a los roles que lo requieren sin
+      // tener que consultar la base de datos en cada petición.
+      mfaEnabled: user.totpEnabled,
+    });
     const refreshToken = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
     await this.prisma.refreshToken.create({
