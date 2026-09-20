@@ -188,7 +188,11 @@ export class BillingService {
             firstName: true,
             lastName: true,
             email: true,
-            portalAccount: { select: { id: true, isActive: true, email: true } },
+            // portalAccount (singular) → portalAccounts (plural): ahora un paciente puede
+            // tener varias cuentas de portal (la suya propia y la de sus tutores). Para
+            // avisar de una factura, basta con que exista al menos una cuenta activa,
+            // sea del paciente o de un tutor.
+            portalAccounts: { where: { isActive: true }, select: { id: true, email: true, accessorType: true } },
           },
         },
       },
@@ -197,8 +201,9 @@ export class BillingService {
     if (invoice.status === 'DRAFT') throw new BadRequestException('Emite la factura antes de enviarla');
     if (invoice.status === 'VOID') throw new BadRequestException('No se puede enviar una factura anulada');
 
-    const hasPortal = Boolean(invoice.patient.portalAccount?.isActive);
-    const email = invoice.patient.portalAccount?.email || invoice.patient.email;
+    const activePortalAccounts = invoice.patient.portalAccounts ?? [];
+    const hasPortal = activePortalAccounts.length > 0;
+    const email = activePortalAccounts[0]?.email || invoice.patient.email;
     if (!hasPortal && !email) {
       throw new BadRequestException('El paciente necesita un portal activo o un correo electrónico para recibir la factura');
     }
