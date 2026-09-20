@@ -193,6 +193,7 @@ model Patient {
   birthDate          DateTime?
   consultationReason String?
   status             PatientStatus     @default(ACTIVE)
+  portalAccessMode   PortalAccessMode  @default(PATIENT_ONLY)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   deletedAt          DateTime?
@@ -208,7 +209,7 @@ model Patient {
   clinicalReports     ClinicalReport[]
   invoices            Invoice[]
   payments            Payment[]
-  portalAccount       PatientPortalAccount?
+  portalAccounts      PatientPortalAccount[]
   resourceShares      ResourceShare[]
   conversations       Conversation[]
 
@@ -606,7 +607,10 @@ model Payment {
 model PatientPortalAccount {
   id              String    @id @default(cuid())
   workspaceId     String
-  patientId       String    @unique
+  patientId       String
+  accessorType    PortalAccessorType @default(PATIENT)
+  guardianName    String?
+  guardianRelationship String?
   email           String
   passwordHash    String
   isActive        Boolean   @default(true)
@@ -621,6 +625,7 @@ model PatientPortalAccount {
 
   @@unique([email])
   @@index([workspaceId, isActive])
+  @@index([patientId])
 }
 
 enum NotificationAudience {
