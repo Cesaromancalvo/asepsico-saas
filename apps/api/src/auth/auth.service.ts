@@ -95,11 +95,26 @@ export class AuthService {
     return this.issueSession(user, user.memberships[0].workspaceId, user.memberships[0].role, meta);
   }
 
+  /**
+   * Genera un secreto TOTP y el QR para escanearlo. Si ya había un secreto pendiente de
+   * confirmar (el usuario le dio dos veces al botón, tiene varias pestañas abiertas, o
+   * recargó la página a medio proceso), se reutiliza el mismo secreto en vez de generar
+   * uno nuevo — así el QR que ya escaneó sigue siendo válido y no hay que repetir el
+   * escaneo. Solo se genera un secreto nuevo de verdad la primera vez, o si MFA ya estaba
+   * activo antes (una reconfiguración deliberada).
+   */
   async setupMfa(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    const secret = generateTotpSecret();
-    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: encryptField(secret), totpEnabled: false } });
+
+    let secret: string;
+    if (user.totpSecret && !user.totpEnabled) {
+      secret = decryptField(user.totpSecret)!;
+    } else {
+      secret = generateTotpSecret();
+      await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: encryptField(secret), totpEnabled: false } });
+    }
+
     const uri = getTotpUri(secret, user.email);
     const qrCodeDataUrl = await getTotpQrCodeDataUrl(uri);
     return { qrCodeDataUrl, secret };
@@ -200,8 +215,6 @@ export class AuthService {
       email: user.email,
       workspaceId,
       role,
-      // Necesario para que JwtAuthGuard pueda exigir MFA a los roles que lo requieren sin
-      // tener que consultar la base de datos en cada petición.
       mfaEnabled: user.totpEnabled,
     });
     const refreshToken = generateOpaqueToken();
