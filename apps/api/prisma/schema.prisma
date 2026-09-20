@@ -650,6 +650,17 @@ enum NotificationType {
   SYSTEM
 }
 
+enum PortalAccessMode {
+  PATIENT_ONLY
+  GUARDIAN_ONLY
+  SHARED
+}
+
+enum PortalAccessorType {
+  PATIENT
+  GUARDIAN
+}
+
 model NotificationPreference {
   id                   String   @id @default(cuid())
   workspaceId          String
