@@ -35,6 +35,9 @@ export class PortalController {
   @Patch('portal/password') @UseGuards(PortalGuard, CsrfGuard)
   changePassword(@Req() req:any, @Body() dto:ChangePortalPasswordDto) { return this.service.changePassword(req.portalUser,dto); }
 
+  @Get('patients/:patientId/portal-accounts') @UseGuards(JwtAuthGuard)
+  listAccounts(@Req() req:any, @Param('patientId') patientId:string) { return this.service.listAccounts(req.user.workspaceId, req.user, patientId); }
+
   @Post('patients/:patientId/portal-account') @UseGuards(JwtAuthGuard, CsrfGuard)
   enable(@Req() req:any,@Param('patientId') patientId:string,@Body() dto:EnablePortalDto){ return this.service.enable(req.user.workspaceId,req.user,patientId,dto); }
 
