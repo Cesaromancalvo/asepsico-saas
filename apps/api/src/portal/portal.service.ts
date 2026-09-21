@@ -14,6 +14,18 @@ export class PortalService {
     if (!['OWNER','ADMIN','ASSISTANT'].includes(actor?.role)) throw new ForbiddenException();
   }
 
+  /** Lista las cuentas de portal existentes de un paciente (la suya propia y la de cada tutor), para que el profesional vea quién tiene acceso hoy antes de añadir o quitar a nadie. */
+  async listAccounts(workspaceId: string, actor: any, patientId: string) {
+    this.assertStaff(actor);
+    const patient = await this.prisma.patient.findFirst({ where: { id: patientId, workspaceId, deletedAt: null } });
+    if (!patient) throw new NotFoundException('Paciente no encontrado');
+    return (this.prisma as any).patientPortalAccount.findMany({
+      where: { patientId, workspaceId },
+      orderBy: [{ accessorType: 'asc' }, { createdAt: 'asc' }],
+      select: { id:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, mustChangePassword:true, lastLoginAt:true, createdAt:true },
+    });
+  }
+
   async enable(workspaceId: string, actor: any, patientId: string, dto: EnablePortalDto) {
     this.assertStaff(actor);
     const patient = await this.prisma.patient.findFirst({ where: { id: patientId, workspaceId, deletedAt: null } });
