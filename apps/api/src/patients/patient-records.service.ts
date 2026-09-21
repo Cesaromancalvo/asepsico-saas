@@ -1,10 +1,29 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
 import { CreatePatientDocumentDto } from './dto/create-patient-document.dto';
 import { CreateConsentRecordDto, UpdateConsentRecordDto } from './dto/create-consent-record.dto';
 import { CreateClinicalReportDto, UpdateClinicalReportDto } from './dto/create-clinical-report.dto';
+
+// El contenido de un informe clínico (evolución, alta, derivación, certificado) es tan
+// sensible como la propia historia clínica, así que se cifra en reposo igual que el resto.
+function decryptReport<T extends { content?: string | null }>(report: T): T {
+  return { ...report, content: decryptField(report.content) ?? '' };
+}
+
+// description y fileName de un documento del paciente pueden llevar contenido revelador
+// (una descripción narrativa, o un nombre de archivo con datos identificativos) — se
+// cifran igual que el resto del contenido clínico. storageKey y mimeType se quedan tal
+// cual: son referencias técnicas internas, no contenido legible por sí mismas.
+function decryptDocument<T extends { description?: string | null; fileName?: string | null }>(document: T): T {
+  return {
+    ...document,
+    description: decryptField(document.description) ?? null,
+    fileName: decryptField(document.fileName) ?? null,
+  };
+}
 
 @Injectable()
 export class PatientRecordsService {
@@ -12,10 +31,11 @@ export class PatientRecordsService {
 
   async getPatientDocuments(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.patientDocument.findMany({
+    const documents = await this.prisma.patientDocument.findMany({
       where: { workspaceId, patientId }, orderBy: { createdAt: 'desc' },
       select: { id:true,title:true,type:true,description:true,fileName:true,mimeType:true,storageKey:true,createdAt:true,updatedAt:true,createdBy:{select:{id:true,firstName:true,lastName:true}} },
     });
+    return documents.map(decryptDocument);
   }
 
   async createPatientDocument(workspaceId: string, actor: AuthUser, patientId: string, dto: CreatePatientDocumentDto) {
@@ -24,11 +44,11 @@ export class PatientRecordsService {
     return this.prisma.$transaction(async (tx) => {
       const document = await tx.patientDocument.create({ data: {
         workspaceId, patientId, createdById: actor.sub, title: dto.title.trim(), type: dto.type,
-        description: dto.description?.trim() || null, fileName: dto.fileName?.trim() || null,
+        description: encryptField(dto.description?.trim() || null), fileName: encryptField(dto.fileName?.trim() || null),
         mimeType: dto.mimeType?.trim() || null, storageKey: dto.storageKey?.trim() || null,
       }});
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PATIENT_DOCUMENT_CREATED', entityType: 'PatientDocument', entityId: document.id, metadata: { patientId, type: dto.type, hasStorageReference: Boolean(dto.storageKey) } } });
-      return document;
+      return decryptDocument(document);
     });
   }
 
@@ -102,7 +122,8 @@ export class PatientRecordsService {
 
   async getClinicalReports(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId }, orderBy: { updatedAt: 'desc' } });
+    const reports = await this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId }, orderBy: { updatedAt: 'desc' } });
+    return reports.map(decryptReport);
   }
 
   async createClinicalReport(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateClinicalReportDto) {
@@ -112,10 +133,10 @@ export class PatientRecordsService {
       const status = dto.status ?? 'DRAFT';
       const report = await tx.clinicalReport.create({ data: {
         workspaceId, patientId, createdById: actor.sub, title: dto.title.trim(), type: dto.type,
-        status, content: dto.content.trim(), finalizedAt: status === 'FINAL' ? new Date() : null,
+        status, content: encryptField(dto.content.trim())!, finalizedAt: status === 'FINAL' ? new Date() : null,
       }});
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_REPORT_CREATED', entityType: 'ClinicalReport', entityId: report.id, metadata: { patientId, type: dto.type, status } } });
-      return report;
+      return decryptReport(report);
     });
   }
 
@@ -128,12 +149,12 @@ export class PatientRecordsService {
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title.trim();
     if (dto.type !== undefined) data.type = dto.type;
-    if (dto.content !== undefined) data.content = dto.content.trim();
+    if (dto.content !== undefined) data.content = encryptField(dto.content.trim());
     if (dto.status !== undefined) { data.status = dto.status; data.finalizedAt = dto.status === 'FINAL' ? new Date() : existing.finalizedAt; }
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.clinicalReport.update({ where: { id: reportId }, data });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_REPORT_UPDATED', entityType: 'ClinicalReport', entityId: reportId, metadata: { patientId, updatedFields: Object.keys(dto), previousStatus: existing.status, newStatus: report.status } } });
-      return report;
+      return decryptReport(report);
     });
   }
 
