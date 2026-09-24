@@ -201,6 +201,10 @@ export class PatientsController {
     return this.patients.restore(user.workspaceId, user, id);
   }
 
+  @Post(':id/block') block(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.patients.block(user.workspaceId, user, id);
+  }
+
   @Delete(':id') archive(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.patients.archive(user.workspaceId, user, id);
   }
