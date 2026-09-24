@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PatientStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
@@ -14,7 +14,16 @@ const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   PAUSED: ['ACTIVE', 'DISCHARGED'],
   DISCHARGED: ['ACTIVE'],
   ARCHIVED: [],
+  // Bloqueado no admite transiciones normales: es un estado de salida, previo al borrado
+  // definitivo al cumplirse el plazo legal de conservación. Se llega a él únicamente a
+  // través de block(), nunca del selector de estados habitual.
+  BLOCKED: [],
 };
+
+// Años mínimos de conservación de la historia clínica antes de poder suprimirla de verdad
+// (Ley 41/2002, mínimo estatal; algunas comunidades autónomas exigen más — confirmar con
+// el despacho si el volumen de pacientes crece fuera de la Comunidad Valenciana).
+const RETENTION_YEARS = 5;
 
 // consultationReason se cifra en reposo (ver common/crypto/field-encryption.ts). Centralizado
 // aquí porque hay varios puntos de retorno distintos en este servicio (get(), pero también
@@ -47,8 +56,11 @@ export class PatientCoreService {
       ...(query.status
         ? { status: query.status }
         : {
+            // Ni archivados ni bloqueados aparecen en el listado normal por defecto. Un
+            // paciente bloqueado (art. 32 LOPDGDD) está fuera de cualquier uso operativo
+            // habitual — solo se accede a él de forma explícita, nunca navegando la lista.
             status: {
-              not: PatientStatus.ARCHIVED,
+              notIn: [PatientStatus.ARCHIVED, PatientStatus.BLOCKED],
             },
           }),
 
@@ -545,6 +557,51 @@ export class PatientCoreService {
     });
 
     return decryptPatient(restored);
+  }
+
+  /**
+   * Bloquea los datos de un paciente (art. 32 LOPDGDD): cuando se solicita la baja o el
+   * borrado pero existe obligación legal de conservar la historia clínica (mínimo 5 años,
+   * Ley 41/2002), los datos no se suprimen de inmediato — se bloquean, quedando fuera de
+   * cualquier uso operativo normal (ya no aparecen en list() por defecto) y accesibles solo
+   * de forma explícita, para defensa legal. Pasado el plazo (retentionUntil), el borrado
+   * definitivo es una acción manual separada, no automática.
+   *
+   * Solo OWNER/ADMIN pueden bloquear: es una decisión administrativa/legal, no clínica del
+   * día a día, y no puede deshacerse desde aquí — no existe un "unblock" normal.
+   */
+  async block(workspaceId: string, actor: AuthUser, id: string) {
+    if (!['OWNER', 'ADMIN'].includes(actor.role)) {
+      throw new ForbiddenException('Solo el propietario o un administrador pueden bloquear los datos de un paciente');
+    }
+
+    const patient = await this.prisma.patient.findFirst({ where: { id, workspaceId } });
+    if (!patient) throw new NotFoundException('Paciente no encontrado');
+    if (patient.status === PatientStatus.BLOCKED) {
+      throw new BadRequestException('El paciente ya está bloqueado');
+    }
+
+    const blockedAt = new Date();
+    const retentionUntil = new Date(blockedAt);
+    retentionUntil.setFullYear(retentionUntil.getFullYear() + RETENTION_YEARS);
+
+    const updated = await this.prisma.patient.update({
+      where: { id },
+      data: { status: PatientStatus.BLOCKED, blockedAt, retentionUntil },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        workspaceId,
+        actorId: actor.sub,
+        action: 'PATIENT_BLOCKED',
+        entityType: 'Patient',
+        entityId: id,
+        metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString() },
+      },
+    });
+
+    return decryptPatient(updated);
   }
 
   private async assertActive(
