@@ -37,7 +37,7 @@ export default function PortalPage(){
    ]);
    if(notifications.ok)setItems(await notifications.json());
    if(preferences.ok)setPref(await preferences.json());
-   if(messages.ok)setConversation(await messages.json());
+   if(messages.ok){try{setConversation(await messages.json())}catch{setConversation(null)}}
   }
  }
  useEffect(()=>{load().catch(e=>setError(e.message))},[]);
