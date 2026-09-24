@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CsrfGuard } from '../common/guards/csrf.guard';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
+import { RequestDeletionDto } from './dto/request-deletion.dto';
 import { PortalGuard } from './portal.guard';
 import { PortalService } from './portal.service';
 
@@ -25,6 +26,12 @@ export class PortalController {
 
   @Get('portal/dashboard') @UseGuards(PortalGuard)
   dashboard(@Req() req:any) { return this.service.dashboard(req.portalUser); }
+
+  @Get('portal/export-data') @UseGuards(PortalGuard)
+  exportData(@Req() req:any) { return this.service.exportData(req.portalUser); }
+
+  @Post('portal/request-deletion') @UseGuards(PortalGuard, CsrfGuard)
+  requestDeletion(@Req() req:any, @Body() dto:RequestDeletionDto) { return this.service.requestDeletion(req.portalUser, dto.reason); }
 
   @Patch('portal/tasks/:taskId/progress') @UseGuards(PortalGuard, CsrfGuard)
   saveTaskProgress(@Req() req:any,@Param('taskId') taskId:string,@Body() dto:SaveTaskProgressDto){return this.service.saveTaskProgress(req.portalUser,taskId,dto);}
