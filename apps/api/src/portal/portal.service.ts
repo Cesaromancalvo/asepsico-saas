@@ -14,7 +14,6 @@ export class PortalService {
     if (!['OWNER','ADMIN','ASSISTANT'].includes(actor?.role)) throw new ForbiddenException();
   }
 
-  /** Lista las cuentas de portal existentes de un paciente (la suya propia y la de cada tutor), para que el profesional vea quién tiene acceso hoy antes de añadir o quitar a nadie. */
   async listAccounts(workspaceId: string, actor: any, patientId: string) {
     this.assertStaff(actor);
     const patient = await this.prisma.patient.findFirst({ where: { id: patientId, workspaceId, deletedAt: null } });
@@ -114,6 +113,69 @@ export class PortalService {
       reviewComment: decryptField(task.reviewComment) ?? null,
     }));
     return { patient, sessions, tasks: decryptedTasks, consents, invoices, resources, mustChangePassword: Boolean(account.mustChangePassword), accessorType: account.accessorType };
+  }
+
+  /**
+   * Exportación de datos propios del paciente (art. 15 RGPD, derecho de acceso): a diferencia
+   * de la baja/borrado, esto SÍ se autoserve sin pasar por el profesional — no es una acción
+   * destructiva, es solo entregarle al paciente (o a su tutor) una copia de lo que ya puede
+   * ver en su propio portal, en un formato descargable.
+   */
+  async exportData(portal: any) {
+    const account = await (this.prisma as any).patientPortalAccount.findFirst({ where:{ id:portal.portalAccountId, patientId:portal.patientId, workspaceId:portal.workspaceId, isActive:true } });
+    if (!account) throw new UnauthorizedException();
+
+    const [patient, sessions, tasks, assessments, consents, invoices] = await Promise.all([
+      this.prisma.patient.findFirst({ where:{ id:portal.patientId, workspaceId:portal.workspaceId, deletedAt:null }, select:{ id:true, firstName:true, lastName:true, email:true, phone:true, birthDate:true, createdAt:true } }),
+      this.prisma.session.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId }, orderBy:{ startsAt:'asc' }, select:{ startsAt:true, endsAt:true, status:true, type:true } }),
+      (this.prisma as any).therapeuticTask.findMany({ where:{ patientId:portal.patientId }, orderBy:{ createdAt:'asc' }, select:{ title:true, instructions:true, status:true, dueDate:true, patientFeedback:true, submittedAt:true, completedAt:true } }),
+      (this.prisma as any).clinicalAssessment.findMany({ where:{ patientId:portal.patientId }, orderBy:{ administeredAt:'asc' }, select:{ scaleName:true, totalScore:true, severity:true, administeredAt:true } }),
+      (this.prisma as any).consentRecord.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId }, orderBy:{ createdAt:'asc' }, select:{ title:true, type:true, status:true, signedAt:true } }),
+      (this.prisma as any).invoice.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId, status:{ not:'DRAFT' } }, orderBy:{ createdAt:'asc' }, select:{ invoiceNumber:true, status:true, totalCents:true, paidCents:true, issueDate:true } }),
+    ]);
+    if (!patient) throw new NotFoundException();
+
+    const decryptedTasks = tasks.map((task: any) => ({
+      ...task,
+      instructions: decryptField(task.instructions) ?? null,
+      patientFeedback: decryptField(task.patientFeedback) ?? null,
+    }));
+
+    await this.prisma.auditLog.create({ data:{ workspaceId:portal.workspaceId, actorId:null, action:'PORTAL_DATA_EXPORTED', entityType:'Patient', entityId:portal.patientId, metadata:{ accessorType:portal.accessorType } } });
+
+    return {
+      exportedAt: new Date().toISOString(),
+      patient,
+      sessions,
+      tasks: decryptedTasks,
+      assessments,
+      consents,
+      invoices,
+    };
+  }
+
+  /**
+   * Solicitud de baja/borrado: a diferencia de exportData(), esto NUNCA ejecuta nada por sí
+   * mismo — solo avisa al profesional (cláusula 9.1 del contrato art. 28: el Encargado
+   * traslada la solicitud, no decide sobre el fondo). El profesional revisa y, si procede,
+   * actúa manualmente con la acción de bloqueo ya existente.
+   */
+  async requestDeletion(portal: any, reason?: string) {
+    await this.prisma.auditLog.create({ data:{ workspaceId:portal.workspaceId, actorId:null, action:'PORTAL_DELETION_REQUESTED', entityType:'Patient', entityId:portal.patientId, metadata:{ accessorType:portal.accessorType, reason: reason || null } } });
+
+    await (this.prisma as any).notification.create({ data: {
+      workspaceId: portal.workspaceId,
+      audience: 'PROFESSIONAL',
+      patientId: portal.patientId,
+      type: 'SYSTEM',
+      title: 'Solicitud de baja de datos',
+      body: `El paciente (o su tutor) ha solicitado la baja/borrado de sus datos.${reason ? ' Motivo: ' + reason : ''}`,
+      status: 'PENDING',
+      scheduledAt: new Date(),
+      dedupeKey: `deletion-request:${portal.patientId}:${Date.now()}`,
+    }});
+
+    return { ok: true };
   }
 
   async saveTaskProgress(portal:any, taskId:string, dto:SaveTaskProgressDto) {
