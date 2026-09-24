@@ -19,6 +19,7 @@ enum PatientStatus {
   PAUSED
   DISCHARGED
   ARCHIVED
+  BLOCKED
 }
 
 enum SessionStatus {
@@ -197,6 +198,8 @@ model Patient {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   deletedAt          DateTime?
+  blockedAt          DateTime?
+  retentionUntil     DateTime?
   workspace          Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   sessions           Session[]
   clinicalProcesses  ClinicalProcess[]
