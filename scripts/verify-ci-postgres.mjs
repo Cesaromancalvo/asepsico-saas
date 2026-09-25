@@ -71,4 +71,16 @@ if (!/\/auth\/mfa\/setup/.test(smoke) || !/\/auth\/mfa\/confirm/.test(smoke) || 
   throw new Error('El smoke test no contempla el MFA obligatorio (mfa/setup + mfa/confirm + refresh)');
 }
 
+// ENROLL_MFA modifica la cuenta: solo contra hosts locales, salvo válvula explícita que la CI no usa.
+if (!/assertEnrollmentTargetAllowed\(\);\s*\n\s*const setup = await req\('\/auth\/mfa\/setup'/.test(smoke) ||
+    !/'localhost',\s*'127\.0\.0\.1',\s*'::1'/.test(smoke)) {
+  throw new Error('El smoke debe bloquear ASEPSICO_SMOKE_ENROLL_MFA contra hosts no locales antes de mfa/setup');
+}
+if (/ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL/.test(workflow)) {
+  throw new Error('La CI no debe definir ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL');
+}
+if (!/recoveryCodes/.test(smoke)) {
+  throw new Error('El smoke debe desactivar el MFA temporal con un código de recuperación, no reutilizando el TOTP');
+}
+
 console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);

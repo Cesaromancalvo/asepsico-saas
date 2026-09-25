@@ -17,9 +17,18 @@
 //                               cuenta NO tiene MFA, el smoke lo activa (mfa/setup + confirm
 //                               con un TOTP generado aquí), renueva el JWT con /auth/refresh y,
 //                               al terminar (también si falla a mitad), lo desactiva de nuevo
-//                               con mfa/disable para dejar la cuenta como estaba. Así el smoke
-//                               es repetible sobre la misma BD. Sin esta variable el smoke
-//                               NUNCA modifica la configuración de MFA de la cuenta.
+//                               con mfa/disable (usando un código de recuperación, no el TOTP ya
+//                               usado) para dejar la cuenta como estaba. Así el smoke es
+//                               repetible sobre la misma BD. Sin esta variable el smoke NUNCA
+//                               modifica la configuración de MFA de la cuenta.
+//                               Salvaguarda: solo se permite si ASEPSICO_API_URL apunta a
+//                               localhost, 127.0.0.1 o ::1. Contra el piloto/producción se
+//                               aborta, porque si fallara el disable un profesional real se
+//                               quedaría con un MFA de secreto desconocido.
+//
+//   ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL=1  Válvula explícita para permitir ENROLL_MFA contra
+//                               un host no local (p. ej. un entorno efímero). NO se define en
+//                               CI ni debe usarse contra el piloto o producción.
 //
 // Limitación: si una ejecución con ENROLL_MFA se interrumpe de forma abrupta (kill -9) antes
 // de desactivar el MFA, la cuenta queda con MFA activo y un secreto que nadie conoce. En ese
@@ -34,6 +43,9 @@ const email = process.env.ASEPSICO_SMOKE_EMAIL || 'demo@asepsico.es';
 const password = process.env.ASEPSICO_SMOKE_PASSWORD || 'AsePsico2026!';
 const presetTotpSecret = process.env.ASEPSICO_SMOKE_TOTP_SECRET || '';
 const allowMfaEnrollment = process.env.ASEPSICO_SMOKE_ENROLL_MFA === '1';
+const allowRemoteEnrollment = process.env.ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL === '1';
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const MFA_REQUIRED_MESSAGE = 'Activa la verificación en dos pasos';
 
 // otplib es dependencia de @asepsico/api; se resuelve desde ese workspace.
 const requireFromApi = createRequire(new URL('../apps/api/package.json', import.meta.url));
@@ -48,8 +60,17 @@ function capture(res) { const values = res.headers.getSetCookie?.() || []; for (
 async function req(path, { method = 'GET', body } = {}) { const headers = {}; if (cookies.size) headers.cookie = cookieHeader(); if (body !== undefined) headers['content-type'] = 'application/json'; if (!['GET', 'HEAD'].includes(method)) { const csrf = cookies.get('csrf_token'); if (csrf) headers['x-csrf-token'] = decodeURIComponent(csrf); } const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); capture(res); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${JSON.stringify(data)}`); return data; }
 function assert(value, message) { if (!value) throw new Error(message); }
 
-// Secreto del MFA que activa el propio smoke (solo con ENROLL_MFA). Solo en memoria.
-let enrolledSecret = null;
+// Código de recuperación del MFA que activa el propio smoke (solo con ENROLL_MFA). Solo en
+// memoria, nunca se imprime. Se usa para desactivarlo al final: reutilizar el TOTP de la
+// misma ventana fallaría en cuanto la API tenga protección anti-replay.
+let enrolledRecoveryCode = null;
+
+function assertEnrollmentTargetAllowed() {
+  const hostname = new URL(API).hostname;
+  if (LOCAL_HOSTS.has(hostname) || allowRemoteEnrollment) return;
+  throw new Error(`ASEPSICO_SMOKE_ENROLL_MFA=1 solo se permite contra localhost/127.0.0.1/::1 (API: ${hostname}). ` +
+    'Contra entornos persistentes usa ASEPSICO_SMOKE_TOTP_SECRET.');
+}
 
 async function login() {
   const result = await req('/auth/login', { method: 'POST', body: { email, password } });
@@ -63,31 +84,35 @@ async function login() {
     return;
   }
   // Sin MFA: el login deja cookies, pero si el rol exige MFA la API solo permite configurarlo.
-  // Lo comprobamos con una lectura inocua (sin datos clínicos) para no replicar aquí la
-  // lista de roles del guard: si responde 403, hace falta MFA.
+  // Lo comprobamos con una lectura inocua (sin datos clínicos), sin replicar aquí la lista de
+  // roles del guard: solo el 403 con el mensaje concreto del guard de MFA significa "falta MFA";
+  // cualquier otro error se propaga tal cual.
   try {
     await req('/notifications/preferences');
     return;
   } catch (error) {
-    if (!/: 403 /.test(String(error.message))) throw error;
+    const message = String(error.message);
+    if (!(/: 403 /.test(message) && message.includes(MFA_REQUIRED_MESSAGE))) throw error;
   }
   if (!allowMfaEnrollment) {
     throw new Error('La API exige MFA a esta cuenta y no lo tiene activo. Define ASEPSICO_SMOKE_TOTP_SECRET ' +
       '(cuenta con MFA) o, SOLO en una BD desechable, ASEPSICO_SMOKE_ENROLL_MFA=1.');
   }
+  assertEnrollmentTargetAllowed();
   const setup = await req('/auth/mfa/setup', { method: 'POST' });
   assert(typeof setup.secret === 'string' && setup.secret.length > 0, 'mfa/setup no devolvió secreto');
-  await req('/auth/mfa/confirm', { method: 'POST', body: { code: await totpCode(setup.secret) } });
-  enrolledSecret = setup.secret;
+  const confirmed = await req('/auth/mfa/confirm', { method: 'POST', body: { code: await totpCode(setup.secret) } });
+  assert(Array.isArray(confirmed.recoveryCodes) && confirmed.recoveryCodes.length > 0, 'mfa/confirm no devolvió códigos de recuperación');
+  enrolledRecoveryCode = confirmed.recoveryCodes[0];
   // El JWT emitido en el login lleva mfaEnabled=false; refresh lo reemite con el valor real.
   await req('/auth/refresh', { method: 'POST' });
   console.log('   MFA activado temporalmente para el smoke (se desactivará al terminar)');
 }
 
 async function revertEnrollment() {
-  if (!enrolledSecret) return;
-  await req('/auth/mfa/disable', { method: 'POST', body: { password, code: await totpCode(enrolledSecret) } });
-  enrolledSecret = null;
+  if (!enrolledRecoveryCode) return;
+  await req('/auth/mfa/disable', { method: 'POST', body: { password, code: enrolledRecoveryCode } });
+  enrolledRecoveryCode = null;
   console.log('   MFA temporal desactivado: la cuenta queda como estaba');
 }
 
