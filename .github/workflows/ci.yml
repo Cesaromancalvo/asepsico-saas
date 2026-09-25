@@ -80,6 +80,9 @@ jobs:
       ASEPSICO_API_URL: http://127.0.0.1:4000/api/v1
       ASEPSICO_SMOKE_EMAIL: demo@asepsico.es
       ASEPSICO_SMOKE_PASSWORD: AsePsico2026!
+      # BD desechable recién sembrada: el smoke activa MFA temporalmente en la cuenta demo
+      # (la API lo exige a OWNER/ADMIN/THERAPIST) y lo desactiva al terminar.
+      ASEPSICO_SMOKE_ENROLL_MFA: '1'
 
     steps:
       - name: Checkout

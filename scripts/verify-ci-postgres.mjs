@@ -18,6 +18,7 @@ const checks = [
   ['API start', /npm --workspace @asepsico\/api run start/],
   ['real health endpoint', /127\.0\.0\.1:4000\/api\/v1\/health/],
   ['real HTTP smoke test', /npm run test:smoke/],
+  ['smoke con MFA temporal (BD desechable)', /ASEPSICO_SMOKE_ENROLL_MFA:\s*'1'/],
   ['failure log artifact', /actions\/upload-artifact@v4/],
 ];
 
@@ -84,6 +85,32 @@ if (!/priority:\s*2/.test(smoke)) {
 // debe seguir cubriendo que un paciente admite dos cuentas de portal (paciente + tutor).
 if (!/accessorType:\s*'PATIENT'/.test(smoke) || !/accessorType:\s*'GUARDIAN'/.test(smoke)) {
   throw new Error('El smoke test debe habilitar dos cuentas de portal (PATIENT y GUARDIAN) para el mismo paciente');
+}
+
+// Repo público: la contraseña de las cuentas de portal del smoke no puede ser un literal fijo,
+// y el smoke no puede dejar accesos vivos (revoca en un finally antes de archivar).
+if (!/randomBytes\(/.test(smoke) || /temporaryPassword:\s*'[^']+'/.test(smoke)) {
+  throw new Error('El smoke debe generar la contraseña de portal con crypto.randomBytes, no un literal');
+}
+if (!/finally\s*\{[\s\S]*?\/portal-account`,\s*\{\s*method:\s*'DELETE'/.test(smoke)) {
+  throw new Error('El smoke debe desactivar las cuentas de portal (DELETE portal-account) en un finally');
+}
+
+// La API exige MFA a OWNER/ADMIN/THERAPIST: sin este flujo el smoke muere con 403 en el paso 2.
+if (!/\/auth\/mfa\/setup/.test(smoke) || !/\/auth\/mfa\/confirm/.test(smoke) || !/\/auth\/refresh/.test(smoke)) {
+  throw new Error('El smoke test no contempla el MFA obligatorio (mfa/setup + mfa/confirm + refresh)');
+}
+
+// ENROLL_MFA modifica la cuenta: solo contra hosts locales, salvo válvula explícita que la CI no usa.
+if (!/assertEnrollmentTargetAllowed\(\);\s*\n\s*const setup = await req\('\/auth\/mfa\/setup'/.test(smoke) ||
+    !/'localhost',\s*'127\.0\.0\.1',\s*'::1'/.test(smoke)) {
+  throw new Error('El smoke debe bloquear ASEPSICO_SMOKE_ENROLL_MFA contra hosts no locales antes de mfa/setup');
+}
+if (/ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL/.test(workflow)) {
+  throw new Error('La CI no debe definir ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL');
+}
+if (!/recoveryCodes/.test(smoke)) {
+  throw new Error('El smoke debe desactivar el MFA temporal con un código de recuperación, no reutilizando el TOTP');
 }
 
 console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);
