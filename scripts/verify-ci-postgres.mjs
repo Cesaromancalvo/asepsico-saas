@@ -65,4 +65,10 @@ if (!/priority:\s*2/.test(smoke)) {
   throw new Error('El smoke test no contiene una prioridad numérica válida para el objetivo terapéutico');
 }
 
+// El smoke real es el único test que ejecuta las migraciones contra Postgres y la API de verdad:
+// debe seguir cubriendo que un paciente admite dos cuentas de portal (paciente + tutor).
+if (!/accessorType:\s*'PATIENT'/.test(smoke) || !/accessorType:\s*'GUARDIAN'/.test(smoke)) {
+  throw new Error('El smoke test debe habilitar dos cuentas de portal (PATIENT y GUARDIAN) para el mismo paciente');
+}
+
 console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);
