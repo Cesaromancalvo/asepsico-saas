@@ -1,5 +1,10 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { hashSync } from 'bcryptjs';
 import { ExportsService } from '../src/exports/exports.service';
+
+// Contraseña ficticia solo para tests: el servicio exige re-confirmarla (step-up) antes de exportar.
+const STEP_UP_PASSWORD='contrasena-ficticia-de-test';
+const STEP_UP_HASH=hashSync(STEP_UP_PASSWORD,4);
 
 const owner:any={sub:'u-owner',workspaceId:'w1',role:'OWNER'};
 const therapist:any={sub:'u-therapist',workspaceId:'w1',role:'THERAPIST'};
@@ -7,6 +12,7 @@ const receptionist:any={sub:'u-reception',workspaceId:'w1',role:'RECEPTIONIST'};
 
 function mockPrisma(){
   return {
+    user:{findUnique:jest.fn().mockResolvedValue({passwordHash:STEP_UP_HASH})},
     patient:{findFirst:jest.fn(),count:jest.fn()},
     workspace:{findUnique:jest.fn()},
     session:{count:jest.fn()},
@@ -28,7 +34,7 @@ describe('Sprint 14 exports and pilot readiness security',()=>{
       .mockResolvedValueOnce({id:'p1',firstName:'Ana',clinicalHistory:{reason:'sensible'}});
     prisma.auditLog.create.mockResolvedValue({});
     const service=new ExportsService(prisma);
-    const result=await service.exportPatient(therapist,'p1');
+    const result=await service.exportPatient(therapist,'p1',STEP_UP_PASSWORD);
     expect(prisma.patient.findFirst.mock.calls[0][0]).toEqual(expect.objectContaining({where:expect.objectContaining({
       id:'p1',workspaceId:'w1',deletedAt:null,
       clinicalProcesses:{some:{therapistId:'u-therapist'}},
@@ -39,19 +45,19 @@ describe('Sprint 14 exports and pilot readiness security',()=>{
   it('returns not found instead of leaking an inaccessible patient',async()=>{
     const prisma=mockPrisma();
     prisma.patient.findFirst.mockResolvedValue(null);
-    await expect(new ExportsService(prisma).exportPatient(therapist,'foreign')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(new ExportsService(prisma).exportPatient(therapist,'foreign',STEP_UP_PASSWORD)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('rejects non-clinical roles from patient exports',async()=>{
     const prisma=mockPrisma();
-    await expect(new ExportsService(prisma).exportPatient(receptionist,'p1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(new ExportsService(prisma).exportPatient(receptionist,'p1',STEP_UP_PASSWORD)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.patient.findFirst).not.toHaveBeenCalled();
   });
 
   it('restricts workspace export and pilot readiness to owner/admin',async()=>{
     const prisma=mockPrisma();
     const service=new ExportsService(prisma);
-    await expect(service.exportWorkspace(therapist)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.exportWorkspace(therapist,STEP_UP_PASSWORD)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.getPilotReadiness(therapist)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -61,11 +67,35 @@ describe('Sprint 14 exports and pilot readiness security',()=>{
       .mockResolvedValueOnce({id:'p1'})
       .mockResolvedValueOnce({id:'p1',firstName:'Ana',clinicalHistory:{reason:'TRAUMA CONFIDENCIAL'}});
     prisma.auditLog.create.mockResolvedValue({});
-    await new ExportsService(prisma).exportPatient(owner,'p1');
+    await new ExportsService(prisma).exportPatient(owner,'p1',STEP_UP_PASSWORD);
     const auditCall=prisma.auditLog.create.mock.calls[0][0];
     expect(auditCall.data).toEqual(expect.objectContaining({workspaceId:'w1',actorId:'u-owner',action:'PATIENT_DATA_EXPORTED',entityType:'Patient',entityId:'p1'}));
     expect(auditCall.data.metadata).toEqual(expect.objectContaining({format:'JSON'}));
     expect(JSON.stringify(auditCall)).not.toContain('TRAUMA CONFIDENCIAL');
+  });
+
+  it('rejects a patient export with a wrong step-up password before touching patient data',async()=>{
+    const prisma=mockPrisma();
+    await expect(new ExportsService(prisma).exportPatient(owner,'p1','contrasena-incorrecta')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({where:{id:'u-owner'}}));
+    expect(prisma.patient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a workspace export with a wrong step-up password before touching workspace data',async()=>{
+    const prisma=mockPrisma();
+    await expect(new ExportsService(prisma).exportWorkspace(owner,'contrasena-incorrecta')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
+    expect(prisma.patient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an export when the user account cannot be found',async()=>{
+    const prisma=mockPrisma();
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(new ExportsService(prisma).exportPatient(owner,'p1',STEP_UP_PASSWORD)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.patient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('builds pilot readiness from workspace-scoped counters',async()=>{
