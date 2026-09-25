@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from '../src/patients/patients.service';
 import { PatientCoreService } from '../src/patients/patient-core.service';
 import { PatientLifecycleService } from '../src/patients/patient-lifecycle.service';
@@ -31,9 +31,20 @@ type FakePatient = {
 function prismaMock(seed: FakePatient[]) {
   let store: FakePatient[] = seed.map((p) => ({ ...p }));
 
+  // Soporta igualdad, { not } y { notIn } en status, y igualdad (incluido null) en blockedAt.
+  const matchesStatus = (status: string, filter: any) => {
+    if (filter === undefined) return true;
+    if (typeof filter === 'string') return status === filter;
+    if (filter.not !== undefined && status === filter.not) return false;
+    if (filter.notIn !== undefined && filter.notIn.includes(status)) return false;
+    if (filter.equals !== undefined && status !== filter.equals) return false;
+    return true;
+  };
   const matches = (p: FakePatient, where: any) =>
     (where.id === undefined || p.id === where.id) &&
     (where.workspaceId === undefined || p.workspaceId === where.workspaceId) &&
+    matchesStatus(p.status, where.status) &&
+    (!('blockedAt' in where) || (p.blockedAt ?? null) === where.blockedAt) &&
     (where.clinicalProcesses?.some?.therapistId === undefined ||
       p.therapistId === where.clinicalProcesses.some.therapistId);
 
@@ -64,7 +75,14 @@ function prismaMock(seed: FakePatient[]) {
       }),
     },
     auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })) },
+    // Gancho para simular otra petición concurrente que cambia el estado justo antes de escribir.
+    __beforeTx: null as null | ((patch: (id: string, data: Partial<FakePatient>) => void) => void),
     $transaction: jest.fn(async (cb: any) => {
+      if (prisma.__beforeTx) {
+        prisma.__beforeTx((id: string, data: Partial<FakePatient>) => {
+          store = store.map((p) => (p.id === id ? { ...p, ...data } : p));
+        });
+      }
       const snapshot = store.map((p) => ({ ...p }));
       try {
         return await cb(prisma);
@@ -116,7 +134,7 @@ describe('PatientLifecycleService — aislamiento, roles y auditoría transaccio
         expect(result.status).toBe('BLOCKED');
         expect(prisma.$transaction).toHaveBeenCalledTimes(1);
         expect(prisma.patient.updateMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-1' } }),
+          expect.objectContaining({ where: expect.objectContaining({ id: 'patient-1', workspaceId: 'ws-1' }) }),
         );
         expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
           data: expect.objectContaining({
@@ -189,7 +207,7 @@ describe('PatientLifecycleService — aislamiento, roles y auditoría transaccio
         .rejects.toThrow('fallo de auditoría simulado');
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.patient.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-1' } }),
+        expect.objectContaining({ where: expect.objectContaining({ id: 'patient-1', workspaceId: 'ws-1' }) }),
       );
     });
   });
@@ -254,7 +272,96 @@ describe('PatientLifecycleService — aislamiento, roles y auditoría transaccio
     const result: any = await lifecycle.changeStatus('ws-1', owner as any, 'patient-1', 'PAUSED');
     expect(result.status).toBe('PAUSED');
     expect(prisma.patient.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-1' } }),
+      expect.objectContaining({ where: expect.objectContaining({ id: 'patient-1', workspaceId: 'ws-1' }) }),
     );
+  });
+
+  describe('C1 — un paciente BLOCKED no se modifica, archiva ni restaura (nadie lo desbloquea)', () => {
+    const ownTherapist = therapist; // therapist-1 es el terapeuta del paciente de prueba
+    const blockedAt = new Date('2026-01-01T00:00:00Z');
+
+    it.each([['ASSISTANT', assistant], ['THERAPIST propietario', ownTherapist], ['OWNER', owner]])(
+      '%s: archive, restore y update → BadRequest sin escrituras ni auditoría',
+      async (_role, actor) => {
+        const prisma = prismaMock([patient({ status: 'BLOCKED', blockedAt })]);
+        const service = new PatientsService(prisma);
+        await expect(service.archive('ws-1', actor as any, 'patient-1')).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.restore('ws-1', actor as any, 'patient-1')).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.update('ws-1', actor as any, 'patient-1', { firstName: 'Otro' } as any))
+          .rejects.toBeInstanceOf(BadRequestException);
+        expectNoWrites(prisma);
+        expect(prisma.__status('patient-1')).toBe('BLOCKED');
+      },
+    );
+
+    it('la cadena archive → restore sobre un BLOCKED no acaba en ACTIVE', async () => {
+      const prisma = prismaMock([patient({ status: 'BLOCKED', blockedAt })]);
+      const service = new PatientsService(prisma);
+      await service.archive('ws-1', assistant as any, 'patient-1').catch(() => undefined);
+      await service.restore('ws-1', assistant as any, 'patient-1').catch(() => undefined);
+      expect(prisma.__status('patient-1')).toBe('BLOCKED');
+      expectNoWrites(prisma);
+    });
+
+    it('restore rechaza un ARCHIVED con blockedAt (datos que llegaron a bloquearse)', async () => {
+      const prisma = prismaMock([patient({ status: 'ARCHIVED', blockedAt })]);
+      const service = new PatientsService(prisma);
+      await expect(service.restore('ws-1', owner as any, 'patient-1')).rejects.toBeInstanceOf(BadRequestException);
+      expectNoWrites(prisma);
+      expect(prisma.__status('patient-1')).toBe('ARCHIVED');
+    });
+  });
+
+  describe('carrera: el estado cambia entre la validación y la escritura → 409 sin confirmar nada', () => {
+    it.each([
+      ['changeStatus', (s: PatientsService) => s.changeStatus('ws-1', owner as any, 'patient-1', 'PAUSED')],
+      ['archive', (s: PatientsService) => s.archive('ws-1', owner as any, 'patient-1')],
+      ['update', (s: PatientsService) => s.update('ws-1', owner as any, 'patient-1', { firstName: 'Otro' } as any)],
+    ])('%s: ACTIVE leído, BLOCKED al escribir → ConflictException y sigue BLOCKED', async (_name, run) => {
+      const prisma = prismaMock([patient({ status: 'ACTIVE' })]);
+      prisma.__beforeTx = (patch: any) => patch('patient-1', { status: 'BLOCKED', blockedAt: new Date() });
+      const service = new PatientsService(prisma);
+      await expect(run(service)).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+      expect(prisma.__status('patient-1')).toBe('BLOCKED');
+    });
+
+    it('block: si otro proceso ya lo bloqueó → ConflictException sin segunda auditoría', async () => {
+      const prisma = prismaMock([patient({ status: 'ACTIVE' })]);
+      prisma.__beforeTx = (patch: any) => patch('patient-1', { status: 'BLOCKED' });
+      const service = new PatientsService(prisma);
+      await expect(service.block('ws-1', owner as any, 'patient-1')).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('restore: si se bloqueó entretanto → ConflictException y no vuelve a ACTIVE', async () => {
+      const prisma = prismaMock([patient({ status: 'ARCHIVED' })]);
+      prisma.__beforeTx = (patch: any) => patch('patient-1', { status: 'BLOCKED', blockedAt: new Date() });
+      const service = new PatientsService(prisma);
+      await expect(service.restore('ws-1', owner as any, 'patient-1')).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.__status('patient-1')).toBe('BLOCKED');
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('la escritura lleva el estado esperado en el where (compare-and-set)', async () => {
+      const prisma = prismaMock([patient({ status: 'ACTIVE' })]);
+      const service = new PatientsService(prisma);
+      await service.changeStatus('ws-1', owner as any, 'patient-1', 'PAUSED');
+      expect(prisma.patient.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE' },
+      }));
+    });
+  });
+
+  it('core.update sobre un paciente de otro workspace → NotFound sin escrituras ni auditoría', async () => {
+    const prisma = prismaMock([patient(), foreignPatient]);
+    const service = new PatientsService(prisma);
+    await expect(service.update('ws-1', owner as any, 'patient-ws2', { firstName: 'Otro' } as any))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expectNoWrites(prisma);
+    const core = new PatientCoreService(prisma);
+    await expect(core.update('ws-1', owner as any, 'patient-ws2', { firstName: 'Otro' } as any))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expectNoWrites(prisma);
   });
 });
