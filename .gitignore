@@ -26,3 +26,7 @@ apps/web/.env.local
 # Backups
 backups/
 tmp/
+
+# Caché incremental de TypeScript
+apps/api/tsconfig.tsbuildinfo
+apps/web/tsconfig.tsbuildinfo
