@@ -10,6 +10,10 @@ const checks = [
   ['healthcheck pg_isready', /pg_isready -U asepsico -d asepsico/],
   ['db:generate', /npm run db:generate/],
   ['db:migrate:ci', /npm run db:migrate:ci/],
+  [
+    'drift check migraciones vs schema.prisma',
+    /npx prisma migrate diff\s*\\?\s*\n?\s*--from-url "\$DATABASE_URL"\s*\\?\s*\n?\s*--to-schema-datamodel prisma\/schema\.prisma\s*\\?\s*\n?\s*--exit-code/,
+  ],
   ['seed', /npm run db:seed/],
   ['API start', /npm --workspace @asepsico\/api run start/],
   ['real health endpoint', /127\.0\.0\.1:4000\/api\/v1\/health/],
@@ -21,6 +25,17 @@ const failures = checks.filter(([, pattern]) => !pattern.test(workflow));
 if (failures.length) {
   for (const [name] of failures) console.error(`FAIL: ${name}`);
   process.exit(1);
+}
+
+// El drift check solo tiene sentido sobre la BD ya migrada: debe ir después de db:migrate:ci
+// y fallar el job si `migrate diff` devuelve 2 (hay diferencias).
+const migrateIndex = workflow.indexOf('npm run db:migrate:ci');
+const driftIndex = workflow.indexOf('npx prisma migrate diff');
+if (driftIndex < migrateIndex) {
+  throw new Error('El paso de drift (prisma migrate diff) debe ir después de "npm run db:migrate:ci"');
+}
+if (!/"\$status" -eq 2 \][\s\S]*?exit 1/.test(workflow)) {
+  throw new Error('El paso de drift debe hacer fallar el job cuando prisma migrate diff devuelve 2');
 }
 
 const rootPackage = JSON.parse(readFileSync('package.json', 'utf8'));
