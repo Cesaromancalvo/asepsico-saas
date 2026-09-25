@@ -90,6 +90,14 @@ describe('Portal: solicitud de baja/borrado (art. 17 y 12.3 RGPD)', () => {
     expect(prisma.__rows('notification')).toHaveLength(3);
   });
 
+  it('los avisos se crean como SENT con sentAt (in-app), no PENDING para un futuro dispatcher de correo', async () => {
+    const prisma = prismaMock();
+    await new PortalService(prisma, {} as any).requestDeletion(portal, REASON);
+    for (const n of prisma.__rows('notification')) {
+      expect(n).toEqual(expect.objectContaining({ status: 'SENT', sentAt: expect.any(Date), scheduledAt: expect.any(Date) }));
+    }
+  });
+
   it('el motivo (texto libre del paciente) no se persiste en claro ni en la auditoría ni en los avisos', async () => {
     const prisma = prismaMock();
     await new PortalService(prisma, {} as any).requestDeletion(portal, REASON);

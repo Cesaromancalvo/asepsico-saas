@@ -197,8 +197,9 @@ export class PortalService {
           title: 'Solicitud de baja de datos',
           body: 'El paciente (o su tutor) ha solicitado la baja/borrado de sus datos. Revisa la solicitud en la ficha del paciente.',
           actionUrl: `/patients/${portal.patientId}`,
-          status: 'PENDING',
+          status: 'SENT',
           scheduledAt: now,
+          sentAt: now,
           dedupeKey: `deletion-request:${requestId}:${userId}`,
         }});
       }
