@@ -1,6 +1,14 @@
-import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { JwtService } from '@nestjs/jwt';
+import * as cookieParser from 'cookie-parser';
+import request = require('supertest');
 import * as bcrypt from 'bcryptjs';
 import { PortalService } from '../src/portal/portal.service';
+import { PortalController } from '../src/portal/portal.controller';
+import { PortalGuard } from '../src/portal/portal.guard';
+import { CsrfGuard } from '../src/common/guards/csrf.guard';
+import { PrismaService } from '../src/database/prisma.service';
 import { PatientCoreService } from '../src/patients/patient-core.service';
 
 function prismaMock(){const p:any={
@@ -216,5 +224,89 @@ describe('Changing portalAccessMode revokes incompatible portal accounts',()=>{
     await new PatientCoreService(prisma).update('ws-1',admin,'p1',{phone:'600000000'} as any);
     expect(state().accounts.every(a=>a.isActive)).toBe(true);
     expect(state().audit.map((a:any)=>a.action)).toEqual(['PATIENT_UPDATED']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// H1: el PortalGuard comprueba en cada petición que la cuenta siga activa, que el paciente no
+// esté borrado y que el modo de acceso actual admita ese tipo de cuenta. Un JWT vigente (30 min)
+// de una cuenta revocada no sirve para nada. Prueba HTTP real con el guard real.
+// ---------------------------------------------------------------------------------------------
+describe('PortalGuard rejects revoked or no-longer-allowed accounts with a still-valid JWT',()=>{
+  let app:INestApplication;
+  const jwtService=new JwtService({secret:'portal-guard-test-secret-with-enough-length'});
+  // Estado de BD simulado que consulta el guard.
+  let dbAccount:any=null;
+  const prisma:any={patientPortalAccount:{findFirst:jest.fn(async({where}:any)=>{
+    if(!dbAccount) return null;
+    const matches=dbAccount.id===where.id&&dbAccount.patientId===where.patientId&&dbAccount.workspaceId===where.workspaceId&&(where.isActive===undefined||dbAccount.isActive===where.isActive);
+    return matches?{accessorType:dbAccount.accessorType,patient:dbAccount.patient}:null;
+  })}};
+  const service:any={
+    dashboard:jest.fn().mockResolvedValue({ok:true}), exportData:jest.fn().mockResolvedValue({ok:true}),
+    requestDeletion:jest.fn().mockResolvedValue({ok:true}), saveTaskProgress:jest.fn().mockResolvedValue({ok:true}),
+    submitTask:jest.fn().mockResolvedValue({ok:true}), changePassword:jest.fn().mockResolvedValue({ok:true}),
+  };
+  const routes:[string,string,any?][]=[
+    ['get','/api/v1/portal/dashboard'],
+    ['get','/api/v1/portal/export-data'],
+    ['post','/api/v1/portal/request-deletion',{}],
+    ['patch','/api/v1/portal/tasks/task-1/progress',{patientFeedback:'Respuesta ficticia'}],
+    ['post','/api/v1/portal/tasks/task-1/submit',{}],
+    ['patch','/api/v1/portal/password',{currentPassword:'Temporal12345',newPassword:'Definitiva12345'}],
+  ];
+
+  beforeAll(async()=>{
+    const moduleRef=await Test.createTestingModule({
+      controllers:[PortalController],
+      providers:[PortalGuard,CsrfGuard,{provide:PortalService,useValue:service},{provide:JwtService,useValue:jwtService},{provide:PrismaService,useValue:prisma}],
+    }).compile();
+    app=moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.use(cookieParser());
+    app.useGlobalPipes(new ValidationPipe({whitelist:true,forbidNonWhitelisted:true,transform:true}));
+    await app.init();
+  });
+  afterAll(()=>app.close());
+  beforeEach(()=>{ Object.values(service).forEach((fn:any)=>fn.mockClear()); });
+
+  async function call(method:string,path:string,body:any,accessorType:'PATIENT'|'GUARDIAN'){
+    const token=await jwtService.signAsync({kind:'patient_portal',portalAccountId:'acc-1',patientId:'p1',workspaceId:'ws-1',accessorType},{expiresIn:'30m'});
+    let r=(request(app.getHttpServer()) as any)[method](path).set('Cookie',[`portal_access_token=${token}`,'csrf_token=csrf-ficticio']).set('x-csrf-token','csrf-ficticio');
+    if(body!==undefined) r=r.send(body);
+    return r;
+  }
+  const account=(over:any={})=>({id:'acc-1',patientId:'p1',workspaceId:'ws-1',accessorType:'PATIENT',isActive:true,patient:{workspaceId:'ws-1',deletedAt:null,portalAccessMode:'PATIENT_ONLY'},...over});
+  const noServiceCalled=()=>Object.values(service).forEach((fn:any)=>expect(fn).not.toHaveBeenCalled());
+
+  it('control: an active account allowed by the access mode passes on every route',async()=>{
+    dbAccount=account();
+    for(const [method,path,body] of routes){ const res=await call(method,path,body,'PATIENT'); expect({path,status:res.status}).toEqual({path,status:expect.any(Number)}); expect(res.status).toBeLessThan(300); }
+  });
+
+  it('revoked account with a valid JWT -> 401 on progress, submit, request-deletion, password, dashboard and export',async()=>{
+    dbAccount=account({isActive:false});
+    for(const [method,path,body] of routes){ const res=await call(method,path,body,'PATIENT'); expect({path,status:res.status}).toEqual({path,status:401}); }
+    noServiceCalled();
+  });
+
+  it('inherited active GUARDIAN account on a PATIENT_ONLY patient -> 401',async()=>{
+    dbAccount=account({accessorType:'GUARDIAN'});
+    for(const [method,path,body] of routes){ const res=await call(method,path,body,'GUARDIAN'); expect({path,status:res.status}).toEqual({path,status:401}); }
+    noServiceCalled();
+  });
+
+  it('deleted patient -> 401',async()=>{
+    dbAccount=account({patient:{workspaceId:'ws-1',deletedAt:new Date(),portalAccessMode:'SHARED'}});
+    const res=await call('get','/api/v1/portal/dashboard',undefined,'PATIENT');
+    expect(res.status).toBe(401);
+    noServiceCalled();
+  });
+
+  it('token whose accessorType does not match the stored account -> 401',async()=>{
+    dbAccount=account({patient:{workspaceId:'ws-1',deletedAt:null,portalAccessMode:'SHARED'}});
+    const res=await call('get','/api/v1/portal/dashboard',undefined,'GUARDIAN');
+    expect(res.status).toBe(401);
+    noServiceCalled();
   });
 });
