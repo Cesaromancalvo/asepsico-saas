@@ -25,6 +25,11 @@ export function isAccessorAllowed(mode: string | null | undefined, accessorType:
   return Boolean(allowed && allowed.includes(accessorType as PortalAccessorTypeValue));
 }
 
+// Modos de acceso que admiten ese tipo de cuenta (para compare-and-set en el WHERE).
+export function accessModesAllowing(accessorType: string): PortalAccessModeValue[] {
+  return (Object.keys(ALLOWED_ACCESSORS) as PortalAccessModeValue[]).filter((mode) => isAccessorAllowed(mode, accessorType));
+}
+
 export function incompatibleAccessorTypes(mode: string | null | undefined): PortalAccessorTypeValue[] {
   return ALL_ACCESSORS.filter((type) => !isAccessorAllowed(mode, type));
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -6,7 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
-import { isAccessorAllowed } from './portal-access-mode.util';
+import { accessModesAllowing, isAccessorAllowed } from './portal-access-mode.util';
 
 @Injectable()
 export class PortalService {
@@ -47,7 +47,8 @@ export class PortalService {
 
     const existing = await (this.prisma as any).patientPortalAccount.findUnique({ where: { email } });
     if (existing && (existing.patientId !== patientId || existing.workspaceId !== workspaceId)) {
-      throw new BadRequestException('Ese correo ya está en uso por la cuenta de portal de otro paciente');
+      // Mensaje genérico: no revela que el correo pertenece a otro paciente ni a otra consulta.
+      throw new BadRequestException('Ese correo no puede usarse para esta cuenta de portal; indica otro correo');
     }
     // Reactivar un correo no puede cambiar quién es la cuenta (paciente ↔ tutor): eso
     // convertiría una cuenta revocada por el modo de acceso en otra de distinto tipo.
@@ -70,6 +71,18 @@ export class PortalService {
 
     const select = { id:true, patientId:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, mustChangePassword:true, createdAt:true, updatedAt:true };
     return this.prisma.$transaction(async (tx: any) => {
+      // Compare-and-set sobre el paciente: el modo leído arriba debe seguir admitiendo este tipo
+      // de cuenta al escribir. El UPDATE además bloquea la fila hasta el commit, así que un cambio
+      // de portalAccessMode concurrente (que escribe esa misma fila) o ya se ve aquí (count 0 →
+      // 409) o espera y después revoca la cuenta recién creada.
+      const { count: modeStillAllows } = await tx.patient.updateMany({
+        where: { id: patientId, workspaceId, deletedAt: null, portalAccessMode: { in: accessModesAllowing(accessorType) } },
+        data: { updatedAt: new Date() },
+      });
+      if (!modeStillAllows) {
+        throw new ConflictException('El modo de acceso al portal del paciente ha cambiado; recarga y vuelve a intentarlo');
+      }
+
       let account: any;
       if (existing) {
         // Reactivación: acotada al workspace y al paciente, nunca solo por id.

@@ -344,6 +344,8 @@ export class PatientCoreService {
           consultationReason: encryptField(
             dto.consultationReason,
           ),
+          // Si no se indica, se aplica el valor por defecto del esquema (PATIENT_ONLY).
+          portalAccessMode: dto.portalAccessMode,
         },
       });
 
@@ -354,6 +356,8 @@ export class PatientCoreService {
           action: 'PATIENT_CREATED',
           entityType: 'Patient',
           entityId: patient.id,
+          // Solo el nombre del modo de acceso al portal (dato de configuración, no personal).
+          metadata: { portalAccessMode: patient.portalAccessMode },
         },
       });
 
@@ -373,9 +377,15 @@ export class PatientCoreService {
     // la modificación (mismo patrón que create()). Si cambia portalAccessMode, la revocación
     // de cuentas de portal incompatibles y su auditoría van también aquí dentro.
     await this.prisma.$transaction(async (tx) => {
-      const previous = dto.portalAccessMode !== undefined
-        ? await tx.patient.findFirst({ where: { id, workspaceId }, select: { portalAccessMode: true } })
-        : null;
+      let previousMode: string | undefined;
+      if (dto.portalAccessMode !== undefined) {
+        // Primero se bloquea la fila del paciente (UPDATE sin cambio de negocio) y después se lee
+        // el modo anterior: con la fila bloqueada, un enable() concurrente (que hace
+        // compare-and-set sobre esta fila) no puede colarse entre la lectura y la revocación.
+        await tx.patient.updateMany({ where: { id, workspaceId }, data: { updatedAt: new Date() } });
+        const locked = await tx.patient.findFirst({ where: { id, workspaceId }, select: { portalAccessMode: true } });
+        previousMode = locked?.portalAccessMode;
+      }
 
       // Guard de estado en el propio UPDATE: si entre assertActive y la escritura el paciente
       // pasó a ARCHIVED o BLOCKED → 409 sin escribir.
@@ -410,7 +420,7 @@ export class PatientCoreService {
           workspaceId,
           actorId: actor.sub,
           patientId: id,
-          previousMode: previous?.portalAccessMode,
+          previousMode,
           newMode: dto.portalAccessMode,
         });
       }

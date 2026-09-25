@@ -12,7 +12,7 @@ import { PrismaService } from '../src/database/prisma.service';
 import { PatientCoreService } from '../src/patients/patient-core.service';
 
 function prismaMock(){const p:any={
-  patient:{findFirst:jest.fn()}, patientPortalAccount:{findFirst:jest.fn(),findUnique:jest.fn(),create:jest.fn(),upsert:jest.fn(),update:jest.fn(async()=>{throw new Error('update solo por id no permitido');}),updateMany:jest.fn().mockResolvedValue({count:1})},
+  patient:{findFirst:jest.fn(),updateMany:jest.fn().mockResolvedValue({count:1})}, patientPortalAccount:{findFirst:jest.fn(),findUnique:jest.fn(),create:jest.fn(),upsert:jest.fn(),update:jest.fn(async()=>{throw new Error('update solo por id no permitido');}),updateMany:jest.fn().mockResolvedValue({count:1})},
   auditLog:{create:jest.fn()}, session:{findMany:jest.fn()}, therapeuticTask:{findMany:jest.fn()}, consentRecord:{findMany:jest.fn()}, invoice:{findMany:jest.fn()}, resourceShare:{findMany:jest.fn().mockResolvedValue([])}
 }; p.$transaction=jest.fn(async(cb:any)=>cb(p)); return p;}
 const jwt:any={signAsync:jest.fn().mockResolvedValue('portal-token')};
@@ -121,6 +121,25 @@ describe('Portal enable() respects portalAccessMode',()=>{
     expect(prisma.patientPortalAccount.update).not.toHaveBeenCalled();
   });
 
+  it('C1: if the access mode changes between the read and the transaction, enable(GUARDIAN) -> 409 with no account and no audit',async()=>{
+    const prisma=enablePrisma('SHARED');
+    // El compare-and-set sobre el paciente no encuentra fila: el modo ya no admite tutores.
+    prisma.patient.updateMany.mockResolvedValue({count:0});
+    await expect(new PortalService(prisma,jwt).enable('ws-1',staff,'p1',dto('GUARDIAN'))).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.patient.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({id:'p1',workspaceId:'ws-1',deletedAt:null,portalAccessMode:{in:['GUARDIAN_ONLY','SHARED']}})}));
+    expect(prisma.patientPortalAccount.create).not.toHaveBeenCalled();
+    expect(prisma.patientPortalAccount.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('uses a generic message when the email belongs to another patient or workspace',async()=>{
+    const prisma=enablePrisma('SHARED',{id:'acc-x',patientId:'p-otro',workspaceId:'ws-otro',accessorType:'PATIENT',isActive:true});
+    const error:any=await new PortalService(prisma,jwt).enable('ws-1',staff,'p1',dto('PATIENT')).catch(e=>e);
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect(String(error.message)).not.toMatch(/otro paciente|workspace|consulta/i);
+    expect(prisma.patientPortalAccount.create).not.toHaveBeenCalled();
+  });
+
   it('reactivating an existing account of the same type is scoped by id, workspaceId and patientId',async()=>{
     const prisma=enablePrisma('SHARED',{id:'acc-1',patientId:'p1',workspaceId:'ws-1',accessorType:'GUARDIAN',isActive:false});
     await new PortalService(prisma,jwt).enable('ws-1',staff,'p1',dto('GUARDIAN'));
@@ -191,6 +210,16 @@ describe('Changing portalAccessMode revokes incompatible portal accounts',()=>{
     expect(prisma.lastTx.patientPortalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({workspaceId:'ws-1',patientId:'p1'}),data:{isActive:false}}));
   });
 
+  it('C1: locks the patient row before reading the previous mode',async()=>{
+    const {prisma}=transactionalPrisma('SHARED',accountsShared());
+    await new PatientCoreService(prisma).update('ws-1',admin,'p1',{portalAccessMode:'PATIENT_ONLY'} as any);
+    const tx=prisma.lastTx;
+    const firstWrite=tx.patient.updateMany.mock.invocationCallOrder[0];
+    const firstRead=tx.patient.findFirst.mock.invocationCallOrder[0];
+    expect(firstWrite).toBeLessThan(firstRead);
+    expect(tx.patient.updateMany.mock.calls[0][0].where).toEqual({id:'p1',workspaceId:'ws-1'});
+  });
+
   it('SHARED -> GUARDIAN_ONLY deactivates the PATIENT account',async()=>{
     const {prisma,state}=transactionalPrisma('SHARED',accountsShared());
     await new PatientCoreService(prisma).update('ws-1',admin,'p1',{portalAccessMode:'GUARDIAN_ONLY'} as any);
@@ -224,6 +253,32 @@ describe('Changing portalAccessMode revokes incompatible portal accounts',()=>{
     await new PatientCoreService(prisma).update('ws-1',admin,'p1',{phone:'600000000'} as any);
     expect(state().accounts.every(a=>a.isActive)).toBe(true);
     expect(state().audit.map((a:any)=>a.action)).toEqual(['PATIENT_UPDATED']);
+  });
+});
+
+describe('POST /patients persists portalAccessMode',()=>{
+  const admin:any={sub:'u-admin',role:'ADMIN',workspaceId:'ws-1'};
+  function createPrisma(){
+    const tx:any={
+      patient:{create:jest.fn(async({data}:any)=>({id:'p-new',...data,portalAccessMode:data.portalAccessMode??'PATIENT_ONLY',consultationReason:null}))},
+      auditLog:{create:jest.fn()},
+    };
+    return {tx,prisma:{$transaction:jest.fn(async(cb:any)=>cb(tx))} as any};
+  }
+
+  it('stores the requested mode and audits only the mode name, in the same transaction',async()=>{
+    const {tx,prisma}=createPrisma();
+    const created:any=await new PatientCoreService(prisma).create('ws-1',admin,{firstName:'Paciente',lastName:'Ficticio',email:'paciente.ficticio@example.com',portalAccessMode:'SHARED'} as any);
+    expect(tx.patient.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({workspaceId:'ws-1',portalAccessMode:'SHARED'})}));
+    expect(created.portalAccessMode).toBe('SHARED');
+    expect(tx.auditLog.create).toHaveBeenCalledWith({data:expect.objectContaining({action:'PATIENT_CREATED',entityId:'p-new',metadata:{portalAccessMode:'SHARED'}})});
+    expect(JSON.stringify(tx.auditLog.create.mock.calls)).not.toContain('example.com');
+  });
+
+  it('without portalAccessMode falls back to the schema default',async()=>{
+    const {tx,prisma}=createPrisma();
+    await new PatientCoreService(prisma).create('ws-1',admin,{firstName:'Paciente',lastName:'Ficticio'} as any);
+    expect(tx.auditLog.create).toHaveBeenCalledWith({data:expect.objectContaining({metadata:{portalAccessMode:'PATIENT_ONLY'}})});
   });
 });
 
