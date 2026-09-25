@@ -367,8 +367,10 @@ export class PatientCoreService {
   ) {
     await this.assertActive(workspaceId, actor, id);
 
-    const { count } =
-      await this.prisma.patient.updateMany({
+    // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma
+    // la modificación (mismo patrón que create()).
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.patient.updateMany({
         where: {
           id,
           workspaceId,
@@ -384,20 +386,21 @@ export class PatientCoreService {
         },
       });
 
-    if (count === 0) {
-      throw new NotFoundException(
-        'Paciente no encontrado',
-      );
-    }
+      if (count === 0) {
+        throw new NotFoundException(
+          'Paciente no encontrado',
+        );
+      }
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_UPDATED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_UPDATED',
+          entityType: 'Patient',
+          entityId: id,
+        },
+      });
     });
 
     return this.get(workspaceId, actor, id);

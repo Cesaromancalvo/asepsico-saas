@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PatientStatus } from '@prisma/client';
+import { PatientStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AssignableStatus } from './dto/change-status.dto';
@@ -25,6 +25,10 @@ const RETENTION_YEARS = 5;
 /**
  * Ciclo de vida del paciente: cambio de estado, archivado, restauración y bloqueo.
  * Se apoya en PatientCoreService para las lecturas con control de acceso (get/assertActive).
+ *
+ * Todas las escrituras: (1) filtran por { id, workspaceId } — nunca solo por id — y
+ * (2) se hacen en la misma $transaction que su auditLog.create, de modo que si la auditoría
+ * falla el cambio de estado no se confirma (docs/SECURITY_BASELINE.md, auditoría transaccional).
  */
 @Injectable()
 export class PatientLifecycleService {
@@ -58,31 +62,27 @@ export class PatientLifecycleService {
       );
     }
 
-    const updated =
-      await this.prisma.patient.update({
-        where: {
-          id,
-        },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await this.updateScoped(tx, workspaceId, id, {
+        status: target,
+      });
+
+      await tx.auditLog.create({
         data: {
-          status: target,
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_STATUS_CHANGED',
+          entityType: 'Patient',
+          entityId: id,
+          metadata: {
+            from: patient.status,
+            to: target,
+          },
         },
       });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_STATUS_CHANGED',
-        entityType: 'Patient',
-        entityId: id,
-        metadata: {
-          from: patient.status,
-          to: target,
-        },
-      },
+      return decryptPatient(updated);
     });
-
-    return decryptPatient(updated);
   }
 
   async archive(
@@ -92,8 +92,8 @@ export class PatientLifecycleService {
   ) {
     await this.core.assertActive(workspaceId, actor, id);
 
-    const { count } =
-      await this.prisma.patient.updateMany({
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.patient.updateMany({
         where: {
           id,
           workspaceId,
@@ -104,25 +104,26 @@ export class PatientLifecycleService {
         },
       });
 
-    if (count === 0) {
-      throw new NotFoundException(
-        'Paciente no encontrado',
-      );
-    }
+      if (count === 0) {
+        throw new NotFoundException(
+          'Paciente no encontrado',
+        );
+      }
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_ARCHIVED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_ARCHIVED',
+          entityType: 'Patient',
+          entityId: id,
+        },
+      });
+
+      return {
+        success: true,
+      };
     });
-
-    return {
-      success: true,
-    };
   }
 
   async restore(
@@ -142,28 +143,24 @@ export class PatientLifecycleService {
       );
     }
 
-    const restored =
-      await this.prisma.patient.update({
-        where: {
-          id,
-        },
+    return this.prisma.$transaction(async (tx) => {
+      const restored = await this.updateScoped(tx, workspaceId, id, {
+        status: 'ACTIVE',
+        deletedAt: null,
+      });
+
+      await tx.auditLog.create({
         data: {
-          status: 'ACTIVE',
-          deletedAt: null,
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_RESTORED',
+          entityType: 'Patient',
+          entityId: id,
         },
       });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_RESTORED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      return decryptPatient(restored);
     });
-
-    return decryptPatient(restored);
   }
 
   /**
@@ -192,22 +189,50 @@ export class PatientLifecycleService {
     const retentionUntil = new Date(blockedAt);
     retentionUntil.setFullYear(retentionUntil.getFullYear() + RETENTION_YEARS);
 
-    const updated = await this.prisma.patient.update({
-      where: { id },
-      data: { status: PatientStatus.BLOCKED, blockedAt, retentionUntil },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await this.updateScoped(tx, workspaceId, id, {
+        status: PatientStatus.BLOCKED,
+        blockedAt,
+        retentionUntil,
+      });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_BLOCKED',
-        entityType: 'Patient',
-        entityId: id,
-        metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString() },
-      },
-    });
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_BLOCKED',
+          entityType: 'Patient',
+          entityId: id,
+          metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString() },
+        },
+      });
 
-    return decryptPatient(updated);
+      return decryptPatient(updated);
+    });
+  }
+
+  /**
+   * Escritura acotada al workspace: updateMany con { id, workspaceId } (nunca solo por id) y
+   * relectura con el mismo filtro para devolver el registro. Si no hay fila en este workspace,
+   * NotFoundException, que además revierte la transacción en curso.
+   */
+  private async updateScoped(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    id: string,
+    data: Prisma.PatientUpdateManyMutationInput,
+  ) {
+    const { count } = await tx.patient.updateMany({
+      where: { id, workspaceId },
+      data,
+    });
+    if (count === 0) {
+      throw new NotFoundException('Paciente no encontrado');
+    }
+    const updated = await tx.patient.findFirst({ where: { id, workspaceId } });
+    if (!updated) {
+      throw new NotFoundException('Paciente no encontrado');
+    }
+    return updated;
   }
 }
