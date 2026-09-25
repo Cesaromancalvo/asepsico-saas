@@ -1,12 +1,14 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PatientCoreService } from './patient-core.service';
+import { PatientLifecycleService } from './patient-lifecycle.service';
 import { PatientAccessService } from './patient-access.service';
 import { PatientCareService } from './patient-care.service';
 import { PatientTasksService } from './patient-tasks.service';
 import { PatientAssessmentsService } from './patient-assessments.service';
 import { PatientRecordsService } from './patient-records.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { AssignableStatus } from './dto/change-status.dto';
 import { UpdateClinicalHistoryDto } from './dto/update-clinical-history.dto';
 import { CreateTherapyGoalDto } from './dto/create-therapy-goal.dto';
 import { UpdateTherapyGoalDto } from './dto/update-therapy-goal.dto';
@@ -24,6 +26,7 @@ export class PatientsService extends PatientCoreService {
   private readonly tasks: PatientTasksService;
   private readonly assessments: PatientAssessmentsService;
   private readonly records: PatientRecordsService;
+  private readonly lifecycle: PatientLifecycleService;
 
   constructor(
     prisma: PrismaService,
@@ -32,6 +35,7 @@ export class PatientsService extends PatientCoreService {
     @Optional() tasks?: PatientTasksService,
     @Optional() assessments?: PatientAssessmentsService,
     @Optional() records?: PatientRecordsService,
+    @Optional() lifecycle?: PatientLifecycleService,
   ) {
     super(prisma);
     const patientAccess = access ?? new PatientAccessService(prisma);
@@ -39,6 +43,23 @@ export class PatientsService extends PatientCoreService {
     this.tasks = tasks ?? new PatientTasksService(prisma, patientAccess);
     this.assessments = assessments ?? new PatientAssessmentsService(prisma, patientAccess);
     this.records = records ?? new PatientRecordsService(prisma, patientAccess);
+    this.lifecycle = lifecycle ?? new PatientLifecycleService(prisma, this);
+  }
+
+  async changeStatus(workspaceId: string, actor: AuthUser, id: string, target: AssignableStatus){
+    return this.lifecycle.changeStatus(workspaceId, actor, id, target);
+  }
+
+  async archive(workspaceId: string, actor: AuthUser, id: string){
+    return this.lifecycle.archive(workspaceId, actor, id);
+  }
+
+  async restore(workspaceId: string, actor: AuthUser, id: string){
+    return this.lifecycle.restore(workspaceId, actor, id);
+  }
+
+  async block(workspaceId: string, actor: AuthUser, id: string){
+    return this.lifecycle.block(workspaceId, actor, id);
   }
 
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string){
