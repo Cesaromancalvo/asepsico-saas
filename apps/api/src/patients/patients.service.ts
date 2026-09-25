@@ -20,6 +20,12 @@ import { CreatePatientDocumentDto } from './dto/create-patient-document.dto';
 import { CreateConsentRecordDto, UpdateConsentRecordDto } from './dto/create-consent-record.dto';
 import { CreateClinicalReportDto, UpdateClinicalReportDto } from './dto/create-clinical-report.dto';
 
+/**
+ * Fachada de Patients. OJO: PatientLifecycleService usa `core.get()` / `core.assertActive()`
+ * como lecturas con control de acceso (workspaceId + rol). Sin inyección (tests), `core` es
+ * esta misma fachada; con Nest es la instancia inyectada de PatientCoreService. Para que ambos
+ * caminos se comporten igual, PatientsService NO debe sobrescribir get() ni assertActive().
+ */
 @Injectable()
 export class PatientsService extends PatientCoreService {
   private readonly care: PatientCareService;
