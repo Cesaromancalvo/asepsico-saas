@@ -9,6 +9,7 @@ import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
 import { decryptPatient } from './patient-crypto.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
+import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -369,8 +370,13 @@ export class PatientCoreService {
     await this.assertActive(workspaceId, actor, id);
 
     // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma
-    // la modificación (mismo patrón que create()).
+    // la modificación (mismo patrón que create()). Si cambia portalAccessMode, la revocación
+    // de cuentas de portal incompatibles y su auditoría van también aquí dentro.
     await this.prisma.$transaction(async (tx) => {
+      const previous = dto.portalAccessMode !== undefined
+        ? await tx.patient.findFirst({ where: { id, workspaceId }, select: { portalAccessMode: true } })
+        : null;
+
       // Guard de estado en el propio UPDATE: si entre assertActive y la escritura el paciente
       // pasó a ARCHIVED o BLOCKED → 409 sin escribir.
       await updatePatientScoped(
@@ -398,6 +404,16 @@ export class PatientCoreService {
           entityId: id,
         },
       });
+
+      if (dto.portalAccessMode !== undefined) {
+        await applyPortalAccessModeChange(tx, {
+          workspaceId,
+          actorId: actor.sub,
+          patientId: id,
+          previousMode: previous?.portalAccessMode,
+          newMode: dto.portalAccessMode,
+        });
+      }
     });
 
     return this.get(workspaceId, actor, id);
