@@ -14,6 +14,7 @@ const checks = [
   ['API start', /npm --workspace @asepsico\/api run start/],
   ['real health endpoint', /127\.0\.0\.1:4000\/api\/v1\/health/],
   ['real HTTP smoke test', /npm run test:smoke/],
+  ['smoke con MFA temporal (BD desechable)', /ASEPSICO_SMOKE_ENROLL_MFA:\s*'1'/],
   ['failure log artifact', /actions\/upload-artifact@v4/],
 ];
 
@@ -63,6 +64,11 @@ if (/priority:\s*['"](?:LOW|MEDIUM|HIGH)['"]/.test(smoke)) {
 }
 if (!/priority:\s*2/.test(smoke)) {
   throw new Error('El smoke test no contiene una prioridad numérica válida para el objetivo terapéutico');
+}
+
+// La API exige MFA a OWNER/ADMIN/THERAPIST: sin este flujo el smoke muere con 403 en el paso 2.
+if (!/\/auth\/mfa\/setup/.test(smoke) || !/\/auth\/mfa\/confirm/.test(smoke) || !/\/auth\/refresh/.test(smoke)) {
+  throw new Error('El smoke test no contempla el MFA obligatorio (mfa/setup + mfa/confirm + refresh)');
 }
 
 console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);
