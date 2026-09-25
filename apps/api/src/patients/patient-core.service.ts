@@ -8,6 +8,7 @@ import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
 import { decryptPatient } from './patient-crypto.util';
+import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -370,12 +371,14 @@ export class PatientCoreService {
     // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma
     // la modificación (mismo patrón que create()).
     await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.patient.updateMany({
-        where: {
-          id,
-          workspaceId,
-        },
-        data: {
+      // Guard de estado en el propio UPDATE: si entre assertActive y la escritura el paciente
+      // pasó a ARCHIVED o BLOCKED → 409 sin escribir.
+      await updatePatientScoped(
+        tx,
+        workspaceId,
+        id,
+        { status: { notIn: [...NON_MODIFIABLE_STATUSES] } },
+        {
           ...dto,
           consultationReason: dto.consultationReason !== undefined
             ? encryptField(dto.consultationReason)
@@ -384,13 +387,7 @@ export class PatientCoreService {
             ? new Date(dto.birthDate)
             : undefined,
         },
-      });
-
-      if (count === 0) {
-        throw new NotFoundException(
-          'Paciente no encontrado',
-        );
-      }
+      );
 
       await tx.auditLog.create({
         data: {
@@ -407,7 +404,10 @@ export class PatientCoreService {
   }
 
   // Público porque PatientLifecycleService.archive() lo reutiliza; solo lee (vía get(), con
-  // filtro por workspaceId y control de rol) y comprueba que el paciente no esté archivado.
+  // filtro por workspaceId y control de rol) y comprueba que el paciente no esté archivado
+  // ni bloqueado. BadRequest (400), igual que el resto de validaciones de estado del módulo
+  // (transición no permitida, "ya está bloqueado", "no está archivado"): es un estado estable
+  // conocido por el cliente. El 409 se reserva para la carrera detectada al escribir.
   async assertActive(
     workspaceId: string,
     actor: AuthUser,
@@ -422,6 +422,14 @@ export class PatientCoreService {
     if (patient.status === 'ARCHIVED') {
       throw new BadRequestException(
         'El paciente está archivado; restáuralo antes de modificarlo',
+      );
+    }
+
+    // Un paciente bloqueado (art. 32 LOPDGDD) no se modifica ni se archiva: archivarlo sería
+    // la puerta para "desbloquearlo" después vía restore().
+    if (patient.status === PatientStatus.BLOCKED) {
+      throw new BadRequestException(
+        'Los datos del paciente están bloqueados y no pueden modificarse',
       );
     }
 

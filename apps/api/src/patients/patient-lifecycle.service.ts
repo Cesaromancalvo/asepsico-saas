@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PatientStatus, Prisma } from '@prisma/client';
+import { PatientStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AssignableStatus } from './dto/change-status.dto';
 import { PatientCoreService } from './patient-core.service';
 import { decryptPatient } from './patient-crypto.util';
+import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 
 const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   ACTIVE: ['PAUSED', 'DISCHARGED'],
@@ -26,9 +27,11 @@ const RETENTION_YEARS = 5;
  * Ciclo de vida del paciente: cambio de estado, archivado, restauración y bloqueo.
  * Se apoya en PatientCoreService para las lecturas con control de acceso (get/assertActive).
  *
- * Todas las escrituras: (1) filtran por { id, workspaceId } — nunca solo por id — y
- * (2) se hacen en la misma $transaction que su auditLog.create, de modo que si la auditoría
- * falla el cambio de estado no se confirma (docs/SECURITY_BASELINE.md, auditoría transaccional).
+ * Todas las escrituras: (1) filtran por { id, workspaceId } — nunca solo por id —,
+ * (2) incluyen en el where el estado validado (compare-and-set: si cambió entre la lectura y
+ * la escritura → 409, sin escribir) y (3) se hacen en la misma $transaction que su
+ * auditLog.create, de modo que si la auditoría falla el cambio no se confirma
+ * (docs/SECURITY_BASELINE.md, auditoría transaccional).
  */
 @Injectable()
 export class PatientLifecycleService {
@@ -63,7 +66,7 @@ export class PatientLifecycleService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await this.updateScoped(tx, workspaceId, id, {
+      const updated = await updatePatientScoped(tx, workspaceId, id, { status: patient.status }, {
         status: target,
       });
 
@@ -93,22 +96,15 @@ export class PatientLifecycleService {
     await this.core.assertActive(workspaceId, actor, id);
 
     return this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.patient.updateMany({
-        where: {
-          id,
-          workspaceId,
-        },
-        data: {
-          status: 'ARCHIVED',
-          deletedAt: new Date(),
-        },
-      });
-
-      if (count === 0) {
-        throw new NotFoundException(
-          'Paciente no encontrado',
-        );
-      }
+      // assertActive ya rechaza ARCHIVED y BLOCKED; el guard lo repite en el UPDATE por si el
+      // estado cambió entretanto (p. ej. un OWNER bloquea mientras otro usuario archiva).
+      await updatePatientScoped(
+        tx,
+        workspaceId,
+        id,
+        { status: { notIn: [...NON_MODIFIABLE_STATUSES] } },
+        { status: 'ARCHIVED', deletedAt: new Date() },
+      );
 
       await tx.auditLog.create({
         data: {
@@ -143,8 +139,16 @@ export class PatientLifecycleService {
       );
     }
 
+    // Defensa en profundidad: un paciente que llegó a estar bloqueado (blockedAt) nunca vuelve a
+    // ACTIVE por la vía de restaurar; desbloquear no es una operación normal (art. 32 LOPDGDD).
+    if (patient.blockedAt) {
+      throw new BadRequestException(
+        'El paciente tiene los datos bloqueados y no puede restaurarse',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      const restored = await this.updateScoped(tx, workspaceId, id, {
+      const restored = await updatePatientScoped(tx, workspaceId, id, { status: 'ARCHIVED', blockedAt: null }, {
         status: 'ACTIVE',
         deletedAt: null,
       });
@@ -190,7 +194,7 @@ export class PatientLifecycleService {
     retentionUntil.setFullYear(retentionUntil.getFullYear() + RETENTION_YEARS);
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await this.updateScoped(tx, workspaceId, id, {
+      const updated = await updatePatientScoped(tx, workspaceId, id, { status: { not: PatientStatus.BLOCKED } }, {
         status: PatientStatus.BLOCKED,
         blockedAt,
         retentionUntil,
@@ -211,28 +215,4 @@ export class PatientLifecycleService {
     });
   }
 
-  /**
-   * Escritura acotada al workspace: updateMany con { id, workspaceId } (nunca solo por id) y
-   * relectura con el mismo filtro para devolver el registro. Si no hay fila en este workspace,
-   * NotFoundException, que además revierte la transacción en curso.
-   */
-  private async updateScoped(
-    tx: Prisma.TransactionClient,
-    workspaceId: string,
-    id: string,
-    data: Prisma.PatientUpdateManyMutationInput,
-  ) {
-    const { count } = await tx.patient.updateMany({
-      where: { id, workspaceId },
-      data,
-    });
-    if (count === 0) {
-      throw new NotFoundException('Paciente no encontrado');
-    }
-    const updated = await tx.patient.findFirst({ where: { id, workspaceId } });
-    if (!updated) {
-      throw new NotFoundException('Paciente no encontrado');
-    }
-    return updated;
-  }
 }
