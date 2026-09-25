@@ -40,6 +40,23 @@ export class PatientTasksService {
     if (!allowed[from]?.includes(to)) throw new BadRequestException(`Transición de tarea no permitida: ${from} → ${to}`);
   }
 
+  /**
+   * Un objetivo o una sesión enlazados a una tarea deben pertenecer al MISMO paciente y
+   * workspace (y, para THERAPIST, la sesión debe ser suya): si no, se podría leer su título o
+   * metadatos a través del include de getTherapeuticTasks. Un id ajeno o inexistente da 400
+   * (mismo mensaje), nunca un 500 por la FK.
+   */
+  private async assertTaskLinks(workspaceId: string, actor: AuthUser, patientId: string, therapyGoalId: string | null, sessionId: string | null) {
+    if (therapyGoalId) {
+      const goal = await this.prisma.therapyGoal.findFirst({ where: { id: therapyGoalId, ...patientChildScope(workspaceId, patientId) }, select: { id: true } });
+      if (!goal) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
+    }
+    if (sessionId) {
+      const session = await this.prisma.session.findFirst({ where: { id: sessionId, workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id: true } });
+      if (!session) throw new BadRequestException('La sesión seleccionada no pertenece al paciente');
+    }
+  }
+
   async getTaskTemplates(workspaceId: string, actor: AuthUser) {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
     return (this.prisma as any).therapeuticTaskTemplate.findMany({ where:{workspaceId,isActive:true}, orderBy:{title:'asc'} });
@@ -78,7 +95,7 @@ export class PatientTasksService {
   async createTherapeuticTask(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateTherapeuticTaskDto) {
     const patient=await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId);
     if(patient.status==='ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    if(dto.therapyGoalId && !(await this.prisma.therapyGoal.findFirst({where:{id:dto.therapyGoalId,...patientChildScope(workspaceId,patientId)}}))) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
+    await this.assertTaskLinks(workspaceId, actor, patientId, dto.therapyGoalId || null, dto.sessionId || null);
     const status:any=dto.saveAsDraft?'DRAFT':'PENDING';
     return this.prisma.$transaction(async tx=>{
       const task=await tx.therapeuticTask.create({data:{patientId,title:dto.title.trim(),instructions:encryptField(dto.instructions?.trim()||null),dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
@@ -96,6 +113,7 @@ export class PatientTasksService {
       const trimmed = typeof (dto as any)[k]==='string'?((dto as any)[k].trim()||null):(dto as any)[k];
       data[k] = ENCRYPTED_FIELDS.has(k) ? encryptField(trimmed) : trimmed;
     }
+    await this.assertTaskLinks(workspaceId, actor, patientId, data.therapyGoalId ?? null, data.sessionId ?? null);
     if(dto.dueDate!==undefined)data.dueDate=dto.dueDate?new Date(dto.dueDate):null;
     if(dto.status){data.status=dto.status; const now=new Date(); if(dto.status==='PENDING')data.assignedAt=now; if(dto.status==='IN_PROGRESS')data.startedAt=now; if(dto.status==='CHANGES_REQUESTED'||dto.status==='COMPLETED')data.reviewedAt=now; if(dto.status==='COMPLETED')data.completedAt=now;}
     return this.prisma.$transaction(async tx=>{
