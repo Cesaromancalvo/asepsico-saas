@@ -28,7 +28,7 @@ function prismaMock(seed: Partial<Stores> = {}) {
     clinicalProcess: [{ id: 'proc-1', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1' }],
     therapeuticTaskTemplate: [], therapeuticTask: [], therapyGoal: [], clinicalAssessment: [], clinicalHistory: [],
     patientDocument: [], consentRecord: [], clinicalReport: [], patientPortalAccount: [], auditLog: [], notification: [],
-    session: [], invoice: [], resourceShare: [],
+    session: [], invoice: [], resourceShare: [], workspaceMember: [],
     ...seed,
   } as Stores;
   const clone = (s: Stores): Stores => Object.fromEntries(Object.entries(s).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]));
