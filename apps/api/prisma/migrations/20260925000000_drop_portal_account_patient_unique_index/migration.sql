@@ -1,0 +1,14 @@
+-- Corrige el drift que dejó 20260919000000_add_portal_guardians.
+--
+-- 20260726233000_add_patient_portal creó "PatientPortalAccount_patientId_key" con
+-- CREATE UNIQUE INDEX (un índice, no una CONSTRAINT). La migración de tutores intentó
+-- quitarlo con ALTER TABLE ... DROP CONSTRAINT IF EXISTS, que sobre un índice suelto no
+-- hace nada (solo emite un NOTICE), así que el índice único siguió vivo en las BD ya
+-- migradas. Resultado: la 2.ª cuenta de portal del mismo paciente (tutor, o paciente +
+-- tutor) fallaba con P2002 y el modelo de tutores/menores no funcionaba.
+--
+-- El schema.prisma ya solo declara @@index([patientId]) (creado por la migración de
+-- tutores como "PatientPortalAccount_patientId_idx"), así que basta con borrar el índice
+-- único. IF EXISTS la hace idempotente y segura en cualquier BD (con o sin el índice).
+-- No se editan migraciones ya aplicadas: esta es una migración nueva.
+DROP INDEX IF EXISTS "PatientPortalAccount_patientId_key";
