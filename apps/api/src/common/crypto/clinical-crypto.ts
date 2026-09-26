@@ -11,7 +11,7 @@ import { decryptField, encryptField, isEncryptedValue } from './field-encryption
  * Fuera de la lista a propósito (ver docs/SECURITY_BASELINE.md):
  *  - Patient.firstName/lastName/email/phone: se buscan y ordenan en BD.
  *  - ClinicalAssessment.totalScore/severity/riskFlag: pendiente de decisión (cambio de esquema).
- *  - Títulos de tareas, documentos, consentimientos e informes, y metadatos (fechas, estados).
+ *  - Títulos de documentos, consentimientos, informes y procesos, y metadatos (fechas, estados).
  */
 
 /** Los 10 campos narrativos de la historia clínica. */
@@ -33,7 +33,7 @@ export const ENCRYPTED_TEXT_FIELDS = {
   patient: ['consultationReason'],
   clinicalHistory: CLINICAL_HISTORY_ENCRYPTED_FIELDS,
   therapyGoal: ['title', 'description'],
-  therapeuticTask: ['instructions', 'clinicianNotes', 'reviewComment', 'patientFeedback'],
+  therapeuticTask: ['title', 'instructions', 'clinicianNotes', 'reviewComment', 'patientFeedback'],
   therapeuticTaskTemplate: ['instructions'],
   clinicalProcess: ['consultationReason', 'goals', 'internalNotes'],
   session: ['notes', 'internalSummary'],

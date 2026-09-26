@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
+import { decryptField } from '../common/crypto/field-encryption';
 import { UpdateOnboardingDto } from './dto/update-onboarding.dto';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
@@ -36,13 +37,21 @@ export class DashboardService {
       this.prisma.session.findMany({
         where: { workspaceId: user.workspaceId, startsAt: { gte: start, lte: end }, ...therapistFilter },
         orderBy: { startsAt: 'asc' },
-        include: { patient: { select: { id: true, firstName: true, lastName: true } }, clinicalProcess: { select: { title: true, modality: true } } },
+        // Vista general: NUNCA notes ni internalSummary (contenido clínico narrativo).
+        select: {
+          id: true, workspaceId: true, patientId: true, therapistId: true, clinicalProcessId: true,
+          startsAt: true, endsAt: true, status: true, type: true, location: true, videoCallUrl: true,
+          createdAt: true, updatedAt: true,
+          patient: { select: { id: true, firstName: true, lastName: true } },
+          clinicalProcess: { select: { title: true, modality: true } },
+        },
       }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE', deletedAt: null, ...patientAccess } }),
       this.prisma.therapeuticTask.findMany({
         where: { status: 'SUBMITTED', patient: { workspaceId: user.workspaceId, ...patientAccess } },
         orderBy: { submittedAt: 'asc' }, take: 5,
-        include: { patient: { select: { id: true, firstName: true, lastName: true } } },
+        // Solo lo necesario para el aviso: nada de instrucciones, respuestas ni notas.
+        select: { id: true, title: true, patient: { select: { id: true, firstName: true, lastName: true } } },
       }),
       this.prisma.message.findMany({
         where: { senderType: 'PATIENT', readByProfessionalAt: null, conversation: { workspaceId: user.workspaceId, patient: patientAccess } },
@@ -80,7 +89,7 @@ export class DashboardService {
       nextSession: sessions.find((session) => session.startsAt >= now) ?? null,
       sessions,
       attention: [
-        ...submittedTasks.map((task) => ({ id: `task-${task.id}`, type: 'TASK_REVIEW', title: `Revisar tarea de ${task.patient.firstName} ${task.patient.lastName}`, subtitle: task.title, href: `/patients/${task.patient.id}/tasks` })),
+        ...submittedTasks.map((task) => ({ id: `task-${task.id}`, type: 'TASK_REVIEW', title: `Revisar tarea de ${task.patient.firstName} ${task.patient.lastName}`, subtitle: decryptField(task.title) ?? '', href: `/patients/${task.patient.id}/tasks` })),
         ...unreadMessages.map((message) => ({ id: `message-${message.id}`, type: 'MESSAGE', title: `Mensaje de ${message.conversation.patient.firstName} ${message.conversation.patient.lastName}`, subtitle: 'Pendiente de lectura', href: `/messages?patient=${message.conversation.patient.id}` })),
         ...activeWithoutFuture.map((patient) => ({ id: `followup-${patient.id}`, type: 'FOLLOW_UP', title: `Revisar seguimiento de ${patient.firstName} ${patient.lastName}`, subtitle: 'Sin próxima cita programada', href: `/patients/${patient.id}` })),
       ].slice(0, 8),

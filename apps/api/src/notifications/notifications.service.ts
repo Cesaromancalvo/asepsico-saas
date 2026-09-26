@@ -59,8 +59,8 @@ export class NotificationsService {
     const maxHorizon=new Date(now.getTime()+168*60*60_000);
     const [sessions,tasks,consents,invoices] = await Promise.all([
       this.prisma.session.findMany({where:{workspaceId:actor.workspaceId,status:'SCHEDULED',startsAt:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,therapistId:true,startsAt:true,type:true}}),
-      this.p().therapeuticTask.findMany({where:{patient:{workspaceId:actor.workspaceId},status:{in:['PENDING','IN_PROGRESS']},dueDate:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,title:true,dueDate:true,patient:{select:{clinicalProcesses:{where:{status:'ACTIVE'},take:1,select:{therapistId:true}}}}}}),
-      this.p().consentRecord.findMany({where:{workspaceId:actor.workspaceId,status:'SIGNED',expiresAt:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,title:true,expiresAt:true}}),
+      this.p().therapeuticTask.findMany({where:{patient:{workspaceId:actor.workspaceId},status:{in:['PENDING','IN_PROGRESS']},dueDate:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,dueDate:true,patient:{select:{clinicalProcesses:{where:{status:'ACTIVE'},take:1,select:{therapistId:true}}}}}}),
+      this.p().consentRecord.findMany({where:{workspaceId:actor.workspaceId,status:'SIGNED',expiresAt:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,expiresAt:true}}),
       this.p().invoice.findMany({where:{workspaceId:actor.workspaceId,status:{in:['ISSUED','PARTIALLY_PAID','OVERDUE']},dueDate:{gte:now,lte:maxHorizon}},select:{id:true,patientId:true,invoiceNumber:true,dueDate:true,totalCents:true,paidCents:true}}),
     ]);
 
@@ -82,11 +82,11 @@ export class NotificationsService {
     }
     for(const t of tasks){
       const pp:any=prefForPatient(t.patientId);
-      if(pp.taskReminders&&inWindow(t.dueDate,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:t.patientId,type:'TASK_DUE',title:'Tarea próxima a vencer',body:t.title,actionUrl:'/portal',dedupeKey:`task:${t.id}:patient:${pp.reminderHoursBefore}h`});
+      if(pp.taskReminders&&inWindow(t.dueDate,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:t.patientId,type:'TASK_DUE',title:'Tarea próxima a vencer',body:'Tienes una tarea que vence pronto. Consúltala en tu portal.',actionUrl:'/portal',dedupeKey:`task:${t.id}:patient:${pp.reminderHoursBefore}h`});
       const therapistId=t.patient?.clinicalProcesses?.[0]?.therapistId;
       if(therapistId){const up:any=prefForUser(therapistId);if(up.taskReminders&&inWindow(t.dueDate,up.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PROFESSIONAL',userId:therapistId,type:'TASK_DUE',title:'Seguimiento de tarea',body:'Una tarea terapéutica vence próximamente.',actionUrl:`/patients/${t.patientId}/tasks`,dedupeKey:`task:${t.id}:therapist:${up.reminderHoursBefore}h`});}
     }
-    for(const c of consents){const pp:any=prefForPatient(c.patientId);if(pp.consentReminders&&inWindow(c.expiresAt,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:c.patientId,type:'CONSENT_EXPIRING',title:'Consentimiento próximo a caducar',body:c.title,actionUrl:'/portal',dedupeKey:`consent:${c.id}:patient:${pp.reminderHoursBefore}h`});}
+    for(const c of consents){const pp:any=prefForPatient(c.patientId);if(pp.consentReminders&&inWindow(c.expiresAt,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:c.patientId,type:'CONSENT_EXPIRING',title:'Consentimiento próximo a caducar',body:'Uno de tus consentimientos caduca pronto. Consúltalo en tu portal.',actionUrl:'/portal',dedupeKey:`consent:${c.id}:patient:${pp.reminderHoursBefore}h`});}
     for(const i of invoices){const pp:any=prefForPatient(i.patientId);if(pp.invoiceReminders&&inWindow(i.dueDate,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:i.patientId,type:'INVOICE_DUE',title:'Factura pendiente',body:`La factura ${i.invoiceNumber} tiene un saldo pendiente.`,actionUrl:'/portal',dedupeKey:`invoice:${i.id}:patient:${pp.reminderHoursBefore}h`});}
     const result=rows.length ? await this.p().notification.createMany({data:rows,skipDuplicates:true}) : {count:0};
     await this.prisma.auditLog.create({data:{workspaceId:actor.workspaceId,actorId:actor.sub,action:'NOTIFICATION_BATCH_PROCESSED',entityType:'Notification',metadata:{candidates:rows.length,created:result.count}}});

@@ -14,7 +14,8 @@ import { CreateTaskTemplateDto, UpdateTaskTemplateDto } from './dto/task-templat
 //    último lo escribe cifrado el portal del paciente, en portal.service.ts).
 //  - TherapeuticTaskTemplate.instructions.
 //  - TherapyGoal.title y description (llegan aquí vía include y en el timeline).
-// El título de la tarea NO se cifra (se muestra en el dashboard y el portal como metadato).
+//  - TherapeuticTask.title también (puede revelar el contenido terapéutico); se descifra en
+//    el dashboard, el portal, el timeline y la exportación. Las notificaciones no lo copian.
 
 @Injectable()
 export class PatientTasksService {
@@ -90,7 +91,7 @@ export class PatientTasksService {
     await this.assertTaskLinks(workspaceId, actor, patientId, dto.therapyGoalId || null, dto.sessionId || null);
     const status:any=dto.saveAsDraft?'DRAFT':'PENDING';
     return this.prisma.$transaction(async tx=>{
-      const task=await tx.therapeuticTask.create({data:{patientId,title:dto.title.trim(),instructions:encryptField(dto.instructions?.trim()||null),dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
+      const task=await tx.therapeuticTask.create({data:{patientId,title:encryptField(dto.title.trim())!,instructions:encryptField(dto.instructions?.trim()||null),dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
       await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:dto.saveAsDraft?'THERAPEUTIC_TASK_DRAFTED':'THERAPEUTIC_TASK_ASSIGNED',entityType:'TherapeuticTask',entityId:task.id,metadata:{patientId}}}); return decryptTask(task);
     });
   }
@@ -100,7 +101,7 @@ export class PatientTasksService {
     const scope = { id: taskId, ...patientChildScope(workspaceId, patientId) };
     const existing:any=await this.prisma.therapeuticTask.findFirst({where:scope}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
     if(dto.status)this.assertTaskTransition(existing.status,dto.status);
-    const ENCRYPTED_FIELDS = new Set(['instructions', 'clinicianNotes', 'reviewComment']);
+    const ENCRYPTED_FIELDS = new Set(['title', 'instructions', 'clinicianNotes', 'reviewComment']);
     const data:any={}; for(const k of ['title','instructions','clinicianNotes','reviewComment','therapyGoalId','sessionId']) if((dto as any)[k]!==undefined){
       const trimmed = typeof (dto as any)[k]==='string'?((dto as any)[k].trim()||null):(dto as any)[k];
       data[k] = ENCRYPTED_FIELDS.has(k) ? encryptField(trimmed) : trimmed;
@@ -156,7 +157,8 @@ export class PatientTasksService {
     // task.instructions / task.reviewComment también están cifrados — mismo motivo.
     for (const task of tasks) {
       const decryptedTask = decryptTask(task as any);
-      const taskTitle=task.status==='SUBMITTED'?`Tarea entregada: ${task.title}`:task.status==='CHANGES_REQUESTED'?`Cambios solicitados: ${task.title}`:task.status==='COMPLETED'?`Tarea completada: ${task.title}`:`Tarea terapéutica: ${task.title}`;
+      const t = decryptedTask.title;
+      const taskTitle=task.status==='SUBMITTED'?`Tarea entregada: ${t}`:task.status==='CHANGES_REQUESTED'?`Cambios solicitados: ${t}`:task.status==='COMPLETED'?`Tarea completada: ${t}`:`Tarea terapéutica: ${t}`;
       events.push({ id:`task-${task.id}`, type:'TASK', date:(task as any).submittedAt || task.completedAt || task.updatedAt, title:taskTitle, description:decryptedTask.reviewComment || decryptedTask.instructions || 'Tarea añadida al seguimiento entre sesiones.', status:task.status, href:`/patients/${patientId}/tasks` });
     }
     for (const assessment of assessments) events.push({ id:`assessment-${assessment.id}`, type:'ASSESSMENT', date:assessment.administeredAt, title:`${assessment.scaleName}: ${assessment.totalScore} puntos`, description:assessment.severity, href:`/patients/${patientId}/assessments` });
