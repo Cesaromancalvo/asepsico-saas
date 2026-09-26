@@ -2,10 +2,10 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PortalService } from '../src/portal/portal.service';
 
-function prismaMock(){return {
-  patient:{findFirst:jest.fn()}, patientPortalAccount:{findFirst:jest.fn(),upsert:jest.fn(),update:jest.fn(),updateMany:jest.fn()},
+function prismaMock(){const p:any={
+  patient:{findFirst:jest.fn()}, patientPortalAccount:{findFirst:jest.fn(),upsert:jest.fn(),update:jest.fn(async()=>{throw new Error('update solo por id no permitido');}),updateMany:jest.fn().mockResolvedValue({count:1})},
   auditLog:{create:jest.fn()}, session:{findMany:jest.fn()}, therapeuticTask:{findMany:jest.fn()}, consentRecord:{findMany:jest.fn()}, invoice:{findMany:jest.fn()}, resourceShare:{findMany:jest.fn().mockResolvedValue([])}
-} as any}
+}; p.$transaction=jest.fn(async(cb:any)=>cb(p)); return p;}
 const jwt:any={signAsync:jest.fn().mockResolvedValue('portal-token')};
 
 describe('Patient portal security',()=>{
@@ -21,10 +21,10 @@ describe('Patient portal security',()=>{
   });
 
   it('locks the account after five failed attempts',async()=>{
-    const prisma=prismaMock(); prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',failedLoginAttempts:4,passwordHash:await bcrypt.hash('Correct12345',4),lockedUntil:null});
+    const prisma=prismaMock(); prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',workspaceId:'ws-1',patientId:'p1',failedLoginAttempts:4,passwordHash:await bcrypt.hash('Correct12345',4),lockedUntil:null});
     const service=new PortalService(prisma,jwt);
     await expect(service.login({email:'p@example.com',password:'Wrong123456'})).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(prisma.patientPortalAccount.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({failedLoginAttempts:5,lockedUntil:expect.any(Date)})}));
+    expect(prisma.patientPortalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({id:'a1',workspaceId:'ws-1'}),data:expect.objectContaining({failedLoginAttempts:5,lockedUntil:expect.any(Date)})}));
   });
 
   it('dashboard queries only the authenticated patient and excludes clinical notes',async()=>{
@@ -49,7 +49,8 @@ describe('Patient portal usability persistence',()=>{
     prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',isActive:true,passwordHash:currentHash});
     const result=await new PortalService(prisma,jwt).changePassword({portalAccountId:'a1',patientId:'p1',workspaceId:'ws-1'},{currentPassword:'Temporary1234',newPassword:'Permanent1234'} as any);
     expect(result).toEqual({ok:true});
-    const update=prisma.patientPortalAccount.update.mock.calls[0][0];
+    const update=prisma.patientPortalAccount.updateMany.mock.calls[0][0];
+    expect(update.where).toEqual(expect.objectContaining({id:'a1',patientId:'p1',workspaceId:'ws-1'}));
     expect(update.data.mustChangePassword).toBe(false);
     expect(await bcrypt.compare('Permanent1234',update.data.passwordHash)).toBe(true);
     expect(prisma.auditLog.create).toHaveBeenCalled();

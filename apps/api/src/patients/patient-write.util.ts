@@ -41,3 +41,34 @@ export async function updatePatientScoped(
   }
   return current;
 }
+
+/**
+ * Alcance multi-tenant para modelos que cuelgan del paciente y NO tienen workspaceId propio
+ * (TherapeuticTask, TherapyGoal, ClinicalAssessment, ClinicalHistory): el workspace se
+ * comprueba a través de la relación patient, en el mismo WHERE de la escritura.
+ */
+export function patientChildScope(workspaceId: string, patientId: string) {
+  return { patientId, patient: { workspaceId } };
+}
+
+/**
+ * Comprueba el resultado de un updateMany/deleteMany acotado (id + workspace, nunca solo id).
+ *
+ * count === 0 significa que el registro ya no está en este workspace o que ya no cumple la
+ * condición de estado incluida en el WHERE (compare-and-set). Si se pasa `stillExists`
+ * (relectura acotada SIN la condición de estado) se distingue:
+ *  - no existe en este workspace → 404 (no se revela nada de otros workspaces);
+ *  - existe pero cambió de estado → 409.
+ * Al lanzar dentro de prisma.$transaction no se confirma nada, auditoría incluida.
+ */
+export async function assertScopedWrite(
+  count: number,
+  notFoundMessage: string,
+  stillExists?: () => Promise<unknown>,
+): Promise<void> {
+  if (count > 0) return;
+  if (stillExists && (await stillExists())) {
+    throw new ConflictException('El registro ha cambiado; recarga y vuelve a intentarlo');
+  }
+  throw new NotFoundException(notFoundMessage);
+}
