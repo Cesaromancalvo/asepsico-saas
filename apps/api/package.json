@@ -14,7 +14,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "test:security": "jest --config ./test/jest-security.json --runInBand",
-    "prisma:migrate:deploy": "prisma migrate deploy"
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:encrypt-fields": "tsx prisma/scripts/encrypt-plaintext-fields.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
