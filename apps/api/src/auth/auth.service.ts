@@ -6,12 +6,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { generateOpaqueToken, hashToken } from './token.util';
 import { randomUUID } from 'crypto';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
-import { generateTotpSecret, getTotpUri, getTotpQrCodeDataUrl, verifyTotpCode } from './totp.util';
-import { generateRecoveryCodes, hashRecoveryCodes, findMatchingRecoveryCodeIndex } from './recovery-codes.util';
+import { MfaService } from './mfa.service';
 
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const MFA_PENDING_TTL = '5m';
+// Membresía con la que se inicia sesión: la más antigua, de forma determinista.
+const FIRST_MEMBERSHIP = { memberships: { take: 1, orderBy: { createdAt: 'asc' as const } } };
 
 type SessionUser = { id: string; email: string; firstName: string; lastName: string; totpEnabled: boolean };
 
@@ -30,7 +30,7 @@ export type LoginResult =
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+  constructor(private prisma: PrismaService, private jwt: JwtService, private mfa: MfaService) {}
 
   async register(dto: RegisterDto, meta: { ip?: string; userAgent?: string }) {
     if (await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } })) {
@@ -49,14 +49,16 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string }): Promise<LoginResult> {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: { memberships: { take: 1 } } });
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: FIRST_MEMBERSHIP });
     const passwordHash = user?.passwordHash ?? '$2a$12$invalidinvalidinvaliduinvalidinvalidinvalidinvalidinva';
     const passwordOk = await compare(dto.password, passwordHash);
     if (!user || !passwordOk || !user.memberships[0]) throw new UnauthorizedException('Credenciales incorrectas');
 
     if (user.totpEnabled) {
       const pendingToken = await this.jwt.signAsync(
-        { sub: user.id, kind: 'mfa_pending' },
+        // fa = fallos de segundo factor de la cuenta al emitir el token: tras
+        // MFA_PENDING_TOKEN_MAX_FAILURES fallos más, el token deja de valer.
+        { sub: user.id, kind: 'mfa_pending', fa: user.mfaFailedAttempts },
         { expiresIn: MFA_PENDING_TTL },
       );
       return { mfaRequired: true, pendingToken };
@@ -67,86 +69,27 @@ export class AuthService {
   }
 
   async verifyMfaLogin(pendingToken: string, code: string, meta: { ip?: string; userAgent?: string }): Promise<IssuedSession> {
-    let payload: { sub?: string; kind?: string };
+    let payload: { sub?: string; kind?: string; fa?: unknown };
     try {
       payload = await this.jwt.verifyAsync(pendingToken);
     } catch {
       throw new UnauthorizedException('El código ha caducado, vuelve a iniciar sesión');
     }
-    if (payload.kind !== 'mfa_pending' || typeof payload.sub !== 'string') {
+    if (payload.kind !== 'mfa_pending' || typeof payload.sub !== 'string' || typeof payload.fa !== 'number') {
       throw new UnauthorizedException('Token no válido');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, include: { memberships: { take: 1 } } });
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, include: FIRST_MEMBERSHIP });
     if (!user || !user.totpEnabled || !user.totpSecret || !user.memberships[0]) {
       throw new UnauthorizedException('No se pudo verificar el segundo factor');
     }
 
-    const secret = decryptField(user.totpSecret)!;
-    const totpValid = await verifyTotpCode(secret, code);
+    const workspaceId = user.memberships[0].workspaceId;
+    // El usuario se relee dentro de la sección exclusiva de MfaService (espera y contador
+    // frescos); aquí solo se usa para la membresía y para emitir la sesión.
+    await this.mfa.verifyLoginSecondFactor({ userId: user.id, workspaceId }, code, meta, payload.fa);
 
-    if (!totpValid) {
-      const matchIndex = await findMatchingRecoveryCodeIndex(code, user.mfaRecoveryCodes);
-      if (matchIndex === -1) throw new UnauthorizedException('Código no válido');
-      const remainingCodes = user.mfaRecoveryCodes.filter((_, i) => i !== matchIndex);
-      await this.prisma.user.update({ where: { id: user.id }, data: { mfaRecoveryCodes: remainingCodes } });
-    }
-
-    return this.issueSession(user, user.memberships[0].workspaceId, user.memberships[0].role, meta);
-  }
-
-  /**
-   * Genera un secreto TOTP y el QR para escanearlo. Si ya había un secreto pendiente de
-   * confirmar (el usuario le dio dos veces al botón, tiene varias pestañas abiertas, o
-   * recargó la página a medio proceso), se reutiliza el mismo secreto en vez de generar
-   * uno nuevo — así el QR que ya escaneó sigue siendo válido y no hay que repetir el
-   * escaneo. Solo se genera un secreto nuevo de verdad la primera vez, o si MFA ya estaba
-   * activo antes (una reconfiguración deliberada).
-   */
-  async setupMfa(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-
-    let secret: string;
-    if (user.totpSecret && !user.totpEnabled) {
-      secret = decryptField(user.totpSecret)!;
-    } else {
-      secret = generateTotpSecret();
-      await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: encryptField(secret), totpEnabled: false } });
-    }
-
-    const uri = getTotpUri(secret, user.email);
-    const qrCodeDataUrl = await getTotpQrCodeDataUrl(uri);
-    return { qrCodeDataUrl, secret };
-  }
-
-  async confirmMfaSetup(userId: string, code: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user?.totpSecret) throw new BadRequestException('Primero tienes que iniciar la configuración de MFA');
-    const secret = decryptField(user.totpSecret)!;
-    const valid = await verifyTotpCode(secret, code);
-    if (!valid) throw new UnauthorizedException('El código no es correcto');
-
-    const recoveryCodes = generateRecoveryCodes();
-    const hashedCodes = await hashRecoveryCodes(recoveryCodes);
-    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true, mfaRecoveryCodes: hashedCodes } });
-    return { recoveryCodes };
-  }
-
-  async disableMfa(userId: string, password: string, code: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-    const passwordOk = await compare(password, user.passwordHash);
-    if (!passwordOk) throw new UnauthorizedException('Contraseña incorrecta');
-    if (!user.totpEnabled || !user.totpSecret) throw new BadRequestException('MFA no está activo');
-
-    const secret = decryptField(user.totpSecret)!;
-    const totpValid = await verifyTotpCode(secret, code);
-    const recoveryValid = !totpValid && (await findMatchingRecoveryCodeIndex(code, user.mfaRecoveryCodes)) !== -1;
-    if (!totpValid && !recoveryValid) throw new UnauthorizedException('Código no válido');
-
-    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: null, totpEnabled: false, mfaRecoveryCodes: [] } });
-    return { success: true };
+    return this.issueSession(user, workspaceId, user.memberships[0].role, meta);
   }
 
   async refresh(rawToken: string, meta: { ip?: string; userAgent?: string }): Promise<IssuedSession> {
