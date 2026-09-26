@@ -163,7 +163,7 @@ const cases: Case[] = [
     foreignId: 'task-ws2', moveAway: childMove,
     run: (s, id, actor = owner) => s.updateTherapeuticTask('ws-1', actor, 'patient-1', id, { title: 'Tarea editada' } as any),
     scope: childScope,
-    written: (rows) => rows.find((r) => r.id === 'task-1')?.title === 'Tarea editada',
+    written: (rows) => decryptField(rows.find((r) => r.id === 'task-1')?.title) === 'Tarea editada', // el título se guarda cifrado
   },
   {
     name: 'deleteTherapeuticTask', model: 'therapeuticTask', kind: 'delete', action: 'THERAPEUTIC_TASK_DRAFT_DELETED',
@@ -443,7 +443,7 @@ describe('Tareas: therapyGoalId y sessionId enlazados deben ser del mismo pacien
     await service.updateTherapeuticTask('ws-1', actor, 'patient-1', 'task-1', { therapyGoalId: 'goal-own', sessionId: 'ses-own' } as any);
     expect(prisma.__rows('therapeuticTask')).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'task-1', therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
-      expect.objectContaining({ title: 'Nueva', therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
+      expect.objectContaining({ title: expect.stringMatching(/^enc:v[12]:/), therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
     ]));
   });
 

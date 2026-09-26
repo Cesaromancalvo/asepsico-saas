@@ -36,7 +36,7 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
 | `Patient` | `consultationReason` |
 | `ClinicalHistory` | `reasonForConsultation`, `currentProblem`, `personalHistory`, `familyHistory`, `medicalHistory`, `currentMedication`, `primaryDiagnosis`, `riskFactors`, `protectiveFactors`, `clinicalObservations` |
 | `TherapyGoal` | `title`, `description` |
-| `TherapeuticTask` | `instructions`, `clinicianNotes`, `reviewComment`, `patientFeedback` |
+| `TherapeuticTask` | `title`, `instructions`, `clinicianNotes`, `reviewComment`, `patientFeedback` |
 | `TherapeuticTaskTemplate` | `instructions` |
 | `ClinicalProcess` | `consultationReason`, `goals`, `internalNotes` |
 | `Session` | `notes`, `internalSummary` |
@@ -53,7 +53,7 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
   Protegidos por control de acceso, TLS y cifrado del disco/backups del proveedor.
 - `ClinicalAssessment.totalScore`, `severity`, `riskFlag`: **pendiente de decisión** (cifrarlos
   exige cambio de esquema: `Int`/`Boolean` → texto; hoy se ven también en el timeline).
-- Títulos de tareas, documentos, consentimientos, informes y procesos, `Session.location` y
+- Títulos de documentos, consentimientos, informes y procesos, `Session.location` y
   `videoCallUrl`, `scaleName`, y metadatos (fechas, estados, tipos, ids, `storageKey`, `mimeType`).
 - `AuditLog.metadata` no lleva contenido clínico (solo nombres de campo e ids).
 
@@ -66,13 +66,22 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
   siguen leyendo con `FIELD_ENCRYPTION_KEY`.
 - En producción, sin clave la API lanza al cifrar. Un llavero mal formado o un kid activo
   inexistente lanza siempre.
+- Nunca se persiste el marcador `[No se pudo descifrar este contenido]`: `encryptField` responde
+  422 si se intenta guardar, y ningún camino re-cifra un valor leído (p. ej. reprogramar una
+  sesión solo toca las notas si llegan en la petición).
+- Autocomprobación al arrancar (`FieldEncryptionCheckService`): ida y vuelta con la clave activa
+  y descifrado del valor cifrado más reciente de varias columnas. Si ninguna muestra se puede
+  descifrar, en producción la API no arranca (clave equivocada); solo registra modelo/campo/kid.
+- Las notificaciones al paciente (tarea próxima a vencer, consentimiento que caduca) usan texto
+  genérico y no copian títulos; el dashboard no selecciona notas de sesión.
 
 **Migración y rotación:** `npm run db:encrypt-fields -- --dry-run` (solo cuenta),
 `npm run db:encrypt-fields` (cifra lo que siga en claro) y `-- --rotate` (re-cifra con la clave
 activa). Idempotente, por lotes transaccionales con compare-and-set, conserva `updatedAt`,
 nunca imprime valores y aborta sin escribir si algún valor cifrado no se puede descifrar.
 
-**Exportación (arts. 15/20 RGPD):** la exportación clínica descifra con los mismos helpers y,
+**Exportación (arts. 15/20 RGPD):** un THERAPIST solo exporta sus propios procesos y sesiones
+(ni facturación), con el mismo alcance que la API. La exportación clínica descifra con los mismos helpers y,
 como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
 la ruta, nunca el valor).
 
