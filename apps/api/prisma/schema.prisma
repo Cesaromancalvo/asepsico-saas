@@ -152,6 +152,8 @@ model User {
   totpSecret                   String?
   totpEnabled                  Boolean           @default(false)
   mfaRecoveryCodes             String[]          @default([])
+  /// Último paso TOTP (floor(epoch/30)) aceptado; impide reutilizar un código (RFC 6238 §5.2).
+  totpLastUsedStep             Int?
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
   memberships                  WorkspaceMember[]
