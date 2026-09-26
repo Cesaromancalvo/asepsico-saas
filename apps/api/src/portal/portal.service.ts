@@ -4,6 +4,17 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { decryptTask } from '../common/crypto/clinical-crypto';
+
+/**
+ * Tarea tal como la puede ver el paciente: descifrada y SIN clinicianNotes (notas privadas del
+ * profesional). saveTaskProgress/submitTask devolvían antes la fila completa, con
+ * clinicianNotes cifrado; al descifrar hay que quitarlo explícitamente.
+ */
+function portalTask<T extends Record<string, any>>(task: T): Omit<T, 'clinicianNotes'> {
+  const { clinicianNotes: _omit, ...rest } = decryptTask(task);
+  return rest;
+}
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
 import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from './portal-access-mode.util';
@@ -161,12 +172,7 @@ export class PortalService {
       (this.prisma as any).resourceShare.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId, revokedAt:null, resource:{ archivedAt:null } }, orderBy:{ sharedAt:'desc' }, select:{ id:true, sharedAt:true, resource:{ select:{ id:true,title:true,description:true,type:true,category:true,url:true,fileName:true,mimeType:true } } } }),
     ]);
     if (!patient) throw new NotFoundException();
-    const decryptedTasks = tasks.map((task: any) => ({
-      ...task,
-      instructions: decryptField(task.instructions) ?? null,
-      patientFeedback: decryptField(task.patientFeedback) ?? null,
-      reviewComment: decryptField(task.reviewComment) ?? null,
-    }));
+    const decryptedTasks = tasks.map(portalTask);
     return { patient, sessions, tasks: decryptedTasks, consents, invoices, resources, mustChangePassword: Boolean(account.mustChangePassword), accessorType: account.accessorType };
   }
 
@@ -190,11 +196,7 @@ export class PortalService {
     ]);
     if (!patient) throw new NotFoundException();
 
-    const decryptedTasks = tasks.map((task: any) => ({
-      ...task,
-      instructions: decryptField(task.instructions) ?? null,
-      patientFeedback: decryptField(task.patientFeedback) ?? null,
-    }));
+    const decryptedTasks = tasks.map(portalTask);
 
     await this.prisma.auditLog.create({ data:{ workspaceId:portal.workspaceId, actorId:null, action:'PORTAL_DATA_EXPORTED', entityType:'Patient', entityId:portal.patientId, metadata:{ accessorType:portal.accessorType } } });
 
@@ -274,7 +276,7 @@ export class PortalService {
       await tx.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_PROGRESS_SAVED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId,accessorType:portal.accessorType}}});
       return tx.therapeuticTask.findFirst({where:scope});
     });
-    return { ...updated, patientFeedback: decryptField(updated.patientFeedback) ?? null };
+    return portalTask(updated);
   }
 
   async submitTask(portal:any, taskId:string) {
@@ -290,7 +292,7 @@ export class PortalService {
       await tx.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'PORTAL_TASK_SUBMITTED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId:portal.patientId,accessorType:portal.accessorType}}});
       return tx.therapeuticTask.findFirst({where:scope});
     });
-    return { ...updated, patientFeedback: decryptField(updated.patientFeedback) ?? null };
+    return portalTask(updated);
   }
 
   async changePassword(portal:any, dto:ChangePortalPasswordDto) {

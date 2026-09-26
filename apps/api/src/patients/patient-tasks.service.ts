@@ -1,30 +1,20 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptTask, decryptTaskTemplate, decryptTherapyGoal } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateTherapeuticTaskDto } from './dto/create-therapeutic-task.dto';
 import { UpdateTherapeuticTaskDto, TherapeuticTaskStatusValue } from './dto/update-therapeutic-task.dto';
 import { CreateTaskTemplateDto, UpdateTaskTemplateDto } from './dto/task-template.dto';
 
-// instructions, clinicianNotes y reviewComment se cifran en reposo. patientFeedback se
-// incluye también en el descifrado (aunque todavía se escriba en texto plano desde el
-// portal del paciente, en portal.service.ts) para que en cuanto se cifre ahí también,
-// este helper ya lo lea sin cambios adicionales.
-function decryptTask<T extends { instructions?: string | null; clinicianNotes?: string | null; reviewComment?: string | null; patientFeedback?: string | null }>(task: T): T {
-  return {
-    ...task,
-    instructions: decryptField(task.instructions) ?? null,
-    clinicianNotes: decryptField(task.clinicianNotes) ?? null,
-    reviewComment: decryptField(task.reviewComment) ?? null,
-    patientFeedback: decryptField(task.patientFeedback) ?? null,
-  };
-}
-
-function decryptGoalDescription(description: string | null | undefined): string | null {
-  return decryptField(description) ?? null;
-}
+// Cifrados en reposo (lista única en common/crypto/clinical-crypto.ts):
+//  - TherapeuticTask.instructions, clinicianNotes, reviewComment y patientFeedback (este
+//    último lo escribe cifrado el portal del paciente, en portal.service.ts).
+//  - TherapeuticTaskTemplate.instructions.
+//  - TherapyGoal.title y description (llegan aquí vía include y en el timeline).
+// El título de la tarea NO se cifra (se muestra en el dashboard y el portal como metadato).
 
 @Injectable()
 export class PatientTasksService {
@@ -59,15 +49,16 @@ export class PatientTasksService {
 
   async getTaskTemplates(workspaceId: string, actor: AuthUser) {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
-    return (this.prisma as any).therapeuticTaskTemplate.findMany({ where:{workspaceId,isActive:true}, orderBy:{title:'asc'} });
+    const templates = await this.prisma.therapeuticTaskTemplate.findMany({ where:{workspaceId,isActive:true}, orderBy:{title:'asc'} });
+    return templates.map(decryptTaskTemplate);
   }
 
   async createTaskTemplate(workspaceId: string, actor: AuthUser, dto: CreateTaskTemplateDto) {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
     return this.prisma.$transaction(async (tx) => {
-      const template = await tx.therapeuticTaskTemplate.create({ data: { workspaceId, createdById: actor.sub, title: dto.title.trim(), instructions: dto.instructions?.trim() || null, category: dto.category?.trim() || null } });
+      const template = await tx.therapeuticTaskTemplate.create({ data: { workspaceId, createdById: actor.sub, title: dto.title.trim(), instructions: encryptField(dto.instructions?.trim() || null), category: dto.category?.trim() || null } });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'TASK_TEMPLATE_CREATED', entityType: 'TherapeuticTaskTemplate', entityId: template.id, metadata: {} } });
-      return template;
+      return decryptTaskTemplate(template);
     });
   }
 
@@ -75,14 +66,15 @@ export class PatientTasksService {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
     const current=await (this.prisma as any).therapeuticTaskTemplate.findFirst({where:{id:templateId,workspaceId}});
     if(!current) throw new NotFoundException('Plantilla no encontrada');
-    const data:any={...dto}; if(dto.title!==undefined)data.title=dto.title.trim(); if(dto.instructions!==undefined)data.instructions=dto.instructions.trim()||null; if(dto.category!==undefined)data.category=dto.category.trim()||null;
+    const data:any={...dto}; if(dto.title!==undefined)data.title=dto.title.trim(); if(dto.instructions!==undefined)data.instructions=encryptField(dto.instructions.trim()||null); if(dto.category!==undefined)data.category=dto.category.trim()||null;
     const scope = { id: templateId, workspaceId };
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.therapeuticTaskTemplate.updateMany({ where: scope, data });
       await assertScopedWrite(count, 'Plantilla no encontrada');
       // Solo nombres de campo: ni el título ni las instrucciones de la plantilla van al log.
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'TASK_TEMPLATE_UPDATED', entityType: 'TherapeuticTaskTemplate', entityId: templateId, metadata: { updatedFields: Object.keys(dto) } } });
-      return tx.therapeuticTaskTemplate.findFirst({ where: scope });
+      const template = await tx.therapeuticTaskTemplate.findFirst({ where: scope });
+      return template && decryptTaskTemplate(template);
     });
   }
 
@@ -158,9 +150,9 @@ export class PatientTasksService {
     for (const process of processes) events.push({ id:`process-${process.id}`, type:'PROCESS', date:process.startedAt, title:`Proceso: ${process.title}`, description:'Evento del proceso terapéutico.', status:process.status });
     for (const session of sessions) events.push({ id:`session-${session.id}`, type:'SESSION', date:session.startsAt, title:session.status === 'COMPLETED' ? 'Sesión completada' : session.status === 'CANCELLED' ? 'Sesión cancelada' : 'Sesión programada', description:session.type.replaceAll('_',' '), status:session.status, href:`/agenda/${session.id}` });
     if (history?.updatedAt) events.push({ id:`history-${history.id}`, type:'HISTORY', date:history.updatedAt, title:'Historia clínica actualizada', description:'Se guardaron cambios en la historia clínica.' });
-    // goal.description está cifrado (ver patient-care.service.ts) — se descifra aquí antes
-    // de usarlo como texto del timeline, o se vería el blob cifrado en vez de la descripción.
-    for (const goal of goals) events.push({ id:`goal-${goal.id}`, type:'GOAL', date:goal.achievedAt || goal.updatedAt, title:goal.status === 'ACHIEVED' ? `Objetivo alcanzado: ${goal.title}` : `Objetivo terapéutico: ${goal.title}`, description:decryptGoalDescription(goal.description) || 'Objetivo añadido al plan terapéutico.', status:goal.status });
+    // goal.title/description se cifran al escribir en patient-care.service.ts: se descifran
+    // aquí antes de usarlos como texto del timeline.
+    for (const rawGoal of goals) { const goal = decryptTherapyGoal(rawGoal); events.push({ id:`goal-${goal.id}`, type:'GOAL', date:goal.achievedAt || goal.updatedAt, title:goal.status === 'ACHIEVED' ? `Objetivo alcanzado: ${goal.title}` : `Objetivo terapéutico: ${goal.title}`, description:goal.description || 'Objetivo añadido al plan terapéutico.', status:goal.status }); }
     // task.instructions / task.reviewComment también están cifrados — mismo motivo.
     for (const task of tasks) {
       const decryptedTask = decryptTask(task as any);

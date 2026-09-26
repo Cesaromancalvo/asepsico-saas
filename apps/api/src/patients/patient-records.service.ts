@@ -1,30 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptConsent, decryptDocument, decryptReport } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite } from './patient-write.util';
 import { CreatePatientDocumentDto } from './dto/create-patient-document.dto';
 import { CreateConsentRecordDto, UpdateConsentRecordDto } from './dto/create-consent-record.dto';
 import { CreateClinicalReportDto, UpdateClinicalReportDto } from './dto/create-clinical-report.dto';
 
-// El contenido de un informe clínico (evolución, alta, derivación, certificado) es tan
-// sensible como la propia historia clínica, así que se cifra en reposo igual que el resto.
-function decryptReport<T extends { content?: string | null }>(report: T): T {
-  return { ...report, content: decryptField(report.content) ?? '' };
-}
-
-// description y fileName de un documento del paciente pueden llevar contenido revelador
-// (una descripción narrativa, o un nombre de archivo con datos identificativos) — se
-// cifran igual que el resto del contenido clínico. storageKey y mimeType se quedan tal
-// cual: son referencias técnicas internas, no contenido legible por sí mismas.
-function decryptDocument<T extends { description?: string | null; fileName?: string | null }>(document: T): T {
-  return {
-    ...document,
-    description: decryptField(document.description) ?? null,
-    fileName: decryptField(document.fileName) ?? null,
-  };
-}
+// Cifrados en reposo (lista única en common/crypto/clinical-crypto.ts): ClinicalReport.content,
+// PatientDocument.description/fileName y ConsentRecord.notes. storageKey y mimeType se quedan
+// tal cual: son referencias técnicas internas, no contenido legible por sí mismas.
 
 @Injectable()
 export class PatientRecordsService {
@@ -69,7 +56,8 @@ export class PatientRecordsService {
 
   async getConsentRecords(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.consentRecord.findMany({ where: { workspaceId, patientId }, orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }] });
+    const consents = await this.prisma.consentRecord.findMany({ where: { workspaceId, patientId }, orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }] });
+    return consents.map(decryptConsent);
   }
 
   async createConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateConsentRecordDto) {
@@ -81,10 +69,10 @@ export class PatientRecordsService {
       const consent = await tx.consentRecord.create({ data: {
         workspaceId, patientId, createdById: actor.sub, type: dto.type, title, status: dto.status,
         signedAt: dto.signedAt ? new Date(dto.signedAt) : null, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-        signedBy: dto.signedBy?.trim() || null, notes: dto.notes?.trim() || null,
+        signedBy: dto.signedBy?.trim() || null, notes: encryptField(dto.notes?.trim() || null),
       }});
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_CREATED', entityType: 'ConsentRecord', entityId: consent.id, metadata: { patientId, type: dto.type, status: dto.status } } });
-      return consent;
+      return decryptConsent(consent);
     });
   }
 
@@ -100,7 +88,7 @@ export class PatientRecordsService {
     if (dto.signedAt !== undefined) data.signedAt = dto.signedAt ? new Date(dto.signedAt) : null;
     if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.signedBy !== undefined) data.signedBy = dto.signedBy.trim() || null;
-    if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
+    if (dto.notes !== undefined) data.notes = encryptField(dto.notes.trim() || null);
     const resultingStatus = dto.status ?? existing.status;
     const resultingSignedAt = dto.signedAt !== undefined ? data.signedAt : existing.signedAt;
     if (resultingStatus === 'SIGNED' && !resultingSignedAt) throw new BadRequestException('Indica la fecha de firma del consentimiento');
@@ -110,7 +98,7 @@ export class PatientRecordsService {
       await assertScopedWrite(count, 'Consentimiento no encontrado', () => tx.consentRecord.findFirst({ where: scope, select: { id: true } }));
       const consent = (await tx.consentRecord.findFirst({ where: scope }))!;
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_UPDATED', entityType: 'ConsentRecord', entityId: consentId, metadata: { patientId, updatedFields: Object.keys(dto), previousStatus: existing.status, newStatus: consent.status } } });
-      return consent;
+      return decryptConsent(consent);
     });
   }
 

@@ -12,7 +12,8 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptSession } from '../common/crypto/clinical-crypto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
@@ -25,15 +26,7 @@ const THERAPIST_CAPABLE_ROLES = [
   'THERAPIST',
 ];
 
-// notes e internalSummary se cifran en reposo (ver common/crypto/field-encryption.ts).
-// Centralizado aquí para no olvidar ninguno de los dos al tocar esto en el futuro.
-function decryptSession<T extends { notes?: string | null; internalSummary?: string | null }>(session: T): T {
-  return {
-    ...session,
-    notes: decryptField(session.notes) ?? null,
-    internalSummary: decryptField(session.internalSummary) ?? null,
-  };
-}
+// notes e internalSummary se cifran en reposo (lista única en common/crypto/clinical-crypto.ts).
 
 @Injectable()
 export class SessionsService {

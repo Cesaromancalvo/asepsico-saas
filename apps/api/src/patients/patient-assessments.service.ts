@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptAssessment, encryptJsonField } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateClinicalAssessmentDto } from './dto/create-clinical-assessment.dto';
@@ -38,29 +39,12 @@ const CLINICAL_SCALES = {
   },
 } as const;
 
-// answers es un campo Json (array de números), no texto simple, así que se cifra distinto:
-// se serializa a JSON, se cifra ese string, y se guarda el string cifrado dentro de la
-// columna Json (una columna Json puede contener perfectamente un valor de tipo string).
-// Al leer, si el valor sigue siendo un array (dato de antes de activar el cifrado), se
-// devuelve tal cual sin intentar descifrarlo — igual que con los campos de texto.
+// answers (Json), interpretation y clinicalNotes se cifran en reposo; ver
+// common/crypto/clinical-crypto.ts (encryptJsonField / decryptAssessment).
+// PENDIENTE DE DECISIÓN DEL JEFE: totalScore, severity y riskFlag siguen en claro (cifrarlos
+// exige cambio de esquema: totalScore es Int y riskFlag Boolean).
 function encryptAnswers(answers: number[]): string {
-  return encryptField(JSON.stringify(answers))!;
-}
-function decryptAnswers(raw: unknown): number[] {
-  if (Array.isArray(raw)) return raw as number[];
-  if (typeof raw === 'string') {
-    try { return JSON.parse(decryptField(raw) ?? '[]'); } catch { return []; }
-  }
-  return [];
-}
-
-function decryptAssessment<T extends { answers: unknown; clinicalNotes?: string | null; interpretation: string }>(assessment: T): T {
-  return {
-    ...assessment,
-    answers: decryptAnswers(assessment.answers),
-    clinicalNotes: decryptField(assessment.clinicalNotes) ?? null,
-    interpretation: decryptField(assessment.interpretation) ?? '',
-  };
+  return encryptJsonField(answers);
 }
 
 @Injectable()
