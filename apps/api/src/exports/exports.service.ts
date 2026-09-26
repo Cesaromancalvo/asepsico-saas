@@ -74,19 +74,27 @@ export class ExportsService {
     await this.assertPasswordConfirmed(user, password);
     await this.assertPatientAccess(user, patientId);
 
+    // Mismo alcance que la API para un THERAPIST (ver getTimeline/sessions/clinical-processes):
+    // solo SUS procesos y SUS sesiones — nunca las notas internas, notas de sesión ni resúmenes
+    // de otro profesional que atienda al mismo paciente. La facturación tampoco es accesible
+    // para THERAPIST en la API (billing: OWNER/ADMIN/ASSISTANT), así que no se exporta.
+    // Historia, objetivos, tareas, escalas, consentimientos, informes y documentos son de nivel
+    // paciente: el THERAPIST con acceso clínico al paciente ya los ve en la API.
+    const isTherapist = user.role === 'THERAPIST';
+    const ownOnly = isTherapist ? { where: { workspaceId: user.workspaceId, therapistId: user.sub } } : { where: { workspaceId: user.workspaceId } };
     const patient = await this.prisma.patient.findFirst({
       where: { id: patientId, workspaceId: user.workspaceId, deletedAt: null },
       include: {
         clinicalHistory: true,
-        clinicalProcesses: { orderBy: { startedAt: 'desc' } },
-        sessions: { orderBy: { startsAt: 'desc' } },
+        clinicalProcesses: { ...ownOnly, orderBy: { startedAt: 'desc' } },
+        sessions: { ...ownOnly, orderBy: { startsAt: 'desc' } },
         therapyGoals: { orderBy: { createdAt: 'desc' } },
         therapeuticTasks: { orderBy: { createdAt: 'desc' } },
         clinicalAssessments: { orderBy: { administeredAt: 'desc' } },
         consentRecords: { orderBy: { createdAt: 'desc' } },
         clinicalReports: { orderBy: { createdAt: 'desc' } },
         patientDocuments: { orderBy: { createdAt: 'desc' } },
-        invoices: { include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' } },
+        ...(isTherapist ? {} : { invoices: { where: { workspaceId: user.workspaceId }, include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' as const } } }),
         resourceShares: { include: { resource: true }, orderBy: { sharedAt: 'desc' } },
       },
     });
