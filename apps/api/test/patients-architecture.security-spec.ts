@@ -15,6 +15,8 @@ describe('Patients module architecture regression', () => {
     expect(source).toContain('this.tasks.getTherapeuticTasks');
     expect(source).toContain('this.assessments.getClinicalAssessments');
     expect(source).toContain('this.records.getPatientDocuments');
+    expect(source).toContain('this.lifecycle.changeStatus');
+    expect(source).toContain('this.lifecycle.block');
   });
 
   it('keeps each extracted domain service below the agreed size ceiling', () => {
@@ -25,6 +27,7 @@ describe('Patients module architecture regression', () => {
       'patient-tasks.service.ts',
       'patient-assessments.service.ts',
       'patient-records.service.ts',
+      'patient-lifecycle.service.ts',
     ];
 
     for (const file of files) {
@@ -59,6 +62,7 @@ describe('Patients module architecture regression', () => {
       'PatientTasksService',
       'PatientAssessmentsService',
       'PatientRecordsService',
+      'PatientLifecycleService',
       'PatientsService',
     ]) {
       expect(moduleSource).toContain(service);

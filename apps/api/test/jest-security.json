@@ -3,6 +3,7 @@
   "rootDir": "..",
   "testEnvironment": "node",
   "testRegex": ".*\\.security-spec\\.ts$",
+  "transformIgnorePatterns": ["/node_modules/(?!(otplib|@otplib|@scure|@noble)/)"],
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "<rootDir>/tsconfig.json", "diagnostics": false, "isolatedModules": true }]
   }

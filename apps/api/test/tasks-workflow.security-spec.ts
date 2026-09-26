@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PortalService } from '../src/portal/portal.service';
+import { decryptField } from '../src/common/crypto/field-encryption';
 
 const portal={portalAccountId:'pa1',patientId:'p1',workspaceId:'w1'};
 function mockPrisma(){
@@ -12,10 +13,16 @@ function mockPrisma(){
 
 describe('Sprint 12 task workflow security',()=>{
  it('only saves progress for the authenticated portal patient and workspace',async()=>{
-  const prisma=mockPrisma(); prisma.therapeuticTask.findFirst.mockResolvedValue({id:'t1',patientId:'p1',status:'PENDING',startedAt:null}); prisma.therapeuticTask.update.mockResolvedValue({id:'t1',status:'IN_PROGRESS'});
-  const service=new PortalService(prisma,{} as any); await service.saveTaskProgress(portal,'t1',{patientFeedback:'Registro del paciente'});
+  const prisma=mockPrisma(); prisma.therapeuticTask.findFirst.mockResolvedValue({id:'t1',patientId:'p1',status:'PENDING',startedAt:null}); prisma.therapeuticTask.update.mockImplementation(async({data}:any)=>({id:'t1',...data}));
+  const service=new PortalService(prisma,{} as any); const result=await service.saveTaskProgress(portal,'t1',{patientFeedback:'Registro del paciente'});
   expect(prisma.therapeuticTask.findFirst).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({id:'t1',patientId:'p1',patient:{workspaceId:'w1'}})}));
-  expect(prisma.therapeuticTask.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:'IN_PROGRESS',patientFeedback:'Registro del paciente'})}));
+  // El feedback del paciente se cifra en reposo: nunca debe llegar en claro a la base de datos.
+  expect(prisma.therapeuticTask.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:'IN_PROGRESS',patientFeedback:expect.stringMatching(/^enc:v1:/)})}));
+  const stored=prisma.therapeuticTask.update.mock.calls[0][0].data.patientFeedback;
+  expect(stored).not.toContain('Registro del paciente');
+  expect(decryptField(stored)).toBe('Registro del paciente');
+  // Al paciente se le devuelve descifrado.
+  expect(result.patientFeedback).toBe('Registro del paciente');
  });
 
  it('does not expose or update a task outside the patient context',async()=>{
