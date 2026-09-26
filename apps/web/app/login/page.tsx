@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 
 type LoginResponse =
   | { mfaRequired: true; pendingToken: string }
@@ -10,14 +10,25 @@ type LoginResponse =
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState(''); // aviso al volver al paso 1 porque el paso 2 ya no vale
   const [pendingToken, setPendingToken] = useState<string>(''); // vacío = todavía en el paso 1 (email/contraseña)
   const [busy, setBusy] = useState(false);
+
+  function backToPasswordStep(message = '') {
+    setPendingToken('');
+    setError('');
+    setNotice(message);
+  }
 
   async function submitPassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
+    setNotice('');
     setBusy(true);
-    const data = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    const passwordField = form.elements.namedItem('password');
+    if (passwordField instanceof HTMLInputElement) passwordField.value = '';
     try {
       const result = await api<LoginResponse>('/auth/login', {
         method: 'POST',
@@ -39,15 +50,26 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setBusy(true);
-    const data = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const code = new FormData(form).get('code');
+    const codeField = form.elements.namedItem('code');
+    if (codeField instanceof HTMLInputElement) codeField.value = '';
     try {
       await api<LoginResponse>('/auth/login/mfa', {
         method: 'POST',
-        body: JSON.stringify({ pendingToken, code: data.get('code') }),
+        body: JSON.stringify({ pendingToken, code }),
       });
       router.push('/patients');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Código no válido');
+      const message = err instanceof Error && err.message ? err.message : 'Código no válido';
+      if (err instanceof ApiError && err.status === 401 && message !== 'Código no válido') {
+        // pendingToken anulado por intentos fallidos, caducado o no válido: hay que empezar de nuevo.
+        backToPasswordStep(message);
+        return;
+      }
+      // 401 "Código no válido" o 429 "Demasiados intentos fallidos. Espera N minutos…": texto de la API tal cual.
+      setError(message);
+      if (codeField instanceof HTMLInputElement) codeField.focus();
     } finally {
       setBusy(false);
     }
@@ -63,16 +85,16 @@ export default function LoginPage() {
           <form onSubmit={submitMfaCode}>
             <label className="field">
               Código
-              <input name="code" autoFocus inputMode="numeric" placeholder="123456" required minLength={6} maxLength={11} />
+              <input name="code" autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="123456" required minLength={6} maxLength={11} />
             </label>
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
             <button className="button" type="submit" disabled={busy}>{busy ? 'Comprobando…' : 'Confirmar'}</button>
           </form>
           <button
             type="button"
             className="button secondary"
             style={{ marginTop: 12 }}
-            onClick={() => { setPendingToken(''); setError(''); }}
+            onClick={() => backToPasswordStep()}
           >
             Volver a introducir el correo y la contraseña
           </button>
@@ -87,10 +109,11 @@ export default function LoginPage() {
         <div className="brand">AsePsico</div>
         <h1>Accede a tu consulta</h1>
         <p className="muted">Demo: demo@asepsico.es / AsePsico2026!</p>
+        {notice && <p className="error" role="alert">{notice}</p>}
         <form onSubmit={submitPassword}>
-          <label className="field">Correo<input name="email" type="email" defaultValue="demo@asepsico.es" required /></label>
-          <label className="field">Contraseña<input name="password" type="password" defaultValue="AsePsico2026!" required /></label>
-          {error && <p className="error">{error}</p>}
+          <label className="field">Correo<input name="email" type="email" autoComplete="username" defaultValue="demo@asepsico.es" required /></label>
+          <label className="field">Contraseña<input name="password" type="password" autoComplete="current-password" defaultValue="AsePsico2026!" autoFocus={!!notice} required /></label>
+          {error && <p className="error" role="alert">{error}</p>}
           <button className="button" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         </form>
       </div>
