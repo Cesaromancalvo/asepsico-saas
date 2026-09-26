@@ -83,6 +83,11 @@ jobs:
       # BD desechable recién sembrada: el smoke activa MFA temporalmente en la cuenta demo
       # (la API lo exige a OWNER/ADMIN/THERAPIST) y lo desactiva al terminar.
       ASEPSICO_SMOKE_ENROLL_MFA: '1'
+      # La API de CI solo recibe tráfico local: confiar en loopback permite que los scripts
+      # simulen IPs de cliente distintas con X-Forwarded-For sin arrancar en NODE_ENV=production
+      # (que activaría cookies "secure" sobre HTTP). El smoke no envía la cabecera, así que para
+      # él req.ip sigue siendo 127.0.0.1. Producción usa TRUST_PROXY=1 (ops/PILOT_RUNBOOK.md).
+      TRUST_PROXY: loopback
 
     steps:
       - name: Checkout
@@ -181,6 +186,20 @@ jobs:
 
       - name: Run real HTTP smoke test
         run: npm run test:smoke
+
+      # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
+      # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
+      # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR
+      # se fusione, se ejecuta solo, sin tocar este workflow. Va después del smoke porque deja
+      # la cuenta demo en espera ~1 min y la restaura (sin MFA) al terminar.
+      - name: Verify MFA attempt limit under concurrency (real PostgreSQL)
+        shell: bash
+        run: |
+          if [ ! -f scripts/verify-mfa-concurrency.mjs ]; then
+            echo "::notice title=verify-mfa-concurrency pendiente::scripts/verify-mfa-concurrency.mjs aún no está en esta rama (llega con la PR #9). Paso omitido."
+            exit 0
+          fi
+          node scripts/verify-mfa-concurrency.mjs
 
       - name: Stop API
         if: always()
