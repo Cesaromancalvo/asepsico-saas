@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
+import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateTherapeuticTaskDto } from './dto/create-therapeutic-task.dto';
 import { UpdateTherapeuticTaskDto, TherapeuticTaskStatusValue } from './dto/update-therapeutic-task.dto';
 import { CreateTaskTemplateDto, UpdateTaskTemplateDto } from './dto/task-template.dto';
@@ -39,6 +40,23 @@ export class PatientTasksService {
     if (!allowed[from]?.includes(to)) throw new BadRequestException(`Transición de tarea no permitida: ${from} → ${to}`);
   }
 
+  /**
+   * Un objetivo o una sesión enlazados a una tarea deben pertenecer al MISMO paciente y
+   * workspace (y, para THERAPIST, la sesión debe ser suya): si no, se podría leer su título o
+   * metadatos a través del include de getTherapeuticTasks. Un id ajeno o inexistente da 400
+   * (mismo mensaje), nunca un 500 por la FK.
+   */
+  private async assertTaskLinks(workspaceId: string, actor: AuthUser, patientId: string, therapyGoalId: string | null, sessionId: string | null) {
+    if (therapyGoalId) {
+      const goal = await this.prisma.therapyGoal.findFirst({ where: { id: therapyGoalId, ...patientChildScope(workspaceId, patientId) }, select: { id: true } });
+      if (!goal) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
+    }
+    if (sessionId) {
+      const session = await this.prisma.session.findFirst({ where: { id: sessionId, workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id: true } });
+      if (!session) throw new BadRequestException('La sesión seleccionada no pertenece al paciente');
+    }
+  }
+
   async getTaskTemplates(workspaceId: string, actor: AuthUser) {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
     return (this.prisma as any).therapeuticTaskTemplate.findMany({ where:{workspaceId,isActive:true}, orderBy:{title:'asc'} });
@@ -46,9 +64,11 @@ export class PatientTasksService {
 
   async createTaskTemplate(workspaceId: string, actor: AuthUser, dto: CreateTaskTemplateDto) {
     if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
-    const template=await (this.prisma as any).therapeuticTaskTemplate.create({data:{workspaceId,createdById:actor.sub,title:dto.title.trim(),instructions:dto.instructions?.trim()||null,category:dto.category?.trim()||null}});
-    await this.prisma.auditLog.create({data:{workspaceId,actorId:actor.sub,action:'TASK_TEMPLATE_CREATED',entityType:'TherapeuticTaskTemplate',entityId:template.id,metadata:{}}});
-    return template;
+    return this.prisma.$transaction(async (tx) => {
+      const template = await tx.therapeuticTaskTemplate.create({ data: { workspaceId, createdById: actor.sub, title: dto.title.trim(), instructions: dto.instructions?.trim() || null, category: dto.category?.trim() || null } });
+      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'TASK_TEMPLATE_CREATED', entityType: 'TherapeuticTaskTemplate', entityId: template.id, metadata: {} } });
+      return template;
+    });
   }
 
   async updateTaskTemplate(workspaceId: string, actor: AuthUser, templateId: string, dto: UpdateTaskTemplateDto) {
@@ -56,7 +76,14 @@ export class PatientTasksService {
     const current=await (this.prisma as any).therapeuticTaskTemplate.findFirst({where:{id:templateId,workspaceId}});
     if(!current) throw new NotFoundException('Plantilla no encontrada');
     const data:any={...dto}; if(dto.title!==undefined)data.title=dto.title.trim(); if(dto.instructions!==undefined)data.instructions=dto.instructions.trim()||null; if(dto.category!==undefined)data.category=dto.category.trim()||null;
-    return (this.prisma as any).therapeuticTaskTemplate.update({where:{id:templateId},data});
+    const scope = { id: templateId, workspaceId };
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.therapeuticTaskTemplate.updateMany({ where: scope, data });
+      await assertScopedWrite(count, 'Plantilla no encontrada');
+      // Solo nombres de campo: ni el título ni las instrucciones de la plantilla van al log.
+      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'TASK_TEMPLATE_UPDATED', entityType: 'TherapeuticTaskTemplate', entityId: templateId, metadata: { updatedFields: Object.keys(dto) } } });
+      return tx.therapeuticTaskTemplate.findFirst({ where: scope });
+    });
   }
 
   async getTherapeuticTasks(workspaceId: string, actor: AuthUser, patientId: string) {
@@ -68,7 +95,7 @@ export class PatientTasksService {
   async createTherapeuticTask(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateTherapeuticTaskDto) {
     const patient=await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId);
     if(patient.status==='ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    if(dto.therapyGoalId && !(await this.prisma.therapyGoal.findFirst({where:{id:dto.therapyGoalId,patientId}}))) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
+    await this.assertTaskLinks(workspaceId, actor, patientId, dto.therapyGoalId || null, dto.sessionId || null);
     const status:any=dto.saveAsDraft?'DRAFT':'PENDING';
     return this.prisma.$transaction(async tx=>{
       const task=await tx.therapeuticTask.create({data:{patientId,title:dto.title.trim(),instructions:encryptField(dto.instructions?.trim()||null),dueDate:dto.dueDate?new Date(dto.dueDate):null,therapyGoalId:dto.therapyGoalId||null,sessionId:dto.sessionId||null,status,assignedAt:dto.saveAsDraft?null:new Date()}});
@@ -78,26 +105,38 @@ export class PatientTasksService {
 
   async updateTherapeuticTask(workspaceId:string, actor:AuthUser, patientId:string, taskId:string, dto:UpdateTherapeuticTaskDto){
     const patient=await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId); if(patient.status==='ARCHIVED')throw new BadRequestException('El paciente está archivado');
-    const existing:any=await this.prisma.therapeuticTask.findFirst({where:{id:taskId,patientId}}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
+    const scope = { id: taskId, ...patientChildScope(workspaceId, patientId) };
+    const existing:any=await this.prisma.therapeuticTask.findFirst({where:scope}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
     if(dto.status)this.assertTaskTransition(existing.status,dto.status);
     const ENCRYPTED_FIELDS = new Set(['instructions', 'clinicianNotes', 'reviewComment']);
     const data:any={}; for(const k of ['title','instructions','clinicianNotes','reviewComment','therapyGoalId','sessionId']) if((dto as any)[k]!==undefined){
       const trimmed = typeof (dto as any)[k]==='string'?((dto as any)[k].trim()||null):(dto as any)[k];
       data[k] = ENCRYPTED_FIELDS.has(k) ? encryptField(trimmed) : trimmed;
     }
+    await this.assertTaskLinks(workspaceId, actor, patientId, data.therapyGoalId ?? null, data.sessionId ?? null);
     if(dto.dueDate!==undefined)data.dueDate=dto.dueDate?new Date(dto.dueDate):null;
     if(dto.status){data.status=dto.status; const now=new Date(); if(dto.status==='PENDING')data.assignedAt=now; if(dto.status==='IN_PROGRESS')data.startedAt=now; if(dto.status==='CHANGES_REQUESTED'||dto.status==='COMPLETED')data.reviewedAt=now; if(dto.status==='COMPLETED')data.completedAt=now;}
     return this.prisma.$transaction(async tx=>{
-      const task=await tx.therapeuticTask.update({where:{id:taskId},data});
+      // La transición se validó sobre existing.status: se exige que siga siendo ese estado al escribir.
+      const { count } = await tx.therapeuticTask.updateMany({ where: { ...scope, status: existing.status }, data });
+      await assertScopedWrite(count, 'Tarea terapéutica no encontrada', () => tx.therapeuticTask.findFirst({ where: scope, select: { id: true } }));
       await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:'THERAPEUTIC_TASK_UPDATED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId,from:existing.status,to:dto.status||existing.status,updatedFields:Object.keys(dto)}}});
-      return decryptTask(task);
+      const task = await tx.therapeuticTask.findFirst({ where: scope });
+      return decryptTask(task!);
     });
   }
 
   async deleteTherapeuticTask(workspaceId:string,actor:AuthUser,patientId:string,taskId:string){
-    await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId); const existing:any=await this.prisma.therapeuticTask.findFirst({where:{id:taskId,patientId}}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
+    await this.access.assertPatientClinicalAccess(workspaceId,actor,patientId);
+    const scope = { id: taskId, ...patientChildScope(workspaceId, patientId) };
+    const existing:any=await this.prisma.therapeuticTask.findFirst({where:scope}); if(!existing)throw new NotFoundException('Tarea terapéutica no encontrada');
     if(existing.status!=='DRAFT') throw new BadRequestException('Solo se pueden eliminar borradores. Cancela la tarea para conservar el historial.');
-    await this.prisma.$transaction(async tx=>{await tx.therapeuticTask.delete({where:{id:taskId}});await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:'THERAPEUTIC_TASK_DRAFT_DELETED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId}}});}); return {success:true};
+    await this.prisma.$transaction(async tx=>{
+      const { count } = await tx.therapeuticTask.deleteMany({ where: { ...scope, status: 'DRAFT' } });
+      await assertScopedWrite(count, 'Tarea terapéutica no encontrada', () => tx.therapeuticTask.findFirst({ where: scope, select: { id: true } }));
+      await tx.auditLog.create({data:{workspaceId,actorId:actor.sub,action:'THERAPEUTIC_TASK_DRAFT_DELETED',entityType:'TherapeuticTask',entityId:taskId,metadata:{patientId}}});
+    });
+    return {success:true};
   }
 
   async getTimeline(workspaceId: string, actor: AuthUser, patientId: string) {

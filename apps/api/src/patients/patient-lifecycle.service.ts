@@ -5,6 +5,8 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AssignableStatus } from './dto/change-status.dto';
 import { PatientCoreService } from './patient-core.service';
 import { decryptPatient } from './patient-crypto.util';
+import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
+import { revokeAllPortalAccounts } from '../portal/portal-access-mode.util';
 
 const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   ACTIVE: ['PAUSED', 'DISCHARGED'],
@@ -25,6 +27,12 @@ const RETENTION_YEARS = 5;
 /**
  * Ciclo de vida del paciente: cambio de estado, archivado, restauración y bloqueo.
  * Se apoya en PatientCoreService para las lecturas con control de acceso (get/assertActive).
+ *
+ * Todas las escrituras: (1) filtran por { id, workspaceId } — nunca solo por id —,
+ * (2) incluyen en el where el estado validado (compare-and-set: si cambió entre la lectura y
+ * la escritura → 409, sin escribir) y (3) se hacen en la misma $transaction que su
+ * auditLog.create, de modo que si la auditoría falla el cambio no se confirma
+ * (docs/SECURITY_BASELINE.md, auditoría transaccional).
  */
 @Injectable()
 export class PatientLifecycleService {
@@ -58,31 +66,27 @@ export class PatientLifecycleService {
       );
     }
 
-    const updated =
-      await this.prisma.patient.update({
-        where: {
-          id,
-        },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await updatePatientScoped(tx, workspaceId, id, { status: patient.status }, {
+        status: target,
+      });
+
+      await tx.auditLog.create({
         data: {
-          status: target,
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_STATUS_CHANGED',
+          entityType: 'Patient',
+          entityId: id,
+          metadata: {
+            from: patient.status,
+            to: target,
+          },
         },
       });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_STATUS_CHANGED',
-        entityType: 'Patient',
-        entityId: id,
-        metadata: {
-          from: patient.status,
-          to: target,
-        },
-      },
+      return decryptPatient(updated);
     });
-
-    return decryptPatient(updated);
   }
 
   async archive(
@@ -92,37 +96,36 @@ export class PatientLifecycleService {
   ) {
     await this.core.assertActive(workspaceId, actor, id);
 
-    const { count } =
-      await this.prisma.patient.updateMany({
-        where: {
-          id,
-          workspaceId,
-        },
+    return this.prisma.$transaction(async (tx) => {
+      // assertActive ya rechaza ARCHIVED y BLOCKED; el guard lo repite en el UPDATE por si el
+      // estado cambió entretanto (p. ej. un OWNER bloquea mientras otro usuario archiva).
+      await updatePatientScoped(
+        tx,
+        workspaceId,
+        id,
+        { status: { notIn: [...NON_MODIFIABLE_STATUSES] } },
+        { status: 'ARCHIVED', deletedAt: new Date() },
+      );
+
+      // Un paciente archivado no conserva acceso al portal. restore() NO las reactiva: el
+      // profesional debe volver a habilitarlas a mano.
+      const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
+
+      await tx.auditLog.create({
         data: {
-          status: 'ARCHIVED',
-          deletedAt: new Date(),
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_ARCHIVED',
+          entityType: 'Patient',
+          entityId: id,
+          metadata: { revokedPortalAccountIds },
         },
       });
 
-    if (count === 0) {
-      throw new NotFoundException(
-        'Paciente no encontrado',
-      );
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_ARCHIVED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      return {
+        success: true,
+      };
     });
-
-    return {
-      success: true,
-    };
   }
 
   async restore(
@@ -142,28 +145,32 @@ export class PatientLifecycleService {
       );
     }
 
-    const restored =
-      await this.prisma.patient.update({
-        where: {
-          id,
-        },
+    // Defensa en profundidad: un paciente que llegó a estar bloqueado (blockedAt) nunca vuelve a
+    // ACTIVE por la vía de restaurar; desbloquear no es una operación normal (art. 32 LOPDGDD).
+    if (patient.blockedAt) {
+      throw new BadRequestException(
+        'El paciente tiene los datos bloqueados y no puede restaurarse',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const restored = await updatePatientScoped(tx, workspaceId, id, { status: 'ARCHIVED', blockedAt: null }, {
+        status: 'ACTIVE',
+        deletedAt: null,
+      });
+
+      await tx.auditLog.create({
         data: {
-          status: 'ACTIVE',
-          deletedAt: null,
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_RESTORED',
+          entityType: 'Patient',
+          entityId: id,
         },
       });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_RESTORED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      return decryptPatient(restored);
     });
-
-    return decryptPatient(restored);
   }
 
   /**
@@ -192,22 +199,29 @@ export class PatientLifecycleService {
     const retentionUntil = new Date(blockedAt);
     retentionUntil.setFullYear(retentionUntil.getFullYear() + RETENTION_YEARS);
 
-    const updated = await this.prisma.patient.update({
-      where: { id },
-      data: { status: PatientStatus.BLOCKED, blockedAt, retentionUntil },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await updatePatientScoped(tx, workspaceId, id, { status: { not: PatientStatus.BLOCKED } }, {
+        status: PatientStatus.BLOCKED,
+        blockedAt,
+        retentionUntil,
+      });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_BLOCKED',
-        entityType: 'Patient',
-        entityId: id,
-        metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString() },
-      },
-    });
+      // Datos bloqueados (art. 32 LOPDGDD): fuera de todo uso operativo, portal incluido.
+      const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
 
-    return decryptPatient(updated);
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_BLOCKED',
+          entityType: 'Patient',
+          entityId: id,
+          metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString(), revokedPortalAccountIds },
+        },
+      });
+
+      return decryptPatient(updated);
+    });
   }
+
 }

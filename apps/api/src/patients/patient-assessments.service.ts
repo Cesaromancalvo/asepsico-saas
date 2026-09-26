@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
+import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateClinicalAssessmentDto } from './dto/create-clinical-assessment.dto';
 
 const CLINICAL_SCALES = {
@@ -131,10 +132,12 @@ export class PatientAssessmentsService {
   async deleteClinicalAssessment(workspaceId: string, actor: AuthUser, patientId: string, assessmentId: string) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.clinicalAssessment.findFirst({ where: { id: assessmentId, patientId } });
+    const scope = { id: assessmentId, ...patientChildScope(workspaceId, patientId) };
+    const existing = await this.prisma.clinicalAssessment.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Evaluación clínica no encontrada');
     await this.prisma.$transaction(async (tx) => {
-      await tx.clinicalAssessment.delete({ where: { id: assessmentId } });
+      const { count } = await tx.clinicalAssessment.deleteMany({ where: scope });
+      await assertScopedWrite(count, 'Evaluación clínica no encontrada');
       await tx.auditLog.create({ data: {
         workspaceId, actorId: actor.sub, action: 'CLINICAL_ASSESSMENT_DELETED',
         entityType: 'ClinicalAssessment', entityId: assessmentId,

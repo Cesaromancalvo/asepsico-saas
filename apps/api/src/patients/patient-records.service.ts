@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { PatientAccessService } from './patient-access.service';
+import { assertScopedWrite } from './patient-write.util';
 import { CreatePatientDocumentDto } from './dto/create-patient-document.dto';
 import { CreateConsentRecordDto, UpdateConsentRecordDto } from './dto/create-consent-record.dto';
 import { CreateClinicalReportDto, UpdateClinicalReportDto } from './dto/create-clinical-report.dto';
@@ -55,10 +56,12 @@ export class PatientRecordsService {
   async deletePatientDocument(workspaceId: string, actor: AuthUser, patientId: string, documentId: string) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.patientDocument.findFirst({ where: { id: documentId, patientId, workspaceId } });
+    const scope = { id: documentId, patientId, workspaceId };
+    const existing = await this.prisma.patientDocument.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Documento no encontrado');
     await this.prisma.$transaction(async (tx) => {
-      await tx.patientDocument.delete({ where: { id: documentId } });
+      const { count } = await tx.patientDocument.deleteMany({ where: scope });
+      await assertScopedWrite(count, 'Documento no encontrado');
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PATIENT_DOCUMENT_DELETED', entityType: 'PatientDocument', entityId: documentId, metadata: { patientId, type: existing.type } } });
     });
     return { success: true };
@@ -88,7 +91,8 @@ export class PatientRecordsService {
   async updateConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, consentId: string, dto: UpdateConsentRecordDto) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.consentRecord.findFirst({ where: { id: consentId, patientId, workspaceId } });
+    const scope = { id: consentId, patientId, workspaceId };
+    const existing = await this.prisma.consentRecord.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Consentimiento no encontrado');
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title.trim();
@@ -101,7 +105,10 @@ export class PatientRecordsService {
     const resultingSignedAt = dto.signedAt !== undefined ? data.signedAt : existing.signedAt;
     if (resultingStatus === 'SIGNED' && !resultingSignedAt) throw new BadRequestException('Indica la fecha de firma del consentimiento');
     return this.prisma.$transaction(async (tx) => {
-      const consent = await tx.consentRecord.update({ where: { id: consentId }, data });
+      // La validación de firma usó existing.status/signedAt: deben seguir igual al escribir.
+      const { count } = await tx.consentRecord.updateMany({ where: { ...scope, status: existing.status, signedAt: existing.signedAt }, data });
+      await assertScopedWrite(count, 'Consentimiento no encontrado', () => tx.consentRecord.findFirst({ where: scope, select: { id: true } }));
+      const consent = (await tx.consentRecord.findFirst({ where: scope }))!;
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_UPDATED', entityType: 'ConsentRecord', entityId: consentId, metadata: { patientId, updatedFields: Object.keys(dto), previousStatus: existing.status, newStatus: consent.status } } });
       return consent;
     });
@@ -110,11 +117,13 @@ export class PatientRecordsService {
   async deleteConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, consentId: string) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.consentRecord.findFirst({ where: { id: consentId, patientId, workspaceId } });
+    const scope = { id: consentId, patientId, workspaceId };
+    const existing = await this.prisma.consentRecord.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Consentimiento no encontrado');
     if (existing.status !== 'PENDING') throw new BadRequestException('Los consentimientos firmados, revocados o caducados no se eliminan; conserva la trazabilidad');
     await this.prisma.$transaction(async (tx) => {
-      await tx.consentRecord.delete({ where: { id: consentId } });
+      const { count } = await tx.consentRecord.deleteMany({ where: { ...scope, status: 'PENDING' } });
+      await assertScopedWrite(count, 'Consentimiento no encontrado', () => tx.consentRecord.findFirst({ where: scope, select: { id: true } }));
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_DELETED', entityType: 'ConsentRecord', entityId: consentId, metadata: { patientId, type: existing.type, status: existing.status } } });
     });
     return { success: true };
@@ -143,7 +152,8 @@ export class PatientRecordsService {
   async updateClinicalReport(workspaceId: string, actor: AuthUser, patientId: string, reportId: string, dto: UpdateClinicalReportDto) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.clinicalReport.findFirst({ where: { id: reportId, patientId, workspaceId } });
+    const scope = { id: reportId, patientId, workspaceId };
+    const existing = await this.prisma.clinicalReport.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Informe no encontrado');
     if (existing.status === 'FINAL' && dto.status !== 'VOID') throw new BadRequestException('Un informe final solo puede anularse; crea una nueva versión para modificar su contenido');
     const data: any = {};
@@ -152,7 +162,10 @@ export class PatientRecordsService {
     if (dto.content !== undefined) data.content = encryptField(dto.content.trim());
     if (dto.status !== undefined) { data.status = dto.status; data.finalizedAt = dto.status === 'FINAL' ? new Date() : existing.finalizedAt; }
     return this.prisma.$transaction(async (tx) => {
-      const report = await tx.clinicalReport.update({ where: { id: reportId }, data });
+      // La regla "un informe FINAL solo se anula" se validó sobre existing.status: debe seguir igual.
+      const { count } = await tx.clinicalReport.updateMany({ where: { ...scope, status: existing.status }, data });
+      await assertScopedWrite(count, 'Informe no encontrado', () => tx.clinicalReport.findFirst({ where: scope, select: { id: true } }));
+      const report = (await tx.clinicalReport.findFirst({ where: scope }))!;
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_REPORT_UPDATED', entityType: 'ClinicalReport', entityId: reportId, metadata: { patientId, updatedFields: Object.keys(dto), previousStatus: existing.status, newStatus: report.status } } });
       return decryptReport(report);
     });
@@ -161,11 +174,13 @@ export class PatientRecordsService {
   async deleteClinicalReport(workspaceId: string, actor: AuthUser, patientId: string, reportId: string) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const existing = await this.prisma.clinicalReport.findFirst({ where: { id: reportId, patientId, workspaceId } });
+    const scope = { id: reportId, patientId, workspaceId };
+    const existing = await this.prisma.clinicalReport.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Informe no encontrado');
     if (existing.status === 'FINAL') throw new BadRequestException('Los informes finales no se eliminan: deben anularse para conservar la trazabilidad');
     await this.prisma.$transaction(async (tx) => {
-      await tx.clinicalReport.delete({ where: { id: reportId } });
+      const { count } = await tx.clinicalReport.deleteMany({ where: { ...scope, status: { not: 'FINAL' } } });
+      await assertScopedWrite(count, 'Informe no encontrado', () => tx.clinicalReport.findFirst({ where: scope, select: { id: true } }));
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_REPORT_DELETED', entityType: 'ClinicalReport', entityId: reportId, metadata: { patientId, type: existing.type } } });
     });
     return { success: true };

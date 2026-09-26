@@ -8,6 +8,8 @@ import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
 import { decryptPatient } from './patient-crypto.util';
+import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
+import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -342,6 +344,8 @@ export class PatientCoreService {
           consultationReason: encryptField(
             dto.consultationReason,
           ),
+          // Si no se indica, se aplica el valor por defecto del esquema (PATIENT_ONLY).
+          portalAccessMode: dto.portalAccessMode,
         },
       });
 
@@ -352,6 +356,8 @@ export class PatientCoreService {
           action: 'PATIENT_CREATED',
           entityType: 'Patient',
           entityId: patient.id,
+          // Solo el nombre del modo de acceso al portal (dato de configuración, no personal).
+          metadata: { portalAccessMode: patient.portalAccessMode },
         },
       });
 
@@ -367,13 +373,28 @@ export class PatientCoreService {
   ) {
     await this.assertActive(workspaceId, actor, id);
 
-    const { count } =
-      await this.prisma.patient.updateMany({
-        where: {
-          id,
-          workspaceId,
-        },
-        data: {
+    // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma
+    // la modificación (mismo patrón que create()). Si cambia portalAccessMode, la revocación
+    // de cuentas de portal incompatibles y su auditoría van también aquí dentro.
+    await this.prisma.$transaction(async (tx) => {
+      let previousMode: string | undefined;
+      if (dto.portalAccessMode !== undefined) {
+        // Primero se bloquea la fila del paciente (UPDATE sin cambio de negocio) y después se lee
+        // el modo anterior: con la fila bloqueada, un enable() concurrente (que hace
+        // compare-and-set sobre esta fila) no puede colarse entre la lectura y la revocación.
+        await tx.patient.updateMany({ where: { id, workspaceId }, data: { updatedAt: new Date() } });
+        const locked = await tx.patient.findFirst({ where: { id, workspaceId }, select: { portalAccessMode: true } });
+        previousMode = locked?.portalAccessMode;
+      }
+
+      // Guard de estado en el propio UPDATE: si entre assertActive y la escritura el paciente
+      // pasó a ARCHIVED o BLOCKED → 409 sin escribir.
+      await updatePatientScoped(
+        tx,
+        workspaceId,
+        id,
+        { status: { notIn: [...NON_MODIFIABLE_STATUSES] } },
+        {
           ...dto,
           consultationReason: dto.consultationReason !== undefined
             ? encryptField(dto.consultationReason)
@@ -382,29 +403,37 @@ export class PatientCoreService {
             ? new Date(dto.birthDate)
             : undefined,
         },
+      );
+
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'PATIENT_UPDATED',
+          entityType: 'Patient',
+          entityId: id,
+        },
       });
 
-    if (count === 0) {
-      throw new NotFoundException(
-        'Paciente no encontrado',
-      );
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'PATIENT_UPDATED',
-        entityType: 'Patient',
-        entityId: id,
-      },
+      if (dto.portalAccessMode !== undefined) {
+        await applyPortalAccessModeChange(tx, {
+          workspaceId,
+          actorId: actor.sub,
+          patientId: id,
+          previousMode,
+          newMode: dto.portalAccessMode,
+        });
+      }
     });
 
     return this.get(workspaceId, actor, id);
   }
 
   // Público porque PatientLifecycleService.archive() lo reutiliza; solo lee (vía get(), con
-  // filtro por workspaceId y control de rol) y comprueba que el paciente no esté archivado.
+  // filtro por workspaceId y control de rol) y comprueba que el paciente no esté archivado
+  // ni bloqueado. BadRequest (400), igual que el resto de validaciones de estado del módulo
+  // (transición no permitida, "ya está bloqueado", "no está archivado"): es un estado estable
+  // conocido por el cliente. El 409 se reserva para la carrera detectada al escribir.
   async assertActive(
     workspaceId: string,
     actor: AuthUser,
@@ -419,6 +448,14 @@ export class PatientCoreService {
     if (patient.status === 'ARCHIVED') {
       throw new BadRequestException(
         'El paciente está archivado; restáuralo antes de modificarlo',
+      );
+    }
+
+    // Un paciente bloqueado (art. 32 LOPDGDD) no se modifica ni se archiva: archivarlo sería
+    // la puerta para "desbloquearlo" después vía restore().
+    if (patient.status === PatientStatus.BLOCKED) {
+      throw new BadRequestException(
+        'Los datos del paciente están bloqueados y no pueden modificarse',
       );
     }
 
