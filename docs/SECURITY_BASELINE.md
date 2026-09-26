@@ -24,10 +24,63 @@ datos clínicos reales en producción.
   sesión — solo el detalle de cada proceso/sesión, que sí aplica ese control.
 - Soft delete y auditoría transaccional para altas, modificaciones y archivado de pacientes.
 
+## Cifrado a nivel de campo (en reposo)
+
+AES-256-GCM con IV aleatorio por valor (`apps/api/src/common/crypto/field-encryption.ts`).
+La lista de campos cifrados es única y vive en `apps/api/src/common/crypto/clinical-crypto.ts`:
+la usan los servicios al escribir y leer, la exportación, el script de migración y los tests
+(`encrypted-fields-writes.security-spec.ts` falla si un campo del registro no se escribe cifrado).
+
+| Modelo | Campos cifrados |
+|---|---|
+| `Patient` | `consultationReason` |
+| `ClinicalHistory` | `reasonForConsultation`, `currentProblem`, `personalHistory`, `familyHistory`, `medicalHistory`, `currentMedication`, `primaryDiagnosis`, `riskFactors`, `protectiveFactors`, `clinicalObservations` |
+| `TherapyGoal` | `title`, `description` |
+| `TherapeuticTask` | `instructions`, `clinicianNotes`, `reviewComment`, `patientFeedback` |
+| `TherapeuticTaskTemplate` | `instructions` |
+| `ClinicalProcess` | `consultationReason`, `goals`, `internalNotes` |
+| `Session` | `notes`, `internalSummary` |
+| `ClinicalAssessment` | `answers` (Json cifrado como texto), `interpretation`, `clinicalNotes` |
+| `ClinicalReport` | `content` |
+| `PatientDocument` | `description`, `fileName` |
+| `ConsentRecord` | `notes` |
+| `Message` | `body`, `attachmentName` |
+| `User` | `totpSecret` |
+
+**Fuera del cifrado (decisión consciente o pendiente):**
+
+- `Patient.firstName`, `lastName`, `email`, `phone`, `birthDate`: se buscan y ordenan en BD.
+  Protegidos por control de acceso, TLS y cifrado del disco/backups del proveedor.
+- `ClinicalAssessment.totalScore`, `severity`, `riskFlag`: **pendiente de decisión** (cifrarlos
+  exige cambio de esquema: `Int`/`Boolean` → texto; hoy se ven también en el timeline).
+- Títulos de tareas, documentos, consentimientos, informes y procesos, `Session.location` y
+  `videoCallUrl`, `scaleName`, y metadatos (fechas, estados, tipos, ids, `storageKey`, `mimeType`).
+- `AuditLog.metadata` no lleva contenido clínico (solo nombres de campo e ids).
+
+**Formatos y claves:**
+
+- `enc:v1:<iv>:<tag>:<ct>` con `FIELD_ENCRYPTION_KEY` (histórico; sigue siendo el formato por
+  defecto si no se configura llavero).
+- `enc:v2:<kid>:<iv>:<tag>:<ct>` con el llavero `FIELD_ENCRYPTION_KEYS="kid:clave,…"`; se escribe
+  siempre con `FIELD_ENCRYPTION_ACTIVE_KID` y se lee con el `kid` del propio valor. Los v1 se
+  siguen leyendo con `FIELD_ENCRYPTION_KEY`.
+- En producción, sin clave la API lanza al cifrar. Un llavero mal formado o un kid activo
+  inexistente lanza siempre.
+
+**Migración y rotación:** `npm run db:encrypt-fields -- --dry-run` (solo cuenta),
+`npm run db:encrypt-fields` (cifra lo que siga en claro) y `-- --rotate` (re-cifra con la clave
+activa). Idempotente, por lotes transaccionales con compare-and-set, conserva `updatedAt`,
+nunca imprime valores y aborta sin escribir si algún valor cifrado no se puede descifrar.
+
+**Exportación (arts. 15/20 RGPD):** la exportación clínica descifra con los mismos helpers y,
+como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
+la ruta, nunca el valor).
+
 ## Antes de producción (pendiente)
 
 - MFA para las cuentas de terapeutas/administradores.
-- Cifrado a nivel de campo para datos clínicos sensibles (motivo de consulta, notas).
+- Ejecutar `npm run db:encrypt-fields` en producción tras desplegar (datos previos en claro) y
+  decidir el cifrado de las puntuaciones de escalas.
 - Gestión de secretos (Vault/Secrets Manager) en vez de variables de entorno planas.
 - DPA con proveedores, DPIA, política de retención, exportación y borrado de datos (RGPD).
 - Backups verificados con pruebas de restauración periódicas.
