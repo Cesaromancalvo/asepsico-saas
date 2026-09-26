@@ -572,7 +572,8 @@ describe('Portal: lecturas y escrituras acotadas por workspace, auditoría trans
   });
 
   it('login actualiza los contadores de la cuenta acotando por su workspace, nunca solo por id', async () => {
-    const prisma = prismaMock({ patientPortalAccount: [account({ passwordHash: await bcrypt.hash('Correcta12345', 4) })] });
+    // El mock no resuelve include: se adjunta el paciente (activo) que login() comprueba.
+    const prisma = prismaMock({ patientPortalAccount: [account({ passwordHash: await bcrypt.hash('Correcta12345', 4), patient: { id: 'patient-1', status: 'ACTIVE' } })] });
     const service = new PortalService(prisma, jwt);
     await expect(service.login({ email: 'paciente@example.com', password: 'Erronea12345' })).rejects.toBeDefined();
     await service.login({ email: 'paciente@example.com', password: 'Correcta12345' });

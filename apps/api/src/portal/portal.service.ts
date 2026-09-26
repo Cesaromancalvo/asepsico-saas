@@ -6,7 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
-import { accessModesAllowing, isAccessorAllowed } from './portal-access-mode.util';
+import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from './portal-access-mode.util';
 
 @Injectable()
 export class PortalService {
@@ -33,6 +33,12 @@ export class PortalService {
     if (!patient) throw new NotFoundException('Paciente no encontrado');
     const email = dto.email.toLowerCase().trim();
     const accessorType = dto.accessorType ?? 'PATIENT';
+
+    // Paciente bloqueado (art. 32 LOPDGDD) o archivado: no se habilita portal. El compare-and-set
+    // de la transacción lo vuelve a exigir por si el estado cambia entretanto.
+    if (!isPatientPortalOpen(patient.status)) {
+      throw new BadRequestException('No se puede habilitar el portal de un paciente archivado o con los datos bloqueados');
+    }
 
     // El modo de acceso lo decide el profesional (p. ej. un menor con PATIENT_ONLY no puede
     // tener cuenta de tutor). Se comprueba antes de tocar ninguna cuenta.
@@ -76,7 +82,7 @@ export class PortalService {
       // de portalAccessMode concurrente (que escribe esa misma fila) o ya se ve aquí (count 0 →
       // 409) o espera y después revoca la cuenta recién creada.
       const { count: modeStillAllows } = await tx.patient.updateMany({
-        where: { id: patientId, workspaceId, deletedAt: null, portalAccessMode: { in: accessModesAllowing(accessorType) } },
+        where: { id: patientId, workspaceId, deletedAt: null, status: { notIn: [...PORTAL_CLOSED_PATIENT_STATUSES] }, portalAccessMode: { in: accessModesAllowing(accessorType) } },
         data: { updatedAt: new Date() },
       });
       if (!modeStillAllows) {
@@ -117,6 +123,12 @@ export class PortalService {
     const email = dto.email.toLowerCase().trim();
     const account = await (this.prisma as any).patientPortalAccount.findFirst({ where:{ email, isActive:true }, include:{ patient:{ select:{ id:true, firstName:true, lastName:true, status:true } } } });
     if (!account) throw new UnauthorizedException('Credenciales incorrectas');
+    // Paciente bloqueado (art. 32 LOPDGDD) o archivado: sin acceso, con el mismo mensaje genérico
+    // que unas credenciales incorrectas (no se revela el estado del paciente). El PortalGuard
+    // repite la comprobación (y la de deletedAt) en cada petición.
+    if (!account.patient || !isPatientPortalOpen(account.patient.status)) {
+      throw new UnauthorizedException('Credenciales incorrectas');
+    }
     if (account.lockedUntil && account.lockedUntil > new Date()) throw new UnauthorizedException('Cuenta temporalmente bloqueada');
     const valid = await bcrypt.compare(dto.password, account.passwordHash);
     // Escrituras acotadas al workspace de la propia cuenta (nunca solo por id).

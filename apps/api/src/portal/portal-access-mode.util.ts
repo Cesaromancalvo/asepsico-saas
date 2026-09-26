@@ -36,6 +36,31 @@ export function incompatibleAccessorTypes(mode: string | null | undefined): Port
 
 type PortalModeTx = Pick<Prisma.TransactionClient, 'patientPortalAccount' | 'auditLog'>;
 
+// Estados del paciente en los que el portal queda cerrado (art. 32 LOPDGDD para BLOCKED).
+export const PORTAL_CLOSED_PATIENT_STATUSES = ['ARCHIVED', 'BLOCKED'] as const;
+
+export function isPatientPortalOpen(status: string | null | undefined): boolean {
+  return !PORTAL_CLOSED_PATIENT_STATUSES.includes(status as (typeof PORTAL_CLOSED_PATIENT_STATUSES)[number]);
+}
+
+/**
+ * Desactiva TODAS las cuentas activas del paciente (bloqueo o archivado). Se llama dentro de la
+ * transacción de la operación, antes de su auditLog, y devuelve los ids revocados para que esa
+ * auditoría los registre: si la auditoría falla, la revocación se deshace con todo lo demás.
+ */
+export async function revokeAllPortalAccounts(
+  tx: Pick<Prisma.TransactionClient, 'patientPortalAccount'>,
+  workspaceId: string,
+  patientId: string,
+): Promise<string[]> {
+  const where = { workspaceId, patientId, isActive: true };
+  const ids = (await tx.patientPortalAccount.findMany({ where, select: { id: true } })).map((a) => a.id);
+  if (ids.length > 0) {
+    await tx.patientPortalAccount.updateMany({ where: { ...where, id: { in: ids } }, data: { isActive: false } });
+  }
+  return ids;
+}
+
 /**
  * Se ejecuta DENTRO de la transacción que cambia Patient.portalAccessMode: desactiva las
  * cuentas activas que el nuevo modo ya no admite y lo audita. Si la auditoría falla, la

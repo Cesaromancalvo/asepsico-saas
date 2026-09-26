@@ -30,10 +30,19 @@ describe('Patient portal security',()=>{
   });
 
   it('locks the account after five failed attempts',async()=>{
-    const prisma=prismaMock(); prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',workspaceId:'ws-1',patientId:'p1',failedLoginAttempts:4,passwordHash:await bcrypt.hash('Correct12345',4),lockedUntil:null});
+    const prisma=prismaMock(); prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',workspaceId:'ws-1',patientId:'p1',failedLoginAttempts:4,passwordHash:await bcrypt.hash('Correct12345',4),lockedUntil:null,patient:{id:'p1',status:'ACTIVE'}});
     const service=new PortalService(prisma,jwt);
     await expect(service.login({email:'p@example.com',password:'Wrong123456'})).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prisma.patientPortalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({id:'a1',workspaceId:'ws-1'}),data:expect.objectContaining({failedLoginAttempts:5,lockedUntil:expect.any(Date)})}));
+  });
+
+  it.each(['BLOCKED','ARCHIVED'])('H2: login fails with the generic error when the patient is %s, even with the right password',async(status)=>{
+    const prisma=prismaMock(); jwt.signAsync.mockClear();
+    prisma.patientPortalAccount.findFirst.mockResolvedValue({id:'a1',workspaceId:'ws-1',patientId:'p1',accessorType:'PATIENT',failedLoginAttempts:0,passwordHash:await bcrypt.hash('Correct12345',4),lockedUntil:null,patient:{id:'p1',status}});
+    const error:any=await new PortalService(prisma,jwt).login({email:'p@example.com',password:'Correct12345'}).catch(e=>e);
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect(error.message).toBe('Credenciales incorrectas');
+    expect(jwt.signAsync).not.toHaveBeenCalled();
   });
 
   it('dashboard queries only the authenticated patient and excludes clinical notes',async()=>{
@@ -130,6 +139,20 @@ describe('Portal enable() respects portalAccessMode',()=>{
     expect(prisma.patientPortalAccount.create).not.toHaveBeenCalled();
     expect(prisma.patientPortalAccount.updateMany).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['BLOCKED','ARCHIVED'])('H2: enable() on a %s patient is rejected without creating an account',async(status)=>{
+    const prisma=enablePrisma('SHARED');
+    prisma.patient.findFirst.mockResolvedValue({id:'p1',workspaceId:'ws-1',portalAccessMode:'SHARED',status});
+    await expect(new PortalService(prisma,jwt).enable('ws-1',staff,'p1',dto('PATIENT'))).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.patientPortalAccount.create).not.toHaveBeenCalled();
+    expect(prisma.patientPortalAccount.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('H2: the compare-and-set of enable() also requires a patient that is neither archived nor blocked',async()=>{
+    const prisma=enablePrisma('SHARED');
+    await new PortalService(prisma,jwt).enable('ws-1',staff,'p1',dto('PATIENT'));
+    expect(prisma.patient.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({deletedAt:null,status:{notIn:['ARCHIVED','BLOCKED']}})}));
   });
 
   it('uses a generic message when the email belongs to another patient or workspace',async()=>{
@@ -355,6 +378,14 @@ describe('PortalGuard rejects revoked or no-longer-allowed accounts with a still
     dbAccount=account({patient:{workspaceId:'ws-1',deletedAt:new Date(),portalAccessMode:'SHARED'}});
     const res=await call('get','/api/v1/portal/dashboard',undefined,'PATIENT');
     expect(res.status).toBe(401);
+    noServiceCalled();
+  });
+
+  it.each(['BLOCKED','ARCHIVED'])('H2: %s patient with an active account and a valid token -> 401 on dashboard and task submit',async(status)=>{
+    // deletedAt null a propósito: se prueba la comprobación de estado, no la de borrado.
+    dbAccount=account({patient:{workspaceId:'ws-1',deletedAt:null,status,portalAccessMode:'SHARED'}});
+    expect((await call('get','/api/v1/portal/dashboard',undefined,'PATIENT')).status).toBe(401);
+    expect((await call('post','/api/v1/portal/tasks/task-1/submit',{},'PATIENT')).status).toBe(401);
     noServiceCalled();
   });
 
