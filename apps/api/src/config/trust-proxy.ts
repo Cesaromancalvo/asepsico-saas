@@ -67,12 +67,17 @@ export function parseTrustProxy(raw: string | undefined, nodeEnv: string | undef
     return hops;
   }
 
-  const entries = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  // Las entradas vacías ("10.0.0.1,,loopback", "a,", ",") se rechazan en lugar de ignorarse:
+  // suelen delatar una variable mal copiada, y mejor fallar al arrancar que confiar en otra cosa.
+  const entries = value.split(',').map((entry) => entry.trim());
+  if (entries.some((entry) => entry === '')) {
+    throw new InvalidTrustProxyError(value, 'la lista contiene entradas vacías (comas sobrantes)');
+  }
   const invalid = entries.filter((entry) => !isValidAddressOrSubnet(entry));
-  if (entries.length === 0 || invalid.length > 0) {
+  if (invalid.length > 0) {
     throw new InvalidTrustProxyError(
       value,
-      `entradas no válidas: ${invalid.join(', ') || '(vacío)'}. ` +
+      `entradas no válidas: ${invalid.join(', ')}. ` +
         'Se espera un entero 1..5, "false", o una lista de IPs, subredes CIDR, loopback, linklocal o uniquelocal.',
     );
   }

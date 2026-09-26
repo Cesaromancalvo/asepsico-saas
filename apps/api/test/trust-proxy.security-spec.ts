@@ -63,7 +63,30 @@ describe('trust proxy: parseo y validación de TRUST_PROXY', () => {
     ]);
   });
 
-  it.each(['true', 'TRUE', '-1', '6', '1.5', 'loopbak', '10.0.0.0/33', '999.1.1.1', 'fd00::/129', '10.0.0.1/8/1', ','])(
+  it.each([
+    // "true" en cualquier forma: confiaría en la X-Forwarded-For del cliente.
+    'true',
+    'TRUE',
+    ' true ',
+    'True',
+    // Saltos fuera de rango o no enteros.
+    '-1',
+    '6',
+    '1.5',
+    // Direcciones o subredes mal formadas.
+    'loopbak',
+    '10.0.0.0/33',
+    '999.1.1.1',
+    'fd00::/129',
+    '10.0.0.1/8/1',
+    // Listas con entradas vacías o solo comas.
+    ',',
+    ',,',
+    ' , , ',
+    '10.0.0.1,',
+    ',10.0.0.1',
+    '10.0.0.1,,loopback',
+  ])(
     'rechaza %p al arrancar',
     (raw) => {
       expect(() => parseTrustProxy(raw, 'production')).toThrow(InvalidTrustProxyError);
