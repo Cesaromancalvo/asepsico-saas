@@ -7,7 +7,7 @@ import { generate } from 'otplib';
 import request = require('supertest');
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
-import { MfaService, mfaLockDurationMs } from '../src/auth/mfa.service';
+import { MFA_PENDING_TOKEN_MAX_FAILURES, MfaService, mfaLockDurationMs } from '../src/auth/mfa.service';
 import { hashRecoveryCodes } from '../src/auth/recovery-codes.util';
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { CsrfGuard } from '../src/common/guards/csrf.guard';
@@ -101,14 +101,34 @@ class FakePrisma {
     },
   };
 
-  async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+  /** Advisory locks de transacción (pg_try_advisory_xact_lock). false = simular que no existen. */
+  advisoryLocks = true;
+  heldLocks = new Set<string>();
+  /** Intentos que llegaron a evaluar un código (lock conseguido). */
+  lockAcquisitions = 0;
+
+  async $transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
     const snapshot = { users: structuredClone([...this.users.entries()]), audit: structuredClone(this.auditLogs) };
+    const held: string[] = [];
+    const tx = Object.create(this);
+    tx.$queryRaw = async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      const key = values.join('|');
+      if (this.advisoryLocks && this.heldLocks.has(key)) return [{ acquired: false }];
+      if (this.advisoryLocks) {
+        this.heldLocks.add(key);
+        held.push(key);
+      }
+      this.lockAcquisitions++;
+      return [{ acquired: true }];
+    };
     try {
-      return await fn(this);
+      return await fn(tx);
     } catch (error) {
       this.users = new Map(snapshot.users);
       this.auditLogs = snapshot.audit;
       throw error;
+    } finally {
+      for (const key of held) this.heldLocks.delete(key);
     }
   }
 }
@@ -197,6 +217,9 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     db.auditLogs = [];
     db.refreshTokens = [];
     db.failAuditAction = null;
+    db.advisoryLocks = true;
+    db.heldLocks.clear();
+    db.lockAcquisitions = 0;
     currentActor = { sub: USER_ID, workspaceId: WORKSPACE_ID, role: 'THERAPIST', email: EMAIL };
   });
 
@@ -255,7 +278,9 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
         post('login/mfa').send({ pendingToken: t1, code: totp }),
         post('login/mfa').send({ pendingToken: t2, code: totp }),
       ]);
-      expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
+      // El perdedor recibe 401 (código ya usado) o 429 (otro intento en curso).
+      expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+      expect(results.filter((r) => r.status === 401 || r.status === 429)).toHaveLength(1);
       expect(db.refreshTokens).toHaveLength(1);
     });
 
@@ -296,29 +321,30 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       expect(db.auditLogs[0].metadata).toEqual({ context: 'login', remainingRecoveryCodes: 1 });
     });
 
-    it('dos logins concurrentes con el mismo código de recuperación → solo uno gana', async () => {
+    it('sin serialización, el consumo optimista del recovery code sigue impidiendo el doble uso', async () => {
       const { recovery } = await seedUserWithMfa();
-      // Ambas peticiones leyeron el usuario antes de que ninguna escribiera (carrera real).
-      const snapshot = structuredClone(user()) as any;
+      // Defensa en profundidad: aunque el lock por usuario no existiera, ambas peticiones
+      // leen el usuario antes de que ninguna escriba y aun así solo una gana.
+      db.advisoryLocks = false;
       const mfa = app.get(MfaService);
       const actor = { userId: USER_ID, workspaceId: WORKSPACE_ID };
       const results = await Promise.allSettled([
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}, 0),
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}, 0),
+        mfa.verifyLoginSecondFactor(actor, recovery[0], {}, 0),
+        mfa.verifyLoginSecondFactor(actor, recovery[0], {}, 0),
       ]);
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
       expect(user().mfaRecoveryCodes).toHaveLength(1);
     });
 
-    it('dos usos concurrentes del mismo TOTP con el usuario ya leído → solo uno gana', async () => {
+    it('sin serialización, el reclamo atómico del paso TOTP sigue impidiendo el doble uso', async () => {
       const { secret } = await seedUserWithMfa();
-      const snapshot = structuredClone(user()) as any;
+      db.advisoryLocks = false;
       const mfa = app.get(MfaService);
       const actor = { userId: USER_ID, workspaceId: WORKSPACE_ID };
       const totp = await code(secret);
       const results = await Promise.allSettled([
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}, 0),
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}, 0),
+        mfa.verifyLoginSecondFactor(actor, totp, {}, 0),
+        mfa.verifyLoginSecondFactor(actor, totp, {}, 0),
       ]);
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
     });
@@ -462,6 +488,22 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       if (!res.mfaRequired) throw new Error('se esperaba MFA');
       return res.pendingToken;
     }
+
+    it('ráfaga de 20 intentos simultáneos con el mismo token → como mucho 5 evaluados, los demás 429', async () => {
+      const { secret } = await seedUserWithMfa();
+      const token = await loginToken();
+      const results = await Promise.allSettled(
+        Array.from({ length: 20 }, (_, i) => auth().verifyMfaLogin(token, wrong, { ip: `203.0.113.${i + 1}` })),
+      );
+      const statuses = results.map((r) => (r as PromiseRejectedResult).reason?.status);
+      expect(statuses.every((s) => s === 401 || s === 429)).toBe(true);
+      expect(user().mfaFailedAttempts).toBeLessThanOrEqual(MFA_PENDING_TOKEN_MAX_FAILURES);
+      // El token nunca permite más de MFA_PENDING_TOKEN_MAX_FAILURES evaluaciones.
+      for (let i = 0; i < 10; i++) await auth().verifyMfaLogin(token, wrong, {}).catch(() => undefined);
+      expect(user().mfaFailedAttempts).toBe(MFA_PENDING_TOKEN_MAX_FAILURES);
+      expect(user().mfaLockedUntil).not.toBeNull();
+      await expect(auth().verifyMfaLogin(await loginToken(), await code(secret), {})).rejects.toMatchObject({ status: 429 });
+    });
 
     it('la espera crece con los fallos y tiene tope (nunca permanente)', () => {
       expect([0, 4, 5, 9, 10, 14, 15, 50, 10_000].map(mfaLockDurationMs)).toEqual([
