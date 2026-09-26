@@ -13,11 +13,13 @@ export async function getTotpQrCodeDataUrl(uri: string): Promise<string> {
   return QRCode.toDataURL(uri);
 }
 
+/** Tolerancia de reloj: acepta el paso anterior, el actual y el siguiente. */
+export const TOTP_EPOCH_TOLERANCE_SECONDS = 30;
+
 /**
  * Verifica un código TOTP y devuelve el paso de tiempo (floor(epoch / 30)) con el que
- * coincidió, o null si no es válido. Con la tolerancia por defecto de otplib (0) solo se
- * acepta el paso actual; si algún día se amplía la ventana, el paso devuelto sigue siendo
- * el que realmente coincidió (no el actual), que es el que hay que guardar para impedir
+ * coincidió, o null si no es válido. Con la tolerancia de ±30 s el paso devuelto es el que
+ * realmente coincidió (no el actual), que es el que hay que guardar para impedir
  * reutilizar el código (RFC 6238 §5.2).
  *
  * `afterTimeStep` rechaza ya en otplib cualquier paso igual o anterior al último usado;
@@ -29,6 +31,9 @@ export async function verifyTotpCode(secret: string, token: string, afterTimeSte
     const result = await verify({
       secret,
       token,
+      // ±30 s (un paso a cada lado) para tolerar la deriva del reloj del móvil. Es seguro
+      // porque el paso realmente coincidente se guarda y no se puede reutilizar.
+      epochTolerance: TOTP_EPOCH_TOLERANCE_SECONDS,
       ...(typeof afterTimeStep === 'number' ? { afterTimeStep } : {}),
     });
     // Sin paso no hay forma de impedir la reutilización: se trata como no válido (fail closed).

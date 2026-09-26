@@ -15,7 +15,8 @@
 //
 //   ASEPSICO_SMOKE_ENROLL_MFA=1 Solo para BD desechables (CI, local recién sembrada). Si la
 //                               cuenta NO tiene MFA, el smoke lo activa (mfa/setup + confirm
-//                               con un TOTP generado aquí), renueva el JWT con /auth/refresh y,
+//                               con la contraseña de la cuenta y un TOTP generado aquí),
+//                               renueva el JWT con /auth/refresh y,
 //                               al terminar (también si falla a mitad), lo desactiva de nuevo
 //                               con mfa/disable (usando un código de recuperación, no el TOTP ya
 //                               usado) para dejar la cuenta como estaba. Así el smoke es
@@ -101,7 +102,7 @@ async function login() {
   assertEnrollmentTargetAllowed();
   const setup = await req('/auth/mfa/setup', { method: 'POST' });
   assert(typeof setup.secret === 'string' && setup.secret.length > 0, 'mfa/setup no devolvió secreto');
-  const confirmed = await req('/auth/mfa/confirm', { method: 'POST', body: { code: await totpCode(setup.secret) } });
+  const confirmed = await req('/auth/mfa/confirm', { method: 'POST', body: { password, code: await totpCode(setup.secret) } });
   assert(Array.isArray(confirmed.recoveryCodes) && confirmed.recoveryCodes.length > 0, 'mfa/confirm no devolvió códigos de recuperación');
   enrolledRecoveryCode = confirmed.recoveryCodes[0];
   // El JWT emitido en el login lleva mfaEnabled=false; refresh lo reemite con el valor real.

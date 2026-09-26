@@ -10,6 +10,11 @@ export class VerifyMfaLoginDto {
 }
 
 export class ConfirmMfaSetupDto {
+  // Contraseña actual: activar el MFA con solo una sesión robada dejaría fuera al dueño.
+  @IsString()
+  @MinLength(1)
+  password!: string;
+
   @IsString()
   @Length(6, 6)
   code!: string;

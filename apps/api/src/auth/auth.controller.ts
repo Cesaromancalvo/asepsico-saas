@@ -92,7 +92,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, CsrfGuard)
   @Post('mfa/confirm')
   async confirmMfaSetup(@CurrentUser() user: AuthUser, @Body() dto: ConfirmMfaSetupDto, @Req() req: Request) {
-    return this.mfa.confirmMfaSetup({ userId: user.sub, workspaceId: user.workspaceId }, dto.code, meta(req));
+    return this.mfa.confirmMfaSetup({ userId: user.sub, workspaceId: user.workspaceId }, dto.password, dto.code, meta(req));
   }
 
   @Throttle(AUTH_THROTTLE)

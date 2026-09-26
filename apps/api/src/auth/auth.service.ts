@@ -10,6 +10,8 @@ import { MfaService } from './mfa.service';
 
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const MFA_PENDING_TTL = '5m';
+// Membresía con la que se inicia sesión: la más antigua, de forma determinista.
+const FIRST_MEMBERSHIP = { memberships: { take: 1, orderBy: { createdAt: 'asc' as const } } };
 
 type SessionUser = { id: string; email: string; firstName: string; lastName: string; totpEnabled: boolean };
 
@@ -47,14 +49,16 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string }): Promise<LoginResult> {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: { memberships: { take: 1 } } });
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: FIRST_MEMBERSHIP });
     const passwordHash = user?.passwordHash ?? '$2a$12$invalidinvalidinvaliduinvalidinvalidinvalidinvalidinva';
     const passwordOk = await compare(dto.password, passwordHash);
     if (!user || !passwordOk || !user.memberships[0]) throw new UnauthorizedException('Credenciales incorrectas');
 
     if (user.totpEnabled) {
       const pendingToken = await this.jwt.signAsync(
-        { sub: user.id, kind: 'mfa_pending' },
+        // fa = fallos de segundo factor de la cuenta al emitir el token: tras
+        // MFA_PENDING_TOKEN_MAX_FAILURES fallos más, el token deja de valer.
+        { sub: user.id, kind: 'mfa_pending', fa: user.mfaFailedAttempts },
         { expiresIn: MFA_PENDING_TTL },
       );
       return { mfaRequired: true, pendingToken };
@@ -65,23 +69,23 @@ export class AuthService {
   }
 
   async verifyMfaLogin(pendingToken: string, code: string, meta: { ip?: string; userAgent?: string }): Promise<IssuedSession> {
-    let payload: { sub?: string; kind?: string };
+    let payload: { sub?: string; kind?: string; fa?: unknown };
     try {
       payload = await this.jwt.verifyAsync(pendingToken);
     } catch {
       throw new UnauthorizedException('El código ha caducado, vuelve a iniciar sesión');
     }
-    if (payload.kind !== 'mfa_pending' || typeof payload.sub !== 'string') {
+    if (payload.kind !== 'mfa_pending' || typeof payload.sub !== 'string' || typeof payload.fa !== 'number') {
       throw new UnauthorizedException('Token no válido');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, include: { memberships: { take: 1 } } });
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, include: FIRST_MEMBERSHIP });
     if (!user || !user.totpEnabled || !user.totpSecret || !user.memberships[0]) {
       throw new UnauthorizedException('No se pudo verificar el segundo factor');
     }
 
     const workspaceId = user.memberships[0].workspaceId;
-    await this.mfa.verifyLoginSecondFactor(user, code, { userId: user.id, workspaceId }, meta);
+    await this.mfa.verifyLoginSecondFactor(user, code, { userId: user.id, workspaceId }, meta, payload.fa);
 
     return this.issueSession(user, workspaceId, user.memberships[0].role, meta);
   }
