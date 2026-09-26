@@ -1,5 +1,5 @@
 import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { hash } from 'bcryptjs';
 import * as cookieParser from 'cookie-parser';
@@ -7,7 +7,7 @@ import { generate } from 'otplib';
 import request = require('supertest');
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
-import { MfaService } from '../src/auth/mfa.service';
+import { MfaService, mfaLockDurationMs } from '../src/auth/mfa.service';
 import { hashRecoveryCodes } from '../src/auth/recovery-codes.util';
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { CsrfGuard } from '../src/common/guards/csrf.guard';
@@ -21,6 +21,10 @@ import { PrismaService } from '../src/database/prisma.service';
  *  C. Cache-Control: no-store en login y MFA.
  *  D. Auditoría transaccional (rollback si falla) y sin secretos en metadata.
  *  E. Throttle en mfa/*.
+ * Seguimiento de Argos:
+ *  1. confirm exige la contraseña actual (activación hostil con sesión robada).
+ *  2. Límite de intentos de segundo factor por cuenta con espera creciente y anulación del pendingToken.
+ *  4. Tolerancia de reloj ±1 paso, segura gracias al anti-replay.
  * Todos los datos son ficticios.
  */
 
@@ -42,6 +46,8 @@ type FakeUser = {
   totpEnabled: boolean;
   totpLastUsedStep: number | null;
   mfaRecoveryCodes: string[];
+  mfaFailedAttempts: number;
+  mfaLockedUntil: Date | null;
 };
 
 /** Prisma en memoria con transacciones de verdad: si el callback lanza, se revierte todo. */
@@ -58,6 +64,15 @@ class FakePrisma {
       const copy: any = structuredClone(u);
       if (include?.memberships) copy.memberships = [{ workspaceId: WORKSPACE_ID, role: 'THERAPIST', userId: u.id }];
       return copy;
+    },
+    update: async ({ where, data, select }: any) => {
+      const u = this.users.get(where.id);
+      if (!u) throw new Error('Registro no encontrado');
+      for (const [key, value] of Object.entries(data) as [string, any][]) {
+        (u as any)[key] = value && typeof value === 'object' && 'increment' in value ? (u as any)[key] + value.increment : structuredClone(value);
+      }
+      const copy: any = structuredClone(u);
+      return select ? Object.fromEntries(Object.keys(select).map((k) => [k, copy[k]])) : copy;
     },
     updateMany: async ({ where, data }: any) => {
       let count = 0;
@@ -134,16 +149,18 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     db.users.set(USER_ID, {
       id: USER_ID, email: EMAIL, passwordHash, firstName: 'Ana', lastName: 'Ficticia',
       totpSecret: null, totpEnabled: false, totpLastUsedStep: null, mfaRecoveryCodes: [],
+      mfaFailedAttempts: 0, mfaLockedUntil: null,
       ...overrides,
     });
   }
 
   /** Cuenta con MFA ya activo: devuelve el secreto y los códigos de recuperación en claro. */
-  async function seedUserWithMfa() {
+  async function seedUserWithMfa(overrides: Partial<FakeUser> = {}) {
     const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
     const recovery = ['11111-22222', '33333-44444'];
     await seedUser({
       totpSecret: encryptField(secret), totpEnabled: true, mfaRecoveryCodes: await hashRecoveryCodes(recovery),
+      ...overrides,
     });
     return { secret, recovery };
   }
@@ -202,7 +219,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     it('mfa/confirm con MFA activo → 400 y no se regeneran los códigos de recuperación', async () => {
       const { secret } = await seedUserWithMfa();
       const before = structuredClone(user());
-      await post('mfa/confirm').send({ code: await code(secret) }).expect(400);
+      await post('mfa/confirm').send({ password: PASSWORD, code: await code(secret) }).expect(400);
       expect(user()).toEqual(before);
       expect(actions()).toEqual(['MFA_CONFIRM_REJECTED']);
     });
@@ -253,7 +270,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
       const totp = await code(setup.body.secret);
-      await post('mfa/confirm').send({ code: totp }).expect(201);
+      await post('mfa/confirm').send({ password: PASSWORD, code: totp }).expect(201);
       expect(user().totpEnabled).toBe(true);
       await post('login/mfa').send({ pendingToken: await pendingToken(), code: totp }).expect(401);
     });
@@ -264,7 +281,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await post('login/mfa').send({ pendingToken: await pendingToken(), code: totp }).expect(200);
       const before = structuredClone(user());
       await post('mfa/disable').send({ password: PASSWORD, code: totp }).expect(401);
-      expect(user()).toEqual(before);
+      expect(user()).toEqual({ ...before, mfaFailedAttempts: 1 });
       expect(actions()).toContain('MFA_DISABLE_FAILED');
     });
 
@@ -286,8 +303,8 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       const mfa = app.get(MfaService);
       const actor = { userId: USER_ID, workspaceId: WORKSPACE_ID };
       const results = await Promise.allSettled([
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}),
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}),
+        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}, 0),
+        mfa.verifyLoginSecondFactor(structuredClone(snapshot), recovery[0], actor, {}, 0),
       ]);
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
       expect(user().mfaRecoveryCodes).toHaveLength(1);
@@ -300,8 +317,8 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       const actor = { userId: USER_ID, workspaceId: WORKSPACE_ID };
       const totp = await code(secret);
       const results = await Promise.allSettled([
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}),
-        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}),
+        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}, 0),
+        mfa.verifyLoginSecondFactor(structuredClone(snapshot), totp, actor, {}, 0),
       ]);
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
     });
@@ -311,7 +328,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     it('funciona desactivando con un código de recuperación', async () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
-      const confirm = await post('mfa/confirm').send({ code: await code(setup.body.secret) }).expect(201);
+      const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
       expect(confirm.body.recoveryCodes).toHaveLength(10);
       await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[0] }).expect(201);
       expect(user()).toMatchObject({ totpEnabled: false, totpSecret: null, mfaRecoveryCodes: [], totpLastUsedStep: null });
@@ -322,7 +339,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
       const totp = await code(setup.body.secret);
-      await post('mfa/confirm').send({ code: totp }).expect(201);
+      await post('mfa/confirm').send({ password: PASSWORD, code: totp }).expect(201);
       await post('mfa/disable').send({ password: PASSWORD, code: totp }).expect(401);
       now = BASE_NOW + 30_000;
       await post('mfa/disable').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
@@ -332,10 +349,10 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     it('tras desactivar se puede volver a activar enseguida (el paso usado se reinicia)', async () => {
       await seedUser();
       let setup = await post('mfa/setup').expect(201);
-      const confirm = await post('mfa/confirm').send({ code: await code(setup.body.secret) }).expect(201);
+      const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
       await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[0] }).expect(201);
       setup = await post('mfa/setup').expect(201);
-      await post('mfa/confirm').send({ code: await code(setup.body.secret) }).expect(201);
+      await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
       expect(user().totpEnabled).toBe(true);
     });
   });
@@ -346,7 +363,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       const setup = await post('mfa/setup').expect(201);
       const before = structuredClone(user());
       db.failAuditAction = 'MFA_ENABLED';
-      await post('mfa/confirm').send({ code: await code(setup.body.secret) }).expect(500);
+      await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(500);
       expect(user()).toEqual(before);
       expect(user().totpEnabled).toBe(false);
     });
@@ -403,7 +420,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
       const totp = await code(setup.body.secret);
-      const confirm = await post('mfa/confirm').send({ code: totp }).expect(201);
+      const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: totp }).expect(201);
       const token = await pendingToken();
       await post('login/mfa').send({ pendingToken: token, code: confirm.body.recoveryCodes[0] }).expect(200);
       await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[1] }).expect(201);
@@ -417,13 +434,158 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     });
   });
 
+  describe('1. confirm exige la contraseña actual', () => {
+    it('sin contraseña → 400 (validación) y el MFA no se activa', async () => {
+      await seedUser();
+      const setup = await post('mfa/setup').expect(201);
+      await post('mfa/confirm').send({ code: await code(setup.body.secret) }).expect(400);
+      expect(user().totpEnabled).toBe(false);
+    });
+
+    it('contraseña incorrecta → 401, MFA no activo y auditado como bad_password', async () => {
+      await seedUser();
+      const setup = await post('mfa/setup').expect(201);
+      await post('mfa/confirm').send({ password: 'otra-contrasena-ficticia', code: await code(setup.body.secret) }).expect(401);
+      expect(user()).toMatchObject({ totpEnabled: false, mfaRecoveryCodes: [], totpLastUsedStep: null, mfaFailedAttempts: 1 });
+      const failure = db.auditLogs.find((a) => a.action === 'MFA_CONFIRM_FAILED');
+      expect(failure.metadata).toMatchObject({ reason: 'bad_password' });
+      expect(JSON.stringify(db.auditLogs)).not.toContain('otra-contrasena-ficticia');
+    });
+  });
+
+  describe('2. límite de intentos de segundo factor por cuenta', () => {
+    const auth = () => app.get(AuthService);
+    const wrong = '000000';
+
+    async function loginToken() {
+      const res = await auth().login({ email: EMAIL, password: PASSWORD } as any, {});
+      if (!res.mfaRequired) throw new Error('se esperaba MFA');
+      return res.pendingToken;
+    }
+
+    it('la espera crece con los fallos y tiene tope (nunca permanente)', () => {
+      expect([0, 4, 5, 9, 10, 14, 15, 50, 10_000].map(mfaLockDurationMs)).toEqual([
+        0, 0, 60_000, 60_000, 300_000, 300_000, 900_000, 900_000, 900_000,
+      ]);
+    });
+
+    it('5 fallos con el mismo pendingToken desde IPs distintas → token anulado y cuenta en espera; tras la espera el legítimo entra', async () => {
+      const { secret } = await seedUserWithMfa();
+      const token = await loginToken();
+      for (let i = 0; i < 5; i++) {
+        await expect(auth().verifyMfaLogin(token, wrong, { ip: `203.0.113.${i + 1}` })).rejects.toMatchObject({ status: 401 });
+      }
+      expect(user().mfaFailedAttempts).toBe(5);
+      expect(user().mfaLockedUntil!.getTime()).toBe(BASE_NOW + 60_000);
+
+      // El mismo pendingToken ya no vale ni con el código correcto, venga de donde venga.
+      await expect(auth().verifyMfaLogin(token, await code(secret), { ip: '198.51.100.7' })).rejects.toMatchObject({
+        status: 401, message: expect.stringMatching(/vuelve a iniciar sesión/),
+      });
+      // Con un token nuevo, mientras dure la espera: 429 sin comprobar el código.
+      const fresh = await loginToken();
+      await expect(auth().verifyMfaLogin(fresh, await code(secret), {})).rejects.toMatchObject({ status: 429 });
+      expect(user().totpLastUsedStep).toBeNull();
+
+      now = BASE_NOW + 61_000;
+      const session = await auth().verifyMfaLogin(fresh, await code(secret), {});
+      expect(session.accessToken).toBeTruthy();
+      expect(user()).toMatchObject({ mfaFailedAttempts: 0, mfaLockedUntil: null });
+      const lockAudit = db.auditLogs.find((a) => a.metadata?.lockedForSeconds);
+      expect(lockAudit.metadata).toEqual({ reason: 'invalid_code', failedAttempts: 5, lockedForSeconds: 60 });
+      expect(db.auditLogs.map((a) => a.metadata?.reason)).toEqual(
+        expect.arrayContaining(['pending_token_exhausted', 'locked']),
+      );
+    });
+
+    it('a partir del 5.º fallo cada fallo cuesta 1 min de espera; tras el 10.º, 5 min', async () => {
+      await seedUserWithMfa();
+      let token = await loginToken();
+      for (let i = 0; i < 5; i++) {
+        await expect(auth().verifyMfaLogin(token, wrong, {})).rejects.toMatchObject({ status: 401 });
+      }
+      for (let failures = 6; failures <= 10; failures++) {
+        now += 61_000; // se agota la espera anterior
+        token = await loginToken(); // el token anterior quedó anulado
+        await expect(auth().verifyMfaLogin(token, wrong, {})).rejects.toMatchObject({ status: 401 });
+        // Sin esperar, el siguiente intento ya no se evalúa.
+        await expect(auth().verifyMfaLogin(token, wrong, {})).rejects.toMatchObject({ status: 429 });
+        expect(user().mfaFailedAttempts).toBe(failures);
+      }
+      expect(user().mfaLockedUntil!.getTime()).toBe(now + 5 * 60_000);
+    });
+
+    it('durante la espera no se cuentan intentos (no se alarga) y un recovery code válido tampoco se consume', async () => {
+      const { recovery } = await seedUserWithMfa();
+      const lockedUntil = new Date(BASE_NOW + 60_000);
+      db.users.get(USER_ID)!.mfaFailedAttempts = 5;
+      db.users.get(USER_ID)!.mfaLockedUntil = lockedUntil;
+      const token = await loginToken();
+      await expect(auth().verifyMfaLogin(token, recovery[0], {})).rejects.toMatchObject({ status: 429 });
+      await expect(auth().verifyMfaLogin(token, wrong, {})).rejects.toMatchObject({ status: 429 });
+      expect(user()).toMatchObject({ mfaFailedAttempts: 5, mfaLockedUntil: lockedUntil });
+      expect(user().mfaRecoveryCodes).toHaveLength(2);
+    });
+
+    it('los fallos con código de recuperación cuentan igual', async () => {
+      await seedUserWithMfa();
+      const token = await loginToken();
+      for (let i = 0; i < 5; i++) {
+        await expect(auth().verifyMfaLogin(token, '99999-99999', {})).rejects.toMatchObject({ status: 401 });
+      }
+      expect(user().mfaFailedAttempts).toBe(5);
+      expect(user().mfaLockedUntil).not.toBeNull();
+    });
+
+    it('disable también respeta la espera (429)', async () => {
+      const { secret } = await seedUserWithMfa({ mfaFailedAttempts: 5, mfaLockedUntil: new Date(BASE_NOW + 60_000) });
+      await post('mfa/disable').send({ password: PASSWORD, code: await code(secret) }).expect(429);
+      expect(user().totpEnabled).toBe(true);
+    });
+
+    it('un pendingToken sin contador (emitido antes de este cambio) no vale', async () => {
+      const { secret } = await seedUserWithMfa();
+      const legacy = await app.get(JwtService).signAsync({ sub: USER_ID, kind: 'mfa_pending' }, { expiresIn: '5m' });
+      await expect(auth().verifyMfaLogin(legacy, await code(secret), {})).rejects.toMatchObject({ status: 401 });
+    });
+  });
+
+  describe('4. tolerancia de reloj ±1 paso con anti-replay', () => {
+    it('acepta el código del paso anterior y guarda ESE paso', async () => {
+      const { secret } = await seedUserWithMfa();
+      const previous = await generate({ secret, epoch: Math.floor(BASE_NOW / 1000) - 30 });
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: previous }).expect(200);
+      expect(user().totpLastUsedStep).toBe(Math.floor(BASE_NOW / 1000 / 30) - 1);
+    });
+
+    it('tras usar el paso actual, el código del paso anterior ya no vale', async () => {
+      const { secret } = await seedUserWithMfa();
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: await code(secret) }).expect(200);
+      const previous = await generate({ secret, epoch: Math.floor(BASE_NOW / 1000) - 30 });
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: previous }).expect(401);
+    });
+
+    it('no acepta códigos a dos pasos de distancia', async () => {
+      const { secret } = await seedUserWithMfa();
+      const old = await generate({ secret, epoch: Math.floor(BASE_NOW / 1000) - 60 });
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: old }).expect(401);
+    });
+
+    it('totpLastUsedStep por delante del paso actual → TOTP 401, pero el código de recuperación entra', async () => {
+      const { secret, recovery } = await seedUserWithMfa();
+      db.users.get(USER_ID)!.totpLastUsedStep = Math.floor(BASE_NOW / 1000 / 30) + 5;
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: await code(secret) }).expect(401);
+      await post('login/mfa').send({ pendingToken: await pendingToken(), code: recovery[0] }).expect(200);
+    });
+  });
+
   describe('C. Cache-Control: no-store', () => {
     it.each([
       ['login', { email: EMAIL, password: PASSWORD }],
       ['login/mfa', { pendingToken: 'x', code: '000000' }],
       ['refresh', undefined],
       ['mfa/setup', undefined],
-      ['mfa/confirm', { code: '000000' }],
+      ['mfa/confirm', { password: PASSWORD, code: '000000' }],
       ['mfa/disable', { password: PASSWORD, code: '000000' }],
     ])('%s responde con no-store (también en error)', async (path, body) => {
       await seedUser();
