@@ -192,6 +192,7 @@ jobs:
       # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR
       # se fusione, se ejecuta solo, sin tocar este workflow. Va después del smoke porque deja
       # la cuenta demo en espera ~1 min y la restaura (sin MFA) al terminar.
+      # TODO: cuando el script esté en main, quitar la condición para que su ausencia falle el job.
       - name: Verify MFA attempt limit under concurrency (real PostgreSQL)
         shell: bash
         run: |
