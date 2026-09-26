@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
@@ -167,21 +168,41 @@ export class PortalService {
    * actúa manualmente con la acción de bloqueo ya existente.
    */
   async requestDeletion(portal: any, reason?: string) {
-    // Auditoría y aviso al profesional en la misma transacción: o quedan los dos o ninguno.
+    // El motivo es texto libre del paciente y puede contener datos de salud: NO se persiste en
+    // claro (ni en la auditoría ni en la notificación). Solo se registra si se indicó.
+    const hasReason = Boolean(reason?.trim());
+    const requestId = randomUUID();
+    // Auditoría y avisos en la misma transacción: o quedan todos o ninguno.
     await this.prisma.$transaction(async (tx: any) => {
-      await tx.auditLog.create({ data:{ workspaceId:portal.workspaceId, actorId:null, action:'PORTAL_DELETION_REQUESTED', entityType:'Patient', entityId:portal.patientId, metadata:{ accessorType:portal.accessorType, reason: reason || null } } });
+      await tx.auditLog.create({ data:{ workspaceId:portal.workspaceId, actorId:null, action:'PORTAL_DELETION_REQUESTED', entityType:'Patient', entityId:portal.patientId, metadata:{ accessorType:portal.accessorType, hasReason } } });
 
-      await tx.notification.create({ data: {
-        workspaceId: portal.workspaceId,
-        audience: 'PROFESSIONAL',
-        patientId: portal.patientId,
-        type: 'SYSTEM',
-        title: 'Solicitud de baja de datos',
-        body: `El paciente (o su tutor) ha solicitado la baja/borrado de sus datos.${reason ? ' Motivo: ' + reason : ''}`,
-        status: 'PENDING',
-        scheduledAt: new Date(),
-        dedupeKey: `deletion-request:${portal.patientId}:${Date.now()}`,
-      }});
+      // Destinatarios: OWNER/ADMIN del workspace + terapeutas con proceso ACTIVO del paciente.
+      // listProfessional filtra por userId, así que cada aviso va dirigido a un usuario concreto.
+      const [managers, processes] = await Promise.all([
+        tx.workspaceMember.findMany({ where:{ workspaceId:portal.workspaceId, role:{ in:['OWNER','ADMIN'] } }, select:{ userId:true } }),
+        tx.clinicalProcess.findMany({ where:{ workspaceId:portal.workspaceId, patientId:portal.patientId, status:'ACTIVE' }, select:{ therapistId:true } }),
+      ]);
+      const recipients = [...new Set<string>([
+        ...managers.map((m: any) => m.userId),
+        ...processes.map((p: any) => p.therapistId),
+      ].filter(Boolean))];
+      const now = new Date();
+      for (const userId of recipients) {
+        await tx.notification.create({ data: {
+          workspaceId: portal.workspaceId,
+          audience: 'PROFESSIONAL',
+          userId,
+          patientId: portal.patientId,
+          type: 'SYSTEM',
+          title: 'Solicitud de baja de datos',
+          body: 'El paciente (o su tutor) ha solicitado la baja/borrado de sus datos. Revisa la solicitud en la ficha del paciente.',
+          actionUrl: `/patients/${portal.patientId}`,
+          status: 'SENT',
+          scheduledAt: now,
+          sentAt: now,
+          dedupeKey: `deletion-request:${requestId}:${userId}`,
+        }});
+      }
     });
 
     return { ok: true };
