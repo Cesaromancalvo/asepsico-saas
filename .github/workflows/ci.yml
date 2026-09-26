@@ -120,6 +120,36 @@ jobs:
       - name: Apply migrations to real PostgreSQL (db:migrate)
         run: npm run db:migrate:ci
 
+      # Detecta drift entre lo que dejan las migraciones y lo que declara schema.prisma.
+      # `migrate deploy` solo comprueba que las migraciones se aplican, no que el resultado
+      # coincida con el schema: así sobrevivió el índice único PatientPortalAccount_patientId_key.
+      # Como la BD del job está recién migrada desde cero, comparar BD vs schema equivale a
+      # comparar migraciones vs schema (sin necesidad de shadow database).
+      # Códigos de `migrate diff --exit-code`: 0 = sin diferencias, 2 = hay drift, 1 = error.
+      - name: Check migrations match schema.prisma (prisma migrate diff)
+        working-directory: apps/api
+        shell: bash
+        run: |
+          set +e
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code --script > "$RUNNER_TEMP/schema-drift.sql"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "OK: las migraciones producen exactamente el esquema de schema.prisma."
+            exit 0
+          fi
+          if [ "$status" -eq 2 ]; then
+            echo "::error title=Drift entre migraciones y schema.prisma::La BD migrada no coincide con schema.prisma. Crea una migración nueva (nunca edites una ya aplicada). SQL necesario para igualarlas:"
+            cat "$RUNNER_TEMP/schema-drift.sql"
+            exit 1
+          fi
+          echo "::error title=prisma migrate diff falló::Error ejecutando prisma migrate diff (código $status)."
+          cat "$RUNNER_TEMP/schema-drift.sql"
+          exit 1
+
       - name: Seed smoke-test account
         run: npm run db:seed
 

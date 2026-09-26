@@ -28,8 +28,13 @@ type FakePatient = {
  * MISMO mock y, si el callback lanza, restaura la instantánea previa (simula el ROLLBACK).
  * Así se puede comprobar que un fallo de auditoría no deja el cambio de estado confirmado.
  */
-function prismaMock(seed: FakePatient[]) {
+type FakePortalAccount = { id: string; workspaceId: string; patientId: string; accessorType: string; isActive: boolean };
+
+function prismaMock(seed: FakePatient[], portalSeed: FakePortalAccount[] = []) {
   let store: FakePatient[] = seed.map((p) => ({ ...p }));
+  let accounts: FakePortalAccount[] = portalSeed.map((a) => ({ ...a }));
+  const matchesAccount = (a: any, where: any) => Object.entries(where).every(([k, v]: any) =>
+    v && typeof v === 'object' && 'in' in v ? v.in.includes(a[k]) : a[k] === v);
 
   // Soporta igualdad, { not } y { notIn } en status, y igualdad (incluido null) en blockedAt.
   const matchesStatus = (status: string, filter: any) => {
@@ -74,6 +79,14 @@ function prismaMock(seed: FakePatient[]) {
         throw new Error('patient.update no debe usarse: las escrituras deben filtrar por workspaceId');
       }),
     },
+    patientPortalAccount: {
+      findMany: jest.fn(async ({ where }: any) => accounts.filter((a) => matchesAccount(a, where)).map((a) => ({ id: a.id }))),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        accounts = accounts.map((a) => (matchesAccount(a, where) ? (count++, { ...a, ...data }) : a));
+        return { count };
+      }),
+    },
     auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })) },
     // Gancho para simular otra petición concurrente que cambia el estado justo antes de escribir.
     __beforeTx: null as null | ((patch: (id: string, data: Partial<FakePatient>) => void) => void),
@@ -84,14 +97,17 @@ function prismaMock(seed: FakePatient[]) {
         });
       }
       const snapshot = store.map((p) => ({ ...p }));
+      const accountsSnapshot = accounts.map((a) => ({ ...a }));
       try {
         return await cb(prisma);
       } catch (error) {
         store = snapshot;
+        accounts = accountsSnapshot;
         throw error;
       }
     }),
     __status: (id: string) => store.find((p) => p.id === id)?.status,
+    __accounts: () => accounts.map((a) => ({ ...a })),
   };
   return prisma;
 }
@@ -363,5 +379,55 @@ describe('PatientLifecycleService — aislamiento, roles y auditoría transaccio
     await expect(core.update('ws-1', owner as any, 'patient-ws2', { firstName: 'Otro' } as any))
       .rejects.toBeInstanceOf(NotFoundException);
     expectNoWrites(prisma);
+  });
+});
+
+// H2 (art. 32 LOPDGDD): bloquear o archivar cierra el portal del paciente en la misma transacción.
+describe('PatientLifecycleService — block()/archive() revocan el portal del paciente', () => {
+  const portalAccounts = (): FakePortalAccount[] => [
+    { id: 'pa-pat', workspaceId: 'ws-1', patientId: 'patient-1', accessorType: 'PATIENT', isActive: true },
+    { id: 'pa-tut', workspaceId: 'ws-1', patientId: 'patient-1', accessorType: 'GUARDIAN', isActive: true },
+    { id: 'pa-old', workspaceId: 'ws-1', patientId: 'patient-1', accessorType: 'GUARDIAN', isActive: false },
+    { id: 'pa-otro', workspaceId: 'ws-1', patientId: 'patient-2', accessorType: 'PATIENT', isActive: true },
+    { id: 'pa-ws2', workspaceId: 'ws-2', patientId: 'patient-1', accessorType: 'PATIENT', isActive: true },
+  ];
+  const run: Record<string, (s: PatientsService) => Promise<unknown>> = {
+    block: (s) => s.block('ws-1', owner as any, 'patient-1'),
+    archive: (s) => s.archive('ws-1', owner as any, 'patient-1'),
+  };
+  const action: Record<string, string> = { block: 'PATIENT_BLOCKED', archive: 'PATIENT_ARCHIVED' };
+
+  it.each(['block', 'archive'])('%s() desactiva todas las cuentas activas del paciente y audita sus ids', async (op) => {
+    const prisma = prismaMock([patient()], portalAccounts());
+    await run[op](new PatientsService(prisma));
+    const byId = Object.fromEntries(prisma.__accounts().map((a: any) => [a.id, a.isActive]));
+    expect(byId).toEqual({ 'pa-pat': false, 'pa-tut': false, 'pa-old': false, 'pa-otro': true, 'pa-ws2': true });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      workspaceId: 'ws-1', action: action[op], entityId: 'patient-1',
+      metadata: expect.objectContaining({ revokedPortalAccountIds: ['pa-pat', 'pa-tut'] }),
+    }) });
+    expect(prisma.patientPortalAccount.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ workspaceId: 'ws-1', patientId: 'patient-1', isActive: true }),
+      data: { isActive: false },
+    }));
+  });
+
+  it.each(['block', 'archive'])('%s(): si la auditoría falla, ni el estado ni la revocación se confirman', async (op) => {
+    const prisma = prismaMock([patient()], portalAccounts());
+    prisma.auditLog.create.mockRejectedValueOnce(new Error('fallo de auditoría simulado'));
+    await expect(run[op](new PatientsService(prisma))).rejects.toThrow('fallo de auditoría simulado');
+    expect(prisma.__status('patient-1')).toBe('ACTIVE');
+    expect(prisma.__accounts().filter((a: any) => a.isActive).map((a: any) => a.id)).toEqual(['pa-pat', 'pa-tut', 'pa-otro', 'pa-ws2']);
+  });
+
+  it('restore() no reactiva las cuentas de portal revocadas al archivar', async () => {
+    const prisma = prismaMock([patient()], portalAccounts());
+    const service = new PatientsService(prisma);
+    await service.archive('ws-1', owner as any, 'patient-1');
+    await service.restore('ws-1', owner as any, 'patient-1');
+    expect(prisma.__status('patient-1')).toBe('ACTIVE');
+    const own = prisma.__accounts().filter((a: any) => a.patientId === 'patient-1' && a.workspaceId === 'ws-1');
+    expect(own.every((a: any) => a.isActive === false)).toBe(true);
+    expect(prisma.patientPortalAccount.updateMany).toHaveBeenCalledTimes(1);
   });
 });

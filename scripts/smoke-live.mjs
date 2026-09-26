@@ -36,6 +36,7 @@
 //
 // El script nunca imprime secretos TOTP, códigos, códigos de recuperación ni tokens.
 // La sesión viaja en cookies httpOnly y las escrituras llevan la cabecera CSRF.
+import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const API = process.env.ASEPSICO_API_URL || 'http://localhost:4000/api/v1';
@@ -118,15 +119,47 @@ async function revertEnrollment() {
 
 async function main() {
   const stamp = Date.now();
-  console.log('1/9 Login'); await login();
-  console.log('2/9 Crear paciente'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000' } }); assert(patient.id, 'No se devolvió patient.id');
-  console.log('3/9 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
-  console.log('4/9 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
-  console.log('5/9 Guardar escala'); const assessment = await req(`/patients/${patient.id}/assessments`, { method: 'POST', body: { scaleCode: 'PHQ9', answers: [0, 0, 0, 0, 0, 0, 0, 0, 0] } }); const assessments = await req(`/patients/${patient.id}/assessments`); assert(assessments.some(x => x.id === assessment.id), 'La escala no persistió');
-  console.log('6/9 Guardar documento, consentimiento e informe'); await req(`/patients/${patient.id}/documents`, { method: 'POST', body: { title: 'Documento smoke', type: 'ADMINISTRATIVE', fileName: 'smoke.pdf', mimeType: 'application/pdf', storageKey: `smoke/${stamp}` } }); await req(`/patients/${patient.id}/consents`, { method: 'POST', body: { title: 'Consentimiento smoke', type: 'DATA_PROCESSING', status: 'PENDING' } }); await req(`/patients/${patient.id}/reports`, { method: 'POST', body: { title: 'Informe smoke', type: 'EVOLUTION', status: 'DRAFT', content: 'Contenido de comprobación automática.' } }); assert((await req(`/patients/${patient.id}/documents`)).length > 0, 'Documento no persistió'); assert((await req(`/patients/${patient.id}/consents`)).length > 0, 'Consentimiento no persistió'); assert((await req(`/patients/${patient.id}/reports`)).length > 0, 'Informe no persistió');
-  console.log('7/9 Guardar preferencias'); await req('/notifications/preferences', { method: 'PATCH', body: { appointmentReminders: true, taskReminders: true, consentReminders: false, invoiceReminders: true, emailEnabled: false, smsEnabled: false, reminderHoursBefore: 24 } }); const pref = await req('/notifications/preferences'); assert(pref.reminderHoursBefore === 24, 'Preferencias no persistieron');
-  console.log('8/9 Comprobar timeline'); const timeline = await req(`/patients/${patient.id}/timeline`); assert(Array.isArray(timeline), 'Timeline no disponible');
-  console.log('9/9 Archivar paciente de prueba'); await req(`/patients/${patient.id}`, { method: 'DELETE' });
+  console.log('1/10 Login'); await login();
+  console.log('2/10 Crear paciente'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000' } }); assert(patient.id, 'No se devolvió patient.id');
+  console.log('3/10 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
+  console.log('4/10 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
+  console.log('5/10 Guardar escala'); const assessment = await req(`/patients/${patient.id}/assessments`, { method: 'POST', body: { scaleCode: 'PHQ9', answers: [0, 0, 0, 0, 0, 0, 0, 0, 0] } }); const assessments = await req(`/patients/${patient.id}/assessments`); assert(assessments.some(x => x.id === assessment.id), 'La escala no persistió');
+  console.log('6/10 Guardar documento, consentimiento e informe'); await req(`/patients/${patient.id}/documents`, { method: 'POST', body: { title: 'Documento smoke', type: 'ADMINISTRATIVE', fileName: 'smoke.pdf', mimeType: 'application/pdf', storageKey: `smoke/${stamp}` } }); await req(`/patients/${patient.id}/consents`, { method: 'POST', body: { title: 'Consentimiento smoke', type: 'DATA_PROCESSING', status: 'PENDING' } }); await req(`/patients/${patient.id}/reports`, { method: 'POST', body: { title: 'Informe smoke', type: 'EVOLUTION', status: 'DRAFT', content: 'Contenido de comprobación automática.' } }); assert((await req(`/patients/${patient.id}/documents`)).length > 0, 'Documento no persistió'); assert((await req(`/patients/${patient.id}/consents`)).length > 0, 'Consentimiento no persistió'); assert((await req(`/patients/${patient.id}/reports`)).length > 0, 'Informe no persistió');
+  console.log('7/10 Guardar preferencias'); await req('/notifications/preferences', { method: 'PATCH', body: { appointmentReminders: true, taskReminders: true, consentReminders: false, invoiceReminders: true, emailEnabled: false, smsEnabled: false, reminderHoursBefore: 24 } }); const pref = await req('/notifications/preferences'); assert(pref.reminderHoursBefore === 24, 'Preferencias no persistieron');
+  console.log('8/10 Comprobar timeline'); const timeline = await req(`/patients/${patient.id}/timeline`); assert(Array.isArray(timeline), 'Timeline no disponible');
+  // Portal: un mismo paciente admite cuenta propia y de tutor (regresión del índice único
+  // PatientPortalAccount_patientId_key, migración 20260925000000) y el cambio de modo revoca las
+  // cuentas incompatibles. Contraseña aleatoria por ejecución (repo público), que cumple la política
+  // del DTO (mayúscula, minúscula y número). Pase lo que pase, el finally desactiva las cuentas y
+  // archiva el paciente: el smoke no deja accesos vivos.
+  const portalPassword = 'Aa1' + randomBytes(18).toString('base64url');
+  let cleanupError = null;
+  try {
+    console.log('9/10 Habilitar portal del paciente y de un tutor (modo SHARED, dos cuentas)');
+    await req(`/patients/${patient.id}`, { method: 'PATCH', body: { portalAccessMode: 'SHARED' } });
+    const ownAccount = await req(`/patients/${patient.id}/portal-account`, { method: 'POST', body: { email: `smoke-portal-${stamp}@example.test`, temporaryPassword: portalPassword, accessorType: 'PATIENT' } });
+    const guardianAccount = await req(`/patients/${patient.id}/portal-account`, { method: 'POST', body: { email: `smoke-tutor-${stamp}@example.test`, temporaryPassword: portalPassword, accessorType: 'GUARDIAN', guardianName: 'Tutor Ficticio', guardianRelationship: 'padre' } });
+    assert(ownAccount.id && guardianAccount.id && ownAccount.id !== guardianAccount.id, 'No se crearon dos cuentas de portal distintas');
+    const portalAccounts = await req(`/patients/${patient.id}/portal-accounts`);
+    assert(portalAccounts.length === 2, `Se esperaban 2 cuentas de portal y hay ${portalAccounts.length}`);
+    assert(portalAccounts.some(x => x.accessorType === 'PATIENT') && portalAccounts.some(x => x.accessorType === 'GUARDIAN'), 'Faltan la cuenta del paciente o la del tutor');
+
+    console.log('10/10 Pasar a PATIENT_ONLY (revoca al tutor), revocar portal y archivar paciente de prueba');
+    await req(`/patients/${patient.id}`, { method: 'PATCH', body: { portalAccessMode: 'PATIENT_ONLY' } });
+    const afterMode = await req(`/patients/${patient.id}/portal-accounts`);
+    assert(afterMode.find(x => x.accessorType === 'GUARDIAN')?.isActive === false && afterMode.find(x => x.accessorType === 'PATIENT')?.isActive === true, 'Pasar a PATIENT_ONLY no revocó solo la cuenta del tutor');
+  } finally {
+    // Limpieza también si algo falla a mitad. Un error aquí no tapa el original: se registra y,
+    // si los pasos fueron bien, se relanza después.
+    try { await req(`/patients/${patient.id}/portal-account`, { method: 'DELETE' }); } catch (error) { if (!/: 404 /.test(String(error.message))) cleanupError = error; }
+    try {
+      const left = await req(`/patients/${patient.id}/portal-accounts`);
+      if (left.some(x => x.isActive !== false)) cleanupError ??= new Error('Quedan cuentas de portal activas tras desactivarlas');
+    } catch (error) { cleanupError ??= error; }
+    try { await req(`/patients/${patient.id}`, { method: 'DELETE' }); } catch (error) { cleanupError ??= error; }
+    if (cleanupError) console.error(`   limpieza del portal: ${cleanupError.message}`);
+  }
+  if (cleanupError) throw cleanupError;
   console.log('OK: flujo crítico guardado y recargado correctamente.');
 }
 

@@ -22,8 +22,9 @@ type Stores = Record<string, Row[]>;
 function prismaMock(seed: Partial<Stores> = {}) {
   let stores: Stores = {
     patient: [
-      { id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE', deletedAt: null, firstName: 'Paciente', lastName: 'Ficticio' },
-      { id: 'patient-ws2', workspaceId: 'ws-2', status: 'ACTIVE', deletedAt: null, firstName: 'Otro', lastName: 'Ficticio' },
+      // portalAccessMode con el valor por defecto del esquema (PATIENT_ONLY).
+      { id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE', deletedAt: null, firstName: 'Paciente', lastName: 'Ficticio', portalAccessMode: 'PATIENT_ONLY' },
+      { id: 'patient-ws2', workspaceId: 'ws-2', status: 'ACTIVE', deletedAt: null, firstName: 'Otro', lastName: 'Ficticio', portalAccessMode: 'PATIENT_ONLY' },
     ],
     clinicalProcess: [{ id: 'proc-1', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1' }],
     therapeuticTaskTemplate: [], therapeuticTask: [], therapyGoal: [], clinicalAssessment: [], clinicalHistory: [],
@@ -571,7 +572,8 @@ describe('Portal: lecturas y escrituras acotadas por workspace, auditoría trans
   });
 
   it('login actualiza los contadores de la cuenta acotando por su workspace, nunca solo por id', async () => {
-    const prisma = prismaMock({ patientPortalAccount: [account({ passwordHash: await bcrypt.hash('Correcta12345', 4) })] });
+    // El mock no resuelve include: se adjunta el paciente (activo) que login() comprueba.
+    const prisma = prismaMock({ patientPortalAccount: [account({ passwordHash: await bcrypt.hash('Correcta12345', 4), patient: { id: 'patient-1', status: 'ACTIVE' } })] });
     const service = new PortalService(prisma, jwt);
     await expect(service.login({ email: 'paciente@example.com', password: 'Erronea12345' })).rejects.toBeDefined();
     await service.login({ email: 'paciente@example.com', password: 'Correcta12345' });

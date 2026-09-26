@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
+import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from './portal-access-mode.util';
 
 @Injectable()
 export class PortalService {
@@ -30,15 +31,39 @@ export class PortalService {
     this.assertStaff(actor);
     const patient = await this.prisma.patient.findFirst({ where: { id: patientId, workspaceId, deletedAt: null } });
     if (!patient) throw new NotFoundException('Paciente no encontrado');
-    const passwordHash = await bcrypt.hash(dto.temporaryPassword, 12);
     const email = dto.email.toLowerCase().trim();
     const accessorType = dto.accessorType ?? 'PATIENT';
 
-    const existing = await (this.prisma as any).patientPortalAccount.findUnique({ where: { email } });
-    if (existing && (existing.patientId !== patientId || existing.workspaceId !== workspaceId)) {
-      throw new BadRequestException('Ese correo ya está en uso por la cuenta de portal de otro paciente');
+    // Paciente bloqueado (art. 32 LOPDGDD) o archivado: no se habilita portal. El compare-and-set
+    // de la transacción lo vuelve a exigir por si el estado cambia entretanto.
+    if (!isPatientPortalOpen(patient.status)) {
+      throw new BadRequestException('No se puede habilitar el portal de un paciente archivado o con los datos bloqueados');
     }
 
+    // El modo de acceso lo decide el profesional (p. ej. un menor con PATIENT_ONLY no puede
+    // tener cuenta de tutor). Se comprueba antes de tocar ninguna cuenta.
+    if (!isAccessorAllowed((patient as any).portalAccessMode, accessorType)) {
+      await this.auditEnableRejected(workspaceId, actor, patientId, accessorType, 'ACCESS_MODE_NOT_ALLOWED', (patient as any).portalAccessMode);
+      throw new BadRequestException(
+        accessorType === 'GUARDIAN'
+          ? 'El modo de acceso al portal de este paciente no admite cuentas de tutor'
+          : 'El modo de acceso al portal de este paciente no admite cuenta del propio paciente',
+      );
+    }
+
+    const existing = await (this.prisma as any).patientPortalAccount.findUnique({ where: { email } });
+    if (existing && (existing.patientId !== patientId || existing.workspaceId !== workspaceId)) {
+      // Mensaje genérico: no revela que el correo pertenece a otro paciente ni a otra consulta.
+      throw new BadRequestException('Ese correo no puede usarse para esta cuenta de portal; indica otro correo');
+    }
+    // Reactivar un correo no puede cambiar quién es la cuenta (paciente ↔ tutor): eso
+    // convertiría una cuenta revocada por el modo de acceso en otra de distinto tipo.
+    if (existing && existing.accessorType !== accessorType) {
+      await this.auditEnableRejected(workspaceId, actor, patientId, accessorType, 'ACCESSOR_TYPE_MISMATCH', (patient as any).portalAccessMode);
+      throw new BadRequestException('Ese correo ya pertenece a una cuenta de portal de otro tipo (paciente/tutor); usa otro correo');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.temporaryPassword, 12);
     const accountData = {
       passwordHash,
       isActive: true,
@@ -52,6 +77,18 @@ export class PortalService {
 
     const select = { id:true, patientId:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, mustChangePassword:true, createdAt:true, updatedAt:true };
     return this.prisma.$transaction(async (tx: any) => {
+      // Compare-and-set sobre el paciente: el modo leído arriba debe seguir admitiendo este tipo
+      // de cuenta al escribir. El UPDATE además bloquea la fila hasta el commit, así que un cambio
+      // de portalAccessMode concurrente (que escribe esa misma fila) o ya se ve aquí (count 0 →
+      // 409) o espera y después revoca la cuenta recién creada.
+      const { count: modeStillAllows } = await tx.patient.updateMany({
+        where: { id: patientId, workspaceId, deletedAt: null, status: { notIn: [...PORTAL_CLOSED_PATIENT_STATUSES] }, portalAccessMode: { in: accessModesAllowing(accessorType) } },
+        data: { updatedAt: new Date() },
+      });
+      if (!modeStillAllows) {
+        throw new ConflictException('El modo de acceso al portal del paciente ha cambiado; recarga y vuelve a intentarlo');
+      }
+
       let account: any;
       if (existing) {
         // Reactivación: acotada al workspace y al paciente, nunca solo por id.
@@ -65,6 +102,11 @@ export class PortalService {
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action:'PORTAL_ACCOUNT_ENABLED', entityType:'PatientPortalAccount', entityId:account.id, metadata:{ patientId, accessorType } } });
       return account;
     });
+  }
+
+  // Sin emails ni nombres de tutor en la metadata: solo ids, tipo de cuenta, modo y motivo.
+  private async auditEnableRejected(workspaceId: string, actor: any, patientId: string, accessorType: string, reason: string, portalAccessMode: string) {
+    await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action:'PORTAL_ACCOUNT_ENABLE_REJECTED', entityType:'Patient', entityId:patientId, metadata:{ patientId, accessorType, portalAccessMode, reason } } });
   }
 
   async disable(workspaceId: string, actor: any, patientId: string) {
@@ -81,6 +123,12 @@ export class PortalService {
     const email = dto.email.toLowerCase().trim();
     const account = await (this.prisma as any).patientPortalAccount.findFirst({ where:{ email, isActive:true }, include:{ patient:{ select:{ id:true, firstName:true, lastName:true, status:true } } } });
     if (!account) throw new UnauthorizedException('Credenciales incorrectas');
+    // Paciente bloqueado (art. 32 LOPDGDD) o archivado: sin acceso, con el mismo mensaje genérico
+    // que unas credenciales incorrectas (no se revela el estado del paciente). El PortalGuard
+    // repite la comprobación (y la de deletedAt) en cada petición.
+    if (!account.patient || !isPatientPortalOpen(account.patient.status)) {
+      throw new UnauthorizedException('Credenciales incorrectas');
+    }
     if (account.lockedUntil && account.lockedUntil > new Date()) throw new UnauthorizedException('Cuenta temporalmente bloqueada');
     const valid = await bcrypt.compare(dto.password, account.passwordHash);
     // Escrituras acotadas al workspace de la propia cuenta (nunca solo por id).

@@ -6,6 +6,7 @@ import { AssignableStatus } from './dto/change-status.dto';
 import { PatientCoreService } from './patient-core.service';
 import { decryptPatient } from './patient-crypto.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
+import { revokeAllPortalAccounts } from '../portal/portal-access-mode.util';
 
 const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   ACTIVE: ['PAUSED', 'DISCHARGED'],
@@ -106,6 +107,10 @@ export class PatientLifecycleService {
         { status: 'ARCHIVED', deletedAt: new Date() },
       );
 
+      // Un paciente archivado no conserva acceso al portal. restore() NO las reactiva: el
+      // profesional debe volver a habilitarlas a mano.
+      const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
+
       await tx.auditLog.create({
         data: {
           workspaceId,
@@ -113,6 +118,7 @@ export class PatientLifecycleService {
           action: 'PATIENT_ARCHIVED',
           entityType: 'Patient',
           entityId: id,
+          metadata: { revokedPortalAccountIds },
         },
       });
 
@@ -200,6 +206,9 @@ export class PatientLifecycleService {
         retentionUntil,
       });
 
+      // Datos bloqueados (art. 32 LOPDGDD): fuera de todo uso operativo, portal incluido.
+      const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
+
       await tx.auditLog.create({
         data: {
           workspaceId,
@@ -207,7 +216,7 @@ export class PatientLifecycleService {
           action: 'PATIENT_BLOCKED',
           entityType: 'Patient',
           entityId: id,
-          metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString() },
+          metadata: { previousStatus: patient.status, retentionUntil: retentionUntil.toISOString(), revokedPortalAccountIds },
         },
       });
 
