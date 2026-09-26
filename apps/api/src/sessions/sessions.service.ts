@@ -367,23 +367,29 @@ export class SessionsService {
       );
     }
 
-    // session.notes ya viene descifrado (session = this.get(...) más arriba), así que si no
-    // hay dto.notes nuevo, hay que volver a cifrar el mismo texto antes de guardarlo — nunca
-    // se escribe en la base de datos sin pasar por encryptField().
-    const nextNotes = dto.notes ?? session.notes ?? undefined;
-
-    const updated =
-      await this.prisma.session.update({
+    // Las notas SOLO se escriben si llegan en el dto. Antes se re-cifraba session.notes (ya
+    // descifrado por get()): si el descifrado había fallado, se persistía el marcador
+    // "[No se pudo descifrar…]" encima del original y el dato se perdía para siempre.
+    // updateMany con workspaceId: la escritura también queda acotada al workspace.
+    const { count } =
+      await this.prisma.session.updateMany({
         where: {
           id,
+          workspaceId,
         },
 
         data: {
           startsAt,
           endsAt,
-          notes: encryptField(nextNotes),
+          ...(dto.notes !== undefined
+            ? { notes: encryptField(dto.notes) }
+            : {}),
         },
       });
+
+    if (count === 0) {
+      throw new NotFoundException('Sesión no encontrada');
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -412,7 +418,7 @@ export class SessionsService {
     return this.get(
       workspaceId,
       actor,
-      updated.id,
+      id,
     );
   }
   async updateNotes(

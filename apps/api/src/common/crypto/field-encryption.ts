@@ -1,3 +1,4 @@
+import { UnprocessableEntityException } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
 /**
@@ -123,8 +124,20 @@ function open(key: Buffer, ivB64: string, authTagB64: string, ciphertextB64: str
   return Buffer.concat([decipher.update(Buffer.from(ciphertextB64, 'base64')), decipher.final()]).toString('utf8');
 }
 
+/**
+ * Se lanza si alguien intenta guardar el marcador de "no se pudo descifrar": significaría
+ * persistir el marcador ENCIMA del dato original (que quizá solo es ilegible por una clave mal
+ * configurada) y perderlo para siempre. Es un 422 para la API; el script lo trata como error.
+ */
+export class DecryptionPlaceholderWriteError extends UnprocessableEntityException {
+  constructor() {
+    super('Este contenido no se pudo descifrar y no se puede guardar tal cual. Avisa al administrador antes de editarlo.');
+  }
+}
+
 export function encryptField(plaintext: string | null | undefined): string | null | undefined {
   if (plaintext === null || plaintext === undefined || plaintext === '') return plaintext;
+  if (plaintext.trim() === DECRYPTION_FAILED_PLACEHOLDER) throw new DecryptionPlaceholderWriteError();
   const keyring = getKeyring();
   if (keyring) return `${PREFIX_V2}${keyring.activeKid}:${seal(keyring.keys.get(keyring.activeKid)!, plaintext)}`;
   return `${PREFIX_V1}${seal(getLegacyKey(), plaintext)}`;
