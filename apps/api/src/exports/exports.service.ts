@@ -1,13 +1,16 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
+import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 const ADMIN_ROLES = ['OWNER', 'ADMIN'];
 
 @Injectable()
 export class ExportsService {
+  private readonly logger = new Logger(ExportsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private assertClinical(user: AuthUser) {
@@ -52,6 +55,20 @@ export class ExportsService {
     });
   }
 
+  /**
+   * Arts. 15/20 RGPD: la exportación debe entregar el contenido legible, nunca "enc:v1:…".
+   * 1) descifrado tipado por modelo (common/crypto/clinical-crypto.ts, la misma lista que usan
+   *    los servicios); 2) red de seguridad que descifra cualquier string cifrado que quede
+   *    (campo nuevo no añadido al registro) y registra SOLO la ruta, nunca el valor.
+   */
+  private decryptForExport<T>(payload: T, exportType: string): T {
+    const { value, leakedPaths } = decryptDeep(payload);
+    if (leakedPaths.length) {
+      this.logger.warn(`${exportType}: campos cifrados fuera del registro de clinical-crypto.ts: ${leakedPaths.slice(0, 20).join(', ')}`);
+    }
+    return value;
+  }
+
   async exportPatient(user: AuthUser, patientId: string, password: string) {
     this.assertClinical(user);
     await this.assertPasswordConfirmed(user, password);
@@ -82,7 +99,7 @@ export class ExportsService {
       exportType: 'PATIENT_CLINICAL_RECORD',
       generatedAt,
       workspaceId: user.workspaceId,
-      patient,
+      patient: this.decryptForExport(decryptPatientRecord(patient), 'PATIENT_CLINICAL_RECORD'),
       notice: 'Exportación clínica confidencial. Debe almacenarse y transmitirse de forma segura.',
     };
   }
@@ -112,10 +129,12 @@ export class ExportsService {
     return {
       schemaVersion: '1.0', exportType: 'WORKSPACE_ADMIN_EXPORT', generatedAt,
       workspace: { id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt },
-      members: workspace.members,
-      patients: workspace.patients,
+      // Hoy no incluye campos cifrados (solo datos administrativos), pero pasa por la misma red
+      // de seguridad por si en el futuro se añade alguno.
+      members: this.decryptForExport(workspace.members, 'WORKSPACE_ADMIN_EXPORT'),
+      patients: this.decryptForExport(workspace.patients, 'WORKSPACE_ADMIN_EXPORT'),
       inventory: { sessions, invoices, resources, conversations },
-      recentAuditLogs: auditLogs,
+      recentAuditLogs: this.decryptForExport(auditLogs, 'WORKSPACE_ADMIN_EXPORT'),
       notice: 'Esta exportación administrativa no sustituye a una copia de seguridad de PostgreSQL.',
     };
   }
