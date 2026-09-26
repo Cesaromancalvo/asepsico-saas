@@ -85,7 +85,9 @@ export class AuthService {
     }
 
     const workspaceId = user.memberships[0].workspaceId;
-    await this.mfa.verifyLoginSecondFactor(user, code, { userId: user.id, workspaceId }, meta, payload.fa);
+    // El usuario se relee dentro de la sección exclusiva de MfaService (espera y contador
+    // frescos); aquí solo se usa para la membresía y para emitir la sesión.
+    await this.mfa.verifyLoginSecondFactor({ userId: user.id, workspaceId }, code, meta, payload.fa);
 
     return this.issueSession(user, workspaceId, user.memberships[0].role, meta);
   }
