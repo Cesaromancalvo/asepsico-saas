@@ -1,45 +1,87 @@
 'use client';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { api } from '@/lib/api';
+import { api, ApiError, refreshSession } from '@/lib/api';
 
 type SetupResponse = { qrCodeDataUrl: string; secret: string };
 type ConfirmResponse = { recoveryCodes: string[] };
+
+function messageOf(err: unknown, fallback: string) {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+/** Vacía un campo del formulario (contraseñas y códigos no se quedan escritos tras enviar). */
+function clearField(form: HTMLFormElement, name: string) {
+  const field = form.elements.namedItem(name);
+  if (field instanceof HTMLInputElement) field.value = '';
+}
 
 export default function SecurityPage() {
   const [setup, setSetup] = useState<SetupResponse | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [error, setError] = useState('');
+  const [confirmError, setConfirmError] = useState('');
   const [disableError, setDisableError] = useState('');
+  const [disableNotice, setDisableNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmCodeRef = useRef<HTMLInputElement>(null);
 
   async function startSetup() {
     setError('');
+    setConfirmError('');
     setBusy(true);
     try {
       const result = await api<SetupResponse>('/auth/mfa/setup', { method: 'POST' });
       setSetup(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo iniciar la configuración');
+      // 400 si ya está activa: la API explica que hay que desactivarla primero.
+      setError(messageOf(err, 'No se pudo iniciar la configuración'));
     } finally {
       setBusy(false);
     }
   }
 
+  function cancelSetup() {
+    setSetup(null);
+    setConfirmError('');
+  }
+
   async function confirmSetup(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError('');
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    const password = data.get('password');
+    const code = data.get('code');
+    clearField(form, 'password');
+    setConfirmError('');
     setBusy(true);
-    const data = new FormData(e.currentTarget);
     try {
       const result = await api<ConfirmResponse>('/auth/mfa/confirm', {
         method: 'POST',
-        body: JSON.stringify({ code: data.get('code') }),
+        body: JSON.stringify({ password, code }),
       });
       setRecoveryCodes(result.recoveryCodes);
       setSetup(null);
+      // El access token lleva "mfaEnabled": se renueva para que el resto de la app se desbloquee ya.
+      await refreshSession();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'El código no es correcto');
+      const message = messageOf(err, 'No se pudo activar la verificación en dos pasos');
+      if (err instanceof ApiError && err.status === 400) {
+        // Ya está activa (o la configuración ya no es válida): se vuelve a la tarjeta inicial con el aviso.
+        setSetup(null);
+        setError(message);
+        return;
+      }
+      setConfirmError(message);
+      if (err instanceof ApiError && err.status === 401) {
+        if (message === 'Contraseña incorrecta') {
+          confirmPasswordRef.current?.focus();
+        } else {
+          clearField(form, 'code');
+          confirmCodeRef.current?.focus();
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -47,18 +89,25 @@ export default function SecurityPage() {
 
   async function disableMfa(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    const password = data.get('password');
+    const code = data.get('code');
+    clearField(form, 'password');
     setDisableError('');
+    setDisableNotice('');
     setBusy(true);
-    const data = new FormData(e.currentTarget);
     try {
       await api('/auth/mfa/disable', {
         method: 'POST',
-        body: JSON.stringify({ password: data.get('password'), code: data.get('code') }),
+        body: JSON.stringify({ password, code }),
       });
-      e.currentTarget.reset();
-      window.alert('Verificación en dos pasos desactivada.');
+      form.reset();
+      setDisableNotice('Verificación en dos pasos desactivada.');
+      await refreshSession();
     } catch (err) {
-      setDisableError(err instanceof Error ? err.message : 'No se pudo desactivar');
+      // 401 (contraseña o código), 429 (espera por intentos fallidos) o 400: el texto de la API tal cual.
+      setDisableError(messageOf(err, 'No se pudo desactivar'));
     } finally {
       setBusy(false);
     }
@@ -105,11 +154,37 @@ export default function SecurityPage() {
             <form onSubmit={confirmSetup}>
               <label className="field">
                 Código de tu app
-                <input name="code" autoFocus inputMode="numeric" placeholder="123456" required minLength={6} maxLength={6} />
+                <input
+                  ref={confirmCodeRef}
+                  name="code"
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  required
+                  minLength={6}
+                  maxLength={6}
+                  pattern="[0-9]{6}"
+                  title="Los 6 dígitos que muestra tu app"
+                />
               </label>
-              {error && <p className="error">{error}</p>}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" className="button secondary" onClick={() => setSetup(null)}>Cancelar</button>
+              <label className="field">
+                Contraseña actual
+                <input
+                  ref={confirmPasswordRef}
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  aria-describedby="confirm-password-hint"
+                />
+                <span id="confirm-password-hint" className="muted">
+                  La pedimos para confirmar que eres tú quien activa la verificación.
+                </span>
+              </label>
+              {confirmError && <p className="error" role="alert">{confirmError}</p>}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" className="button secondary" onClick={cancelSetup}>Cancelar</button>
                 <button type="submit" className="button primary" disabled={busy}>{busy ? 'Comprobando…' : 'Confirmar y activar'}</button>
               </div>
             </form>
@@ -118,7 +193,7 @@ export default function SecurityPage() {
           <section className="patient-card">
             <h2>Activar verificación en dos pasos</h2>
             <p>Necesitarás una app de autenticación en tu móvil (Google Authenticator, Authy, etc.).</p>
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
             <button className="button primary" onClick={startSetup} disabled={busy}>
               {busy ? 'Generando…' : 'Empezar configuración'}
             </button>
@@ -129,9 +204,16 @@ export default function SecurityPage() {
           <h2>Desactivar verificación en dos pasos</h2>
           <p>Solo si ya la tienes activa. Necesitas tu contraseña y un código válido (o uno de recuperación).</p>
           <form onSubmit={disableMfa}>
-            <label className="field">Contraseña<input name="password" type="password" required /></label>
-            <label className="field">Código<input name="code" required minLength={6} maxLength={11} /></label>
-            {disableError && <p className="error">{disableError}</p>}
+            <label className="field">
+              Contraseña
+              <input name="password" type="password" autoComplete="current-password" required />
+            </label>
+            <label className="field">
+              Código
+              <input name="code" autoComplete="one-time-code" required minLength={6} maxLength={11} />
+            </label>
+            {disableError && <p className="error" role="alert">{disableError}</p>}
+            {disableNotice && <p role="status">{disableNotice}</p>}
             <button className="button secondary" type="submit" disabled={busy}>{busy ? 'Desactivando…' : 'Desactivar'}</button>
           </form>
         </section>

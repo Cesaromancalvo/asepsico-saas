@@ -20,6 +20,9 @@ const checks = [
   ['real HTTP smoke test', /npm run test:smoke/],
   ['smoke con MFA temporal (BD desechable)', /ASEPSICO_SMOKE_ENROLL_MFA:\s*'1'/],
   ['failure log artifact', /actions\/upload-artifact@v4/],
+  // La API de CI solo confía en loopback; nunca "true" (permitiría falsear la IP del throttle).
+  ['TRUST_PROXY de CI acotado a loopback', /TRUST_PROXY:\s*loopback/],
+  ['verificación de concurrencia MFA (condicionada a que exista el script)', /node scripts\/verify-mfa-concurrency\.mjs/],
 ];
 
 const failures = checks.filter(([, pattern]) => !pattern.test(workflow));
@@ -37,6 +40,16 @@ if (driftIndex < migrateIndex) {
 }
 if (!/"\$status" -eq 2 \][\s\S]*?exit 1/.test(workflow)) {
   throw new Error('El paso de drift debe hacer fallar el job cuando prisma migrate diff devuelve 2');
+}
+
+// La ráfaga MFA necesita la API levantada y deja la cuenta en espera: después del smoke.
+const smokeIndex = workflow.indexOf('npm run test:smoke');
+const mfaIndex = workflow.indexOf('node scripts/verify-mfa-concurrency.mjs');
+if (mfaIndex < smokeIndex) {
+  throw new Error('verify-mfa-concurrency debe ejecutarse después del smoke HTTP real');
+}
+if (/TRUST_PROXY:\s*['"]?true/i.test(workflow)) {
+  throw new Error('La CI no debe usar TRUST_PROXY=true');
 }
 
 const rootPackage = JSON.parse(readFileSync('package.json', 'utf8'));
