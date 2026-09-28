@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptAssessment, encryptAssessmentResult, encryptJsonField } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateClinicalAssessmentDto } from './dto/create-clinical-assessment.dto';
@@ -38,29 +39,12 @@ const CLINICAL_SCALES = {
   },
 } as const;
 
-// answers es un campo Json (array de números), no texto simple, así que se cifra distinto:
-// se serializa a JSON, se cifra ese string, y se guarda el string cifrado dentro de la
-// columna Json (una columna Json puede contener perfectamente un valor de tipo string).
-// Al leer, si el valor sigue siendo un array (dato de antes de activar el cifrado), se
-// devuelve tal cual sin intentar descifrarlo — igual que con los campos de texto.
+// answers (Json), interpretation y clinicalNotes se cifran en reposo; ver
+// common/crypto/clinical-crypto.ts (encryptJsonField / decryptAssessment).
+// totalScore, severity y riskFlag se guardan cifrados juntos en `result` (decisión del Jefe);
+// las columnas en claro son legado y ya no se escriben (quedan NULL).
 function encryptAnswers(answers: number[]): string {
-  return encryptField(JSON.stringify(answers))!;
-}
-function decryptAnswers(raw: unknown): number[] {
-  if (Array.isArray(raw)) return raw as number[];
-  if (typeof raw === 'string') {
-    try { return JSON.parse(decryptField(raw) ?? '[]'); } catch { return []; }
-  }
-  return [];
-}
-
-function decryptAssessment<T extends { answers: unknown; clinicalNotes?: string | null; interpretation: string }>(assessment: T): T {
-  return {
-    ...assessment,
-    answers: decryptAnswers(assessment.answers),
-    clinicalNotes: decryptField(assessment.clinicalNotes) ?? null,
-    interpretation: decryptField(assessment.interpretation) ?? '',
-  };
+  return encryptJsonField(answers);
 }
 
 @Injectable()
@@ -108,10 +92,8 @@ export class PatientAssessmentsService {
           scaleCode: scale.code,
           scaleName: scale.name,
           answers: encryptAnswers(dto.answers),
-          totalScore,
-          severity,
+          result: encryptAssessmentResult({ totalScore, severity, riskFlag }),
           interpretation: encryptField(interpretation)!,
-          riskFlag,
           clinicalNotes: encryptField(dto.clinicalNotes?.trim() || null),
           administeredAt: dto.administeredAt ? new Date(dto.administeredAt) : new Date(),
         },
@@ -119,11 +101,9 @@ export class PatientAssessmentsService {
       await tx.auditLog.create({ data: {
         workspaceId, actorId: actor.sub, action: 'CLINICAL_ASSESSMENT_CREATED',
         entityType: 'ClinicalAssessment', entityId: assessment.id,
-        // El audit log guarda severity/riskFlag/totalScore en claro a propósito: son
-        // metadatos operativos de bajo detalle (igual que ya se hacía antes de cifrar
-        // nada), no el contenido narrativo. No incluyen ni las respuestas ni la
-        // interpretación completa.
-        metadata: { patientId, scaleCode: scale.code, totalScore, severity, riskFlag },
+        // Sin puntuación, gravedad ni alerta de riesgo: ahora son contenido cifrado y el
+        // audit log (en claro) no debe copiarlos. Solo qué escala se pasó y a quién.
+        metadata: { patientId, scaleCode: scale.code },
       }});
       return decryptAssessment(assessment);
     });

@@ -2,7 +2,8 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { ClinicalProcessStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptProcess } from '../common/crypto/clinical-crypto';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
@@ -21,17 +22,8 @@ const ALLOWED_TRANSITIONS: Record<ClinicalProcessStatus, ClinicalProcessStatusVa
   CLOSED: [],
 };
 
-// Los tres campos de contenido clínico narrativo se cifran en reposo (ver
-// common/crypto/field-encryption.ts). Centralizado aquí para no repetir la lista de campos
-// en cada método y no olvidar ninguno al tocar esto en el futuro.
-function decryptProcess<T extends { consultationReason?: string | null; goals?: string | null; internalNotes?: string | null }>(process: T): T {
-  return {
-    ...process,
-    consultationReason: decryptField(process.consultationReason) ?? null,
-    goals: decryptField(process.goals) ?? null,
-    internalNotes: decryptField(process.internalNotes) ?? null,
-  };
-}
+// consultationReason, goals e internalNotes se cifran en reposo (lista única en
+// common/crypto/clinical-crypto.ts).
 
 @Injectable()
 export class ClinicalProcessesService {

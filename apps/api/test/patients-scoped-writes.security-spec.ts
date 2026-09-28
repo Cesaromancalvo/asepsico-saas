@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, HttpException, NotFoundExcepti
 import * as bcrypt from 'bcryptjs';
 import { PatientsService } from '../src/patients/patients.service';
 import { PortalService } from '../src/portal/portal.service';
+import { decryptField } from '../src/common/crypto/field-encryption';
 
 // Datos 100 % ficticios.
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER', email: 'o@example.com' } as any;
@@ -162,7 +163,7 @@ const cases: Case[] = [
     foreignId: 'task-ws2', moveAway: childMove,
     run: (s, id, actor = owner) => s.updateTherapeuticTask('ws-1', actor, 'patient-1', id, { title: 'Tarea editada' } as any),
     scope: childScope,
-    written: (rows) => rows.find((r) => r.id === 'task-1')?.title === 'Tarea editada',
+    written: (rows) => decryptField(rows.find((r) => r.id === 'task-1')?.title) === 'Tarea editada', // el título se guarda cifrado
   },
   {
     name: 'deleteTherapeuticTask', model: 'therapeuticTask', kind: 'delete', action: 'THERAPEUTIC_TASK_DRAFT_DELETED',
@@ -346,14 +347,17 @@ describe('Escrituras de patients/ acotadas por workspace y auditadas en la misma
       await new PatientsService(prisma).updateClinicalHistory('ws-1', owner, 'patient-1', { reasonForConsultation: 'Motivo revisado' } as any);
       expect(prisma.clinicalHistory.upsert).not.toHaveBeenCalled();
       expect(prisma.clinicalHistory.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'patient-1', patient: { workspaceId: 'ws-1' } } }));
-      expect(prisma.__rows('clinicalHistory')[0].reasonForConsultation).toBe('Motivo revisado');
+      // Se guarda cifrado (ver clinical-history-encryption.security-spec.ts) y se lee en claro.
+      expect(prisma.__rows('clinicalHistory')[0].reasonForConsultation).toMatch(/^enc:v[12]:/);
+      expect(decryptField(prisma.__rows('clinicalHistory')[0].reasonForConsultation)).toBe('Motivo revisado');
       expect(prisma.__rows('auditLog')).toEqual([expect.objectContaining({ action: 'CLINICAL_HISTORY_UPDATED', entityId: 'hist-1' })]);
     });
 
     it('crea la historia si no existe, auditando en la misma transacción', async () => {
       const prisma = prismaMock();
       const saved: any = await new PatientsService(prisma).updateClinicalHistory('ws-1', owner, 'patient-1', { reasonForConsultation: 'Motivo nuevo' } as any);
-      expect(prisma.__rows('clinicalHistory')).toEqual([expect.objectContaining({ patientId: 'patient-1', reasonForConsultation: 'Motivo nuevo' })]);
+      expect(prisma.__rows('clinicalHistory')).toEqual([expect.objectContaining({ patientId: 'patient-1', reasonForConsultation: expect.stringMatching(/^enc:v[12]:/) })]);
+      expect(saved.reasonForConsultation).toBe('Motivo nuevo');
       expect(prisma.__rows('auditLog')).toEqual([expect.objectContaining({ action: 'CLINICAL_HISTORY_UPDATED', entityId: saved.id })]);
     });
 
@@ -439,7 +443,7 @@ describe('Tareas: therapyGoalId y sessionId enlazados deben ser del mismo pacien
     await service.updateTherapeuticTask('ws-1', actor, 'patient-1', 'task-1', { therapyGoalId: 'goal-own', sessionId: 'ses-own' } as any);
     expect(prisma.__rows('therapeuticTask')).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'task-1', therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
-      expect.objectContaining({ title: 'Nueva', therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
+      expect.objectContaining({ title: expect.stringMatching(/^enc:v[12]:/), therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
     ]));
   });
 

@@ -6,6 +6,18 @@ import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { UpdateClinicalHistoryDto } from './dto/update-clinical-history.dto';
 import { CreateTherapyGoalDto } from './dto/create-therapy-goal.dto';
 import { UpdateTherapyGoalDto } from './dto/update-therapy-goal.dto';
+import { encryptField } from '../common/crypto/field-encryption';
+import {
+  CLINICAL_HISTORY_ENCRYPTED_FIELDS,
+  decryptClinicalHistory,
+  decryptTherapyGoal,
+  encryptModelData,
+} from '../common/crypto/clinical-crypto';
+
+// Los 10 campos narrativos de ClinicalHistory y TherapyGoal.title/description se cifran en
+// reposo (lista única en common/crypto/clinical-crypto.ts). Todo lo que sale de este servicio
+// pasa por decryptClinicalHistory / decryptTherapyGoal.
+export { CLINICAL_HISTORY_ENCRYPTED_FIELDS };
 
 @Injectable()
 export class PatientCareService {
@@ -14,13 +26,14 @@ export class PatientCareService {
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     const history = await this.prisma.clinicalHistory.findUnique({ where: { patientId } });
-    return history ?? { patientId, reasonForConsultation: null, currentProblem: null, personalHistory: null, familyHistory: null, medicalHistory: null, currentMedication: null, primaryDiagnosis: null, riskFactors: null, protectiveFactors: null, clinicalObservations: null, createdAt: null, updatedAt: null };
+    if (history) return decryptClinicalHistory(history);
+    return { patientId, reasonForConsultation: null, currentProblem: null, personalHistory: null, familyHistory: null, medicalHistory: null, currentMedication: null, primaryDiagnosis: null, riskFactors: null, protectiveFactors: null, clinicalObservations: null, createdAt: null, updatedAt: null };
   }
 
   async updateClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string, dto: UpdateClinicalHistoryDto) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
-    const clean = Object.fromEntries(Object.entries(dto).map(([k,v]) => [k, typeof v === 'string' ? v.trim() || null : v]));
+    const clean = encryptModelData('clinicalHistory', Object.fromEntries(Object.entries(dto).map(([k,v]) => [k, typeof v === 'string' ? v.trim() || null : v])));
     // ClinicalHistory no tiene workspaceId propio: el alcance va por la relación patient. No se
     // usa upsert porque solo admite el único { patientId } y la escritura quedaría sin workspace.
     const scope = patientChildScope(workspaceId, patientId);
@@ -34,23 +47,25 @@ export class PatientCareService {
       }
       const saved = await tx.clinicalHistory.findFirst({ where: scope });
       if (!saved) throw new NotFoundException('Paciente no encontrado');
+      // Solo nombres de campo en la auditoría, nunca contenido.
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_HISTORY_UPDATED', entityType: 'ClinicalHistory', entityId: saved.id, metadata: { patientId, updatedFields: Object.keys(dto) } } });
-      return saved;
+      return decryptClinicalHistory(saved);
     });
   }
 
   async getTherapyGoals(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    return this.prisma.therapyGoal.findMany({ where: { patientId }, orderBy: [{ status: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }] });
+    const goals = await this.prisma.therapyGoal.findMany({ where: { patientId }, orderBy: [{ status: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }] });
+    return goals.map(decryptTherapyGoal);
   }
 
   async createTherapyGoal(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateTherapyGoalDto) {
     const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
     return this.prisma.$transaction(async tx => {
-      const goal = await tx.therapyGoal.create({ data: { patientId, title: dto.title.trim(), description: dto.description?.trim() || null, targetDate: dto.targetDate ? new Date(dto.targetDate) : null, priority: dto.priority ?? 2 } });
+      const goal = await tx.therapyGoal.create({ data: { patientId, title: encryptField(dto.title.trim())!, description: encryptField(dto.description?.trim() || null), targetDate: dto.targetDate ? new Date(dto.targetDate) : null, priority: dto.priority ?? 2 } });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'THERAPY_GOAL_CREATED', entityType: 'TherapyGoal', entityId: goal.id, metadata: { patientId } } });
-      return goal;
+      return decryptTherapyGoal(goal);
     });
   }
 
@@ -61,8 +76,8 @@ export class PatientCareService {
     const existing = await this.prisma.therapyGoal.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Objetivo terapéutico no encontrado');
     const data: any = {};
-    if (dto.title !== undefined) data.title = dto.title.trim();
-    if (dto.description !== undefined) data.description = dto.description.trim() || null;
+    if (dto.title !== undefined) data.title = encryptField(dto.title.trim());
+    if (dto.description !== undefined) data.description = encryptField(dto.description.trim() || null);
     if (dto.targetDate !== undefined) data.targetDate = dto.targetDate ? new Date(dto.targetDate) : null;
     if (dto.priority !== undefined) data.priority = dto.priority;
     if (dto.status !== undefined) { data.status = dto.status; data.achievedAt = dto.status === 'ACHIEVED' ? new Date() : null; }
@@ -70,7 +85,8 @@ export class PatientCareService {
       const { count } = await tx.therapyGoal.updateMany({ where: scope, data });
       await assertScopedWrite(count, 'Objetivo terapéutico no encontrado');
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'THERAPY_GOAL_UPDATED', entityType: 'TherapyGoal', entityId: goalId, metadata: { patientId, updatedFields: Object.keys(dto) } } });
-      return tx.therapyGoal.findFirst({ where: scope });
+      const goal = await tx.therapyGoal.findFirst({ where: scope });
+      return goal && decryptTherapyGoal(goal);
     });
   }
 

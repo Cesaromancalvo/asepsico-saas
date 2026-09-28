@@ -1,7 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { decryptField, encryptField } from '../common/crypto/field-encryption';
+import { encryptField } from '../common/crypto/field-encryption';
+import { decryptMessage } from '../common/crypto/clinical-crypto';
 import { SendMessageDto, UpdateConversationDto } from './dto/message.dto';
 
 @Injectable()
@@ -42,11 +43,10 @@ export class MessagesService {
     };
   }
 
-  // El cuerpo del mensaje se cifra en reposo. Se centraliza aquí porque tanto list() (el
-  // último mensaje de cada conversación, para la vista previa) como thread()/portalThread()
-  // (el historial completo) necesitan el mismo descifrado.
-  private decryptMessage<T extends { body: string }>(message: T): T {
-    return { ...message, body: decryptField(message.body) ?? '' };
+  // body y attachmentName se cifran en reposo (lista única en common/crypto/clinical-crypto.ts).
+  // list() (vista previa), thread()/portalThread() y las respuestas de send() descifran igual.
+  private decryptMessage<T extends Record<string, any>>(message: T): T {
+    return decryptMessage(message);
   }
 
   async list(workspaceId: string, actor: AuthUser, q?: string) {
@@ -100,7 +100,7 @@ export class MessagesService {
     if (conversation.status !== 'OPEN') throw new BadRequestException('La conversación está cerrada');
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('El mensaje no puede estar vacío');
-    const message = await this.p().message.create({ data: { conversationId, senderType: 'PROFESSIONAL', senderUserId: actor.sub, body: encryptField(body), attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByProfessionalAt: new Date() } });
+    const message = await this.p().message.create({ data: { conversationId, senderType: 'PROFESSIONAL', senderUserId: actor.sub, body: encryptField(body)!, attachmentName: encryptField(dto.attachmentName), attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByProfessionalAt: new Date() } });
     await this.p().conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
     await this.p().notification.createMany({ data: [{ workspaceId, audience: 'PATIENT', patientId: conversation.patientId, type: 'SYSTEM', title: 'Nuevo mensaje', body: 'Tienes un nuevo mensaje de tu profesional.', actionUrl: '/portal', status: 'SENT', scheduledAt: new Date(), sentAt: new Date(), dedupeKey: `message:${message.id}:patient` }], skipDuplicates: true });
     await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'MESSAGE_SENT', entityType: 'Message', entityId: message.id, metadata: { conversationId, patientId: conversation.patientId, hasAttachment: Boolean(dto.attachmentKey) } } });
@@ -138,7 +138,7 @@ export class MessagesService {
     if (conversation.status !== 'OPEN' || !conversation.patientCanReply) throw new ForbiddenException('La mensajería está cerrada por tu profesional');
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('El mensaje no puede estar vacío');
-    const message = await this.p().message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body: encryptField(body), attachmentName: dto.attachmentName, attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByPatientAt: new Date() } });
+    const message = await this.p().message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body: encryptField(body)!, attachmentName: encryptField(dto.attachmentName), attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByPatientAt: new Date() } });
     await this.p().conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
     const processes = await this.prisma.clinicalProcess.findMany({ where: { workspaceId: portal.workspaceId, patientId: portal.patientId, status: 'ACTIVE' }, select: { therapistId: true } });
     const recipients = [...new Set(processes.map((process: any) => process.therapistId).filter(Boolean))];

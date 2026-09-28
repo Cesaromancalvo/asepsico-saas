@@ -1,13 +1,16 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
+import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 const ADMIN_ROLES = ['OWNER', 'ADMIN'];
 
 @Injectable()
 export class ExportsService {
+  private readonly logger = new Logger(ExportsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private assertClinical(user: AuthUser) {
@@ -52,24 +55,46 @@ export class ExportsService {
     });
   }
 
+  /**
+   * Arts. 15/20 RGPD: la exportación debe entregar el contenido legible, nunca "enc:v1:…".
+   * 1) descifrado tipado por modelo (common/crypto/clinical-crypto.ts, la misma lista que usan
+   *    los servicios); 2) red de seguridad que descifra cualquier string cifrado que quede
+   *    (campo nuevo no añadido al registro) y registra SOLO la ruta, nunca el valor.
+   */
+  private decryptForExport<T>(payload: T, exportType: string): T {
+    const { value, leakedPaths } = decryptDeep(payload);
+    if (leakedPaths.length) {
+      this.logger.warn(`${exportType}: campos cifrados fuera del registro de clinical-crypto.ts: ${leakedPaths.slice(0, 20).join(', ')}`);
+    }
+    return value;
+  }
+
   async exportPatient(user: AuthUser, patientId: string, password: string) {
     this.assertClinical(user);
     await this.assertPasswordConfirmed(user, password);
     await this.assertPatientAccess(user, patientId);
 
+    // Mismo alcance que la API para un THERAPIST (ver getTimeline/sessions/clinical-processes):
+    // solo SUS procesos y SUS sesiones — nunca las notas internas, notas de sesión ni resúmenes
+    // de otro profesional que atienda al mismo paciente. La facturación tampoco es accesible
+    // para THERAPIST en la API (billing: OWNER/ADMIN/ASSISTANT), así que no se exporta.
+    // Historia, objetivos, tareas, escalas, consentimientos, informes y documentos son de nivel
+    // paciente: el THERAPIST con acceso clínico al paciente ya los ve en la API.
+    const isTherapist = user.role === 'THERAPIST';
+    const ownOnly = isTherapist ? { where: { workspaceId: user.workspaceId, therapistId: user.sub } } : { where: { workspaceId: user.workspaceId } };
     const patient = await this.prisma.patient.findFirst({
       where: { id: patientId, workspaceId: user.workspaceId, deletedAt: null },
       include: {
         clinicalHistory: true,
-        clinicalProcesses: { orderBy: { startedAt: 'desc' } },
-        sessions: { orderBy: { startsAt: 'desc' } },
+        clinicalProcesses: { ...ownOnly, orderBy: { startedAt: 'desc' } },
+        sessions: { ...ownOnly, orderBy: { startsAt: 'desc' } },
         therapyGoals: { orderBy: { createdAt: 'desc' } },
         therapeuticTasks: { orderBy: { createdAt: 'desc' } },
         clinicalAssessments: { orderBy: { administeredAt: 'desc' } },
         consentRecords: { orderBy: { createdAt: 'desc' } },
         clinicalReports: { orderBy: { createdAt: 'desc' } },
         patientDocuments: { orderBy: { createdAt: 'desc' } },
-        invoices: { include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' } },
+        ...(isTherapist ? {} : { invoices: { where: { workspaceId: user.workspaceId }, include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' as const } } }),
         resourceShares: { include: { resource: true }, orderBy: { sharedAt: 'desc' } },
       },
     });
@@ -82,7 +107,7 @@ export class ExportsService {
       exportType: 'PATIENT_CLINICAL_RECORD',
       generatedAt,
       workspaceId: user.workspaceId,
-      patient,
+      patient: this.decryptForExport(decryptPatientRecord(patient), 'PATIENT_CLINICAL_RECORD'),
       notice: 'Exportación clínica confidencial. Debe almacenarse y transmitirse de forma segura.',
     };
   }
@@ -112,10 +137,12 @@ export class ExportsService {
     return {
       schemaVersion: '1.0', exportType: 'WORKSPACE_ADMIN_EXPORT', generatedAt,
       workspace: { id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt },
-      members: workspace.members,
-      patients: workspace.patients,
+      // Hoy no incluye campos cifrados (solo datos administrativos), pero pasa por la misma red
+      // de seguridad por si en el futuro se añade alguno.
+      members: this.decryptForExport(workspace.members, 'WORKSPACE_ADMIN_EXPORT'),
+      patients: this.decryptForExport(workspace.patients, 'WORKSPACE_ADMIN_EXPORT'),
       inventory: { sessions, invoices, resources, conversations },
-      recentAuditLogs: auditLogs,
+      recentAuditLogs: this.decryptForExport(auditLogs, 'WORKSPACE_ADMIN_EXPORT'),
       notice: 'Esta exportación administrativa no sustituye a una copia de seguridad de PostgreSQL.',
     };
   }
