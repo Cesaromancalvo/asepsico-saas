@@ -51,13 +51,10 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
 
 - `Patient.firstName`, `lastName`, `email`, `phone`, `birthDate`: se buscan y ordenan en BD.
   Protegidos por control de acceso, TLS y cifrado del disco/backups del proveedor.
-- `ClinicalAssessment.totalScore`, `severity`, `riskFlag` (columnas **legado**): la API ya no
-  las escribe (quedan NULL); su contenido vive cifrado en `result`. El script
-  `db:encrypt-fields` copia las filas antiguas a `result` y las vacía. Se eliminarán en una
-  migración posterior con una guarda que aborta si queda algún valor. Consecuencia aceptada:
-  ya no se puede filtrar ni ordenar por puntuación, gravedad ni riesgo en SQL (hoy no hay
-  ninguna consulta así). El `AuditLog` de escalas ya no copia puntuación, gravedad ni riesgo, y
-  el portal del paciente no recibe `riskFlag`.
+- Puntuación, gravedad y alerta de riesgo de las escalas: ya no existen columnas en claro
+  (`totalScore`, `severity`, `riskFlag` se eliminaron tras migrar su contenido a `result`).
+  Consecuencia aceptada: no se puede filtrar ni ordenar por ellas en SQL. El `AuditLog` de
+  escalas no las copia y el portal del paciente no recibe `riskFlag`.
 - Títulos de documentos, consentimientos, informes y procesos, `Session.location` y
   `videoCallUrl`, `scaleName`, y metadatos (fechas, estados, tipos, ids, `storageKey`, `mimeType`).
 - `AuditLog.metadata` no lleva contenido clínico (solo nombres de campo e ids).
@@ -93,9 +90,7 @@ la ruta, nunca el valor).
 ## Antes de producción (pendiente)
 
 - MFA para las cuentas de terapeutas/administradores.
-- Ejecutar `npm run db:encrypt-fields` en producción tras desplegar (datos previos en claro y
-  puntuaciones de escalas legado) y, en el despliegue siguiente, la migración que elimina las
-  columnas legado de `ClinicalAssessment`.
+- Ejecutar `npm run db:encrypt-fields` en producción tras desplegar (datos previos en claro).
 - Gestión de secretos (Vault/Secrets Manager) en vez de variables de entorno planas.
 - DPA con proveedores, DPIA, política de retención, exportación y borrado de datos (RGPD).
 - Backups verificados con pruebas de restauración periódicas.

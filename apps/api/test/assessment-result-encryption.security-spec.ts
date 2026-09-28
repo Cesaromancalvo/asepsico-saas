@@ -34,12 +34,11 @@ describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', 
     expect(result).not.toHaveProperty('result');
   });
 
-  it('decryptAssessment: result cifrado, fila legado (result NULL) y result ilegible', () => {
-    const fromResult = decryptAssessment({ id: 'a', result: encryptAssessmentResult({ totalScore: 5, severity: 'Leve', riskFlag: false }), totalScore: null, severity: null, riskFlag: null });
+  it('decryptAssessment: result cifrado, result NULL y result ilegible', () => {
+    const fromResult = decryptAssessment({ id: 'a', result: encryptAssessmentResult({ totalScore: 5, severity: 'Leve', riskFlag: false }) });
     expect(fromResult).toEqual({ id: 'a', totalScore: 5, severity: 'Leve', riskFlag: false });
 
-    const legacy = decryptAssessment({ id: 'b', result: null, totalScore: 17, severity: 'Moderadamente grave', riskFlag: true });
-    expect(legacy).toEqual({ id: 'b', totalScore: 17, severity: 'Moderadamente grave', riskFlag: true });
+    expect(decryptAssessment({ id: 'b', result: null })).toEqual({ id: 'b', totalScore: null, severity: null, riskFlag: false });
 
     // Cifrado con una clave que no está configurada → no se inventa nada ni se expone el marcador.
     const saved = { k: process.env.FIELD_ENCRYPTION_KEYS, a: process.env.FIELD_ENCRYPTION_ACTIVE_KID };
@@ -47,7 +46,7 @@ describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', 
     const unreadable = encryptField(JSON.stringify({ totalScore: 3, severity: 'Mínima', riskFlag: false }));
     delete process.env.FIELD_ENCRYPTION_KEYS; delete process.env.FIELD_ENCRYPTION_ACTIVE_KID;
     try {
-      const broken = decryptAssessment({ id: 'c', result: unreadable, totalScore: null, severity: null, riskFlag: null });
+      const broken = decryptAssessment({ id: 'c', result: unreadable });
       expect(broken).toEqual({ id: 'c', totalScore: null, severity: null, riskFlag: false });
       expect(JSON.stringify(broken)).not.toContain(DECRYPTION_FAILED_PLACEHOLDER);
     } finally {
@@ -63,7 +62,7 @@ describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', 
       clinicalHistory: { findUnique: jest.fn(async () => null) },
       therapyGoal: empty, therapeuticTask: empty, clinicalProcess: empty, session: empty, patientDocument: empty,
       consentRecord: empty, clinicalReport: empty, resourceShare: empty,
-      clinicalAssessment: { findMany: jest.fn(async () => [{ id: 'as-1', scaleName: 'GAD-7', administeredAt: new Date(), result: encryptAssessmentResult({ totalScore: 9, severity: 'Leve', riskFlag: false }), totalScore: null, severity: null, riskFlag: null }]) },
+      clinicalAssessment: { findMany: jest.fn(async () => [{ id: 'as-1', scaleName: 'GAD-7', administeredAt: new Date(), result: encryptAssessmentResult({ totalScore: 9, severity: 'Leve', riskFlag: false }) }]) },
     };
     const events: any[] = await new PatientTasksService(prisma, access).getTimeline('ws-1', owner, 'p1');
     const select = prisma.clinicalAssessment.findMany.mock.calls[0][0].select;
@@ -80,7 +79,7 @@ describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', 
       patient: { findFirst: jest.fn(async () => ({ id: 'p1', firstName: 'P', lastName: 'F' })) },
       session: { findMany: jest.fn(async () => []) },
       therapeuticTask: { findMany: jest.fn(async () => []) },
-      clinicalAssessment: { findMany: jest.fn(async () => [{ scaleName: 'PHQ-9', administeredAt: new Date('2026-01-01'), result: encryptAssessmentResult({ totalScore: 12, severity: 'Moderada', riskFlag: true }), totalScore: null, severity: null, riskFlag: null }]) },
+      clinicalAssessment: { findMany: jest.fn(async () => [{ scaleName: 'PHQ-9', administeredAt: new Date('2026-01-01'), result: encryptAssessmentResult({ totalScore: 12, severity: 'Moderada', riskFlag: true }) }]) },
       consentRecord: { findMany: jest.fn(async () => []) },
       invoice: { findMany: jest.fn(async () => []) },
       auditLog: { create: jest.fn(async () => ({})) },
