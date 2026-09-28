@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
-import { decryptAssessment, encryptJsonField } from '../common/crypto/clinical-crypto';
+import { decryptAssessment, encryptAssessmentResult, encryptJsonField } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateClinicalAssessmentDto } from './dto/create-clinical-assessment.dto';
@@ -41,8 +41,8 @@ const CLINICAL_SCALES = {
 
 // answers (Json), interpretation y clinicalNotes se cifran en reposo; ver
 // common/crypto/clinical-crypto.ts (encryptJsonField / decryptAssessment).
-// PENDIENTE DE DECISIÓN DEL JEFE: totalScore, severity y riskFlag siguen en claro (cifrarlos
-// exige cambio de esquema: totalScore es Int y riskFlag Boolean).
+// totalScore, severity y riskFlag se guardan cifrados juntos en `result` (decisión del Jefe);
+// las columnas en claro son legado y ya no se escriben (quedan NULL).
 function encryptAnswers(answers: number[]): string {
   return encryptJsonField(answers);
 }
@@ -92,10 +92,8 @@ export class PatientAssessmentsService {
           scaleCode: scale.code,
           scaleName: scale.name,
           answers: encryptAnswers(dto.answers),
-          totalScore,
-          severity,
+          result: encryptAssessmentResult({ totalScore, severity, riskFlag }),
           interpretation: encryptField(interpretation)!,
-          riskFlag,
           clinicalNotes: encryptField(dto.clinicalNotes?.trim() || null),
           administeredAt: dto.administeredAt ? new Date(dto.administeredAt) : new Date(),
         },
@@ -103,11 +101,9 @@ export class PatientAssessmentsService {
       await tx.auditLog.create({ data: {
         workspaceId, actorId: actor.sub, action: 'CLINICAL_ASSESSMENT_CREATED',
         entityType: 'ClinicalAssessment', entityId: assessment.id,
-        // El audit log guarda severity/riskFlag/totalScore en claro a propósito: son
-        // metadatos operativos de bajo detalle (igual que ya se hacía antes de cifrar
-        // nada), no el contenido narrativo. No incluyen ni las respuestas ni la
-        // interpretación completa.
-        metadata: { patientId, scaleCode: scale.code, totalScore, severity, riskFlag },
+        // Sin puntuación, gravedad ni alerta de riesgo: ahora son contenido cifrado y el
+        // audit log (en claro) no debe copiarlos. Solo qué escala se pasó y a quién.
+        metadata: { patientId, scaleCode: scale.code },
       }});
       return decryptAssessment(assessment);
     });

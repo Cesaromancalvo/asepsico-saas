@@ -4,7 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { decryptField, encryptField } from '../common/crypto/field-encryption';
-import { decryptTask } from '../common/crypto/clinical-crypto';
+import { ASSESSMENT_RESULT_SELECT, decryptAssessment, decryptTask } from '../common/crypto/clinical-crypto';
 
 /**
  * Tarea tal como la puede ver el paciente: descifrada y SIN clinicianNotes (notas privadas del
@@ -190,7 +190,7 @@ export class PortalService {
       this.prisma.patient.findFirst({ where:{ id:portal.patientId, workspaceId:portal.workspaceId, deletedAt:null }, select:{ id:true, firstName:true, lastName:true, email:true, phone:true, birthDate:true, createdAt:true } }),
       this.prisma.session.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId }, orderBy:{ startsAt:'asc' }, select:{ startsAt:true, endsAt:true, status:true, type:true } }),
       (this.prisma as any).therapeuticTask.findMany({ where:{ patientId:portal.patientId, patient:{ workspaceId:portal.workspaceId } }, orderBy:{ createdAt:'asc' }, select:{ title:true, instructions:true, status:true, dueDate:true, patientFeedback:true, submittedAt:true, completedAt:true } }),
-      (this.prisma as any).clinicalAssessment.findMany({ where:{ patientId:portal.patientId, patient:{ workspaceId:portal.workspaceId } }, orderBy:{ administeredAt:'asc' }, select:{ scaleName:true, totalScore:true, severity:true, administeredAt:true } }),
+      (this.prisma as any).clinicalAssessment.findMany({ where:{ patientId:portal.patientId, patient:{ workspaceId:portal.workspaceId } }, orderBy:{ administeredAt:'asc' }, select:{ scaleName:true, administeredAt:true, ...ASSESSMENT_RESULT_SELECT } }),
       (this.prisma as any).consentRecord.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId }, orderBy:{ createdAt:'asc' }, select:{ title:true, type:true, status:true, signedAt:true } }),
       (this.prisma as any).invoice.findMany({ where:{ patientId:portal.patientId, workspaceId:portal.workspaceId, status:{ not:'DRAFT' } }, orderBy:{ createdAt:'asc' }, select:{ invoiceNumber:true, status:true, totalCents:true, paidCents:true, issueDate:true } }),
     ]);
@@ -205,7 +205,9 @@ export class PortalService {
       patient,
       sessions,
       tasks: decryptedTasks,
-      assessments,
+      // Misma información que antes (escala, puntuación, gravedad, fecha): la alerta de riesgo
+      // interna (riskFlag) no se entrega al paciente.
+      assessments: assessments.map((raw: any) => { const { scaleName, administeredAt, totalScore, severity } = decryptAssessment(raw); return { scaleName, totalScore, severity, administeredAt }; }),
       consents,
       invoices,
     };

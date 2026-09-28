@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
-import { decryptTask, decryptTaskTemplate, decryptTherapyGoal } from '../common/crypto/clinical-crypto';
+import { ASSESSMENT_RESULT_SELECT, decryptAssessment, decryptTask, decryptTaskTemplate, decryptTherapyGoal } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateTherapeuticTaskDto } from './dto/create-therapeutic-task.dto';
@@ -141,7 +141,7 @@ export class PatientTasksService {
       this.prisma.therapeuticTask.findMany({ where: { patientId } }),
       this.prisma.clinicalProcess.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,title:true,status:true,startedAt:true } }),
       this.prisma.session.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,startsAt:true,status:true,type:true } }),
-      this.prisma.clinicalAssessment.findMany({ where: { patientId }, select: { id:true,scaleName:true,totalScore:true,severity:true,administeredAt:true } }),
+      this.prisma.clinicalAssessment.findMany({ where: { patientId }, select: { id:true,scaleName:true,administeredAt:true,...ASSESSMENT_RESULT_SELECT } }),
       this.prisma.patientDocument.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,type:true,createdAt:true } }),
       this.prisma.consentRecord.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,status:true,updatedAt:true } }),
       this.prisma.clinicalReport.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,status:true,updatedAt:true } }),
@@ -161,7 +161,7 @@ export class PatientTasksService {
       const taskTitle=task.status==='SUBMITTED'?`Tarea entregada: ${t}`:task.status==='CHANGES_REQUESTED'?`Cambios solicitados: ${t}`:task.status==='COMPLETED'?`Tarea completada: ${t}`:`Tarea terapéutica: ${t}`;
       events.push({ id:`task-${task.id}`, type:'TASK', date:(task as any).submittedAt || task.completedAt || task.updatedAt, title:taskTitle, description:decryptedTask.reviewComment || decryptedTask.instructions || 'Tarea añadida al seguimiento entre sesiones.', status:task.status, href:`/patients/${patientId}/tasks` });
     }
-    for (const assessment of assessments) events.push({ id:`assessment-${assessment.id}`, type:'ASSESSMENT', date:assessment.administeredAt, title:`${assessment.scaleName}: ${assessment.totalScore} puntos`, description:assessment.severity, href:`/patients/${patientId}/assessments` });
+    for (const assessment of assessments.map(decryptAssessment)) events.push({ id:`assessment-${assessment.id}`, type:'ASSESSMENT', date:assessment.administeredAt, title:`${assessment.scaleName}: ${assessment.totalScore} puntos`, description:assessment.severity, href:`/patients/${patientId}/assessments` });
     for (const document of documents) events.push({ id:`document-${document.id}`, type:'DOCUMENT', date:document.createdAt, title:`Documento: ${document.title}`, description:document.type.replaceAll('_',' '), href:`/patients/${patientId}/documents` });
     for (const consent of consents) events.push({ id:`consent-${consent.id}`, type:'CONSENT', date:consent.updatedAt, title:`Consentimiento: ${consent.title}`, description:consent.status, href:`/patients/${patientId}/documents` });
     for (const report of reports) events.push({ id:`report-${report.id}`, type:'REPORT', date:report.updatedAt, title:`Informe: ${report.title}`, description:report.status, href:`/patients/${patientId}/documents` });

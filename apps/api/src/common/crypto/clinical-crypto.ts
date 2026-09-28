@@ -10,7 +10,8 @@ import { decryptField, encryptField, isEncryptedValue } from './field-encryption
  *
  * Fuera de la lista a propósito (ver docs/SECURITY_BASELINE.md):
  *  - Patient.firstName/lastName/email/phone: se buscan y ordenan en BD.
- *  - ClinicalAssessment.totalScore/severity/riskFlag: pendiente de decisión (cambio de esquema).
+ *  - ClinicalAssessment.totalScore/severity/riskFlag: columnas LEGADO en claro, ya no se escriben;
+ *    su contenido vive cifrado en `result` (ver ASSESSMENT_RESULT_LEGACY_FIELDS).
  *  - Títulos de documentos, consentimientos, informes y procesos, y metadatos (fechas, estados).
  */
 
@@ -37,7 +38,7 @@ export const ENCRYPTED_TEXT_FIELDS = {
   therapeuticTaskTemplate: ['instructions'],
   clinicalProcess: ['consultationReason', 'goals', 'internalNotes'],
   session: ['notes', 'internalSummary'],
-  clinicalAssessment: ['interpretation', 'clinicalNotes'],
+  clinicalAssessment: ['interpretation', 'clinicalNotes', 'result'],
   clinicalReport: ['content'],
   patientDocument: ['description', 'fileName'],
   consentRecord: ['notes'],
@@ -52,6 +53,19 @@ export const ENCRYPTED_TEXT_FIELDS = {
 export const ENCRYPTED_JSON_FIELDS = {
   clinicalAssessment: ['answers'],
 } as const;
+
+/**
+ * ClinicalAssessment.result = cifrado de JSON {totalScore, severity, riskFlag}. Las columnas en
+ * claro de antes quedan como legado: la API ya no las escribe (NULL), la lectura las usa solo
+ * como respaldo mientras `result` sea NULL, y el script de migración las copia cifradas a
+ * `result` y las vacía. Se eliminarán en una migración posterior.
+ */
+export const ASSESSMENT_RESULT_LEGACY_FIELDS = ['totalScore', 'severity', 'riskFlag'] as const;
+export type AssessmentResult = { totalScore: number | null; severity: string | null; riskFlag: boolean };
+
+export function encryptAssessmentResult(result: AssessmentResult): string {
+  return encryptField(JSON.stringify({ totalScore: result.totalScore, severity: result.severity, riskFlag: result.riskFlag }))!;
+}
 
 export type EncryptedModel = keyof typeof ENCRYPTED_TEXT_FIELDS;
 
@@ -107,11 +121,30 @@ export function decryptTask<T extends Row>(task: T): T {
   return out as T;
 }
 
+/**
+ * Descifra la escala y expone la MISMA forma de siempre (totalScore, severity, riskFlag), sin
+ * el campo interno `result`. Si `result` aún es NULL (fila anterior al script), usa las
+ * columnas legado; si no se puede descifrar, devuelve null/false en vez del marcador.
+ */
 export function decryptAssessment<T extends Row>(assessment: T): T {
   const out: Row = decryptModel('clinicalAssessment', assessment);
   if ('answers' in out) out.answers = decryptJsonField<number[]>(out.answers, []);
+  if ('result' in out || ASSESSMENT_RESULT_LEGACY_FIELDS.some((f) => f in out)) {
+    let parsed: Partial<AssessmentResult> | null = null;
+    if (typeof out.result === 'string' && out.result) {
+      try { parsed = JSON.parse(out.result); } catch { parsed = null; }
+    }
+    const legacy = !out.result;
+    out.totalScore = (parsed?.totalScore ?? (legacy ? out.totalScore : null)) ?? null;
+    out.severity = (parsed?.severity ?? (legacy ? out.severity : null)) ?? null;
+    out.riskFlag = Boolean(parsed?.riskFlag ?? (legacy ? out.riskFlag : false));
+    delete out.result;
+  }
   return out as T;
 }
+
+/** Proyección para selects que muestran la puntuación: `result` + legado (respaldo). */
+export const ASSESSMENT_RESULT_SELECT = { result: true, totalScore: true, severity: true, riskFlag: true } as const;
 
 /** Ficha completa del paciente tal como la carga la exportación clínica (include de relaciones). */
 export function decryptPatientRecord<T extends Row>(patient: T): T {
