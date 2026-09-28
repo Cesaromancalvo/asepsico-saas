@@ -9,7 +9,7 @@ import { ClinicalProcessesService } from '../src/clinical-processes/clinical-pro
 import { SessionsService } from '../src/sessions/sessions.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { PortalService } from '../src/portal/portal.service';
-import { AuthService } from '../src/auth/auth.service';
+import { MfaService } from '../src/auth/mfa.service';
 
 /**
  * Test tabla-driven: por CADA campo marcado como cifrado en common/crypto/clinical-crypto.ts,
@@ -91,7 +91,7 @@ const CASES: Case[] = [
     run: (p) => new ClinicalProcessesService(p).update('ws-1', owner, 'proc-1', { consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'Sessions.updateNotes', writes: { session: ['notes', 'internalSummary'] },
     run: (p) => new SessionsService(p).updateNotes('ws-1', owner, 'session-1', { notes: text('notas'), internalSummary: text('resumen') } as any) },
-  { name: 'PatientAssessments.createClinicalAssessment', writes: { clinicalAssessment: ['interpretation', 'clinicalNotes', 'answers'] },
+  { name: 'PatientAssessments.createClinicalAssessment', writes: { clinicalAssessment: ['interpretation', 'clinicalNotes', 'answers', 'result'] },
     run: (p) => new PatientAssessmentsService(p, access).createClinicalAssessment('ws-1', owner, 'patient-1', { scaleCode: 'GAD7', answers: [1, 1, 1, 1, 1, 1, 1], clinicalNotes: text('notas') } as any) },
   { name: 'PatientRecords.createClinicalReport', writes: { clinicalReport: ['content'] },
     run: (p) => new PatientRecordsService(p, access).createClinicalReport('ws-1', owner, 'patient-1', { title: 'Informe', type: 'EVOLUTION', content: text('contenido') } as any) },
@@ -107,8 +107,8 @@ const CASES: Case[] = [
     run: (p) => new MessagesService(p).send('ws-1', owner, 'conv-1', { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
   { name: 'Messages.portalSend', writes: { message: ['body', 'attachmentName'] }, rows: { conversation: { status: 'OPEN', patientCanReply: true } },
     run: (p) => new MessagesService(p).portalSend(portal, { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
-  { name: 'Auth.setupMfa', writes: { user: ['totpSecret'] },
-    run: (p) => new AuthService(p, {} as any).setupMfa('owner-1') },
+  { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
+    run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
 ];
 
 function registeredFields(): string[] {

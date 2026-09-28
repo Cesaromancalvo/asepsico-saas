@@ -1,7 +1,7 @@
 import { hashSync } from 'bcryptjs';
 import { ExportsService } from '../src/exports/exports.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
-import { ENCRYPTED_TEXT_FIELDS, encryptJsonField } from '../src/common/crypto/clinical-crypto';
+import { ENCRYPTED_TEXT_FIELDS, encryptAssessmentResult, encryptJsonField } from '../src/common/crypto/clinical-crypto';
 
 // Datos 100 % ficticios. Contraseña solo de test (step-up de la exportación).
 const PASSWORD = 'contrasena-ficticia-de-test';
@@ -41,7 +41,7 @@ describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', (
       sessions: [encryptedRow('session')],
       therapyGoals: [encryptedRow('therapyGoal')],
       therapeuticTasks: [encryptedRow('therapeuticTask', { title: 'Tarea' })],
-      clinicalAssessments: [encryptedRow('clinicalAssessment', { answers: encryptJsonField([1, 2, 3]), totalScore: 6 })],
+      clinicalAssessments: [{ ...encryptedRow('clinicalAssessment', { answers: encryptJsonField([1, 2, 3]) }), result: encryptAssessmentResult({ totalScore: 6, severity: 'Leve', riskFlag: false }), totalScore: null, severity: null, riskFlag: null }],
       consentRecords: [encryptedRow('consentRecord')],
       clinicalReports: [encryptedRow('clinicalReport')],
       patientDocuments: [encryptedRow('patientDocument')],
@@ -58,6 +58,8 @@ describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', (
     expect(result.patient.sessions[0].notes).toBe('session.notes ficticio');
     expect(result.patient.consentRecords[0].notes).toBe('consentRecord.notes ficticio');
     expect(result.patient.clinicalAssessments[0].answers).toEqual([1, 2, 3]);
+    expect(result.patient.clinicalAssessments[0]).toEqual(expect.objectContaining({ totalScore: 6, severity: 'Leve', riskFlag: false }));
+    expect(result.patient.clinicalAssessments[0]).not.toHaveProperty('result');
   });
 
   it('red de seguridad: un campo cifrado fuera del registro también sale descifrado', async () => {
