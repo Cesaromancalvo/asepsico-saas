@@ -318,13 +318,7 @@ model ClinicalAssessment {
   // Puntuación, gravedad y alerta de riesgo cifradas juntas: JSON {totalScore, severity, riskFlag}
   // cifrado con encryptField (ver src/common/crypto/clinical-crypto.ts).
   result          String?
-  // LEGADO en claro: la API ya no los escribe (quedan NULL) y el script
-  // prisma/scripts/encrypt-plaintext-fields.ts los copia cifrados a `result` y los vacía.
-  // Se eliminarán en una migración posterior, una vez ejecutado el script en producción.
-  totalScore      Int?
-  severity        String?
   interpretation  String
-  riskFlag        Boolean?
   clinicalNotes   String?
   administeredAt  DateTime @default(now())
   createdAt       DateTime @default(now())

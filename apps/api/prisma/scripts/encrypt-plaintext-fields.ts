@@ -4,8 +4,6 @@
  * que estén cifrados con otra (enc:v1 o enc:v2 con un kid antiguo).
  *
  * La lista de campos sale de src/common/crypto/clinical-crypto.ts (la misma que usa la API).
- * Además migra ClinicalAssessment.totalScore/severity/riskFlag (legado en claro) al campo
- * cifrado `result` y vacía esas columnas (paso previo a eliminarlas en una migración posterior).
  *
  *   npm run db:encrypt-fields -- --dry-run            # solo cuenta, no escribe nada
  *   npm run db:encrypt-fields                         # cifra lo que esté en claro
@@ -38,7 +36,7 @@ import {
   encryptedValueKid,
   isEncryptedValue,
 } from '../../src/common/crypto/field-encryption';
-import { ASSESSMENT_RESULT_LEGACY_FIELDS, ENCRYPTED_JSON_FIELDS, ENCRYPTED_TEXT_FIELDS, encryptAssessmentResult } from '../../src/common/crypto/clinical-crypto';
+import { ENCRYPTED_JSON_FIELDS, ENCRYPTED_TEXT_FIELDS } from '../../src/common/crypto/clinical-crypto';
 
 type Counters = { scanned: number; plaintext: number; rotate: number; ok: number; unreadable: number; written: number; conflicts: number };
 type FieldKind = 'text' | 'json';
@@ -133,51 +131,6 @@ async function processModel(prisma: PrismaClient, model: string, fields: { name:
   return counters;
 }
 
-/**
- * ClinicalAssessment: copia las columnas legado en claro (totalScore, severity, riskFlag) al campo
- * cifrado `result` y las deja a NULL, en el mismo UPDATE con compare-and-set sobre los valores
- * leídos. Si la fila ya tiene `result` (p. ej. se relanza), solo vacía el legado cuando coincide
- * exactamente con lo cifrado; si no coincide, no toca nada y lo cuenta como conflicto.
- */
-async function migrateAssessmentLegacy(prisma: PrismaClient, write: boolean): Promise<Record<string, Counters>> {
-  const c: Counters = { scanned: 0, plaintext: 0, rotate: 0, ok: 0, unreadable: 0, written: 0, conflicts: 0 };
-  let cursor: string | undefined;
-  for (;;) {
-    const rows: any[] = await prisma.clinicalAssessment.findMany({
-      select: { id: true, updatedAt: true, result: true, totalScore: true, severity: true, riskFlag: true },
-      orderBy: { id: 'asc' }, take: BATCH_SIZE, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    if (!rows.length) break;
-    cursor = rows[rows.length - 1].id;
-    const changes: Change[] = [];
-    for (const row of rows) {
-      c.scanned++;
-      const hasLegacy = ASSESSMENT_RESULT_LEGACY_FIELDS.some((f) => row[f] !== null && row[f] !== undefined);
-      if (!hasLegacy) { if (row.result) c.ok++; continue; }
-      const legacy = { totalScore: row.totalScore ?? null, severity: row.severity ?? null, riskFlag: Boolean(row.riskFlag) };
-      const where = { id: row.id, result: row.result, totalScore: row.totalScore, severity: row.severity, riskFlag: row.riskFlag };
-      const clearLegacy = { totalScore: null, severity: null, riskFlag: null, updatedAt: row.updatedAt };
-      if (!row.result) {
-        c.plaintext++;
-        changes.push({ id: row.id, where, data: { result: encryptAssessmentResult(legacy), ...clearLegacy } });
-        continue;
-      }
-      let current: any;
-      try { current = JSON.parse(decryptFieldStrict(row.result)); } catch { c.unreadable++; continue; }
-      if (current?.totalScore === legacy.totalScore && current?.severity === legacy.severity && Boolean(current?.riskFlag) === legacy.riskFlag) {
-        c.plaintext++;
-        changes.push({ id: row.id, where, data: clearLegacy });
-      } else {
-        c.conflicts++; // result y legado discrepan: no se toca, revisar a mano
-      }
-    }
-    if (!write || !changes.length) continue;
-    const results = await prisma.$transaction(changes.map((ch) => prisma.clinicalAssessment.updateMany({ where: ch.where as any, data: ch.data as any })));
-    results.forEach((r) => { if (r.count === 1) c.written++; else c.conflicts++; });
-  }
-  return { 'result←legado(totalScore,severity,riskFlag)': c };
-}
-
 async function main() {
   assertConfig();
   const schema = schemaFields();
@@ -207,7 +160,6 @@ async function main() {
     // Pasada 1 (siempre): solo lectura. Cuenta y verifica que todo lo cifrado se puede descifrar.
     const planned: [string, Record<string, Counters>][] = [];
     for (const [model, fields] of plan) planned.push([model, await processModel(prisma, model, fields, schema.get(model)!.has('updatedAt'), false)]);
-    planned.push(['clinicalAssessment', await migrateAssessmentLegacy(prisma, false)]);
     const unreadable = total(planned, 'unreadable');
     if (DRY_RUN || unreadable) report('Verificación (sin escribir):', planned, false);
     if (unreadable) {
@@ -219,7 +171,6 @@ async function main() {
     // Pasada 2: escritura por lotes transaccionales.
     const written: [string, Record<string, Counters>][] = [];
     for (const [model, fields] of plan) written.push([model, await processModel(prisma, model, fields, schema.get(model)!.has('updatedAt'), true)]);
-    written.push(['clinicalAssessment', await migrateAssessmentLegacy(prisma, true)]);
     report('Resultado:', written, true);
     const conflicts = total(written, 'conflicts');
     if (conflicts) console.log(`AVISO: ${conflicts} valor(es) cambiaron durante la ejecución y no se tocaron; vuelve a lanzar el script.`);

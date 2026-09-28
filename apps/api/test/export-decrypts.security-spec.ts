@@ -41,7 +41,7 @@ describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', (
       sessions: [encryptedRow('session')],
       therapyGoals: [encryptedRow('therapyGoal')],
       therapeuticTasks: [encryptedRow('therapeuticTask', { title: 'Tarea' })],
-      clinicalAssessments: [{ ...encryptedRow('clinicalAssessment', { answers: encryptJsonField([1, 2, 3]) }), result: encryptAssessmentResult({ totalScore: 6, severity: 'Leve', riskFlag: false }), totalScore: null, severity: null, riskFlag: null }],
+      clinicalAssessments: [{ ...encryptedRow('clinicalAssessment', { answers: encryptJsonField([1, 2, 3]) }), result: encryptAssessmentResult({ totalScore: 6, severity: 'Leve', riskFlag: false }) }],
       consentRecords: [encryptedRow('consentRecord')],
       clinicalReports: [encryptedRow('clinicalReport')],
       patientDocuments: [encryptedRow('patientDocument')],
