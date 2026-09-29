@@ -7,7 +7,7 @@ import { encryptField } from '../common/crypto/field-encryption';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
-import { decryptPatient } from './patient-crypto.util';
+import { PATIENT_VIEW_SELECT, assertCanWriteConsultationReason, projectSelect, toPatientView } from './patient-view.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 
@@ -83,6 +83,66 @@ export class PatientCoreService {
         ? [{ createdAt: 'desc' }]
         : [{ lastName: 'asc' }, { firstName: 'asc' }];
 
+    // select explícito: vista general sin consultationReason (ver patient-view.util.ts). La
+    // respuesta se proyecta además con este mismo select (projectSelect) como lista blanca.
+    const select = {
+      ...PATIENT_VIEW_SELECT,
+      _count: {
+        select: {
+          sessions: true,
+          clinicalProcesses: true,
+        },
+      },
+
+      clinicalProcesses: {
+        ...(actor.role === 'THERAPIST' ? { where: { workspaceId, therapistId: actor.sub } } : {}),
+        // El más reciente, sea cual sea su estado (no solo ACTIVE): así un proceso
+        // pausado o dado de alta sigue siendo visible y se puede reactivar desde aquí,
+        // en vez de desaparecer de la vista.
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: 1,
+        // Sin title: el título del proceso puede revelar contenido clínico y el listado
+        // lo ve también un ASSISTANT. Solo metadatos operativos.
+        select: {
+          id: true,
+          status: true,
+          modality: true,
+          frequency: true,
+          startedAt: true,
+          therapist: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      },
+
+      sessions: {
+        where: {
+          ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}),
+          startsAt: {
+            lt: now,
+          },
+        },
+        orderBy: {
+          startsAt: 'desc',
+        },
+        take: 1,
+        select: {
+          id: true,
+          startsAt: true,
+          endsAt: true,
+          status: true,
+          type: true,
+        },
+      },
+    } satisfies Prisma.PatientSelect;
+
     const [patients, total] = await Promise.all([
       this.prisma.patient.findMany({
         where,
@@ -90,61 +150,7 @@ export class PatientCoreService {
         skip: (page - 1) * pageSize,
         take: pageSize,
 
-        include: {
-          _count: {
-            select: {
-              sessions: true,
-              clinicalProcesses: true,
-            },
-          },
-
-          clinicalProcesses: {
-            ...(actor.role === 'THERAPIST' ? { where: { workspaceId, therapistId: actor.sub } } : {}),
-            // El más reciente, sea cual sea su estado (no solo ACTIVE): así un proceso
-            // pausado o dado de alta sigue siendo visible y se puede reactivar desde aquí,
-            // en vez de desaparecer de la vista.
-            orderBy: {
-              updatedAt: 'desc',
-            },
-            take: 1,
-            select: {
-              id: true,
-              title: true,
-              status: true,
-              modality: true,
-              frequency: true,
-              startedAt: true,
-              therapist: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-
-          sessions: {
-            where: {
-              ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}),
-              startsAt: {
-                lt: now,
-              },
-            },
-            orderBy: {
-              startsAt: 'desc',
-            },
-            take: 1,
-            select: {
-              id: true,
-              startsAt: true,
-              endsAt: true,
-              status: true,
-              type: true,
-            },
-          },
-        },
+        select,
       }),
 
       this.prisma.patient.count({
@@ -198,7 +204,8 @@ export class PatientCoreService {
       }
     }
 
-    const data = patients.map((patient) => {
+    const data = patients.map((row) => {
+      const patient = projectSelect<typeof row>(row, select);
       const {
         _count,
         clinicalProcesses,
@@ -210,7 +217,7 @@ export class PatientCoreService {
         clinicalProcesses[0] ?? null;
 
       return {
-        ...decryptPatient(patientData),
+        ...toPatientView(patientData),
 
         summary: {
           processCount: _count.clinicalProcesses,
@@ -243,14 +250,50 @@ export class PatientCoreService {
     assertStaffRole(actor);
     const now = new Date();
 
-    // Igual que list(): solo se seleccionan campos operativos/administrativos de los procesos
-    // clínicos y las sesiones. El contenido clínico narrativo (motivo de consulta, objetivos,
+    // Igual que list(): solo campos administrativos del paciente (sin su consultationReason) y
+    // operativos de procesos y sesiones. El contenido clínico narrativo (motivo de consulta, objetivos,
     // notas internas, notas de sesión) NUNCA se expone a través de Patients, ni siquiera al
     // propio terapeuta dueño del proceso: eso solo se sirve desde GET /clinical-processes/:id
     // y GET /sessions/:id, que sí aplican el control de acceso por rol/propiedad. Servirlo aquí
     // se saltaría ese control (por ejemplo, un THERAPIST vería las notas privadas de otro
     // profesional sobre el mismo paciente, o un ASSISTANT vería contenido clínico).
-    const patient = await this.prisma.patient.findFirst({
+    const select = {
+      ...PATIENT_VIEW_SELECT,
+      _count: { select: { sessions: true, clinicalProcesses: true } },
+      clinicalProcesses: {
+        ...(actor.role === 'THERAPIST' ? { where: { workspaceId, therapistId: actor.sub } } : {}),
+        orderBy: { updatedAt: 'desc' },
+        // Sin title (igual que list()): el detalle general lo ve también un ASSISTANT.
+        select: {
+          id: true,
+          status: true,
+          modality: true,
+          frequency: true,
+          startedAt: true,
+          updatedAt: true,
+          therapist: { select: { id: true, firstName: true, lastName: true, email: true } },
+          _count: { select: { sessions: true } },
+        },
+      },
+      sessions: {
+        ...(actor.role === 'THERAPIST' ? { where: { therapistId: actor.sub } } : {}),
+        orderBy: { startsAt: 'desc' },
+        select: {
+          id: true,
+          clinicalProcessId: true,
+          therapistId: true,
+          startsAt: true,
+          endsAt: true,
+          status: true,
+          type: true,
+          location: true,
+          videoCallUrl: true,
+          therapist: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+    } satisfies Prisma.PatientSelect;
+
+    const row = await this.prisma.patient.findFirst({
       where: {
         id,
         workspaceId,
@@ -258,46 +301,15 @@ export class PatientCoreService {
           ? { clinicalProcesses: { some: { workspaceId, therapistId: actor.sub } } }
           : {}),
       },
-      include: {
-        _count: { select: { sessions: true, clinicalProcesses: true } },
-        clinicalProcesses: {
-          ...(actor.role === 'THERAPIST' ? { where: { workspaceId, therapistId: actor.sub } } : {}),
-          orderBy: { updatedAt: 'desc' },
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            modality: true,
-            frequency: true,
-            startedAt: true,
-            updatedAt: true,
-            therapist: { select: { id: true, firstName: true, lastName: true, email: true } },
-            _count: { select: { sessions: true } },
-          },
-        },
-        sessions: {
-          ...(actor.role === 'THERAPIST' ? { where: { therapistId: actor.sub } } : {}),
-          orderBy: { startsAt: 'desc' },
-          select: {
-            id: true,
-            clinicalProcessId: true,
-            therapistId: true,
-            startsAt: true,
-            endsAt: true,
-            status: true,
-            type: true,
-            location: true,
-            videoCallUrl: true,
-            therapist: { select: { id: true, firstName: true, lastName: true } },
-          },
-        },
-      },
+      select,
     });
 
-    if (!patient) {
+    if (!row) {
       throw new NotFoundException('Paciente no encontrado');
     }
 
+    // Lista blanca también sobre la respuesta (defensa en profundidad), no solo en la consulta.
+    const patient = projectSelect<typeof row>(row, select);
     const { _count, clinicalProcesses, sessions, ...patientData } = patient;
 
     const activeProcess = clinicalProcesses.find((process) => process.status === 'ACTIVE') ?? null;
@@ -310,7 +322,7 @@ export class PatientCoreService {
         .sort((first, second) => new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime())[0] ?? null;
 
     return {
-      ...decryptPatient(patientData),
+      ...toPatientView(patientData),
       summary: {
         processCount: _count.clinicalProcesses,
         sessionCount: _count.sessions,
@@ -330,8 +342,10 @@ export class PatientCoreService {
     dto: CreatePatientDto,
   ) {
     assertStaffRole(actor);
+    assertCanWriteConsultationReason(actor, dto);
     return this.prisma.$transaction(async (tx) => {
       const patient = await tx.patient.create({
+        select: PATIENT_VIEW_SELECT,
         data: {
           workspaceId,
           firstName: dto.firstName,
@@ -361,7 +375,7 @@ export class PatientCoreService {
         },
       });
 
-      return decryptPatient(patient);
+      return toPatientView(patient);
     });
   }
 
@@ -371,6 +385,8 @@ export class PatientCoreService {
     id: string,
     dto: UpdatePatientDto,
   ) {
+    assertStaffRole(actor);
+    assertCanWriteConsultationReason(actor, dto);
     await this.assertActive(workspaceId, actor, id);
 
     // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma

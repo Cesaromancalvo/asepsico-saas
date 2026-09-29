@@ -68,6 +68,10 @@ export class PatientsService extends PatientCoreService {
     return this.lifecycle.block(workspaceId, actor, id);
   }
 
+  async getConsultationReason(workspaceId: string, actor: AuthUser, patientId: string){
+    return this.care.getConsultationReason(workspaceId, actor, patientId);
+  }
+
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string){
     return this.care.getClinicalHistory(workspaceId, actor, patientId);
   }

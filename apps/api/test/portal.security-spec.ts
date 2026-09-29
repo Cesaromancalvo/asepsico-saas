@@ -189,7 +189,9 @@ function transactionalPrisma(initialMode:string, accounts:Account[], opts:{failA
     patient:{
       findFirst:jest.fn(async({where,select}:any)=>{
         const p=get().patient; if(where.id!==p.id||where.workspaceId!==p.workspaceId) return null;
-        if(select) return {portalAccessMode:p.portalAccessMode};
+        // select solo de portalAccessMode = lectura del modo previo; el select de la vista
+        // general (get(), con id) recibe la fila con sus relaciones.
+        if(select&&!select.id) return {portalAccessMode:p.portalAccessMode};
         return {...p,_count:{sessions:0,clinicalProcesses:0},clinicalProcesses:[],sessions:[]};
       }),
       updateMany:jest.fn(async({where,data}:any)=>{
