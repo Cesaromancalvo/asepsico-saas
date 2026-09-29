@@ -8,6 +8,11 @@ import {
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
+import {
+  fetchConsultationReason,
+  processLabel,
+  useIsClinicalRole,
+} from '@/lib/clinical';
 
 type PatientStatus =
   | 'ACTIVE'
@@ -28,9 +33,9 @@ type Therapist = {
   email?: string;
 };
 
+// Vista general: sin título del proceso (puede revelar contenido clínico).
 type ClinicalProcess = {
   id: string;
-  title: string;
   status: ProcessStatus;
   modality?: string;
   frequency?: string;
@@ -61,7 +66,6 @@ type Patient = {
   lastName: string;
   email?: string;
   phone?: string;
-  consultationReason?: string;
   status: PatientStatus;
   summary: PatientSummary;
 };
@@ -168,6 +172,15 @@ export default function PatientsPage() {
 
   const [error, setError] = useState('');
 
+  // null mientras se comprueba el rol; el motivo de consulta solo se pide con rol clínico.
+  const isClinical = useIsClinicalRole();
+
+  const [selectedReason, setSelectedReason] =
+    useState<{
+      patientId: string;
+      reason: string | null;
+    } | null>(null);
+
   const selectedPatient =
     page.data.find(
       (patient) =>
@@ -218,6 +231,38 @@ export default function PatientsPage() {
     load(status);
   }, [status]);
 
+  useEffect(() => {
+    if (!isClinical || !selectedPatientId) {
+      setSelectedReason(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    // 403 (THERAPIST sin proceso propio) se tolera: fetchConsultationReason devuelve null.
+    fetchConsultationReason(
+      selectedPatientId,
+    ).then((reason) => {
+      if (!cancelled) {
+        setSelectedReason({
+          patientId: selectedPatientId,
+          reason,
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isClinical, selectedPatientId]);
+
+  const selectedPatientReason =
+    selectedReason &&
+    selectedReason.patientId ===
+      selectedPatientId
+      ? selectedReason.reason
+      : null;
+
   async function createPatient(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -225,6 +270,17 @@ export default function PatientsPage() {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+
+    // El motivo de consulta solo lo envía un rol clínico y solo si tiene contenido:
+    // nunca "" ni null (la API responde 403 a un ASSISTANT aunque el valor esté vacío).
+    const consultationReason =
+      isClinical
+        ? String(
+            formData.get(
+              'consultationReason',
+            ) ?? '',
+          ).trim()
+        : '';
 
     try {
       setError('');
@@ -242,10 +298,9 @@ export default function PatientsPage() {
           phone:
             formData.get('phone') ||
             undefined,
-          consultationReason:
-            formData.get(
-              'consultationReason',
-            ) || undefined,
+          ...(consultationReason
+            ? { consultationReason }
+            : {}),
         }),
       });
 
@@ -291,7 +346,7 @@ export default function PatientsPage() {
             formData.get(
               'consultationReason',
             ) ||
-            selectedPatient.consultationReason ||
+            selectedPatientReason ||
             undefined,
           goals:
             formData.get('goals') ||
@@ -541,10 +596,9 @@ export default function PatientsPage() {
                             marginTop: 4,
                           }}
                         >
-                          {patient
-                            .consultationReason ||
-                            patient.email ||
-                            'Sin información adicional'}
+                          {patient.email ||
+                            patient.phone ||
+                            'Sin datos de contacto'}
                         </div>
                       </div>
 
@@ -643,10 +697,10 @@ export default function PatientsPage() {
                       }}
                     >
                       <div className="muted">
-                        {patient.summary
-                          .activeProcess
-                          ? `Proceso activo: ${patient.summary.activeProcess.title}`
-                          : 'Sin proceso activo'}
+                        {processLabel(
+                          patient.summary
+                            .activeProcess,
+                        )}
                         {' · '}
                         {therapistName(
                           patient.summary
@@ -805,9 +859,13 @@ export default function PatientsPage() {
               </h2>
 
               <p className="muted">
-                {selectedPatient
-                  .consultationReason ||
-                  'Sin motivo de consulta registrado'}
+                {STATUS_LABEL[
+                  selectedPatient.status
+                ]}
+                {' · '}
+                {selectedPatient.email ||
+                  selectedPatient.phone ||
+                  'Sin datos de contacto'}
               </p>
 
               <div
@@ -819,17 +877,17 @@ export default function PatientsPage() {
               >
                 <div>
                   <div className="muted">
-                    Proceso activo
+                    Proceso actual
                   </div>
 
                   <strong>
-                    {selectedPatient.summary
-                      .activeProcess
-                      ?.title ||
-                      'Sin proceso activo'}
+                    {processLabel(
+                      selectedPatient.summary
+                        .activeProcess,
+                    )}
                   </strong>
 
-                  {selectedPatient.summary.activeProcess && (
+                  {isClinical && selectedPatient.summary.activeProcess && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                       {PROCESS_TRANSITIONS[selectedPatient.summary.activeProcess.status].map((t) => (
                         <button
@@ -893,7 +951,8 @@ export default function PatientsPage() {
                   .activeProcess.status ===
                   'CLOSED') &&
                 selectedPatient.status !==
-                  'ARCHIVED' && (
+                  'ARCHIVED' &&
+                isClinical && (
                   <form
                     onSubmit={createProcess}
                     style={{
@@ -916,11 +975,14 @@ export default function PatientsPage() {
                     <label className="field">
                       Motivo de consulta
                       <input
+                        // Se remonta al llegar el motivo para aplicar el prefill.
+                        key={`reason-${selectedPatient.id}-${selectedPatientReason ?? ''}`}
                         name="consultationReason"
                         defaultValue={
-                          selectedPatient.consultationReason ??
+                          selectedPatientReason ??
                           ''
                         }
+                        placeholder="Describe el motivo principal de consulta"
                       />
                     </label>
 
@@ -1014,10 +1076,15 @@ export default function PatientsPage() {
                 <input name="phone" />
               </label>
 
-              <label className="field">
-                Motivo de consulta
-                <input name="consultationReason" />
-              </label>
+              {isClinical && (
+                <label className="field">
+                  Motivo de consulta
+                  <input
+                    name="consultationReason"
+                    maxLength={2000}
+                  />
+                </label>
+              )}
 
               <button className="button">
                 Crear paciente

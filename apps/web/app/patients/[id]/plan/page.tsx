@@ -5,11 +5,12 @@ import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { processLabel } from '@/lib/clinical';
 
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; achievedAt?:string|null; priority:number; createdAt:string; updatedAt:string };
 type TimelineEvent = { id:string; type:'PATIENT_CREATED'|'PROCESS'|'SESSION'|'HISTORY'|'GOAL'|'TASK'|'ASSESSMENT'|'DOCUMENT'|'CONSENT'|'REPORT'; date:string; title:string; description?:string|null; status?:string|null; href?:string|null };
-type Patient = { id:string; firstName:string; lastName:string; status:string; summary:{ activeProcess?:{title:string}|null } };
+type Patient = { id:string; firstName:string; lastName:string; status:string; summary:{ activeProcess?:{status:string; modality?:string|null}|null } };
 
 const STATUS_LABEL: Record<GoalStatus,string> = { ACTIVE:'Activo', ACHIEVED:'Alcanzado', PAUSED:'Pausado', CANCELLED:'Cancelado' };
 const TYPE_ICON: Record<TimelineEvent['type'],string> = { PATIENT_CREATED:'P', PROCESS:'PR', SESSION:'S', HISTORY:'HC', GOAL:'O', TASK:'T', ASSESSMENT:'E', DOCUMENT:'D', CONSENT:'C', REPORT:'I' };
@@ -76,7 +77,7 @@ export default function PatientPlanPage(){
 
   return <div className="app-layout"><Sidebar syncText="Plan terapéutico actualizado"/><main className="patient-plan-page">
     <header className="patient-plan-header">
-      <div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la historia clínica</Link><div className="patient-record-kicker">Seguimiento clínico</div><h1>Plan terapéutico de {patient.firstName} {patient.lastName}</h1><p>{patient.summary.activeProcess?.title||'Sin proceso terapéutico activo'}</p></div>
+      <div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la historia clínica</Link><div className="patient-record-kicker">Seguimiento clínico</div><h1>Plan terapéutico de {patient.firstName} {patient.lastName}</h1><p>{patient.summary.activeProcess?processLabel(patient.summary.activeProcess):'Sin proceso terapéutico activo'}</p></div>
       <div className="patient-record-actions"><Link href={`/patients/${patient.id}/tasks`} className="button secondary">Tareas</Link><Link href={`/agenda?patientId=${patient.id}`} className="button">Programar sesión</Link></div>
     </header>
     {error&&<div className="agenda-error">{error}</div>}
