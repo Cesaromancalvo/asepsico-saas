@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from '../src/patients/patients.service';
 import { PatientAccessService } from '../src/patients/patient-access.service';
 import { PatientTasksService } from '../src/patients/patient-tasks.service';
@@ -176,6 +176,24 @@ describe('Patients: ASSISTANT no puede escribir el motivo de consulta', () => {
     expect(prisma.patient.updateMany).not.toHaveBeenCalled();
   });
 
+  it('POST /patients con consultationReason: null → 403 sin escribir ni auditar', async () => {
+    const prisma = patientsPrisma();
+    await expect(new PatientsService(prisma).create('ws-1', assistant, { firstName: 'Paciente', lastName: 'Ficticio', consultationReason: null } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.patient.create).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /patients/:id con consultationReason: null → 403 sin escribir ni auditar (null también lo borraría)', async () => {
+    const prisma = patientsPrisma();
+    await expect(new PatientsService(prisma).update('ws-1', assistant, 'patient-1', { consultationReason: null } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.patient.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
   it('ASSISTANT sigue pudiendo dar de alta y modificar datos administrativos', async () => {
     const prisma = patientsPrisma();
     const service = new PatientsService(prisma);
@@ -195,6 +213,22 @@ describe('GET /patients/:id/consultation-reason (campo clínico)', () => {
     const prisma = patientsPrisma();
     prisma.clinicalProcess.findFirst = jest.fn(async () => null);
     await expect(new PatientsService(prisma).getConsultationReason('ws-1', therapist, 'patient-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('OWNER de otro workspace → 404 sin fuga (ni el motivo ni si el paciente existe)', async () => {
+    const foreignOwner = { sub: 'owner-2', workspaceId: 'ws-2', role: 'OWNER', email: 'o2@example.com' } as any;
+    const prisma = patientsPrisma();
+    const row = fullPatientRow();
+    // El doble respeta el filtro de workspace: el paciente vive en ws-1.
+    prisma.patient.findFirst = jest.fn(async (args: any) => (args?.where?.workspaceId === row.workspaceId && args?.where?.id === row.id ? row : null));
+    const error = await new PatientsService(prisma).getConsultationReason('ws-2', foreignOwner, 'patient-1').catch((e) => e);
+    expect(error).toBeInstanceOf(NotFoundException);
+    expect(error.getStatus()).toBe(404);
+    const body = JSON.stringify(error.getResponse());
+    expect(body).not.toContain(REASON);
+    expect(body).not.toContain('patient-1');
+    expect(body).not.toMatch(/enc:v[12]:/);
+    expect(prisma.patient.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-2' } }));
   });
 
   it.each([['OWNER', owner], ['ADMIN', admin], ['THERAPIST', therapist]])('%s lo recibe descifrado, acotado al workspace', async (_role, actor) => {
