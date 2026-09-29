@@ -56,7 +56,7 @@ describe('TherapyGoal: title y description se cifran en reposo', () => {
     const prisma: any = {
       therapeuticTask: { findMany: jest.fn(async () => [{ id: 't1', title: 'Tarea', status: 'PENDING', instructions: null, therapyGoal: { id: 'goal-1', title: encGoal.title, status: 'ACTIVE' }, updatedAt: new Date() }]) },
       patient: { findFirst: jest.fn(async () => ({ id: 'patient-1', createdAt: new Date() })) },
-      clinicalHistory: { findUnique: jest.fn(async () => null) },
+      clinicalHistory: { findFirst: jest.fn(async () => null) },
       therapyGoal: { findMany: jest.fn(async () => [encGoal]) },
       clinicalProcess: empty, session: empty, clinicalAssessment: empty, patientDocument: empty,
       consentRecord: empty, clinicalReport: empty, resourceShare: empty,

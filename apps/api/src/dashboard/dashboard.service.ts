@@ -37,13 +37,14 @@ export class DashboardService {
       this.prisma.session.findMany({
         where: { workspaceId: user.workspaceId, startsAt: { gte: start, lte: end }, ...therapistFilter },
         orderBy: { startsAt: 'asc' },
-        // Vista general: NUNCA notes ni internalSummary (contenido clínico narrativo).
+        // Vista general: NUNCA notes ni internalSummary (contenido clínico narrativo), ni el
+        // título del proceso (puede revelar el motivo clínico): solo su modalidad.
         select: {
           id: true, workspaceId: true, patientId: true, therapistId: true, clinicalProcessId: true,
           startsAt: true, endsAt: true, status: true, type: true, location: true, videoCallUrl: true,
           createdAt: true, updatedAt: true,
           patient: { select: { id: true, firstName: true, lastName: true } },
-          clinicalProcess: { select: { title: true, modality: true } },
+          clinicalProcess: { select: { modality: true } },
         },
       }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE', deletedAt: null, ...patientAccess } }),
@@ -56,7 +57,9 @@ export class DashboardService {
       this.prisma.message.findMany({
         where: { senderType: 'PATIENT', readByProfessionalAt: null, conversation: { workspaceId: user.workspaceId, patient: patientAccess } },
         orderBy: { createdAt: 'desc' }, take: 5,
-        include: { conversation: { include: { patient: { select: { id: true, firstName: true, lastName: true } } } } },
+        // Solo metadatos para el aviso: el cuerpo del mensaje (body) NUNCA se carga aquí; se lee
+        // en /messages, con su propio control de acceso.
+        select: { id: true, createdAt: true, conversation: { select: { patient: { select: { id: true, firstName: true, lastName: true } } } } },
       }),
       this.prisma.patient.findMany({
         where: {

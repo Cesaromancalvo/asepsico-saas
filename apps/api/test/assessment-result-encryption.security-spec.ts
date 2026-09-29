@@ -59,7 +59,7 @@ describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', 
     const empty = { findMany: jest.fn(async () => []) };
     const prisma: any = {
       patient: { findFirst: jest.fn(async () => ({ id: 'p1', createdAt: new Date() })) },
-      clinicalHistory: { findUnique: jest.fn(async () => null) },
+      clinicalHistory: { findFirst: jest.fn(async () => null) },
       therapyGoal: empty, therapeuticTask: empty, clinicalProcess: empty, session: empty, patientDocument: empty,
       consentRecord: empty, clinicalReport: empty, resourceShare: empty,
       clinicalAssessment: { findMany: jest.fn(async () => [{ id: 'as-1', scaleName: 'GAD-7', administeredAt: new Date(), result: encryptAssessmentResult({ totalScore: 9, severity: 'Leve', riskFlag: false }) }]) },

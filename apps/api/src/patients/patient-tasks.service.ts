@@ -134,14 +134,17 @@ export class PatientTasksService {
 
   async getTimeline(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    // Los modelos hijos sin workspaceId propio se acotan por la relación patient (defensa en
+    // profundidad: nunca solo por patientId).
+    const childScope = patientChildScope(workspaceId, patientId);
     const [patient, history, goals, tasks, processes, sessions, assessments, documents, consents, reports, resourceShares] = await Promise.all([
       this.prisma.patient.findFirst({ where: { id: patientId, workspaceId } }),
-      this.prisma.clinicalHistory.findUnique({ where: { patientId } }),
-      this.prisma.therapyGoal.findMany({ where: { patientId } }),
-      this.prisma.therapeuticTask.findMany({ where: { patientId } }),
+      this.prisma.clinicalHistory.findFirst({ where: childScope }),
+      this.prisma.therapyGoal.findMany({ where: childScope }),
+      this.prisma.therapeuticTask.findMany({ where: childScope }),
       this.prisma.clinicalProcess.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,title:true,status:true,startedAt:true } }),
       this.prisma.session.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,startsAt:true,status:true,type:true } }),
-      this.prisma.clinicalAssessment.findMany({ where: { patientId }, select: { id:true,scaleName:true,administeredAt:true,...ASSESSMENT_RESULT_SELECT } }),
+      this.prisma.clinicalAssessment.findMany({ where: childScope, select: { id:true,scaleName:true,administeredAt:true,...ASSESSMENT_RESULT_SELECT } }),
       this.prisma.patientDocument.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,type:true,createdAt:true } }),
       this.prisma.consentRecord.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,status:true,updatedAt:true } }),
       this.prisma.clinicalReport.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,status:true,updatedAt:true } }),
