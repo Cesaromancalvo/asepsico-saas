@@ -81,7 +81,7 @@ export class PatientTasksService {
 
   async getTherapeuticTasks(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    const tasks = await this.prisma.therapeuticTask.findMany({ where:{patientId}, orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+    const tasks = await this.prisma.therapeuticTask.findMany({ where: patientChildScope(workspaceId, patientId), orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
     return tasks.map(decryptTask);
   }
 
