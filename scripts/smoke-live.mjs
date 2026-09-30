@@ -85,14 +85,20 @@ function assertEnrollmentTargetAllowed() {
     'Contra entornos persistentes usa ASEPSICO_SMOKE_TOTP_SECRET.');
 }
 
+// Id del usuario de la sesión del smoke: OWNER/ADMIN deben indicar therapistId al abrir un
+// proceso clínico (la API no lo infiere para roles de gestión), así que lo abrimos a su nombre.
+let sessionUserId = null;
+
 async function login() {
   const result = await req('/auth/login', { method: 'POST', body: { email, password } });
+  sessionUserId = result.user?.id ?? null;
   if (result.mfaRequired) {
     if (!presetTotpSecret) {
       throw new Error('La cuenta de smoke tiene MFA activo y no se ha definido ASEPSICO_SMOKE_TOTP_SECRET. ' +
         'En una BD desechable, vuelve a sembrarla (npm run db:seed) y usa ASEPSICO_SMOKE_ENROLL_MFA=1.');
     }
-    await req('/auth/login/mfa', { method: 'POST', body: { pendingToken: result.pendingToken, code: await totpCode(presetTotpSecret) } });
+    const session = await req('/auth/login/mfa', { method: 'POST', body: { pendingToken: result.pendingToken, code: await totpCode(presetTotpSecret) } });
+    sessionUserId = session.user?.id ?? null;
     console.log('   sesión iniciada con MFA (secreto proporcionado por entorno)');
     return;
   }
@@ -144,7 +150,8 @@ function assertNoClinicalContent(value, where) {
 
 // Regresión de fix/patient-reason-exposure contra la API y la BD reales.
 async function checkReasonExposure(patient) {
-  await req('/clinical-processes', { method: 'POST', body: { patientId: patient.id, title: SMOKE_PROCESS_TITLE } });
+  assert(sessionUserId, 'El login no devolvió user.id para abrir el proceso clínico');
+  await req('/clinical-processes', { method: 'POST', body: { patientId: patient.id, therapistId: sessionUserId, title: SMOKE_PROCESS_TITLE } });
   assertNoClinicalContent(patient, 'POST /patients');
 
   const list = await req(`/patients?q=${encodeURIComponent(patient.lastName)}`);
