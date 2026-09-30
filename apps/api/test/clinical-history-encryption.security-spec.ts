@@ -67,7 +67,7 @@ describe('ClinicalHistory: los 10 campos narrativos se cifran en reposo', () => 
     const history: any = await service.getClinicalHistory('ws-1', owner, 'patient-1');
     for (const f of FIELDS) expect(history[f]).toBe(dto[f]);
 
-    prisma.clinicalHistory.findUnique.mockResolvedValueOnce({ id: 'hist-legacy', patientId: 'patient-1', currentProblem: 'Dato antiguo en claro ficticio' });
+    prisma.clinicalHistory.findFirst.mockResolvedValueOnce({ id: 'hist-legacy', patientId: 'patient-1', currentProblem: 'Dato antiguo en claro ficticio' });
     expect(((await service.getClinicalHistory('ws-1', owner, 'patient-1')) as any).currentProblem).toBe('Dato antiguo en claro ficticio');
   });
 });

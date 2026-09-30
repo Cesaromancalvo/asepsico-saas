@@ -36,7 +36,8 @@ export class PatientCareService {
 
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    const history = await this.prisma.clinicalHistory.findUnique({ where: { patientId } });
+    // Defensa en profundidad: además del control de acceso, la lectura se acota al workspace.
+    const history = await this.prisma.clinicalHistory.findFirst({ where: patientChildScope(workspaceId, patientId) });
     if (history) return decryptClinicalHistory(history);
     return { patientId, reasonForConsultation: null, currentProblem: null, personalHistory: null, familyHistory: null, medicalHistory: null, currentMedication: null, primaryDiagnosis: null, riskFactors: null, protectiveFactors: null, clinicalObservations: null, createdAt: null, updatedAt: null };
   }
@@ -66,7 +67,7 @@ export class PatientCareService {
 
   async getTherapyGoals(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    const goals = await this.prisma.therapyGoal.findMany({ where: { patientId }, orderBy: [{ status: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }] });
+    const goals = await this.prisma.therapyGoal.findMany({ where: patientChildScope(workspaceId, patientId), orderBy: [{ status: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }] });
     return goals.map(decryptTherapyGoal);
   }
 

@@ -9,7 +9,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import { api } from '@/lib/api';
-import { processLabel } from '@/lib/clinical';
+import { processLabel, useIsClinicalRole } from '@/lib/clinical';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -57,7 +57,8 @@ type Session = {
   type: SessionType;
   location?: string | null;
   videoCallUrl?: string | null;
-  notes?: string | null;
+  // GET /sessions (listado) no devuelve notes ni internalSummary: solo metadatos. Las notas
+  // se ven y editan en el detalle /agenda/[sessionId].
 
   patient?: {
     id: string;
@@ -71,9 +72,9 @@ type Session = {
     lastName: string;
   };
 
+  // Sin título: puede revelar contenido clínico y la agenda la usa también ASSISTANT.
   clinicalProcess?: {
     id: string;
-    title: string;
     modality: TherapyModality;
     status: string;
   } | null;
@@ -176,6 +177,9 @@ function formatDuration(startsAt: string, endsAt: string) {
 export default function AgendaPage() {
   const router = useRouter();
 
+  // Las notas de sesión son contenido clínico: ASSISTANT no las ve ni las envía (la API
+  // respondería 403 y no crearía la cita).
+  const isClinical = useIsClinicalRole();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
 
@@ -425,7 +429,7 @@ export default function AgendaPage() {
       payload.videoCallUrl = videoCallUrl;
     }
 
-    if (notes) {
+    if (notes && isClinical === true) {
       payload.notes = notes;
     }
 
@@ -836,15 +840,17 @@ export default function AgendaPage() {
                 />
               </label>
 
-              <label className="agenda-form-notes">
-                <span>Notas</span>
+              {isClinical === true && (
+                <label className="agenda-form-notes">
+                  <span>Notas</span>
 
-                <textarea
-                  name="notes"
-                  rows={3}
-                  placeholder="Información relevante para preparar la sesión..."
-                />
-              </label>
+                  <textarea
+                    name="notes"
+                    rows={3}
+                    placeholder="Información relevante para preparar la sesión..."
+                  />
+                </label>
+              )}
 
               <div className="agenda-form-actions">
                 <button
@@ -996,22 +1002,9 @@ export default function AgendaPage() {
 
                           {session.clinicalProcess && (
                             <p className="agenda-session-notes">
-                              Proceso:{' '}
-                              <strong>
-                                {
-                                  session
-                                    .clinicalProcess
-                                    .title
-                                }
-                              </strong>
-                              {' · '}
-                              {
-                                MODALITY_LABELS[
-                                  session
-                                    .clinicalProcess
-                                    .modality
-                                ]
-                              }
+                              {processLabel(
+                                session.clinicalProcess,
+                              )}
                             </p>
                           )}
 
@@ -1043,11 +1036,6 @@ export default function AgendaPage() {
                             </p>
                           )}
 
-                          {session.notes && (
-                            <p className="agenda-session-notes">
-                              {session.notes}
-                            </p>
-                          )}
                         </button>
 
                         {session.videoCallUrl && (

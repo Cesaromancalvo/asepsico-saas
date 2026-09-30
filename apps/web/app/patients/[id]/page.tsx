@@ -40,6 +40,11 @@ const EMPTY_HISTORY: ClinicalHistory = {
 const STATUS_LABEL: Record<PatientStatus,string> = { ACTIVE:'Activo', PAUSED:'Pausado', DISCHARGED:'Alta', ARCHIVED:'Archivado' };
 const EVENT_LABEL: Record<string,string> = { SESSION:'Sesión', GOAL:'Objetivo', TASK:'Tarea', ASSESSMENT:'Escala', DOCUMENT:'Documento', HISTORY:'Historia', PROCESS:'Proceso', CONSENT:'Consentimiento', REPORT:'Informe', RESOURCE:'Recurso', PATIENT_CREATED:'Alta' };
 
+/** Valor de una promesa resuelta, o el valor por defecto si falló (403 incluido). */
+function settledOr<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status==='fulfilled'?result.value:fallback;
+}
+
 function formatDate(value?:string|null, includeTime=false) {
   if (!value) return 'Sin registrar';
   return new Intl.DateTimeFormat('es-ES',{ day:'2-digit', month:'short', year:'numeric', ...(includeTime?{hour:'2-digit',minute:'2-digit'}:{}) }).format(new Date(value));
@@ -65,21 +70,35 @@ export default function PatientRecordPage(){
   const [consultationReason,setConsultationReason]=useState<string|null>(null);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const [savedMessage,setSavedMessage]=useState('');
 
+  // La API responde 403 a la parte clínica (historia, objetivos, tareas, escalas...) si el rol no
+  // es clínico (ASSISTANT) o si un THERAPIST no tiene proceso propio con este paciente. En ese
+  // caso la ficha muestra solo los datos administrativos en lugar de romper la página entera.
+  const [clinicalDenied,setClinicalDenied]=useState(false);
+  const showClinical=isClinical===true&&!clinicalDenied;
+
   async function load(){
     try{
       setLoading(true); setError('');
-      const [patientData,historyData,goalData,taskData,assessmentData,documentData,timelineData]=await Promise.all([
-        api<Patient>(`/patients/${patientId}`), api<ClinicalHistory>(`/patients/${patientId}/history`),
-        api<Goal[]>(`/patients/${patientId}/goals`), api<Task[]>(`/patients/${patientId}/tasks`),
-        api<Assessment[]>(`/patients/${patientId}/assessments`), api<DocumentItem[]>(`/patients/${patientId}/documents`),
-        api<TimelineEvent[]>(`/patients/${patientId}/timeline`),
-      ]);
-      setPatient(patientData); setHistory({...EMPTY_HISTORY,...historyData,patientId}); setGoals(goalData); setTasks(taskData);
-      setAssessments(assessmentData); setDocuments(documentData); setTimeline(timelineData);
+      setPatient(await api<Patient>(`/patients/${patientId}`));
     }catch(err){ setError(err instanceof Error?err.message:'No se pudo cargar la ficha del paciente'); }
     finally{ setLoading(false); }
   }
+  async function loadClinical(){
+    const [historyRes,goalRes,taskRes,assessmentRes,documentRes,timelineRes]=await Promise.allSettled([
+      api<ClinicalHistory>(`/patients/${patientId}/history`),
+      api<Goal[]>(`/patients/${patientId}/goals`), api<Task[]>(`/patients/${patientId}/tasks`),
+      api<Assessment[]>(`/patients/${patientId}/assessments`), api<DocumentItem[]>(`/patients/${patientId}/documents`),
+      api<TimelineEvent[]>(`/patients/${patientId}/timeline`),
+    ]);
+    // La historia clínica es la referencia: si no se puede leer, se oculta toda la parte clínica.
+    if(historyRes.status==='rejected'){ setClinicalDenied(true); setView('overview'); return; }
+    setClinicalDenied(false);
+    setHistory({...EMPTY_HISTORY,...historyRes.value,patientId});
+    setGoals(settledOr(goalRes,[])); setTasks(settledOr(taskRes,[])); setAssessments(settledOr(assessmentRes,[]));
+    setDocuments(settledOr(documentRes,[])); setTimeline(settledOr(timelineRes,[]));
+  }
   useEffect(()=>{ if(patientId) load(); },[patientId]);
+  useEffect(()=>{ if(patientId&&isClinical) loadClinical(); },[patientId,isClinical]);
   useEffect(()=>{
     if(!isClinical||!patientId){ setConsultationReason(null); return; }
     let cancelled=false;
@@ -114,7 +133,7 @@ export default function PatientRecordPage(){
     finally{ setSaving(false); }
   }
 
-  if(loading) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="patient-record-loading">Cargando ficha unificada…</div></main></div>;
+  if(loading||isClinical===null) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="patient-record-loading">Cargando ficha unificada…</div></main></div>;
   if(!patient) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div><Link href="/patients" className="button secondary">Volver a pacientes</Link></main></div>;
 
   return <div className="app-layout"><Sidebar syncText={savedMessage||'Ficha clínica protegida'}/><main className="patient-record-page patient-unified-page">
@@ -126,13 +145,21 @@ export default function PatientRecordPage(){
           <div className="patient-record-meta"><span className={`patient-status patient-status-${patient.status.toLowerCase()}`}>{STATUS_LABEL[patient.status]}</span>{age!==null&&<span>{age} años</span>}{patient.email&&<span>{patient.email}</span>}{patient.phone&&<span>{patient.phone}</span>}</div>
         </div></div>
       </div>
-      <div className="patient-record-actions"><Link href={`/agenda?patientId=${patient.id}`} className="button">Nueva cita</Link><Link href={`/patients/${patient.id}/tasks`} className="button secondary">Nueva tarea</Link></div>
+      <div className="patient-record-actions"><Link href={`/agenda?patientId=${patient.id}`} className="button">Nueva cita</Link>{showClinical&&<Link href={`/patients/${patient.id}/tasks`} className="button secondary">Nueva tarea</Link>}</div>
     </header>
 
     {error&&<div className="agenda-error">{error}</div>}
-    <nav className="patient-unified-tabs" aria-label="Secciones de la ficha"><button className={view==='overview'?'active':''} onClick={()=>setView('overview')}>Resumen y seguimiento</button><button className={view==='history'?'active':''} onClick={()=>setView('history')}>Historia clínica</button></nav>
+    {!showClinical&&<section className="patient-record-card"><p>Vista administrativa: la información clínica de este paciente solo es visible para su equipo clínico.</p></section>}
+    {showClinical&&<nav className="patient-unified-tabs" aria-label="Secciones de la ficha"><button className={view==='overview'?'active':''} onClick={()=>setView('overview')}>Resumen y seguimiento</button><button className={view==='history'?'active':''} onClick={()=>setView('history')}>Historia clínica</button></nav>}
 
-    {view==='overview' ? <>
+    {!showClinical ? <div className="patient-unified-grid">
+      <section className="patient-record-summary-grid patient-unified-summary">
+        <article className="patient-summary-card"><span>Próxima sesión</span><strong>{formatDate(patient.summary.nextSession?.startsAt,true)}</strong><small>{patient.summary.nextSession?'Cita programada':'Sin cita prevista'}</small></article>
+        <article className="patient-summary-card"><span>Sesiones</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
+        <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{patient.summary.activeProcess?.frequency||'Frecuencia no definida'}</small></article>
+      </section>
+      <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Gestión administrativa</h2></div></div><div className="patient-quick-links"><Link href={`/agenda?patientId=${patient.id}`}><strong>Agenda</strong><span>Programar o mover citas</span></Link><Link href={`/patients/${patient.id}/portal`}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
+    </div> : view==='overview' ? <>
       <section className="patient-next-action"><div><span>Siguiente acción recomendada</span><h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div><Link href={nextAction.href} className="button">{nextAction.cta}</Link></section>
 
       <section className="patient-record-summary-grid patient-unified-summary">

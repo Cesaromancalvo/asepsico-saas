@@ -19,12 +19,33 @@ import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
+import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view.util';
+import { projectSelect } from '../patients/patient-view.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
   'ADMIN',
   'THERAPIST',
 ];
+
+// Roles con acceso a contenido clínico de la sesión (notes, internalSummary, título del
+// proceso). Lista blanca: cualquier otro rol (ASSISTANT o desconocido) queda fuera.
+const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
+
+function isClinicalRole(actor: Pick<AuthUser, 'role'>): boolean {
+  return CLINICAL_ROLES.includes(actor?.role);
+}
+
+/**
+ * Las notas de sesión son contenido clínico: un rol no clínico que las envíe al crear o
+ * reprogramar → 403 antes de leer o escribir nada (null o '' también cuentan: borrarlas es
+ * escribirlas).
+ */
+function assertCanWriteSessionNotes(actor: Pick<AuthUser, 'role'>, dto: { notes?: unknown }) {
+  if (dto.notes !== undefined && !isClinicalRole(actor)) {
+    throw new ForbiddenException('No tienes permiso para registrar notas de sesión');
+  }
+}
 
 // notes e internalSummary se cifran en reposo (lista única en common/crypto/clinical-crypto.ts).
 
@@ -84,32 +105,8 @@ export class SessionsService {
         skip: (page - 1) * pageSize,
         take: pageSize,
 
-        include: {
-          patient: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-
-          therapist: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-
-          clinicalProcess: {
-            select: {
-              id: true,
-              title: true,
-              modality: true,
-              status: true,
-            },
-          },
-        },
+        // Listado: solo metadatos (sin notes, internalSummary ni título del proceso).
+        select: SESSION_LIST_SELECT,
       }),
 
       this.prisma.session.count({
@@ -118,7 +115,9 @@ export class SessionsService {
     ]);
 
     return {
-      data: data.map(decryptSession),
+      // La proyección se aplica también a la respuesta (lista blanca) como defensa en
+      // profundidad, por si una consulta futura trae la fila completa.
+      data: data.map((row) => projectSelect<typeof row>(row, SESSION_LIST_SELECT)),
       meta: {
         page,
         pageSize,
@@ -137,6 +136,20 @@ export class SessionsService {
     id: string,
   ) {
     assertStaffRole(actor);
+
+    // Roles no clínicos (ASSISTANT): solo metadatos de la sesión, sin notes, internalSummary
+    // ni título del proceso. Lista blanca también sobre la respuesta.
+    if (!isClinicalRole(actor)) {
+      const summary = await this.prisma.session.findFirst({
+        where: { id, workspaceId },
+        select: SESSION_ADMIN_DETAIL_SELECT,
+      });
+      if (!summary) {
+        throw new NotFoundException('Sesión no encontrada');
+      }
+      return projectSelect<typeof summary>(summary, SESSION_ADMIN_DETAIL_SELECT);
+    }
+
     const session =
       await this.prisma.session.findFirst({
         where: {
@@ -196,6 +209,8 @@ export class SessionsService {
     actor: AuthUser,
     dto: CreateSessionDto,
   ) {
+    assertStaffRole(actor);
+    assertCanWriteSessionNotes(actor, dto);
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
 
@@ -321,6 +336,8 @@ export class SessionsService {
     id: string,
     dto: RescheduleSessionDto,
   ) {
+    assertStaffRole(actor);
+    assertCanWriteSessionNotes(actor, dto);
     const session = await this.get(
       workspaceId,
       actor,
@@ -427,6 +444,10 @@ export class SessionsService {
     id: string,
     dto: UpdateSessionNotesDto,
   ) {
+    assertStaffRole(actor);
+    if (!isClinicalRole(actor)) {
+      throw new ForbiddenException('No tienes permiso para registrar notas de sesión');
+    }
     const session = await this.get(
       workspaceId,
       actor,
@@ -447,10 +468,12 @@ export class SessionsService {
       );
     }
 
-    const updated =
-      await this.prisma.session.update({
+    // updateMany con workspaceId: la escritura nunca va solo por id.
+    const { count: notesCount } =
+      await this.prisma.session.updateMany({
         where: {
           id,
+          workspaceId,
         },
 
         data: {
@@ -472,6 +495,10 @@ export class SessionsService {
         },
       });
 
+    if (notesCount === 0) {
+      throw new NotFoundException('Sesión no encontrada');
+    }
+
     await this.prisma.auditLog.create({
       data: {
         workspaceId,
@@ -492,7 +519,7 @@ export class SessionsService {
     return this.get(
       workspaceId,
       actor,
-      updated.id,
+      id,
     );
   }
   async close(
@@ -521,16 +548,23 @@ export class SessionsService {
       );
     }
 
-    const updated =
-      await this.prisma.session.update({
+    // updateMany con workspaceId y compare-and-set del estado: nunca solo por id.
+    const { count: closedCount } =
+      await this.prisma.session.updateMany({
         where: {
           id,
+          workspaceId,
+          status: SessionStatus.SCHEDULED,
         },
 
         data: {
           status: target,
         },
       });
+
+    if (closedCount === 0) {
+      throw new BadRequestException('La sesión ya está cerrada');
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -552,7 +586,7 @@ export class SessionsService {
     return this.get(
       workspaceId,
       actor,
-      updated.id,
+      id,
     );
   }
 
