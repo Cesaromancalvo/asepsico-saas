@@ -57,7 +57,8 @@ type Session = {
   type: SessionType;
   location?: string | null;
   videoCallUrl?: string | null;
-  notes?: string | null;
+  // GET /sessions (listado) no devuelve notes ni internalSummary: solo metadatos. Las notas
+  // se ven y editan en el detalle /agenda/[sessionId].
 
   patient?: {
     id: string;
@@ -71,9 +72,9 @@ type Session = {
     lastName: string;
   };
 
+  // Sin título: puede revelar contenido clínico y la agenda la usa también ASSISTANT.
   clinicalProcess?: {
     id: string;
-    title: string;
     modality: TherapyModality;
     status: string;
   } | null;
@@ -996,22 +997,9 @@ export default function AgendaPage() {
 
                           {session.clinicalProcess && (
                             <p className="agenda-session-notes">
-                              Proceso:{' '}
-                              <strong>
-                                {
-                                  session
-                                    .clinicalProcess
-                                    .title
-                                }
-                              </strong>
-                              {' · '}
-                              {
-                                MODALITY_LABELS[
-                                  session
-                                    .clinicalProcess
-                                    .modality
-                                ]
-                              }
+                              {processLabel(
+                                session.clinicalProcess,
+                              )}
                             </p>
                           )}
 
@@ -1043,11 +1031,6 @@ export default function AgendaPage() {
                             </p>
                           )}
 
-                          {session.notes && (
-                            <p className="agenda-session-notes">
-                              {session.notes}
-                            </p>
-                          )}
                         </button>
 
                         {session.videoCallUrl && (
