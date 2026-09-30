@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AssignableStatus } from './dto/change-status.dto';
 import { PatientCoreService } from './patient-core.service';
-import { decryptPatient } from './patient-crypto.util';
+import { toPatientView } from './patient-view.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 import { revokeAllPortalAccounts } from '../portal/portal-access-mode.util';
 
@@ -85,7 +85,7 @@ export class PatientLifecycleService {
         },
       });
 
-      return decryptPatient(updated);
+      return toPatientView(updated);
     });
   }
 
@@ -169,7 +169,7 @@ export class PatientLifecycleService {
         },
       });
 
-      return decryptPatient(restored);
+      return toPatientView(restored);
     });
   }
 
@@ -220,7 +220,7 @@ export class PatientLifecycleService {
         },
       });
 
-      return decryptPatient(updated);
+      return toPatientView(updated);
     });
   }
 

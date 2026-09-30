@@ -6,7 +6,7 @@ import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { UpdateClinicalHistoryDto } from './dto/update-clinical-history.dto';
 import { CreateTherapyGoalDto } from './dto/create-therapy-goal.dto';
 import { UpdateTherapyGoalDto } from './dto/update-therapy-goal.dto';
-import { encryptField } from '../common/crypto/field-encryption';
+import { decryptField, encryptField } from '../common/crypto/field-encryption';
 import {
   CLINICAL_HISTORY_ENCRYPTED_FIELDS,
   decryptClinicalHistory,
@@ -22,6 +22,17 @@ export { CLINICAL_HISTORY_ENCRYPTED_FIELDS };
 @Injectable()
 export class PatientCareService {
   constructor(private readonly prisma: PrismaService, private readonly access: PatientAccessService) {}
+
+  /**
+   * Motivo de consulta registrado en la ficha del paciente (Patient.consultationReason). Es
+   * contenido clínico: ya no viaja en GET /patients ni GET /patients/:id, y solo se sirve aquí,
+   * con el mismo control que la historia clínica (ASSISTANT → 403; THERAPIST solo con proceso
+   * propio; siempre acotado al workspace).
+   */
+  async getConsultationReason(workspaceId: string, actor: AuthUser, patientId: string) {
+    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    return { patientId: patient.id, consultationReason: decryptField(patient.consultationReason) ?? null };
+  }
 
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
+import { modalityLabel } from '../lib/clinical';
 
 type DashboardData = {
   professional: { firstName: string; lastName: string; role: string };
@@ -15,7 +16,7 @@ type DashboardData = {
     type: string;
     location?: string | null;
     patient: { id: string; firstName: string; lastName: string };
-    clinicalProcess?: { title: string; modality: string } | null;
+    clinicalProcess?: { modality: string } | null;
   };
   sessions: Array<{
     id: string;
@@ -24,7 +25,7 @@ type DashboardData = {
     status: string;
     type: string;
     patient: { id: string; firstName: string; lastName: string };
-    clinicalProcess?: { title: string; modality: string } | null;
+    clinicalProcess?: { modality: string } | null;
   }>;
   attention: Array<{ id: string; type: string; title: string; subtitle: string; href: string }>;
   onboarding: {
@@ -128,7 +129,7 @@ export default function Home() {
             <div>
               <span className="next-session-label">PRÓXIMA SESIÓN · EN {minutesUntil(next.startsAt)} MIN</span>
               <h2>{next.patient.firstName} {next.patient.lastName}</h2>
-              <p>{formatTime(next.startsAt)} · {next.clinicalProcess?.title ?? 'Proceso clínico'} · {next.clinicalProcess?.modality === 'ONLINE' ? 'Online' : 'Presencial'}</p>
+              <p>{formatTime(next.startsAt)} · {next.clinicalProcess ? `Proceso clínico · ${modalityLabel(next.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p>
             </div>
             <div className="next-session-actions">
               <Link href={`/patients/${next.patient.id}`} className="banner-secondary">Abrir ficha</Link>
@@ -157,7 +158,7 @@ export default function Home() {
                 <article key={session.id} className="session-row">
                   <div className="session-time"><strong>{formatTime(session.startsAt)}</strong><span>{Math.round((new Date(session.endsAt).getTime() - new Date(session.startsAt).getTime()) / 60000)} min</span></div>
                   <div className="session-avatar purple">{session.patient.firstName[0]}{session.patient.lastName[0]}</div>
-                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess?.title ?? 'Proceso clínico'}</p><small className="session-status purple">{session.status === 'SCHEDULED' ? 'Programada' : session.status}</small></div>
+                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess ? `Proceso clínico · ${modalityLabel(session.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p><small className="session-status purple">{session.status === 'SCHEDULED' ? 'Programada' : session.status}</small></div>
                   <div className="session-buttons"><Link href={`/patients/${session.patient.id}`} className="small-secondary">Abrir caso</Link><Link href={`/agenda/${session.id}`} className="small-primary">Preparar</Link></div>
                 </article>
               )) : <div className="dashboard-empty"><strong>No hay sesiones hoy</strong><p>La agenda de hoy está libre.</p></div>}

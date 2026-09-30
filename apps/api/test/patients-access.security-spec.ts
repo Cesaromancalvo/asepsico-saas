@@ -86,8 +86,8 @@ describe('PatientsService clinical authorization', () => {
       workspaceId: 'ws-1',
       clinicalProcesses: { some: { workspaceId: 'ws-1', therapistId: 'therapist-1' } },
     }));
-    expect(args.include.clinicalProcesses.where).toEqual({ workspaceId: 'ws-1', therapistId: 'therapist-1' });
-    expect(args.include.sessions.where.therapistId).toBe('therapist-1');
+    expect(args.select.clinicalProcesses.where).toEqual({ workspaceId: 'ws-1', therapistId: 'therapist-1' });
+    expect(args.select.sessions.where.therapistId).toBe('therapist-1');
   });
 
   it('no permite que THERAPIST abra la ficha administrativa de un paciente no asignado', async () => {

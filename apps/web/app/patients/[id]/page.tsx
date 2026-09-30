@@ -5,13 +5,15 @@ import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { fetchConsultationReason, modalityLabel, processLabel, useIsClinicalRole } from '@/lib/clinical';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type TaskStatus = 'DRAFT' | 'PENDING' | 'IN_PROGRESS' | 'SUBMITTED' | 'CHANGES_REQUESTED' | 'COMPLETED' | 'CANCELLED';
 
 type Session = { id:string; startsAt:string; endsAt:string; status:string; type:string; notes?:string|null };
-type ClinicalProcess = { id:string; title:string; status:string; consultationReason?:string|null; goals?:string|null; modality?:string|null; frequency?:string|null };
+// Vista general del paciente: el proceso llega sin título ni contenido clínico narrativo.
+type ClinicalProcess = { id:string; status:string; modality?:string|null; frequency?:string|null; startedAt?:string|null };
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; priority:number; updatedAt:string };
 type Task = { id:string; title:string; instructions?:string|null; status:TaskStatus; dueDate?:string|null; completedAt?:string|null; patientFeedback?:string|null; clinicianNotes?:string|null; createdAt:string; updatedAt:string };
 type Assessment = { id:string; scaleName:string; totalScore:number; severity:string; riskFlag:boolean; administeredAt:string };
@@ -20,7 +22,7 @@ type TimelineEvent = { id:string; type:string; date:string; title:string; descri
 
 type Patient = {
   id:string; firstName:string; lastName:string; email?:string|null; phone?:string|null; birthDate?:string|null;
-  consultationReason?:string|null; status:PatientStatus; sessions:Session[]; clinicalProcesses:ClinicalProcess[];
+  status:PatientStatus; sessions:Session[]; clinicalProcesses:ClinicalProcess[];
   summary:{ processCount:number; sessionCount:number; activeProcess:ClinicalProcess|null; lastSession:Session|null; nextSession:Session|null };
 };
 
@@ -58,6 +60,9 @@ export default function PatientRecordPage(){
   const [documents,setDocuments]=useState<DocumentItem[]>([]);
   const [timeline,setTimeline]=useState<TimelineEvent[]>([]);
   const [view,setView]=useState<'overview'|'history'>('overview');
+  const isClinical=useIsClinicalRole();
+  // Motivo de consulta del paciente (endpoint con control clínico); solo se usa como placeholder.
+  const [consultationReason,setConsultationReason]=useState<string|null>(null);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const [savedMessage,setSavedMessage]=useState('');
 
   async function load(){
@@ -75,6 +80,12 @@ export default function PatientRecordPage(){
     finally{ setLoading(false); }
   }
   useEffect(()=>{ if(patientId) load(); },[patientId]);
+  useEffect(()=>{
+    if(!isClinical||!patientId){ setConsultationReason(null); return; }
+    let cancelled=false;
+    fetchConsultationReason(patientId).then(reason=>{ if(!cancelled) setConsultationReason(reason); });
+    return ()=>{ cancelled=true; };
+  },[isClinical,patientId]);
 
   const age=useMemo(()=>calculateAge(patient?.birthDate),[patient?.birthDate]);
   const activeGoals=useMemo(()=>goals.filter(goal=>goal.status==='ACTIVE').sort((a,b)=>a.priority-b.priority),[goals]);
@@ -140,7 +151,7 @@ export default function PatientRecordPage(){
           </div>
         </section>
 
-        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{patient.summary.activeProcess?.title||'Sin proceso activo'}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{patient.summary.activeProcess?.modality||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl><Link href="/management" className="button secondary patient-card-button">Gestionar proceso</Link></aside>
+        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{processLabel(patient.summary.activeProcess)}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{modalityLabel(patient.summary.activeProcess?.modality)||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl><Link href="/management" className="button secondary patient-card-button">Gestionar proceso</Link></aside>
 
         <section className="patient-record-card patient-unified-main-card"><div className="patient-unified-card-heading"><div><span>Actividad reciente</span><h2>Línea temporal clínica</h2></div><Link href={`/patients/${patient.id}/plan`}>Ver todo</Link></div><div className="patient-mini-timeline">{recentTimeline.map(item=><article key={item.id}><span>{EVENT_LABEL[item.type]||'Evento'}</span><div><strong>{item.href?<Link href={item.href}>{item.title}</Link>:item.title}</strong><small>{formatDate(item.date,true)}{item.description?` · ${item.description}`:''}</small></div></article>)}{recentTimeline.length===0&&<p>No hay actividad registrada.</p>}</div></section>
 
@@ -149,7 +160,7 @@ export default function PatientRecordPage(){
     </> : <form className="patient-history-form patient-history-unified" onSubmit={saveHistory}>
       <div className="patient-history-toolbar"><div><span>Contenido profesional privado</span><h2>Historia clínica</h2><p>Esta información no se muestra al paciente.</p></div><button className="button" type="submit" disabled={saving||patient.status==='ARCHIVED'}>{saving?'Guardando…':'Guardar historia'}</button></div>
       {savedMessage&&<div className={`patient-save-state ${savedMessage.includes('sin')?'is-pending':''}`}>{savedMessage}</div>}
-      <section className="patient-record-card"><div className="patient-card-heading"><div><span>01</span><div><h2>Motivo y situación actual</h2><p>Demanda inicial, problema presentado y contexto actual.</p></div></div></div><div className="patient-form-grid"><label className="patient-field patient-field-full"><span>Motivo de consulta</span><textarea value={history.reasonForConsultation??''} onChange={e=>updateField('reasonForConsultation',e.target.value)} placeholder={patient.consultationReason||'Describe el motivo principal de consulta…'}/></label><label className="patient-field patient-field-full"><span>Problema actual y evolución</span><textarea className="is-large" value={history.currentProblem??''} onChange={e=>updateField('currentProblem',e.target.value)} placeholder="Inicio, evolución, desencadenantes, impacto y estrategias utilizadas…"/></label><label className="patient-field patient-field-full"><span>Diagnóstico o hipótesis clínica</span><textarea value={history.primaryDiagnosis??''} onChange={e=>updateField('primaryDiagnosis',e.target.value)} placeholder="Diagnóstico principal, hipótesis de trabajo o formulación provisional…"/></label></div></section>
+      <section className="patient-record-card"><div className="patient-card-heading"><div><span>01</span><div><h2>Motivo y situación actual</h2><p>Demanda inicial, problema presentado y contexto actual.</p></div></div></div><div className="patient-form-grid"><label className="patient-field patient-field-full"><span>Motivo de consulta</span><textarea value={history.reasonForConsultation??''} onChange={e=>updateField('reasonForConsultation',e.target.value)} placeholder={consultationReason||'Describe el motivo principal de consulta…'}/></label><label className="patient-field patient-field-full"><span>Problema actual y evolución</span><textarea className="is-large" value={history.currentProblem??''} onChange={e=>updateField('currentProblem',e.target.value)} placeholder="Inicio, evolución, desencadenantes, impacto y estrategias utilizadas…"/></label><label className="patient-field patient-field-full"><span>Diagnóstico o hipótesis clínica</span><textarea value={history.primaryDiagnosis??''} onChange={e=>updateField('primaryDiagnosis',e.target.value)} placeholder="Diagnóstico principal, hipótesis de trabajo o formulación provisional…"/></label></div></section>
       <section className="patient-record-card"><div className="patient-card-heading"><div><span>02</span><div><h2>Antecedentes</h2><p>Información relevante para comprender el caso.</p></div></div></div><div className="patient-form-grid patient-form-grid-two"><label className="patient-field"><span>Antecedentes personales</span><textarea className="is-large" value={history.personalHistory??''} onChange={e=>updateField('personalHistory',e.target.value)}/></label><label className="patient-field"><span>Antecedentes familiares</span><textarea className="is-large" value={history.familyHistory??''} onChange={e=>updateField('familyHistory',e.target.value)}/></label><label className="patient-field"><span>Antecedentes médicos</span><textarea value={history.medicalHistory??''} onChange={e=>updateField('medicalHistory',e.target.value)}/></label><label className="patient-field"><span>Medicación actual</span><textarea value={history.currentMedication??''} onChange={e=>updateField('currentMedication',e.target.value)}/></label></div></section>
       <section className="patient-record-card"><div className="patient-card-heading"><div><span>03</span><div><h2>Evaluación clínica</h2><p>Riesgos, recursos y observaciones profesionales.</p></div></div></div><div className="patient-form-grid patient-form-grid-two"><label className="patient-field"><span>Factores de riesgo</span><textarea className="is-large" value={history.riskFactors??''} onChange={e=>updateField('riskFactors',e.target.value)}/></label><label className="patient-field"><span>Factores protectores</span><textarea className="is-large" value={history.protectiveFactors??''} onChange={e=>updateField('protectiveFactors',e.target.value)}/></label><label className="patient-field patient-field-full"><span>Observaciones clínicas</span><textarea className="is-xlarge" value={history.clinicalObservations??''} onChange={e=>updateField('clinicalObservations',e.target.value)}/></label></div></section>
       <div className="patient-form-footer"><span>Última actualización: {formatDate(history.updatedAt,true)}</span><button className="button" type="submit" disabled={saving||patient.status==='ARCHIVED'}>{saving?'Guardando…':'Guardar cambios'}</button></div>

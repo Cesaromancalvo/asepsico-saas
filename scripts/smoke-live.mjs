@@ -31,6 +31,10 @@
 //                               un host no local (p. ej. un entorno efímero). NO se define en
 //                               CI ni debe usarse contra el piloto o producción.
 //
+//   ASEPSICO_SMOKE_ASSISTANT_EMAIL / ASEPSICO_SMOKE_ASSISTANT_PASSWORD  Cuenta ASSISTANT
+//                               opcional del mismo workspace para comprobar el 403 del motivo de
+//                               consulta. Sin ellas, esa comprobación se omite con aviso.
+//
 // Limitación: si una ejecución con ENROLL_MFA se interrumpe de forma abrupta (kill -9) antes
 // de desactivar el MFA, la cuenta queda con MFA activo y un secreto que nadie conoce. En ese
 // caso hay que volver a sembrar la BD (npm run db:seed) o pasar ASEPSICO_SMOKE_TOTP_SECRET.
@@ -46,6 +50,11 @@ const password = process.env.ASEPSICO_SMOKE_PASSWORD || 'AsePsico2026!';
 const presetTotpSecret = process.env.ASEPSICO_SMOKE_TOTP_SECRET || '';
 const allowMfaEnrollment = process.env.ASEPSICO_SMOKE_ENROLL_MFA === '1';
 const allowRemoteEnrollment = process.env.ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL === '1';
+// Cuenta ASSISTANT opcional del mismo workspace (sin MFA obligatorio). Si se define, el smoke
+// comprueba además que un ASSISTANT recibe 403 en GET /patients/:id/consultation-reason y que no
+// ve el motivo en las vistas generales. Si no, ese paso se omite y se avisa (no se da por pasado).
+const assistantEmail = process.env.ASEPSICO_SMOKE_ASSISTANT_EMAIL || '';
+const assistantPassword = process.env.ASEPSICO_SMOKE_ASSISTANT_PASSWORD || '';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MFA_REQUIRED_MESSAGE = 'Activa la verificación en dos pasos';
 
@@ -57,9 +66,11 @@ async function totpCode(secret) {
 }
 
 const cookies = new Map();
-function cookieHeader() { return [...cookies].map(([k, v]) => `${k}=${v}`).join('; '); }
-function capture(res) { const values = res.headers.getSetCookie?.() || []; for (const raw of values) { const [pair] = raw.split(';'); const i = pair.indexOf('='); cookies.set(pair.slice(0, i), pair.slice(i + 1)); } }
-async function req(path, { method = 'GET', body } = {}) { const headers = {}; if (cookies.size) headers.cookie = cookieHeader(); if (body !== undefined) headers['content-type'] = 'application/json'; if (!['GET', 'HEAD'].includes(method)) { const csrf = cookies.get('csrf_token'); if (csrf) headers['x-csrf-token'] = decodeURIComponent(csrf); } const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); capture(res); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${JSON.stringify(data)}`); return data; }
+function cookieHeader(jar = cookies) { return [...jar].map(([k, v]) => `${k}=${v}`).join('; '); }
+function capture(res, jar = cookies) { const values = res.headers.getSetCookie?.() || []; for (const raw of values) { const [pair] = raw.split(';'); const i = pair.indexOf('='); jar.set(pair.slice(0, i), pair.slice(i + 1)); } }
+// Petición que devuelve { status, data } sin lanzar: para comprobar respuestas de error (403/404).
+async function rawReq(path, { method = 'GET', body, jar = cookies } = {}) { const headers = {}; if (jar.size) headers.cookie = cookieHeader(jar); if (body !== undefined) headers['content-type'] = 'application/json'; if (!['GET', 'HEAD'].includes(method)) { const csrf = jar.get('csrf_token'); if (csrf) headers['x-csrf-token'] = decodeURIComponent(csrf); } const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); capture(res, jar); const data = await res.json().catch(() => ({})); return { status: res.status, ok: res.ok, data }; }
+async function req(path, options = {}) { const { method = 'GET' } = options; const { ok, status, data } = await rawReq(path, options); if (!ok) throw new Error(`${method} ${path}: ${status} ${JSON.stringify(data)}`); return data; }
 function assert(value, message) { if (!value) throw new Error(message); }
 
 // Código de recuperación del MFA que activa el propio smoke (solo con ENROLL_MFA). Solo en
@@ -74,14 +85,20 @@ function assertEnrollmentTargetAllowed() {
     'Contra entornos persistentes usa ASEPSICO_SMOKE_TOTP_SECRET.');
 }
 
+// Id del usuario de la sesión del smoke: OWNER/ADMIN deben indicar therapistId al abrir un
+// proceso clínico (la API no lo infiere para roles de gestión), así que lo abrimos a su nombre.
+let sessionUserId = null;
+
 async function login() {
   const result = await req('/auth/login', { method: 'POST', body: { email, password } });
+  sessionUserId = result.user?.id ?? null;
   if (result.mfaRequired) {
     if (!presetTotpSecret) {
       throw new Error('La cuenta de smoke tiene MFA activo y no se ha definido ASEPSICO_SMOKE_TOTP_SECRET. ' +
         'En una BD desechable, vuelve a sembrarla (npm run db:seed) y usa ASEPSICO_SMOKE_ENROLL_MFA=1.');
     }
-    await req('/auth/login/mfa', { method: 'POST', body: { pendingToken: result.pendingToken, code: await totpCode(presetTotpSecret) } });
+    const session = await req('/auth/login/mfa', { method: 'POST', body: { pendingToken: result.pendingToken, code: await totpCode(presetTotpSecret) } });
+    sessionUserId = session.user?.id ?? null;
     console.log('   sesión iniciada con MFA (secreto proporcionado por entorno)');
     return;
   }
@@ -118,16 +135,74 @@ async function revertEnrollment() {
   console.log('   MFA temporal desactivado: la cuenta queda como estaba');
 }
 
+// Textos ficticios marcados para detectar si el motivo de consulta o el título del proceso
+// aparecen donde no deben (vistas generales y panel).
+const SMOKE_REASON = 'Motivo ficticio smoke no debe salir en vistas generales';
+const SMOKE_PROCESS_TITLE = 'Proceso ficticio smoke sin titulo en vistas generales';
+
+function assertNoClinicalContent(value, where) {
+  const json = JSON.stringify(value);
+  assert(!json.includes('consultationReason'), `${where} expone consultationReason`);
+  assert(!json.includes(SMOKE_REASON), `${where} expone el motivo de consulta`);
+  assert(!/enc:v[12]:/.test(json), `${where} expone texto cifrado`);
+  assert(!json.includes(SMOKE_PROCESS_TITLE), `${where} expone el título del proceso`);
+}
+
+// Regresión de fix/patient-reason-exposure contra la API y la BD reales.
+async function checkReasonExposure(patient) {
+  assert(sessionUserId, 'El login no devolvió user.id para abrir el proceso clínico');
+  await req('/clinical-processes', { method: 'POST', body: { patientId: patient.id, therapistId: sessionUserId, title: SMOKE_PROCESS_TITLE } });
+  assertNoClinicalContent(patient, 'POST /patients');
+
+  const list = await req(`/patients?q=${encodeURIComponent(patient.lastName)}`);
+  assert(list.data?.some(x => x.id === patient.id), 'El paciente de prueba no aparece en GET /patients');
+  assertNoClinicalContent(list, 'GET /patients');
+  for (const row of list.data) for (const proc of row.clinicalProcesses ?? []) assert(!('title' in proc), 'GET /patients devuelve title de proceso');
+
+  const detail = await req(`/patients/${patient.id}`);
+  assertNoClinicalContent(detail, 'GET /patients/:id');
+  for (const proc of detail.clinicalProcesses ?? []) assert(!('title' in proc), 'GET /patients/:id devuelve title de proceso');
+  if (detail.summary?.activeProcess) assert(!('title' in detail.summary.activeProcess), 'GET /patients/:id devuelve title del proceso activo');
+
+  const reason = await req(`/patients/${patient.id}/consultation-reason`);
+  assert(reason.patientId === patient.id && reason.consultationReason === SMOKE_REASON, 'OWNER no recibe el motivo descifrado en /consultation-reason');
+
+  const dashboard = await req('/dashboard');
+  const dashboardJson = JSON.stringify(dashboard);
+  assert(!/"body"\s*:/.test(dashboardJson), 'El panel devuelve body de mensajes');
+  assertNoClinicalContent(dashboard, 'GET /dashboard');
+
+  if (!assistantEmail || !assistantPassword) {
+    console.log('   AVISO: sin ASEPSICO_SMOKE_ASSISTANT_EMAIL/PASSWORD se omite el 403 de ASSISTANT (cubierto por test:security)');
+    return;
+  }
+  const assistantJar = new Map();
+  const login = await rawReq('/auth/login', { method: 'POST', body: { email: assistantEmail, password: assistantPassword }, jar: assistantJar });
+  assert(login.ok && !login.data.mfaRequired, `Login de la cuenta ASSISTANT falló (${login.status})`);
+  const denied = await rawReq(`/patients/${patient.id}/consultation-reason`, { jar: assistantJar });
+  assert(denied.status === 403, `ASSISTANT debería recibir 403 en /consultation-reason y recibió ${denied.status}`);
+  assert(!JSON.stringify(denied.data).includes(SMOKE_REASON), 'El 403 de ASSISTANT filtra el motivo');
+  const assistantDetail = await rawReq(`/patients/${patient.id}`, { jar: assistantJar });
+  assert(assistantDetail.ok, `ASSISTANT no puede leer la ficha general (${assistantDetail.status})`);
+  assertNoClinicalContent(assistantDetail.data, 'GET /patients/:id (ASSISTANT)');
+  const write = await rawReq(`/patients/${patient.id}`, { method: 'PATCH', body: { consultationReason: null }, jar: assistantJar });
+  assert(write.status === 403, `ASSISTANT debería recibir 403 al escribir consultationReason y recibió ${write.status}`);
+  const still = await req(`/patients/${patient.id}/consultation-reason`);
+  assert(still.consultationReason === SMOKE_REASON, 'El PATCH rechazado de ASSISTANT modificó el motivo');
+  console.log('   ASSISTANT: 403 en /consultation-reason y en la escritura del motivo');
+}
+
 async function main() {
   const stamp = Date.now();
-  console.log('1/10 Login'); await login();
-  console.log('2/10 Crear paciente'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000' } }); assert(patient.id, 'No se devolvió patient.id');
-  console.log('3/10 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
-  console.log('4/10 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
-  console.log('5/10 Guardar escala'); const assessment = await req(`/patients/${patient.id}/assessments`, { method: 'POST', body: { scaleCode: 'PHQ9', answers: [0, 0, 0, 0, 0, 0, 0, 0, 0] } }); const assessments = await req(`/patients/${patient.id}/assessments`); assert(assessments.some(x => x.id === assessment.id), 'La escala no persistió');
-  console.log('6/10 Guardar documento, consentimiento e informe'); await req(`/patients/${patient.id}/documents`, { method: 'POST', body: { title: 'Documento smoke', type: 'ADMINISTRATIVE', fileName: 'smoke.pdf', mimeType: 'application/pdf', storageKey: `smoke/${stamp}` } }); await req(`/patients/${patient.id}/consents`, { method: 'POST', body: { title: 'Consentimiento smoke', type: 'DATA_PROCESSING', status: 'PENDING' } }); await req(`/patients/${patient.id}/reports`, { method: 'POST', body: { title: 'Informe smoke', type: 'EVOLUTION', status: 'DRAFT', content: 'Contenido de comprobación automática.' } }); assert((await req(`/patients/${patient.id}/documents`)).length > 0, 'Documento no persistió'); assert((await req(`/patients/${patient.id}/consents`)).length > 0, 'Consentimiento no persistió'); assert((await req(`/patients/${patient.id}/reports`)).length > 0, 'Informe no persistió');
-  console.log('7/10 Guardar preferencias'); await req('/notifications/preferences', { method: 'PATCH', body: { appointmentReminders: true, taskReminders: true, consentReminders: false, invoiceReminders: true, emailEnabled: false, smsEnabled: false, reminderHoursBefore: 24 } }); const pref = await req('/notifications/preferences'); assert(pref.reminderHoursBefore === 24, 'Preferencias no persistieron');
-  console.log('8/10 Comprobar timeline'); const timeline = await req(`/patients/${patient.id}/timeline`); assert(Array.isArray(timeline), 'Timeline no disponible');
+  console.log('1/11 Login'); await login();
+  console.log('2/11 Crear paciente'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id');
+  console.log('3/11 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
+  console.log('4/11 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
+  console.log('5/11 Guardar escala'); const assessment = await req(`/patients/${patient.id}/assessments`, { method: 'POST', body: { scaleCode: 'PHQ9', answers: [0, 0, 0, 0, 0, 0, 0, 0, 0] } }); const assessments = await req(`/patients/${patient.id}/assessments`); assert(assessments.some(x => x.id === assessment.id), 'La escala no persistió');
+  console.log('6/11 Guardar documento, consentimiento e informe'); await req(`/patients/${patient.id}/documents`, { method: 'POST', body: { title: 'Documento smoke', type: 'ADMINISTRATIVE', fileName: 'smoke.pdf', mimeType: 'application/pdf', storageKey: `smoke/${stamp}` } }); await req(`/patients/${patient.id}/consents`, { method: 'POST', body: { title: 'Consentimiento smoke', type: 'DATA_PROCESSING', status: 'PENDING' } }); await req(`/patients/${patient.id}/reports`, { method: 'POST', body: { title: 'Informe smoke', type: 'EVOLUTION', status: 'DRAFT', content: 'Contenido de comprobación automática.' } }); assert((await req(`/patients/${patient.id}/documents`)).length > 0, 'Documento no persistió'); assert((await req(`/patients/${patient.id}/consents`)).length > 0, 'Consentimiento no persistió'); assert((await req(`/patients/${patient.id}/reports`)).length > 0, 'Informe no persistió');
+  console.log('7/11 Guardar preferencias'); await req('/notifications/preferences', { method: 'PATCH', body: { appointmentReminders: true, taskReminders: true, consentReminders: false, invoiceReminders: true, emailEnabled: false, smsEnabled: false, reminderHoursBefore: 24 } }); const pref = await req('/notifications/preferences'); assert(pref.reminderHoursBefore === 24, 'Preferencias no persistieron');
+  console.log('8/11 Comprobar timeline'); const timeline = await req(`/patients/${patient.id}/timeline`); assert(Array.isArray(timeline), 'Timeline no disponible');
+  console.log('9/11 Motivo de consulta y títulos de proceso fuera de las vistas generales y del panel'); await checkReasonExposure(patient);
   // Portal: un mismo paciente admite cuenta propia y de tutor (regresión del índice único
   // PatientPortalAccount_patientId_key, migración 20260925000000) y el cambio de modo revoca las
   // cuentas incompatibles. Contraseña aleatoria por ejecución (repo público), que cumple la política
@@ -136,7 +211,7 @@ async function main() {
   const portalPassword = 'Aa1' + randomBytes(18).toString('base64url');
   let cleanupError = null;
   try {
-    console.log('9/10 Habilitar portal del paciente y de un tutor (modo SHARED, dos cuentas)');
+    console.log('10/11 Habilitar portal del paciente y de un tutor (modo SHARED, dos cuentas)');
     await req(`/patients/${patient.id}`, { method: 'PATCH', body: { portalAccessMode: 'SHARED' } });
     const ownAccount = await req(`/patients/${patient.id}/portal-account`, { method: 'POST', body: { email: `smoke-portal-${stamp}@example.test`, temporaryPassword: portalPassword, accessorType: 'PATIENT' } });
     const guardianAccount = await req(`/patients/${patient.id}/portal-account`, { method: 'POST', body: { email: `smoke-tutor-${stamp}@example.test`, temporaryPassword: portalPassword, accessorType: 'GUARDIAN', guardianName: 'Tutor Ficticio', guardianRelationship: 'padre' } });
@@ -145,7 +220,7 @@ async function main() {
     assert(portalAccounts.length === 2, `Se esperaban 2 cuentas de portal y hay ${portalAccounts.length}`);
     assert(portalAccounts.some(x => x.accessorType === 'PATIENT') && portalAccounts.some(x => x.accessorType === 'GUARDIAN'), 'Faltan la cuenta del paciente o la del tutor');
 
-    console.log('10/10 Pasar a PATIENT_ONLY (revoca al tutor), revocar portal y archivar paciente de prueba');
+    console.log('11/11 Pasar a PATIENT_ONLY (revoca al tutor), revocar portal y archivar paciente de prueba');
     await req(`/patients/${patient.id}`, { method: 'PATCH', body: { portalAccessMode: 'PATIENT_ONLY' } });
     const afterMode = await req(`/patients/${patient.id}/portal-accounts`);
     assert(afterMode.find(x => x.accessorType === 'GUARDIAN')?.isActive === false && afterMode.find(x => x.accessorType === 'PATIENT')?.isActive === true, 'Pasar a PATIENT_ONLY no revocó solo la cuenta del tutor');

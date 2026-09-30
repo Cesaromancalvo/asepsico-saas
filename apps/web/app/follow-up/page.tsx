@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { processLabel } from '@/lib/clinical';
 
 type Patient = {
   id: string;
@@ -13,7 +14,7 @@ type Patient = {
   summary: {
     processCount: number;
     sessionCount: number;
-    activeProcess?: { id: string; title: string; status: string } | null;
+    activeProcess?: { id: string; status: string; modality?: string | null } | null;
     lastSession?: { startsAt: string; status: string } | null;
     nextSession?: { startsAt: string; status: string } | null;
   };
@@ -105,7 +106,7 @@ export default function FollowUpPage() {
                     <div className="patient-record-avatar">{patient.firstName[0]}{patient.lastName[0]}</div>
                     <div>
                       <h3>{patient.firstName} {patient.lastName}</h3>
-                      <p>{patient.summary.activeProcess?.title || 'Sin proceso terapéutico activo'}</p>
+                      <p>{patient.summary.activeProcess ? processLabel(patient.summary.activeProcess) : 'Sin proceso terapéutico activo'}</p>
                       <small>
                         {patient.summary.sessionCount} sesiones · Próxima: {formatDate(patient.summary.nextSession?.startsAt)}
                       </small>

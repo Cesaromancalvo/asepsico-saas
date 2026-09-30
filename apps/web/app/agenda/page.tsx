@@ -9,6 +9,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import { api } from '@/lib/api';
+import { processLabel } from '@/lib/clinical';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -23,11 +24,11 @@ type SessionType =
   | 'FOLLOW_UP'
   | 'ASSESSMENT';
 
+// Vista general de /patients: el proceso llega sin título (puede revelar contenido clínico).
 type ClinicalProcessSummary = {
   id: string;
-  title: string;
   modality: TherapyModality;
-  status: 'ACTIVE';
+  status: string;
 };
 
 type Patient = {
@@ -677,8 +678,12 @@ export default function AgendaPage() {
                   type="text"
                   readOnly
                   value={
-                    activeProcess?.title ??
-                    'Sin proceso clínico activo'
+                    activeProcess
+                      ? processLabel({
+                          status:
+                            activeProcess.status,
+                        })
+                      : 'Sin proceso clínico activo'
                   }
                 />
               </label>
@@ -727,11 +732,12 @@ export default function AgendaPage() {
                     color: '#075c47',
                   }}
                 >
-                  La sesión se asociará a{' '}
+                  La sesión se asociará al proceso
+                  clínico actual del paciente (
                   <strong>
-                    {activeProcess.title}
+                    {processLabel(activeProcess)}
                   </strong>
-                  .
+                  ).
                 </div>
               )}
 

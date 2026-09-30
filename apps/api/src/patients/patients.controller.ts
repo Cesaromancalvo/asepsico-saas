@@ -31,6 +31,11 @@ export class PatientsController {
     return this.patients.get(user.workspaceId, user, id);
   }
 
+  // Contenido clínico: OWNER/ADMIN, o THERAPIST con proceso propio. ASSISTANT → 403.
+  @Get(':id/consultation-reason') getConsultationReason(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.patients.getConsultationReason(user.workspaceId, user, id);
+  }
+
   @Get(':id/history') getHistory(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.patients.getClinicalHistory(user.workspaceId, user, id);
   }
