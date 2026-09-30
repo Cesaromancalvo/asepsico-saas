@@ -8,6 +8,8 @@ import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
 import { ListClinicalProcessesQueryDto } from './dto/list-clinical-processes-query.dto';
+import { PATIENT_VIEW_SELECT, projectSelect, toPatientView } from '../patients/patient-view.util';
+import { SESSION_SUMMARY_SELECT } from '../sessions/session-view.util';
 
 // Solo quien puede dar o supervisar terapia entra aquí. ASSISTANT gestiona agenda y altas de
 // pacientes, pero nunca motivo de consulta, objetivos ni notas internas: eso es contenido clínico.
@@ -24,6 +26,31 @@ const ALLOWED_TRANSITIONS: Record<ClinicalProcessStatus, ClinicalProcessStatusVa
 
 // consultationReason, goals e internalNotes se cifran en reposo (lista única en
 // common/crypto/clinical-crypto.ts).
+
+/**
+ * Fila de GET /clinical-processes (listado). Sin consultationReason, goals ni internalNotes y
+ * con las sesiones solo como metadatos (sin notes ni internalSummary): los listados nunca
+ * devuelven narrativa clínica (regla dura 2). El contenido completo está en GET /clinical-processes/:id.
+ */
+const CLINICAL_PROCESS_LIST_SELECT = {
+  id: true,
+  workspaceId: true,
+  patientId: true,
+  therapistId: true,
+  title: true,
+  modality: true,
+  frequency: true,
+  status: true,
+  startedAt: true,
+  endedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+  therapist: { select: { id: true, firstName: true, lastName: true } },
+  _count: { select: { sessions: true } },
+} as const satisfies Prisma.ClinicalProcessSelect;
+
+const CLINICAL_PROCESS_LIST_PROJECTION = { ...CLINICAL_PROCESS_LIST_SELECT, sessions: { select: SESSION_SUMMARY_SELECT } };
 
 @Injectable()
 export class ClinicalProcessesService {
@@ -69,17 +96,17 @@ export class ClinicalProcessesService {
         orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
-          patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
-          therapist: { select: { id: true, firstName: true, lastName: true } },
-          sessions: { orderBy: { startsAt: 'desc' }, take: 5 },
-          _count: { select: { sessions: true } },
+        select: {
+          ...CLINICAL_PROCESS_LIST_SELECT,
+          sessions: { select: SESSION_SUMMARY_SELECT, orderBy: { startsAt: 'desc' }, take: 5 },
         },
       }),
       this.prisma.clinicalProcess.count({ where }),
     ]);
 
-    return { data: data.map(decryptProcess), meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
+    // Lista blanca también sobre la respuesta: ni notas de sesión ni narrativa del proceso,
+    // aunque una consulta futura trajera la fila completa. Nada que descifrar en un listado.
+    return { data: data.map((row) => projectSelect<typeof row>(row, CLINICAL_PROCESS_LIST_PROJECTION)), meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
   }
 
   async get(workspaceId: string, actor: AuthUser, id: string) {
@@ -87,7 +114,9 @@ export class ClinicalProcessesService {
     const process = await this.prisma.clinicalProcess.findFirst({
       where: { id, workspaceId },
       include: {
-        patient: true,
+        // Vista general del paciente: sin consultationReason (se sirve solo desde
+        // GET /patients/:id/consultation-reason). El del proceso sí va: es su detalle clínico.
+        patient: { select: PATIENT_VIEW_SELECT },
         therapist: { select: { id: true, firstName: true, lastName: true, email: true } },
         sessions: { orderBy: { startsAt: 'desc' } },
         _count: { select: { sessions: true } },
@@ -95,7 +124,7 @@ export class ClinicalProcessesService {
     });
     if (!process) throw new NotFoundException('Proceso clínico no encontrado');
     this.assertCanManage(actor, process.therapistId);
-    return decryptProcess(process);
+    return decryptProcess({ ...process, patient: toPatientView(process.patient) });
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateClinicalProcessDto) {

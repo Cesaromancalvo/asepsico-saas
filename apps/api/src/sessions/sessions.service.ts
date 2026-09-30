@@ -19,6 +19,8 @@ import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
+import { SESSION_LIST_SELECT } from './session-view.util';
+import { projectSelect } from '../patients/patient-view.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -84,32 +86,8 @@ export class SessionsService {
         skip: (page - 1) * pageSize,
         take: pageSize,
 
-        include: {
-          patient: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-
-          therapist: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-
-          clinicalProcess: {
-            select: {
-              id: true,
-              title: true,
-              modality: true,
-              status: true,
-            },
-          },
-        },
+        // Listado: solo metadatos (sin notes, internalSummary ni título del proceso).
+        select: SESSION_LIST_SELECT,
       }),
 
       this.prisma.session.count({
@@ -118,7 +96,9 @@ export class SessionsService {
     ]);
 
     return {
-      data: data.map(decryptSession),
+      // La proyección se aplica también a la respuesta (lista blanca) como defensa en
+      // profundidad, por si una consulta futura trae la fila completa.
+      data: data.map((row) => projectSelect<typeof row>(row, SESSION_LIST_SELECT)),
       meta: {
         page,
         pageSize,
