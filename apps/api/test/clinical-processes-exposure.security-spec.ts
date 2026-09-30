@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
 import { SessionsService } from '../src/sessions/sessions.service';
 import { PatientCareService } from '../src/patients/patient-care.service';
@@ -195,5 +196,106 @@ describe('Lecturas hijas del paciente acotadas también por workspace (patientCh
     const result = await new PatientTasksService(prisma, permissiveAccess).getTherapeuticTasks('ws-1', owner, 'patient-1');
     expect(result).toEqual([]);
     expect(prisma.therapeuticTask.findMany.mock.calls[0][0].where).toMatchObject({ patientId: 'patient-1', patient: { workspaceId: 'ws-1' } });
+  });
+});
+
+/**
+ * Condiciones de Argos sobre Sessions: el detalle y las escrituras de notas son contenido
+ * clínico. ASSISTANT solo ve metadatos y no puede escribir notes ni internalSummary.
+ */
+function sessionsPrisma() {
+  const full = {
+    ...sessionRow(), status: 'SCHEDULED',
+    patient: patientRow(), therapist: { id: 'therapist-1', firstName: 'T', lastName: 'F' }, clinicalProcess: processRow(),
+  };
+  const prisma: any = {
+    session: {
+      findFirst: jest.fn(async () => full),
+      findMany: jest.fn(async () => []),
+      create: jest.fn(async () => full),
+      update: jest.fn(async () => full),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    patient: { findFirst: jest.fn(async () => patientRow()) },
+    clinicalProcess: { findFirst: jest.fn(async () => processRow()), findMany: jest.fn(async () => [processRow()]) },
+    workspaceMember: { findFirst: jest.fn(async () => ({ role: 'THERAPIST' })) },
+    auditLog: { create: jest.fn(async () => ({})) },
+  };
+  prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+  return prisma;
+}
+
+function expectNoWrites(prisma: any) {
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(prisma.session.create).not.toHaveBeenCalled();
+  expect(prisma.session.update).not.toHaveBeenCalled();
+  expect(prisma.session.updateMany).not.toHaveBeenCalled();
+  expect(prisma.auditLog.create).not.toHaveBeenCalled();
+}
+
+describe('GET /sessions/:id y escrituras de notas por rol', () => {
+  it('ASSISTANT en GET /sessions/:id: sin notes, internalSummary ni título del proceso', async () => {
+    const prisma = sessionsPrisma();
+    const result: any = await new SessionsService(prisma).get('ws-1', assistant, 'sess-1');
+    expect(result).toMatchObject({ id: 'sess-1', therapistId: 'therapist-1', clinicalProcess: { id: 'proc-1', status: 'ACTIVE' } });
+    expect(result).not.toHaveProperty('notes');
+    expect(result).not.toHaveProperty('internalSummary');
+    expect(result.clinicalProcess).not.toHaveProperty('title');
+    expectNoNarrative(result, [SESSION_NOTES, SESSION_SUMMARY, PROCESS_TITLE, PROCESS_REASON, PATIENT_REASON]);
+    const args = prisma.session.findFirst.mock.calls[0][0];
+    expect(args.where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
+    expect(args.include).toBeUndefined();
+    expect(args.select).not.toHaveProperty('notes');
+    expect(args.select).not.toHaveProperty('internalSummary');
+    expect(args.select.clinicalProcess.select).not.toHaveProperty('title');
+  });
+
+  it('OWNER en GET /sessions/:id sí ve las notas (detalle clínico)', async () => {
+    const prisma = sessionsPrisma();
+    const result: any = await new SessionsService(prisma).get('ws-1', owner, 'sess-1');
+    expect(result.notes).toBe(SESSION_NOTES);
+  });
+
+  it('THERAPIST ajeno en GET /sessions/:id → 403', async () => {
+    const prisma = sessionsPrisma();
+    const other = { ...therapist, sub: 'therapist-2' };
+    await expect(new SessionsService(prisma).get('ws-1', other, 'sess-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('ASSISTANT en PATCH /sessions/:id/notes → 403 sin escribir', async () => {
+    const prisma = sessionsPrisma();
+    await expect(new SessionsService(prisma).updateNotes('ws-1', assistant, 'sess-1', { notes: 'x', internalSummary: 'y' } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expectNoWrites(prisma);
+  });
+
+  it('ASSISTANT en POST /sessions con notes → 403 sin escribir', async () => {
+    const prisma = sessionsPrisma();
+    const dto = { patientId: 'patient-1', startsAt: '2026-02-01T10:00:00Z', endsAt: '2026-02-01T11:00:00Z', notes: 'x' } as any;
+    await expect(new SessionsService(prisma).create('ws-1', assistant, dto)).rejects.toBeInstanceOf(ForbiddenException);
+    expectNoWrites(prisma);
+  });
+
+  it.each([['con texto', 'x'], ['vacías', ''], ['null', null]])('ASSISTANT en PATCH /sessions/:id con notes %s → 403 sin escribir', async (_label, notes) => {
+    const prisma = sessionsPrisma();
+    await expect(new SessionsService(prisma).reschedule('ws-1', assistant, 'sess-1', { startsAt: '2026-02-01T10:00:00Z', notes } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expectNoWrites(prisma);
+  });
+
+  it('ASSISTANT puede cerrar una sesión: respuesta sin notas y escritura acotada al workspace', async () => {
+    const prisma = sessionsPrisma();
+    const result: any = await new SessionsService(prisma).close('ws-1', assistant, 'sess-1', 'CANCELLED');
+    expect(result).not.toHaveProperty('notes');
+    expect(result).not.toHaveProperty('internalSummary');
+    expect(prisma.session.update).not.toHaveBeenCalled();
+    expect(prisma.session.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
+  });
+
+  it('OWNER en PATCH /sessions/:id/notes escribe acotado al workspace', async () => {
+    const prisma = sessionsPrisma();
+    await new SessionsService(prisma).updateNotes('ws-1', owner, 'sess-1', { notes: 'Nota ficticia' } as any);
+    expect(prisma.session.update).not.toHaveBeenCalled();
+    expect(prisma.session.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
   });
 });

@@ -35,3 +35,15 @@ export const SESSION_LIST_SELECT = {
   therapist: { select: { id: true, firstName: true, lastName: true } },
   clinicalProcess: { select: { id: true, modality: true, status: true } },
 } as const satisfies Prisma.SessionSelect;
+
+/**
+ * Detalle de sesión (GET /sessions/:id y respuestas de POST/PATCH) para roles NO clínicos
+ * (ASSISTANT): los mismos metadatos que el listado, más la frecuencia del proceso. Sin notes,
+ * internalSummary ni título del proceso.
+ */
+export const SESSION_ADMIN_DETAIL_SELECT = {
+  ...SESSION_SUMMARY_SELECT,
+  patient: { select: { id: true, firstName: true, lastName: true } },
+  therapist: { select: { id: true, firstName: true, lastName: true } },
+  clinicalProcess: { select: { id: true, modality: true, frequency: true, status: true } },
+} as const satisfies Prisma.SessionSelect;
