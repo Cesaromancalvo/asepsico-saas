@@ -1,0 +1,115 @@
+// Contrato de la importación de pacientes (docs/producto/importacion-pacientes-csv.md).
+// Base: /api/v1/patient-imports. Todas las rutas requieren sesión de staff y rol clínico.
+
+/** Solo datos administrativos: no existe ningún campo clínico importable. */
+export type PatientImportField = 'nombre' | 'apellidos' | 'email' | 'telefono' | 'prefijo' | 'fecha_nacimiento' | 'estado';
+export type PatientImportColumnTarget = PatientImportField | 'NO_IMPORTAR';
+
+export type PatientImportStatus =
+  | 'UPLOADED' | 'PREVIEWED' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL' | 'CANCELLED' | 'EXPIRED' | 'REVERTED';
+
+export interface PatientImportColumn {
+  index: number;
+  label: string;
+  /** Cabecera potencialmente clínica: "No se importará", no se puede asignar. */
+  clinical: boolean;
+  suggestedField: PatientImportColumnTarget;
+}
+
+/** POST /patient-imports (multipart, campo `file`; query opcional `sheet`). */
+export interface PatientImportUploadResponse {
+  id: string;
+  format: 'CSV' | 'XLSX';
+  sheetNames: string[];
+  sheetIndex: number;
+  /** Filas no vacías sin contar la primera (si es cabecera). */
+  rowCount: number;
+  columns: PatientImportColumn[];
+  /** Hasta 5 filas (tras la primera) para ayudar a mapear. Columnas clínicas vacías. */
+  sampleRows: Array<{ rowNumber: number; cells: string[] }>;
+  expiresAt: string;
+}
+
+/** Cuerpo de POST /patient-imports/:id/preview. */
+export interface PatientImportPreviewRequest {
+  hasHeaderRow: boolean;
+  columns: Array<{ index: number; field: PatientImportColumnTarget }>;
+}
+
+export type PatientImportIssueCode =
+  | 'REQUIRED' | 'TOO_SHORT' | 'TOO_LONG' | 'INVALID_TEXT' | 'INVALID_EMAIL' | 'INVALID_PHONE' | 'INVALID_PREFIX'
+  | 'INVALID_DATE' | 'IMPLAUSIBLE_DATE' | 'INVALID_STATUS' | 'AMBIGUOUS_DATE' | 'MINOR';
+
+export interface PatientImportIssue {
+  field: PatientImportField;
+  code: PatientImportIssueCode;
+  message: string;
+}
+
+export interface PatientImportPreviewRow {
+  rowNumber: number;
+  status: 'VALID' | 'ERROR' | 'DUPLICATE' | 'IGNORED';
+  ignoredReason?: 'EXAMPLE' | 'EMPTY';
+  values: {
+    firstName?: string;
+    lastName?: string;
+    email?: string | null;
+    phone?: string | null;
+    birthDate?: string | null; // aaaa-mm-dd
+    status?: 'ACTIVE' | 'DISCHARGED';
+  };
+  errors: PatientImportIssue[];
+  /** AMBIGUOUS_DATE, MINOR (completa tutores y modo de acceso al portal después). */
+  warnings: PatientImportIssue[];
+  duplicate?: {
+    source: 'EXISTING' | 'FILE';
+    rule: 'EMAIL' | 'PHONE' | 'NAME_BIRTHDATE';
+    /** Solo pacientes del propio importador. */
+    patientId?: string;
+    row?: number;
+    /** Si false, "Completar el existente" no está disponible. */
+    canComplete: boolean;
+  };
+}
+
+export interface PatientImportPreviewResponse {
+  id: string;
+  status: PatientImportStatus;
+  hasHeaderRow: boolean;
+  columns: Array<PatientImportColumn & { field: PatientImportColumnTarget }>;
+  summary: { total: number; valid: number; errors: number; duplicates: number; ignored: number };
+  rows: PatientImportPreviewRow[];
+  expiresAt: string | null;
+}
+
+/** Cuerpo de POST /patient-imports/:id/confirm. Filas duplicadas sin decisión → SKIP. */
+export interface PatientImportConfirmRequest {
+  decisions?: Array<{ row: number; action: 'SKIP' | 'CREATE' | 'COMPLETE' }>;
+}
+
+/** GET /patient-imports/:id, GET /patient-imports (array), y respuesta de confirm/cancel/revert. */
+export interface PatientImportJob {
+  id: string;
+  status: PatientImportStatus;
+  format: 'CSV' | 'XLSX';
+  totalRows: number;
+  /** Filas del plan (a crear o completar) y cuántas se han procesado ya. */
+  plannedRows: number;
+  processedRows: number;
+  createdCount: number;
+  completedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  revertedCount: number;
+  createdAt: string;
+  confirmedAt: string | null;
+  finishedAt: string | null;
+  expiresAt: string | null;
+  revertibleUntil: string | null;
+  revertedAt: string | null;
+  /** PARTIAL con el fichero aún disponible: se puede volver a llamar a confirm (reanuda). */
+  canRetry: boolean;
+  canRevert: boolean;
+  /** Solo en la respuesta de revert: filas cuyos pacientes ya tienen actividad. */
+  notRevertedRows?: number[];
+}

@@ -3,7 +3,7 @@ import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } 
 import { IsPlausibleBirthDate } from '../../common/validators/plausible-birth-date.validator';
 
 // Formato de teléfono permisivo (nacional o internacional): dígitos, espacios, +, -, paréntesis.
-const PHONE_REGEX = /^[+()\d][\d\s()-]{5,19}$/;
+export const PHONE_REGEX = /^[+()\d][\d\s()-]{5,19}$/;
 
 export class CreatePatientDto {
   @ApiProperty() @IsString() @MinLength(2) @MaxLength(80) firstName!: string;
