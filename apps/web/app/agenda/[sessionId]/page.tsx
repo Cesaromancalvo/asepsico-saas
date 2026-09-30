@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useIsClinicalRole } from "@/lib/clinical";
 
 type Session = {
   id: string;
@@ -63,6 +64,9 @@ export default function SessionDetailPage() {
   const router = useRouter();
 
   const [session, setSession] = useState<Session | null>(null);
+  // Notas y resumen interno son contenido clínico: la API los omite y rechaza (403) para
+  // roles no clínicos (ASSISTANT), así que la pantalla ni los muestra ni los envía.
+  const isClinical = useIsClinicalRole();
   const [notes, setNotes] = useState("");
   const [internalSummary, setInternalSummary] = useState("");
   const [loading, setLoading] = useState(true);
@@ -114,7 +118,7 @@ export default function SessionDetailPage() {
   }, [sessionId]);
 
   async function saveSession() {
-    if (!sessionId) return;
+    if (!sessionId || isClinical !== true) return;
 
     try {
       setSaving(true);
@@ -299,6 +303,7 @@ export default function SessionDetailPage() {
         </article>
       </section>
 
+      {isClinical === true && (
       <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">
           Registro clínico
@@ -353,6 +358,7 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </section>
+      )}
     </main>
   );
 }

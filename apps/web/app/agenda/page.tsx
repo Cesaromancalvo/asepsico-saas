@@ -9,7 +9,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import { api } from '@/lib/api';
-import { processLabel } from '@/lib/clinical';
+import { processLabel, useIsClinicalRole } from '@/lib/clinical';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -177,6 +177,9 @@ function formatDuration(startsAt: string, endsAt: string) {
 export default function AgendaPage() {
   const router = useRouter();
 
+  // Las notas de sesión son contenido clínico: ASSISTANT no las ve ni las envía (la API
+  // respondería 403 y no crearía la cita).
+  const isClinical = useIsClinicalRole();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
 
@@ -426,7 +429,7 @@ export default function AgendaPage() {
       payload.videoCallUrl = videoCallUrl;
     }
 
-    if (notes) {
+    if (notes && isClinical === true) {
       payload.notes = notes;
     }
 
@@ -837,15 +840,17 @@ export default function AgendaPage() {
                 />
               </label>
 
-              <label className="agenda-form-notes">
-                <span>Notas</span>
+              {isClinical === true && (
+                <label className="agenda-form-notes">
+                  <span>Notas</span>
 
-                <textarea
-                  name="notes"
-                  rows={3}
-                  placeholder="Información relevante para preparar la sesión..."
-                />
-              </label>
+                  <textarea
+                    name="notes"
+                    rows={3}
+                    placeholder="Información relevante para preparar la sesión..."
+                  />
+                </label>
+              )}
 
               <div className="agenda-form-actions">
                 <button
