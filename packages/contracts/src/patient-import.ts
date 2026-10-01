@@ -1,18 +1,28 @@
 // Contrato de la importación de pacientes (docs/producto/importacion-pacientes-csv.md).
 // Base: /api/v1/patient-imports. Todas las rutas requieren sesión de staff y rol clínico.
+// POST / responde 429 { code: 'IMPORT_BUSY' } si la consulta ya tiene otra subida en proceso.
+//
+// IMPORTANTE para la interfaz: "Completar el existente" (acción COMPLETE) NO se deshace con
+// revert. Deshacer solo elimina los pacientes CREADOS por el lote; los datos que se rellenaron en
+// pacientes existentes se quedan. Muéstralo al elegir COMPLETE y en el diálogo de deshacer.
 
 /** Solo datos administrativos: no existe ningún campo clínico importable. */
 export type PatientImportField = 'nombre' | 'apellidos' | 'email' | 'telefono' | 'prefijo' | 'fecha_nacimiento' | 'estado';
 export type PatientImportColumnTarget = PatientImportField | 'NO_IMPORTAR';
 
 export type PatientImportStatus =
-  | 'UPLOADED' | 'PREVIEWED' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL' | 'CANCELLED' | 'EXPIRED' | 'REVERTED';
+  | 'UPLOADED' | 'PREVIEWED' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL' | 'CANCELLED' | 'EXPIRED' | 'REVERTING' | 'REVERTED';
 
 export interface PatientImportColumn {
   index: number;
   label: string;
   /** Cabecera potencialmente clínica: "No se importará", no se puede asignar. */
   clinical: boolean;
+  /**
+   * Columna no asignada en una vista previa anterior: sus datos se borraron del fichero temporal
+   * (minimización) y no se puede asignar sin volver a subir el fichero.
+   */
+  discarded?: boolean;
   suggestedField: PatientImportColumnTarget;
 }
 
@@ -59,7 +69,10 @@ export interface PatientImportPreviewRow {
     status?: 'ACTIVE' | 'DISCHARGED';
   };
   errors: PatientImportIssue[];
-  /** AMBIGUOUS_DATE, MINOR (completa tutores y modo de acceso al portal después). */
+  /**
+   * AMBIGUOUS_DATE, MINOR. Un menor se crea con portalAccessMode GUARDIAN_ONLY (solo tutores);
+   * el profesional completa tutores y decide el modo después.
+   */
   warnings: PatientImportIssue[];
   duplicate?: {
     source: 'EXISTING' | 'FILE';
@@ -82,10 +95,15 @@ export interface PatientImportPreviewResponse {
   expiresAt: string | null;
 }
 
-/** Cuerpo de POST /patient-imports/:id/confirm. Filas duplicadas sin decisión → SKIP. */
+/**
+ * Cuerpo de POST /patient-imports/:id/confirm. Filas duplicadas sin decisión → SKIP.
+ * COMPLETE rellena solo campos vacíos del paciente existente y NO se deshace con revert.
+ */
 export interface PatientImportConfirmRequest {
-  decisions?: Array<{ row: number; action: 'SKIP' | 'CREATE' | 'COMPLETE' }>;
+  decisions?: Array<{ row: number; action: PatientImportDuplicateAction }>;
 }
+
+export type PatientImportDuplicateAction = 'SKIP' | 'CREATE' | 'COMPLETE';
 
 /** GET /patient-imports/:id, GET /patient-imports (array), y respuesta de confirm/cancel/revert. */
 export interface PatientImportJob {
@@ -97,6 +115,7 @@ export interface PatientImportJob {
   plannedRows: number;
   processedRows: number;
   createdCount: number;
+  /** Pacientes existentes completados (COMPLETE). No se revierten con revert. */
   completedCount: number;
   skippedCount: number;
   errorCount: number;
@@ -110,6 +129,9 @@ export interface PatientImportJob {
   /** PARTIAL con el fichero aún disponible: se puede volver a llamar a confirm (reanuda). */
   canRetry: boolean;
   canRevert: boolean;
-  /** Solo en la respuesta de revert: filas cuyos pacientes ya tienen actividad. */
+  /**
+   * Solo en la respuesta de revert: filas de pacientes CREADOS que no se eliminaron por tener
+   * actividad. Las filas completadas (COMPLETE) no aparecen: nunca se revierten.
+   */
   notRevertedRows?: number[];
 }

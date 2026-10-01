@@ -1,10 +1,10 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ColumnTarget } from './column-mapping';
 import { ErrorReportEntry, errorReportCsv, templateCsv, templateXlsx } from './import-files';
 import { IMPORT_LIMITS } from './import-limits';
-import { buildPayload, sealPayload } from './import-payload';
+import { buildPayload, minimizePayload, sealPayload } from './import-payload';
 import { ImportFileError } from './parsing/import-file-error';
 import { readCsv } from './parsing/csv-reader';
 import { ImportFormat, RawSheet } from './parsing/raw-table';
@@ -26,6 +26,14 @@ export interface UploadedFile {
  */
 @Injectable()
 export class PatientImportService {
+  /**
+   * Workspaces con una subida en curso en esta instancia: una sola a la vez por workspace (y por
+   * tanto por usuario), el resto recibe 429. Acota la memoria que una consulta puede ocupar con
+   * ficheros en proceso (condición de Argos). Es por instancia; el ThrottlerGuard limita además
+   * las peticiones por IP.
+   */
+  private readonly uploadsInFlight = new Set<string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: PatientImportAccess,
@@ -45,6 +53,21 @@ export class PatientImportService {
 
   async upload(workspaceId: string, actor: AuthUser, file: UploadedFile | undefined, sheet = 0) {
     await this.access.assertCanImport(actor, 'UPLOAD');
+    if (this.uploadsInFlight.has(workspaceId)) {
+      throw new HttpException(
+        { code: 'IMPORT_BUSY', message: 'Ya se está procesando otro fichero en tu consulta; espera unos segundos y vuelve a intentarlo' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.uploadsInFlight.add(workspaceId);
+    try {
+      return await this.processUpload(workspaceId, actor, file, sheet);
+    } finally {
+      this.uploadsInFlight.delete(workspaceId);
+    }
+  }
+
+  private async processUpload(workspaceId: string, actor: AuthUser, file: UploadedFile | undefined, sheet: number) {
     const { format, parsed } = this.parse(file, sheet);
     if (parsed.rows.length === 0) throw new ImportFileError('EMPTY_FILE').toHttp();
 
@@ -109,12 +132,15 @@ export class PatientImportService {
     const payload = await this.jobs.loadPayload(workspaceId, job);
     const mapping = this.jobs.validateMapping(payload, dto.hasHeaderRow, dto.columns);
     const preview = await this.jobs.buildPreview(workspaceId, actor, payload, mapping);
+    const minimized = minimizePayload(payload, mapping.columns.map((c) => c.index));
 
     // Compare-and-set: si otra petición confirmó o canceló entretanto, no se pisa su estado.
     const { count } = await this.prisma.patientImportJob.updateMany({
       where: { id, workspaceId, importerId: actor.sub, status: { in: ['UPLOADED', 'PREVIEWED'] } },
       data: {
         status: 'PREVIEWED',
+        // El fichero temporal se vuelve a cifrar solo con las columnas asignadas.
+        payload: sealPayload(minimized),
         mapping: mapping as unknown as object,
         totalRows: preview.summary.total,
         errorReport: errorEntries(preview) as unknown as object,
@@ -126,7 +152,7 @@ export class PatientImportService {
       id,
       status: 'PREVIEWED' as const,
       hasHeaderRow: mapping.hasHeaderRow,
-      columns: this.jobs.columnsView(payload, mapping),
+      columns: this.jobs.columnsView(minimized, mapping),
       summary: preview.summary,
       rows: preview.rows,
       expiresAt: job.payloadExpiresAt,

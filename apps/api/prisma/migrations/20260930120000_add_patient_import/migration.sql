@@ -2,13 +2,13 @@
 -- Generada con prisma migrate diff (schema anterior -> actual), equivalente a migrate dev.
 
 -- CreateEnum
-CREATE TYPE "PatientImportStatus" AS ENUM ('UPLOADED', 'PREVIEWED', 'PROCESSING', 'COMPLETED', 'PARTIAL', 'CANCELLED', 'EXPIRED', 'REVERTED');
+CREATE TYPE "PatientImportStatus" AS ENUM ('UPLOADED', 'PREVIEWED', 'PROCESSING', 'COMPLETED', 'PARTIAL', 'CANCELLED', 'EXPIRED', 'REVERTING', 'REVERTED');
 
 -- CreateTable
 CREATE TABLE "PatientImportJob" (
     "id" TEXT NOT NULL,
     "workspaceId" TEXT NOT NULL,
-    "importerId" TEXT NOT NULL,
+    "importerId" TEXT,
     "status" "PatientImportStatus" NOT NULL DEFAULT 'UPLOADED',
     "format" TEXT NOT NULL,
     "payload" TEXT,
@@ -56,13 +56,16 @@ CREATE INDEX "PatientImportJob_status_payloadExpiresAt_idx" ON "PatientImportJob
 CREATE UNIQUE INDEX "PatientImportItem_patientId_key" ON "PatientImportItem"("patientId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "PatientImportItem_clinicalProcessId_key" ON "PatientImportItem"("clinicalProcessId");
+
+-- CreateIndex
 CREATE INDEX "PatientImportItem_workspaceId_jobId_idx" ON "PatientImportItem"("workspaceId", "jobId");
 
 -- AddForeignKey
 ALTER TABLE "PatientImportJob" ADD CONSTRAINT "PatientImportJob_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PatientImportJob" ADD CONSTRAINT "PatientImportJob_importerId_fkey" FOREIGN KEY ("importerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PatientImportJob" ADD CONSTRAINT "PatientImportJob_importerId_fkey" FOREIGN KEY ("importerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PatientImportItem" ADD CONSTRAINT "PatientImportItem_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -72,4 +75,7 @@ ALTER TABLE "PatientImportItem" ADD CONSTRAINT "PatientImportItem_jobId_fkey" FO
 
 -- AddForeignKey
 ALTER TABLE "PatientImportItem" ADD CONSTRAINT "PatientImportItem_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PatientImportItem" ADD CONSTRAINT "PatientImportItem_clinicalProcessId_fkey" FOREIGN KEY ("clinicalProcessId") REFERENCES "ClinicalProcess"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

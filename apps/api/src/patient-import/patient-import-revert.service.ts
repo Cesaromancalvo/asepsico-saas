@@ -5,6 +5,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { IMPORT_LIMITS } from './import-limits';
 import { PatientImportAccess } from './patient-import-access';
 import { PatientImportJobsService } from './patient-import-jobs.service';
+import { isStalled } from './patient-import-confirm.service';
 
 /** Margen entre createdAt y updatedAt que se sigue considerando "sin tocar desde el alta". */
 const UNTOUCHED_TOLERANCE_MS = 2000;
@@ -62,13 +63,36 @@ export class PatientImportRevertService {
   async revert(workspaceId: string, actor: AuthUser, id: string) {
     await this.access.assertCanImport(actor, 'REVERT');
     const job = await this.jobs.findOwnJob(workspaceId, actor, id);
-    if (job.status !== 'COMPLETED' && job.status !== 'PARTIAL') {
-      throw new ConflictException('Solo se puede deshacer una importación terminada');
+    // Un REVERTING sin avances durante minutos es un deshacer interrumpido: se puede retomar.
+    const stalled = job.status === 'REVERTING' && isStalled(job.updatedAt);
+    if (job.status !== 'COMPLETED' && job.status !== 'PARTIAL' && !stalled) {
+      throw new ConflictException(
+        job.status === 'REVERTING' ? 'Esta importación ya se está deshaciendo' : 'Solo se puede deshacer una importación terminada',
+      );
     }
     const now = new Date();
     if (!job.revertibleUntil || job.revertibleUntil <= now) {
       throw new ConflictException('El plazo de 7 días para deshacer esta importación ha terminado');
     }
+
+    // Toma del lote (compare-and-set sobre estado y updatedAt): dos deshacer simultáneos, o un
+    // deshacer mientras se reintenta un PARTIAL, no encuentran el lote en el estado esperado y
+    // reciben 409 sin tocar nada. Se borra ya el fichero temporal: un lote que se deshace no se
+    // puede reanudar.
+    const claimed = await this.prisma.patientImportJob.updateMany({
+      where: { id, workspaceId, importerId: actor.sub, status: job.status, updatedAt: job.updatedAt, revertibleUntil: { gt: now } },
+      data: { status: 'REVERTING', payload: null, payloadExpiresAt: null },
+    });
+    if (claimed.count === 0) throw new ConflictException('La importación está cambiando ahora mismo; recarga y vuelve a intentarlo');
+
+    // Estado al que vuelve el lote si quedan pacientes sin deshacer (o si algo falla a mitad).
+    const planned = Array.isArray(job.plan) ? job.plan.length : 0;
+    const restingStatus = job.cursor < planned ? ('PARTIAL' as const) : ('COMPLETED' as const);
+    const release = () =>
+      this.prisma.patientImportJob.updateMany({
+        where: { id, workspaceId, importerId: actor.sub, status: 'REVERTING' },
+        data: { status: restingStatus },
+      });
 
     const items = await this.prisma.patientImportItem.findMany({
       where: { workspaceId, jobId: id, job: { workspaceId, importerId: actor.sub } },
@@ -77,36 +101,40 @@ export class PatientImportRevertService {
 
     const notRevertedRows: number[] = [];
     let reverted = 0;
-    for (let start = 0; start < items.length; start += IMPORT_LIMITS.BLOCK_SIZE) {
-      const block = items.slice(start, start + IMPORT_LIMITS.BLOCK_SIZE);
-      await this.prisma.$transaction(
-        async (tx) => {
-          let blockReverted = 0;
-          for (const item of block) {
-            if (await revertItem(tx, workspaceId, actor, item)) blockReverted += 1;
-            else notRevertedRows.push(item.rowNumber);
-          }
-          await tx.patientImportJob.updateMany({
-            where: { id, workspaceId, importerId: actor.sub },
-            data: { revertedCount: { increment: blockReverted } },
-          });
-          reverted += blockReverted;
-        },
-        { timeout: IMPORT_LIMITS.BLOCK_TX_TIMEOUT_MS, maxWait: 10_000 },
-      );
+    try {
+      for (let start = 0; start < items.length; start += IMPORT_LIMITS.BLOCK_SIZE) {
+        const block = items.slice(start, start + IMPORT_LIMITS.BLOCK_SIZE);
+        await this.prisma.$transaction(
+          async (tx) => {
+            let blockReverted = 0;
+            const blockNotReverted: number[] = [];
+            for (const item of block) {
+              if (await revertItem(tx, workspaceId, actor, item)) blockReverted += 1;
+              else blockNotReverted.push(item.rowNumber);
+            }
+            const advanced = await tx.patientImportJob.updateMany({
+              where: { id, workspaceId, importerId: actor.sub, status: 'REVERTING' },
+              data: { revertedCount: { increment: blockReverted } },
+            });
+            if (advanced.count !== 1) throw new ConflictException('El lote cambió mientras se deshacía');
+            reverted += blockReverted;
+            notRevertedRows.push(...blockNotReverted);
+          },
+          { timeout: IMPORT_LIMITS.BLOCK_TX_TIMEOUT_MS, maxWait: 10_000 },
+        );
+      }
+    } catch (error) {
+      // Los bloques ya deshechos quedan deshechos (y auditados); el lote vuelve a su estado para
+      // poder reintentar. El bloque que falló no deja rastro.
+      await release();
+      throw error;
     }
 
     await this.prisma.$transaction(async (tx) => {
       const remaining = await tx.patientImportItem.count({ where: { workspaceId, jobId: id } });
       await tx.patientImportJob.updateMany({
-        where: { id, workspaceId, importerId: actor.sub, status: job.status },
-        data: {
-          ...(remaining === 0 ? { status: 'REVERTED' as const } : {}),
-          revertedAt: now,
-          // Un PARTIAL deshecho ya no se puede reanudar: se borra su fichero temporal.
-          payload: null,
-          payloadExpiresAt: null,
-        },
+        where: { id, workspaceId, importerId: actor.sub, status: 'REVERTING' },
+        data: { status: remaining === 0 ? 'REVERTED' : restingStatus, revertedAt: now },
       });
       await tx.auditLog.create({
         data: {

@@ -1,8 +1,8 @@
 import { Unzip, UnzipInflate } from 'fflate';
-import { XMLParser } from 'fast-xml-parser';
 import { IMPORT_LIMITS } from '../import-limits';
 import { ImportFileError } from './import-file-error';
 import { RawRow, RawSheet } from './raw-table';
+import { attr, childText, decodeXmlPart, eachElement, firstElement, richText } from './xml-scan';
 
 /**
  * Lector de XLSX con superficie mínima:
@@ -13,8 +13,8 @@ import { RawRow, RawSheet } from './raw-table';
  *   expandirse a más de ~16 MB antes de comprobarse (protección frente a ZIP bomb).
  * - Solo se descomprimen las partes necesarias (workbook, rels, sharedStrings, hojas). Macros
  *   (vbaProject.bin), objetos incrustados, enlaces externos y el resto se ignoran sin leerlos.
- * - XML con `fast-xml-parser`, rechazando cualquier DOCTYPE/ENTITY antes de parsear (sin
- *   entidades externas ni expansión de entidades).
+ * - XML recorrido en lineal con `xml-scan.ts`, sin montar árbol (memoria ≈ tamaño del XML) y
+ *   rechazando cualquier DOCTYPE/ENTITY (sin entidades externas ni expansión de entidades).
  * - Fórmulas: nunca se evalúan. De una celda con fórmula solo se lee el valor calculado que
  *   Excel dejó guardado (`<v>`); el texto de la fórmula (`<f>`) se ignora.
  */
@@ -93,44 +93,6 @@ export function unzipXlsxParts(buffer: Buffer): Map<string, Buffer> {
   return parts;
 }
 
-const ARRAY_TAGS = new Set(['sheet', 'Relationship', 'si', 'r', 'row', 'c']);
-const xmlParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  removeNSPrefix: true,
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-  htmlEntities: false,
-  isArray: (tagName) => ARRAY_TAGS.has(tagName),
-});
-
-function parseXml(part: Buffer | undefined): any {
-  if (!part) throw new ImportFileError('INVALID_XLSX');
-  const text = new TextDecoder('utf-8').decode(part);
-  // Sin DTD no hay entidades externas ni "billion laughs": se rechaza antes de parsear.
-  if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new ImportFileError('INVALID_XLSX');
-  try {
-    return xmlParser.parse(text);
-  } catch {
-    throw new ImportFileError('INVALID_XLSX');
-  }
-}
-
-function textOf(node: unknown): string {
-  if (node === undefined || node === null) return '';
-  if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') return String(node);
-  if (Array.isArray(node)) return node.map(textOf).join('');
-  if (typeof node === 'object') {
-    const obj = node as Record<string, unknown>;
-    if ('#text' in obj) return textOf(obj['#text']);
-    // Texto enriquecido: <si><r><t>..</t></r><r><t>..</t></r></si>; se ignoran rPh (fonética).
-    if ('r' in obj) return textOf((obj.r as unknown[]).map((run) => (run as Record<string, unknown>)?.t));
-    if ('t' in obj) return textOf(obj.t);
-  }
-  return '';
-}
-
 /** "B12" → 1 (índice de columna en base 0). */
 function columnIndex(ref: string | undefined): number | null {
   const letters = /^([A-Z]+)\d+$/i.exec(ref ?? '')?.[1];
@@ -140,69 +102,86 @@ function columnIndex(ref: string | undefined): number | null {
   return index - 1;
 }
 
-function cellValue(cell: Record<string, any>, sharedStrings: string[]): string {
-  const type = cell['@_t'];
+function cellValue(attrs: string, inner: string, sharedStrings: string[]): string {
+  const type = attr(attrs, 't');
   if (type === 's') {
-    const index = Number(textOf(cell.v));
+    const index = Number(childText(inner, 'v'));
     return Number.isInteger(index) ? (sharedStrings[index] ?? '') : '';
   }
-  if (type === 'inlineStr') return textOf(cell.is);
+  if (type === 'inlineStr') {
+    const inline = firstElement(inner, 'is');
+    return inline ? richText(inline.inner) : '';
+  }
   if (type === 'e') return ''; // #N/A, #REF!…: sin valor
-  if (type === 'b') return textOf(cell.v) === '1' ? 'TRUE' : 'FALSE';
+  if (type === 'b') return childText(inner, 'v') === '1' ? 'TRUE' : 'FALSE';
   // 'n' (número), 'str' (resultado de fórmula), 'd' (fecha ISO): el valor calculado, nunca <f>.
-  return textOf(cell.v);
+  return childText(inner, 'v');
 }
 
 export function readXlsx(buffer: Buffer, requestedSheet = 0): RawSheet {
   const parts = unzipXlsxParts(buffer);
-  const workbook = parseXml(parts.get('xl/workbook.xml'))?.workbook;
-  const rels = parseXml(parts.get('xl/_rels/workbook.xml.rels'))?.Relationships?.Relationship ?? [];
-  const sheets: Array<Record<string, string>> = workbook?.sheets?.sheet ?? [];
+  const workbook = decodeXmlPart(parts.get('xl/workbook.xml'));
+  const relsXml = decodeXmlPart(parts.get('xl/_rels/workbook.xml.rels'));
+
+  const sheets: Array<{ name: string; relId: string }> = [];
+  eachElement(workbook, 'sheet', (el) => {
+    sheets.push({ name: attr(el.attrs, 'name') ?? '', relId: attr(el.attrs, 'id') ?? '' });
+  });
   if (!sheets.length) throw new ImportFileError('INVALID_XLSX');
   if (!Number.isInteger(requestedSheet) || requestedSheet < 0 || requestedSheet >= sheets.length) {
     throw new ImportFileError('SHEET_NOT_FOUND');
   }
 
-  const date1904Attr = String(workbook?.workbookPr?.['@_date1904'] ?? '').toLowerCase();
+  const workbookPr = firstElement(workbook, 'workbookPr');
+  const date1904Attr = (workbookPr ? attr(workbookPr.attrs, 'date1904') ?? '' : '').toLowerCase();
   const sheet = sheets[requestedSheet];
-  const rel = (rels as Array<Record<string, string>>).find((r) => r['@_Id'] === sheet['@_id']);
-  const target = (rel?.['@_Target'] ?? '').replace(/^\/?xl\//, '').replace(/^\//, '');
-  const sheetPath = `xl/${target}`;
+  let target = '';
+  eachElement(relsXml, 'Relationship', (el) => {
+    if (attr(el.attrs, 'Id') !== sheet.relId) return true;
+    target = attr(el.attrs, 'Target') ?? '';
+    return false;
+  });
+  const sheetPath = `xl/${target.replace(/^\/?xl\//, '').replace(/^\//, '')}`;
   if (!/^xl\/worksheets\/sheet\d+\.xml$/.test(sheetPath)) throw new ImportFileError('INVALID_XLSX');
 
-  const sharedStrings = parts.has('xl/sharedStrings.xml')
-    ? ((parseXml(parts.get('xl/sharedStrings.xml'))?.sst?.si ?? []) as unknown[]).map((si) =>
-        textOf(si).slice(0, IMPORT_LIMITS.MAX_CELL_CHARS),
-      )
-    : [];
+  const sharedStrings: string[] = [];
+  if (parts.has('xl/sharedStrings.xml')) {
+    eachElement(decodeXmlPart(parts.get('xl/sharedStrings.xml')), 'si', (el) => {
+      sharedStrings.push(richText(el.inner).slice(0, IMPORT_LIMITS.MAX_CELL_CHARS));
+    });
+  }
 
-  const xmlRows: Array<Record<string, any>> = parseXml(parts.get(sheetPath))?.worksheet?.sheetData?.row ?? [];
+  const sheetXml = decodeXmlPart(parts.get(sheetPath));
+  const sheetData = firstElement(sheetXml, 'sheetData');
   const rows: RawRow[] = [];
   let sequentialRow = 0;
-  for (const xmlRow of xmlRows) {
-    const declared = Number(xmlRow['@_r']);
+  eachElement(sheetData?.inner ?? '', 'row', (xmlRow) => {
+    const declared = Number(attr(xmlRow.attrs, 'r'));
     const rowNumber = Number.isInteger(declared) && declared > 0 ? declared : sequentialRow + 1;
     sequentialRow = rowNumber;
     const cells: string[] = [];
     let nextColumn = 0;
-    for (const cell of (xmlRow.c ?? []) as Array<Record<string, any>>) {
-      const column = columnIndex(cell['@_r']) ?? nextColumn;
+    eachElement(xmlRow.inner, 'c', (cell) => {
+      const column = columnIndex(attr(cell.attrs, 'r')) ?? nextColumn;
       nextColumn = column + 1;
-      const value = cellValue(cell, sharedStrings).slice(0, IMPORT_LIMITS.MAX_CELL_CHARS);
+      const value = cellValue(cell.attrs, cell.inner, sharedStrings).slice(0, IMPORT_LIMITS.MAX_CELL_CHARS);
       if (column >= IMPORT_LIMITS.MAX_COLUMNS) {
         if (value.trim() !== '') throw new ImportFileError('TOO_MANY_COLUMNS');
-        continue;
+        return true;
       }
       while (cells.length < column) cells.push('');
       cells[column] = value;
-    }
-    if (!cells.some((value) => value.trim() !== '')) continue;
+      return true;
+    });
+    if (!cells.some((value) => value.trim() !== '')) return true;
+    // Se corta en cuanto se pasa del límite: no se sigue recorriendo la hoja.
     if (rows.length >= IMPORT_LIMITS.MAX_DATA_ROWS + 1) throw new ImportFileError('TOO_MANY_ROWS');
     rows.push({ rowNumber, cells });
-  }
+    return true;
+  });
 
   return {
-    sheetNames: sheets.map((s) => String(s['@_name'] ?? '')),
+    sheetNames: sheets.map((s) => s.name),
     sheetIndex: requestedSheet,
     date1904: date1904Attr === '1' || date1904Attr === 'true',
     rows,

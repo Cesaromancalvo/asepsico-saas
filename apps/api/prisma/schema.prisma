@@ -401,6 +401,7 @@ model ClinicalProcess {
   patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Restrict)
   therapist User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
   sessions  Session[]
+  importItem PatientImportItem?
 
   @@index([workspaceId, status])
   @@index([patientId, status])
@@ -796,6 +797,7 @@ enum PatientImportStatus {
   PARTIAL // falló un bloque; se puede reintentar la confirmación (reanuda en el cursor)
   CANCELLED
   EXPIRED // pasaron 24 h sin confirmar: el fichero se borró
+  REVERTING // deshacer en curso (bloqueo optimista frente a reverts o reintentos simultáneos)
   REVERTED
 }
 
@@ -805,7 +807,8 @@ enum PatientImportStatus {
 model PatientImportJob {
   id               String              @id @default(cuid())
   workspaceId      String
-  importerId       String
+  /// null si se suprime el usuario de staff que importó (el lote y su auditoría se conservan).
+  importerId       String?
   status           PatientImportStatus @default(UPLOADED)
   format           String
   payload          String?
@@ -827,7 +830,7 @@ model PatientImportJob {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   workspace        Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  importer         User                @relation(fields: [importerId], references: [id], onDelete: Restrict)
+  importer         User?               @relation(fields: [importerId], references: [id], onDelete: SetNull)
   items            PatientImportItem[]
 
   @@index([workspaceId, importerId, createdAt])
@@ -840,12 +843,13 @@ model PatientImportItem {
   workspaceId       String
   jobId             String
   patientId         String           @unique
-  clinicalProcessId String
+  clinicalProcessId String           @unique
   rowNumber         Int
   createdAt         DateTime         @default(now())
   workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   job               PatientImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   patient           Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalProcess   ClinicalProcess  @relation(fields: [clinicalProcessId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, jobId])
 }

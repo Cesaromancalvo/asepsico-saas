@@ -7,10 +7,14 @@ export const IMPORT_LIMITS = {
   MAX_COLUMNS: 50,
   /** Longitud máxima que se conserva de una celda (ningún campo importable supera 160). */
   MAX_CELL_CHARS: 1000,
-  /** XLSX (un ZIP): límites aplicados MIENTRAS se descomprime, no después. */
+  /**
+   * XLSX (un ZIP): límites aplicados MIENTRAS se descomprime, no después. Holgados para 2.000
+   * filas (una hoja así ocupa ~1–3 MB de XML) y acotados para la memoria (condición de Argos):
+   * el XML se recorre sin montar árbol, así que el pico de memoria es del orden de estos valores.
+   */
   MAX_ZIP_ENTRIES: 2000,
-  MAX_XLSX_PART_BYTES: 40 * 1024 * 1024,
-  MAX_XLSX_TOTAL_BYTES: 60 * 1024 * 1024,
+  MAX_XLSX_PART_BYTES: 15 * 1024 * 1024,
+  MAX_XLSX_TOTAL_BYTES: 20 * 1024 * 1024,
   /** Bloques transaccionales de la confirmación y del deshacer. */
   BLOCK_SIZE: 100,
   /** Vida del fichero temporal cifrado. */

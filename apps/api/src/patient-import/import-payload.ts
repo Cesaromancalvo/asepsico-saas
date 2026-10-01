@@ -20,6 +20,11 @@ export interface ImportPayload {
   columnCount: number;
   /** Índices de columnas con cabecera potencialmente clínica: vacías y no asignables. */
   clinicalColumns: number[];
+  /**
+   * Columnas que no se asignaron en la vista previa: sus celdas se borraron del fichero temporal
+   * (minimización) y ya no se pueden asignar sin volver a subir el fichero.
+   */
+  discardedColumns?: number[];
   /** Todas las filas no vacías, incluida la primera (cabecera o no, lo decide el usuario). */
   rows: RawRow[];
 }
@@ -45,6 +50,27 @@ export function buildPayload(format: ImportFormat, sheet: RawSheet): ImportPaylo
     columnCount,
     clinicalColumns,
     rows,
+  };
+}
+
+/**
+ * Minimización (condición de Argos): tras la vista previa solo se conservan las celdas de las
+ * columnas asignadas a campos administrativos. El resto (incluidas columnas de texto libre que
+ * no se reconocieron como clínicas por su cabecera, o un fichero sin cabecera) se borra antes de
+ * volver a cifrar, también en la primera fila (por si el usuario marcó como cabecera una fila de
+ * datos): esas columnas pasan a mostrarse como "Columna N".
+ */
+export function minimizePayload(payload: ImportPayload, keepColumns: number[]): ImportPayload {
+  const keep = new Set(keepColumns);
+  const discarded = new Set(payload.discardedColumns ?? []);
+  for (let index = 0; index < payload.columnCount; index += 1) if (!keep.has(index)) discarded.add(index);
+  return {
+    ...payload,
+    discardedColumns: [...discarded].sort((a, b) => a - b),
+    rows: payload.rows.map((row) => ({
+      rowNumber: row.rowNumber,
+      cells: row.cells.map((cell, index) => (keep.has(index) ? cell : '')),
+    })),
   };
 }
 

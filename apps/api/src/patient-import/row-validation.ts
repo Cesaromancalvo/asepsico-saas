@@ -181,6 +181,10 @@ function parseDate(raw: string, ctx: ValidationContext): ParsedDate {
   return { iso: null, ...none };
 }
 
+export function isMinor(iso: string, now = new Date()): boolean {
+  return ageInYears(iso, now) < 18;
+}
+
 function ageInYears(iso: string, now: Date): number {
   const [year, month, day] = iso.split('-').map(Number);
   let age = now.getUTCFullYear() - year;
@@ -246,7 +250,7 @@ export function validateRows(rows: RawRow[], assignments: ColumnAssignment[], ct
       else {
         values.birthDate = parsed.iso;
         if (parsed.ambiguous && fileLooksMonthFirst) warnings.push(issue('fecha_nacimiento', 'AMBIGUOUS_DATE'));
-        if (ageInYears(parsed.iso, now) < 18) warnings.push(issue('fecha_nacimiento', 'MINOR'));
+        if (isMinor(parsed.iso, now)) warnings.push(issue('fecha_nacimiento', 'MINOR'));
       }
     }
 

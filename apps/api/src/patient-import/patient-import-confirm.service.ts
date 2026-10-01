@@ -8,7 +8,7 @@ import { IMPORT_LIMITS } from './import-limits';
 import { PatientImportAccess } from './patient-import-access';
 import { PatientImportJobsService, Preview, StoredMapping } from './patient-import-jobs.service';
 import { errorEntries } from './patient-import.service';
-import { ImportedValues } from './row-validation';
+import { ImportedValues, isMinor } from './row-validation';
 
 export interface PlanItem {
   row: number;
@@ -234,6 +234,7 @@ async function createImportedPatient(
 ) {
   const now = new Date();
   const discharged = values.status === 'DISCHARGED';
+  const minor = values.birthDate !== null && isMinor(values.birthDate, now);
   const patient = await tx.patient.create({
     data: {
       workspaceId,
@@ -243,8 +244,10 @@ async function createImportedPatient(
       phone: values.phone,
       birthDate: values.birthDate ? new Date(`${values.birthDate}T00:00:00.000Z`) : null,
       status: values.status,
-      // Sin consultationReason ni ningún otro contenido clínico. portalAccessMode: valor por
-      // defecto del esquema; no se crea ninguna cuenta de portal.
+      // Sin consultationReason ni ningún otro contenido clínico. No se crea ninguna cuenta de
+      // portal. Menores: GUARDIAN_ONLY (el modo más restrictivo que existe; solo tutores) hasta
+      // que el profesional complete tutores y decida el modo. Adultos: valor por defecto.
+      ...(minor ? { portalAccessMode: 'GUARDIAN_ONLY' as const } : {}),
     },
     select: { id: true, portalAccessMode: true },
   });

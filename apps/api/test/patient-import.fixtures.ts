@@ -131,6 +131,7 @@ export function prismaMock(seed: Partial<Stores> = {}) {
       return { count };
     }),
     deleteMany: jest.fn(async ({ where }: any) => {
+      maybeFail(name, 'deleteMany');
       const before = db.stores[name].length;
       db.stores[name] = db.stores[name].filter((r) => !matches(name, r, where));
       return { count: before - db.stores[name].length };

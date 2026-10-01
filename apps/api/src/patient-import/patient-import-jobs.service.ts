@@ -109,6 +109,11 @@ export class PatientImportJobsService {
       if (payload.clinicalColumns.includes(index)) {
         throw new BadRequestException(`La columna ${index + 1} puede contener información clínica y no se importará`);
       }
+      if (payload.discardedColumns?.includes(index)) {
+        throw new BadRequestException(
+          `La columna ${index + 1} se descartó en la vista previa anterior; vuelve a subir el fichero para asignarla`,
+        );
+      }
       if (seenFields.has(field) && !MULTI_COLUMN_FIELDS.has(field)) {
         throw new BadRequestException(`El campo ${field} solo puede asignarse a una columna`);
       }
@@ -152,7 +157,8 @@ export class PatientImportJobsService {
     const hasHeaderRow = mapping?.hasHeaderRow ?? true;
     const proposal = proposeMapping(payload.rows[0]?.cells ?? [], payload.columnCount, hasHeaderRow).map((column) => {
       const clinical = payload.clinicalColumns.includes(column.index);
-      return { ...column, clinical, suggestedField: clinical ? IGNORE_COLUMN : column.suggestedField };
+      const discarded = Boolean(payload.discardedColumns?.includes(column.index));
+      return { ...column, clinical, discarded, suggestedField: clinical || discarded ? IGNORE_COLUMN : column.suggestedField };
     });
     if (!mapping) return proposal.map((column) => ({ ...column, field: column.suggestedField }));
     return proposal.map((column) => ({

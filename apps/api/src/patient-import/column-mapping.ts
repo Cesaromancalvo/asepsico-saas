@@ -52,7 +52,8 @@ const HEADER_TO_FIELD = new Map<string, ImportField>(
  * "Diagnóstico principal", "Notas", "Historia clínica", "Observaciones"…
  */
 const CLINICAL_KEYWORDS = [
-  'motivo', 'diagnostic', 'observacion', 'nota', 'tratamiento', 'medicacion', 'medicamento', 'historia',
+  // 'obs' cubre "Obs.", "Observ." y "Observaciones"; 'seguim', "Seguimiento".
+  'motivo', 'diagnostic', 'obs', 'seguim', 'nota', 'tratamiento', 'medicacion', 'medicamento', 'historia',
   'historial', 'comentario', 'antecedente', 'sintoma', 'patologia', 'evolucion', 'clinic', 'informe',
   'derivacion', 'terapia', 'trastorno', 'enfermedad', 'alergia', 'queja', 'demanda', 'objetivo', 'sesion',
   'anamnesis', 'riesgo', 'diagnosis', 'notes', 'reason', 'treatment', 'medication', 'history', 'comment',
