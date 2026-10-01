@@ -73,7 +73,7 @@ export class ClinicalProcessesService {
   }
 
   async list(workspaceId: string, actor: AuthUser, query: ListClinicalProcessesQueryDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-processes-list');
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const { isClinician, treatingPatientIds } = await this.access.listingContext(workspaceId, actor);
@@ -141,7 +141,7 @@ export class ClinicalProcessesService {
   }
 
   async get(workspaceId: string, actor: AuthUser, id: string) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process');
     const process = await this.prisma.clinicalProcess.findFirst({
       where: { id, workspaceId },
       include: {
@@ -181,7 +181,7 @@ export class ClinicalProcessesService {
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateClinicalProcessDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-create');
     const patient = await this.prisma.patient.findFirst({ where: { id: dto.patientId, workspaceId, status: { not: 'ARCHIVED' } } });
     if (!patient) throw new NotFoundException('Paciente no encontrado o archivado');
 
@@ -224,7 +224,7 @@ export class ClinicalProcessesService {
   }
 
   async update(workspaceId: string, actor: AuthUser, id: string, dto: UpdateClinicalProcessDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-write');
     const process = await this.getRaw(workspaceId, id);
     const isAuthor = process.therapistId === actor.sub;
     const clinicalChange = CLINICAL_FIELDS.some((field) => dto[field] !== undefined);
@@ -274,7 +274,7 @@ export class ClinicalProcessesService {
   }
 
   async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-status');
     const process = await this.getRaw(workspaceId, id);
     // Estado del proceso: operación de gestión (OWNER/ADMIN) o del propio profesional clínico.
     await this.assertCanManage(workspaceId, actor, process.therapistId);
@@ -301,10 +301,8 @@ export class ClinicalProcessesService {
     return view(await this.getRaw(workspaceId, id));
   }
 
-  private assertClinicalAccess(actor: AuthUser) {
-    if (!CLINICAL_ACCESS_ROLES.includes(actor.role)) {
-      throw new ForbiddenException('Tu rol no tiene acceso a procesos clínicos');
-    }
+  private assertClinicalAccess(workspaceId: string, actor: AuthUser, resource: string) {
+    return this.access.assertRoleAllowed(workspaceId, actor, CLINICAL_ACCESS_ROLES, resource, 'Tu rol no tiene acceso a procesos clínicos');
   }
 
   /**

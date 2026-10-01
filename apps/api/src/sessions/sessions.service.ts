@@ -226,6 +226,7 @@ export class SessionsService {
 
     // Un THERAPIST no ve sesiones ajenas de pacientes que no trata (ni siquiera sus metadatos).
     if (actor.role === 'THERAPIST' && !isAuthor) {
+      await this.access.auditDenied(workspaceId, actor, 'session', scope ? 'READ_ONLY' : 'NO_PROCESS', session.patientId);
       throw new ForbiddenException('No puedes acceder a la sesión de otro profesional');
     }
 

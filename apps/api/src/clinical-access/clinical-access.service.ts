@@ -71,6 +71,17 @@ export class ClinicalAccessService {
     return Boolean(profile && isClinicalProfile(profile));
   }
 
+  /**
+   * Barrera de entrada por rol de un módulo clínico (procesos, mensajería, exportación...). Si el
+   * rol no está permitido, audita CLINICAL_ACCESS_DENIED (reason ROLE, sin contenido) y lanza
+   * 403, igual que el resto de denegaciones. Lista blanca: un rol desconocido también se deniega.
+   */
+  async assertRoleAllowed(workspaceId: string, actor: AuthUser, allowedRoles: readonly string[], resource: string, message: string, patientId?: string) {
+    if (actor && allowedRoles.includes(actor.role)) return;
+    await this.auditDenied(workspaceId, actor, resource, 'ROLE', patientId);
+    throw new ForbiddenException(message);
+  }
+
   /** Exige ser profesional clínico (sin mirar pacientes): biblioteca de tareas, etc. */
   async assertClinician(workspaceId: string, actor: AuthUser, resource: string) {
     assertStaffRole(actor);

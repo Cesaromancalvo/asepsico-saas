@@ -18,8 +18,8 @@ export class ExportsService {
     this.access = access ?? new ClinicalAccessService(prisma);
   }
 
-  private assertClinical(user: AuthUser) {
-    if (!CLINICAL_ROLES.includes(user.role)) throw new ForbiddenException('No tienes permiso para exportar información clínica');
+  private assertClinical(user: AuthUser, patientId: string) {
+    return this.access.assertRoleAllowed(user.workspaceId, user, CLINICAL_ROLES, 'patient-export', 'No tienes permiso para exportar información clínica', patientId);
   }
 
   private assertAdmin(user: AuthUser) {
@@ -60,7 +60,7 @@ export class ExportsService {
   }
 
   async exportPatient(user: AuthUser, patientId: string, password: string) {
-    this.assertClinical(user);
+    await this.assertClinical(user, patientId);
     await this.assertPasswordConfirmed(user, password);
     // Mismo criterio que la API (ClinicalAccessService): quien trata al paciente exporta su
     // contenido clínico (sin notas internas ajenas); el autor de un proceso cerrado, solo lo suyo;

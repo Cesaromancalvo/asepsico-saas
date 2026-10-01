@@ -516,3 +516,60 @@ describe('Proceso en pausa: la ventana de mensajes termina en pausedAt, no en up
     expect(row().pausedAt).toBeNull();
   });
 });
+
+// ------------------------------------------------------------------------------------------
+// Toda denegación clínica se audita igual (también las que se cortan por rol antes de mirar
+// el paciente): CLINICAL_ACCESS_DENIED con { resource, reason, role } y sin contenido.
+// ------------------------------------------------------------------------------------------
+
+describe('Auditoría de denegaciones cortadas por rol', () => {
+  function expectAuditedDenial(prisma: any, actorId: string, resource: string, reason: string, role: string) {
+    const rows = prisma.__store.auditLog.filter((a: any) => a.action === 'CLINICAL_ACCESS_DENIED');
+    expect(rows).toEqual([expect.objectContaining({ workspaceId: WS, actorId, entityType: 'Patient', metadata: { resource, reason, role } })]);
+    expect(json(prisma.__store.auditLog)).not.toMatch(/MARK-|enc:v[12]:/);
+  }
+
+  it('ASSISTANT en GET /clinical-processes/:id → 403 auditado, sin leer el proceso', async () => {
+    const prisma = seedDb();
+    await expect(new ClinicalProcessesService(prisma).get(WS, actor('assistant'), 'proc-active')).rejects.toBeInstanceOf(ForbiddenException);
+    expectAuditedDenial(prisma, 'assistant', 'clinical-process', 'ROLE', 'ASSISTANT');
+    expect(prisma.clinicalProcess.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('ASSISTANT en GET /messages/:id → 403 auditado, sin leer la conversación', async () => {
+    const prisma = seedDb();
+    await expect(new MessagesService(prisma).thread(WS, actor('assistant'), 'conv-1')).rejects.toBeInstanceOf(ForbiddenException);
+    expectAuditedDenial(prisma, 'assistant', 'patient-messages', 'ROLE', 'ASSISTANT');
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalled();
+    expect(prisma.message.findMany).not.toHaveBeenCalled();
+  });
+
+  it('ASSISTANT en POST /exports/patients/:id → 403 auditado, antes de pedir la contraseña', async () => {
+    const prisma = seedDb();
+    await expect(new ExportsService(prisma).exportPatient(actor('assistant'), 'pat-1', PASSWORD)).rejects.toBeInstanceOf(ForbiddenException);
+    expectAuditedDenial(prisma, 'assistant', 'patient-export', 'ROLE', 'ASSISTANT');
+    expect(prisma.__store.auditLog[0].entityId).toBe('pat-1');
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.patient.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rol desconocido → 403 auditado (lista blanca)', async () => {
+    const prisma = seedDb();
+    await expect(new ClinicalProcessesService(prisma).list(WS, actor('assistant', { role: 'RECEPTIONIST' }), {} as any)).rejects.toBeInstanceOf(ForbiddenException);
+    expectAuditedDenial(prisma, 'assistant', 'clinical-processes-list', 'ROLE', 'RECEPTIONIST');
+  });
+
+  it.each(label(['t-other', 't-none'] as ActorKey[]))('%s pide la sesión de otro profesional → 403 auditado', async (_l, key) => {
+    const prisma = seedDb();
+    await expect(new SessionsService(prisma).get(WS, actor(key), 'ses-closed')).rejects.toBeInstanceOf(ForbiddenException);
+    expectAuditedDenial(prisma, key, 'session', 'NO_PROCESS', 'THERAPIST');
+    expect(prisma.__store.auditLog[0].entityId).toBe('pat-1');
+  });
+
+  it('si la auditoría de la denegación falla, se deniega igual (falla en cerrado)', async () => {
+    const prisma = seedDb();
+    prisma.auditLog.create.mockRejectedValueOnce(new Error('auditoría caída'));
+    await expect(new MessagesService(prisma).thread(WS, actor('assistant'), 'conv-1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.message.findMany).not.toHaveBeenCalled();
+  });
+});

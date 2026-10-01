@@ -26,13 +26,13 @@ export class MessagesService {
   }
   private p() { return this.prisma as any; }
 
-  private assertClinicalRole(actor: AuthUser) {
-    if (!['OWNER', 'ADMIN', 'THERAPIST'].includes(actor.role)) throw new ForbiddenException('No tienes acceso a mensajería clínica');
+  private assertClinicalRole(workspaceId: string, actor: AuthUser, resource = 'patient-messages') {
+    return this.access.assertRoleAllowed(workspaceId, actor, ['OWNER', 'ADMIN', 'THERAPIST'], resource, 'No tienes acceso a mensajería clínica');
   }
 
   /** Escribir o gestionar la conversación: solo quien trata al paciente (proceso ACTIVO). */
   private async assertTreating(workspaceId: string, actor: AuthUser, patientId: string, resource: string) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     const { patient, scope } = await this.access.assertTreating(workspaceId, actor, patientId, resource);
     if (patient.deletedAt) throw new NotFoundException('Paciente no encontrado');
     return { patient, scope };
@@ -40,7 +40,7 @@ export class MessagesService {
 
   /** Leer la conversación: quien trata (sus ventanas) o autor de un proceso cerrado (las suyas). */
   private async assertCanRead(workspaceId: string, actor: AuthUser, patientId: string) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     const { patient, scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'patient-messages');
     if (patient.deletedAt) throw new NotFoundException('Paciente no encontrado');
     return { patient, scope };
@@ -70,7 +70,7 @@ export class MessagesService {
   }
 
   async list(workspaceId: string, actor: AuthUser, q?: string) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     const where: any = { workspaceId, status: { not: 'ARCHIVED' } };
     if (q?.trim()) where.patient = { OR: [{ firstName: { contains: q.trim(), mode: 'insensitive' } }, { lastName: { contains: q.trim(), mode: 'insensitive' } }] };
     if (actor.role === 'THERAPIST') where.patient = { ...(where.patient || {}), clinicalProcesses: { some: { workspaceId, therapistId: actor.sub } } };
@@ -108,7 +108,7 @@ export class MessagesService {
   }
 
   async thread(workspaceId: string, actor: AuthUser, conversationId: string) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     // Primero solo metadatos (sin mensajes): el contenido se carga DESPUÉS de decidir el acceso.
     const conversation = await this.p().conversation.findFirst({
       where: { id: conversationId, workspaceId, status: { not: 'ARCHIVED' } },
@@ -130,7 +130,7 @@ export class MessagesService {
   }
 
   async send(workspaceId: string, actor: AuthUser, conversationId: string, dto: SendMessageDto) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     this.validateAttachment(dto);
     const conversation = await this.p().conversation.findFirst({ where: { id: conversationId, workspaceId } });
     if (!conversation) throw new NotFoundException('Conversación no encontrada');
@@ -146,7 +146,7 @@ export class MessagesService {
   }
 
   async update(workspaceId: string, actor: AuthUser, conversationId: string, dto: UpdateConversationDto) {
-    this.assertClinicalRole(actor);
+    await this.assertClinicalRole(workspaceId, actor);
     const conversation = await this.p().conversation.findFirst({ where: { id: conversationId, workspaceId } });
     if (!conversation) throw new NotFoundException('Conversación no encontrada');
     await this.assertTreating(workspaceId, actor, conversation.patientId, 'patient-messages-manage');
