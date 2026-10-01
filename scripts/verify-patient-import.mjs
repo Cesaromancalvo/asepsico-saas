@@ -15,7 +15,8 @@
 //   cliente distinta en X-Forwarded-For para no chocar con los límites por IP de las rutas.
 //
 // Cubre: subida, vista previa, confirmación y deshacer con dos THERAPIST (B no ve los lotes ni los
-// duplicados de A); 403 auditado para ASSISTANT; PARTIAL con reintento sin duplicados; dos
+// duplicados de A); 403 auditado para ASSISTANT; PARTIAL (fallo de sistema) con reintento sin
+// duplicados; fallo de datos real aislado fila a fila (ROW_REJECTED); surrogate suelto y UTF-16; dos
 // confirmaciones y dos deshacer simultáneos (409); deshacer con una cita posterior; minimización
 // del fichero temporal tras la vista previa (descifrándolo); informe de errores sin fórmulas; y
 // ausencia de datos de los pacientes en los logs de la API y en AuditLog.metadata.
@@ -32,6 +33,7 @@ const requireFromApi = createRequire(new URL('../apps/api/package.json', import.
 const { PrismaClient } = requireFromApi('@prisma/client');
 const bcrypt = requireFromApi('bcryptjs');
 const { generate: totp } = requireFromApi('otplib');
+const { strToU8, zipSync } = requireFromApi('fflate');
 
 function assert(value, message) {
   if (!value) throw new Error(message);
@@ -261,28 +263,76 @@ async function main() {
   assert((await prisma.patientImportJob.count({ where: { importerId: userC.id } })) === 0, 'El ASSISTANT llegó a crear un lote');
   ok('ASSISTANT recibe 403 en subir, listar, plantilla, ver y deshacer; 5 auditorías con solo rol y operación');
 
-  console.log('4. PARTIAL con reintento sin duplicados');
+  // Trigger temporal que hace fallar el INSERT de la fila "Bloqueo" con un error REAL de
+  // PostgreSQL/Prisma. errcode '40001' (serialization_failure → P2034) es un fallo de sistema;
+  // sin errcode, RAISE da un PrismaClientUnknownRequestError, que se trata como fallo de datos.
+  async function withFailingInsert(set, errcode, fn) {
+    const using = errcode ? ` USING ERRCODE = '${errcode}'` : '';
+    await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION qa_import_fail() RETURNS trigger AS $$ BEGIN
+      IF NEW."firstName" = 'Bloqueo' AND NEW."lastName" LIKE '${TAG} ${set} %' THEN RAISE EXCEPTION 'fallo forzado por QA'${using}; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe('CREATE TRIGGER qa_import_fail BEFORE INSERT ON "Patient" FOR EACH ROW EXECUTE FUNCTION qa_import_fail()');
+    try {
+      return await fn();
+    } finally {
+      await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS qa_import_fail ON "Patient"');
+      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS qa_import_fail()');
+    }
+  }
+
+  console.log('4. PARTIAL por fallo de sistema, con reintento sin duplicados');
   const rowsP = Array.from({ length: 150 }, (_, i) => fakeRow(i, 'p', i === 120 ? 'Bloqueo' : undefined));
   const partial = await uploadAndPreview(A, csv(HEADER, rowsP));
   assert(partial.preview.summary.valid === 150, `vista previa PARTIAL: ${JSON.stringify(partial.preview.summary)}`);
-  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION qa_import_fail() RETURNS trigger AS $$ BEGIN
-    IF NEW."firstName" = 'Bloqueo' AND NEW."lastName" LIKE '${TAG}%' THEN RAISE EXCEPTION 'fallo forzado por QA'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
-  await prisma.$executeRawUnsafe('CREATE TRIGGER qa_import_fail BEFORE INSERT ON "Patient" FOR EACH ROW EXECUTE FUNCTION qa_import_fail()');
-  let first;
-  try {
-    first = await A.req(`/patient-imports/${partial.id}/confirm`, { method: 'POST', body: {} });
-  } finally {
-    await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS qa_import_fail ON "Patient"');
-    await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS qa_import_fail()');
-  }
+  const first = await withFailingInsert('p', '40001', () => A.req(`/patient-imports/${partial.id}/confirm`, { method: 'POST', body: {} }));
   assert(first.status === 'PARTIAL' && first.createdCount === 100 && first.processedRows === 100 && first.canRetry === true, `primer intento: ${JSON.stringify(first)}`);
   assert((await prisma.patientImportItem.count({ where: { jobId: partial.id } })) === 100, 'El bloque fallido dejó rastro');
-  ok('el fallo del 2.º bloque deja el lote en PARTIAL con 100 creados y el bloque fallido sin rastro');
+  ok('un fallo de sistema (P2034) en el 2.º bloque deja el lote en PARTIAL con 100 creados y el bloque sin rastro');
   const retry = await A.req(`/patient-imports/${partial.id}/confirm`, { method: 'POST', body: {} });
   assert(retry.status === 'COMPLETED' && retry.createdCount === 150, `reintento: ${JSON.stringify(retry)}`);
   const partialPatients = await prisma.patient.findMany({ where: { workspaceId, lastName: { startsWith: `${TAG} p ` } }, select: { email: true } });
   assert(partialPatients.length === 150 && new Set(partialPatients.map((p) => p.email)).size === 150, `tras el reintento hay ${partialPatients.length} pacientes`);
   ok('el reintento reanuda en el cursor: 150 pacientes exactos, ninguno duplicado');
+
+  console.log('4b. Fallo de DATOS real de Prisma: se aísla fila a fila');
+  const rowsR = Array.from({ length: 150 }, (_, i) => fakeRow(i, 'r', i === 120 ? 'Bloqueo' : undefined));
+  const rejected = await uploadAndPreview(A, csv(HEADER, rowsR));
+  const rejectedRow = rejected.preview.rows.find((r) => r.values?.firstName === 'Bloqueo').rowNumber;
+  const isolated = await withFailingInsert('r', null, () => A.req(`/patient-imports/${rejected.id}/confirm`, { method: 'POST', body: {} }));
+  assert(isolated.status === 'COMPLETED' && isolated.createdCount === 149 && isolated.errorCount === 1, `aislamiento: ${JSON.stringify(isolated)}`);
+  const rejectedJob = await prisma.patientImportJob.findUnique({ where: { id: rejected.id } });
+  assert(rejectedJob.errorReport.some((e) => e.row === rejectedRow && e.code === 'ROW_REJECTED'), `errorReport sin ROW_REJECTED: ${JSON.stringify(rejectedJob.errorReport)}`);
+  assert((await prisma.patient.count({ where: { workspaceId, lastName: { startsWith: `${TAG} r ` } } })) === 149, 'No hay 149 pacientes del lote');
+  const rejectedReport = await A.raw(`/patient-imports/${rejected.id}/error-report`);
+  assert(rejectedReport.text.includes(`${rejectedRow};fila;`) && !rejectedReport.text.includes('Bloqueo'), 'El informe no marca la fila rechazada o repite su valor');
+  ok(`el error real (PrismaClientUnknownRequestError) rechaza solo la fila ${rejectedRow}: COMPLETED con 149 creados y ROW_REJECTED en el informe`);
+
+  console.log('4c. Surrogate suelto (&#xD800;) en un XLSX y parte UTF-16');
+  const xlsxBook = (sheetXml) =>
+    Buffer.from(
+      zipSync({
+        'xl/workbook.xml': strToU8('<workbook xmlns:r="r"><sheets><sheet name="H" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+        'xl/_rels/workbook.xml.rels': strToU8('<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'),
+        'xl/worksheets/sheet1.xml': sheetXml,
+      }),
+    );
+  const xc = (ref, text) => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+  const sRows = [['nombre', 'apellidos'], ...Array.from({ length: 3 }, (_, i) => [i === 1 ? 'Ana&#xD800;' : 'Zoraida', `${TAG} s ${'abc'[i]}`])];
+  const sXml = `<worksheet><sheetData>${sRows.map((r, i) => `<row r="${i + 1}">${xc(`A${i + 1}`, r[0])}${xc(`B${i + 1}`, r[1])}</row>`).join('')}</sheetData></worksheet>`;
+  const surrogate = await uploadAndPreview(A, xlsxBook(strToU8(sXml)), 'pacientes.xlsx');
+  const sConfirm = await A.req(`/patient-imports/${surrogate.id}/confirm`, { method: 'POST', body: {} });
+  assert(sConfirm.status === 'COMPLETED', `el lote con &#xD800; terminó en ${sConfirm.status}: ${JSON.stringify(sConfirm)}`);
+  const sStored = await prisma.patient.findMany({ where: { workspaceId, lastName: { startsWith: `${TAG} s ` } }, select: { firstName: true } });
+  assert(sStored.every((p) => !/[\uD800-\uDFFF]/.test(p.firstName)), 'Se guardó un surrogate suelto');
+  const sRow = surrogate.preview.rows.find((r) => r.rowNumber === 3);
+  const sMarked = sRow.status === 'ERROR' && sRow.errors.some((e) => e.code === 'INVALID_TEXT');
+  assert(sMarked || sStored.length === 3, `la fila del surrogate ni se marca INVALID_TEXT ni se importa limpia: ${JSON.stringify(sRow.errors)}`);
+  ok(`&#xD800;: lote COMPLETED (no PARTIAL), ${sStored.length} creados; la fila ${sMarked ? 'queda como INVALID_TEXT' : 'se importa sin el surrogate'}`);
+  const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(sXml.replace('Ana&#xD800;', 'Ana'), 'utf16le')]);
+  const u16 = await A.upload(xlsxBook(new Uint8Array(utf16)), 'pacientes.xlsx');
+  assert(u16.status === 400 && u16.text.includes('UNSUPPORTED_ENCODING'), `XLSX en UTF-16: ${u16.status} ${u16.text.slice(0, 200)}`);
+  const u16csv = await A.upload(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('nombre;apellidos\r\nZoraida;Ficticia\r\n', 'utf16le')]));
+  assert(u16csv.status === 400 && u16csv.text.includes('UNSUPPORTED_ENCODING'), `CSV en UTF-16: ${u16csv.status} ${u16csv.text.slice(0, 200)}`);
+  ok('XLSX y CSV en UTF-16 se rechazan con UNSUPPORTED_ENCODING (400)');
 
   console.log('5. Dos confirmaciones simultáneas');
   const conc = await uploadAndPreview(A, csv(HEADER, Array.from({ length: 150 }, (_, i) => fakeRow(i, 'k'))));
