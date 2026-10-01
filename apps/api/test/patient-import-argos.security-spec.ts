@@ -4,6 +4,7 @@ import { join } from 'path';
 import { strToU8, zipSync } from 'fflate';
 import { decryptFieldStrict } from '../src/common/crypto/field-encryption';
 import { IMPORT_LIMITS } from '../src/patient-import/import-limits';
+import { isRowDataError } from '../src/patient-import/import-errors';
 import { readXlsx } from '../src/patient-import/parsing/xlsx-reader';
 import { FULL_MAPPING, actor, csvFile, fakePatientsCsv, prismaMock, services } from './patient-import.fixtures';
 
@@ -263,6 +264,32 @@ describe('Quima: un fallo de datos de una fila no bloquea el lote', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/Paciente|Ficticio|valor ficticio/);
     const csv = (await svc.imports.errorReport('ws-1', therapist, id)).buffer.toString('utf8');
     expect(csv).toContain('120;fila;');
+  });
+
+  it('isRowDataError: InvalidArg (error real de Prisma con un surrogate) es de datos; P1001/P2034 no', () => {
+    const known = (code: string) => Object.assign(new Error('x'), { name: 'PrismaClientKnownRequestError', code });
+    expect(isRowDataError(known('InvalidArg'))).toBe(true);
+    expect(isRowDataError(known('P2000'))).toBe(true);
+    expect(isRowDataError(known('P1001'))).toBe(false);
+    expect(isRowDataError(known('P2034'))).toBe(false);
+    expect(isRowDataError(new Error('bug'))).toBe(false);
+  });
+
+  it('con el error real (KnownRequestError InvalidArg) la fila se rechaza y el lote termina COMPLETED', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { db, prisma, svc, id } = await imported(150);
+    const realCreate = prisma.patient.create.getMockImplementation();
+    prisma.patient.create.mockImplementation(async (args: any) => {
+      if (args.data.firstName === 'Paciente119') {
+        throw Object.assign(new Error('Invalid argument'), { name: 'PrismaClientKnownRequestError', code: 'InvalidArg' });
+      }
+      return realCreate(args);
+    });
+    const result = await svc.confirm.confirm('ws-1', therapist, id, []);
+    expect(result.status).toBe('COMPLETED');
+    expect(result.createdCount).toBe(149);
+    expect(result.errorCount).toBe(1);
+    expect(db.stores.patientImportJob[0].errorReport).toEqual(expect.arrayContaining([{ row: 120, field: 'fila', code: 'ROW_REJECTED' }]));
   });
 
   it('un fallo de sistema (conexión) sigue dejando el lote en PARTIAL para reintentar', async () => {
