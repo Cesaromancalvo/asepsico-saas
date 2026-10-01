@@ -16,7 +16,10 @@ export function decodeCsvBuffer(buffer: Buffer): string {
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     bytes = bytes.subarray(3);
   }
-  // Un NUL no aparece en un CSV de texto: es un binario renombrado (o UTF-16, que no admitimos).
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) {
+    throw new ImportFileError('UNSUPPORTED_ENCODING');
+  }
+  // Un NUL no aparece en un CSV de texto: es un binario renombrado (o UTF-16 sin BOM).
   if (bytes.includes(0)) throw new ImportFileError('INVALID_CSV');
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);

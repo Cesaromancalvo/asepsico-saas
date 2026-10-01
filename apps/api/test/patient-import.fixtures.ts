@@ -56,7 +56,7 @@ export function prismaMock(seed: Partial<Stores> = {}) {
     stores: Object.fromEntries(STORE_NAMES.map((name) => [name, (seed[name] ?? []).map((r) => ({ ...r }))])),
   };
   const clone = (s: Stores): Stores => Object.fromEntries(Object.entries(s).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]));
-  const failOn: { model?: string; op?: string; nth?: number; calls: number } = { calls: 0 };
+  const failOn: { model?: string; op?: string; nth?: number; calls: number; error?: () => Error } = { calls: 0 };
 
   const matchValue = (value: any, filter: any): boolean => {
     if (filter === null) return (value ?? null) === null;
@@ -98,7 +98,7 @@ export function prismaMock(seed: Partial<Stores> = {}) {
   const maybeFail = (model: string, op: string) => {
     if (failOn.model === model && failOn.op === op) {
       failOn.calls += 1;
-      if (failOn.calls === failOn.nth) throw Object.assign(new Error('fallo simulado'), { code: 'P2034' });
+      if (failOn.calls === failOn.nth) throw failOn.error ? failOn.error() : Object.assign(new Error('fallo simulado'), { code: 'P2034' });
     }
   };
 

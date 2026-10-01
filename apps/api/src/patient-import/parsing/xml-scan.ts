@@ -22,6 +22,12 @@ const NAME_END = new Set([' ', '\t', '\r', '\n', '/', '>']);
 
 export function decodeXmlPart(part: Buffer | undefined): string {
   if (!part) throw new ImportFileError('INVALID_XLSX');
+  // UTF-16 (con BOM, o NUL intercalados al principio): no se admite, con un error claro en vez de
+  // leerlo como UTF-8 y acabar en "fichero vacío".
+  const head = part.subarray(0, 64);
+  if ((head[0] === 0xff && head[1] === 0xfe) || (head[0] === 0xfe && head[1] === 0xff) || head.includes(0)) {
+    throw new ImportFileError('UNSUPPORTED_ENCODING');
+  }
   const text = new TextDecoder('utf-8').decode(part);
   if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new ImportFileError('INVALID_XLSX');
   return text;
@@ -43,28 +49,82 @@ function readName(xml: string, at: number): [string, number] {
   return [xml.slice(start, k), k];
 }
 
+const CDATA_OPEN = '<![CDATA[';
+const CDATA_CLOSE = ']]>';
+
+/**
+ * Busca `token` desde `from` saltando las secciones CDATA (su contenido es texto: un "</t>" o un
+ * "<c" dentro de CDATA no es marcado). Lineal: cada CDATA se recorre una sola vez.
+ */
+// Memo de "siguiente CDATA a partir de" por texto: sin él, cada búsqueda volvería a recorrer el
+// documento hasta el final (cuadrático). Se vacía al terminar cada lectura (resetXmlScan).
+const cdataMemo = new Map<string, { from: number; at: number }>();
+
+function nextCdata(xml: string, cursor: number): number {
+  const memo = cdataMemo.get(xml);
+  if (memo && cursor >= memo.from && (memo.at === -1 || cursor <= memo.at)) return memo.at;
+  const at = xml.indexOf(CDATA_OPEN, cursor);
+  if (cdataMemo.size >= 16) cdataMemo.clear();
+  cdataMemo.set(xml, { from: cursor, at });
+  return at;
+}
+
+export function resetXmlScan(): void {
+  cdataMemo.clear();
+}
+
+function indexOutsideCdata(xml: string, token: string, from: number): number {
+  let cursor = from;
+  for (;;) {
+    const i = xml.indexOf(token, cursor);
+    const cdata = nextCdata(xml, cursor);
+    if (i === -1) return -1;
+    if (cdata === -1 || cdata > i) return i;
+    const end = xml.indexOf(CDATA_CLOSE, cdata + CDATA_OPEN.length);
+    if (end === -1) throw new ImportFileError('INVALID_XLSX'); // CDATA sin cerrar
+    cursor = end + CDATA_CLOSE.length;
+  }
+}
+
 /** Busca la siguiente etiqueta de apertura `<name` o `<prefijo:name` a partir de `from`. */
 function findOpen(xml: string, name: string, from: number, to: number): { start: number; nameEnd: number } | null {
-  let i = xml.indexOf('<', from);
+  let i = indexOutsideCdata(xml, '<', from);
   while (i !== -1 && i < to) {
     const [local, end] = readName(xml, i + 1);
     if (local === name && NAME_END.has(xml[end])) return { start: i, nameEnd: end };
-    i = xml.indexOf('<', i + 1);
+    i = indexOutsideCdata(xml, '<', i + 1);
   }
   return null;
 }
 
 /** Busca el cierre `</name>` o `</prefijo:name>` desde `from`. Devuelve [inicio, fin]. */
 function findClose(xml: string, name: string, from: number, to: number): [number, number] | null {
-  let i = xml.indexOf('</', from);
+  let i = indexOutsideCdata(xml, '</', from);
   while (i !== -1 && i < to) {
     const [local, end] = readName(xml, i + 2);
     let k = end;
     while (k < end + 8 && /\s/.test(xml[k] ?? '')) k += 1;
     if (local === name && xml[k] === '>') return [i, k + 1];
-    i = xml.indexOf('</', i + 2);
+    i = indexOutsideCdata(xml, '</', i + 2);
   }
   return null;
+}
+
+/**
+ * Contenido de texto de un elemento: las secciones CDATA se toman tal cual (sin decodificar
+ * entidades, como manda XML) y el resto se decodifica.
+ */
+export function textContent(raw: string): string {
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    const cdata = raw.indexOf(CDATA_OPEN, cursor);
+    if (cdata === -1) return out + decodeEntities(raw.slice(cursor));
+    const end = raw.indexOf(CDATA_CLOSE, cdata + CDATA_OPEN.length);
+    if (end === -1) throw new ImportFileError('INVALID_XLSX');
+    out += decodeEntities(raw.slice(cursor, cdata)) + raw.slice(cdata + CDATA_OPEN.length, end);
+    cursor = end + CDATA_CLOSE.length;
+  }
 }
 
 /**
@@ -125,7 +185,10 @@ export function decodeEntities(text: string): string {
       case 'apos': return "'";
       default: {
         const code = ent.startsWith('#x') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
-        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+        // Fuera: NUL, el rango de surrogates (U+D800–U+DFFF: dejaría un surrogate suelto que la
+        // base de datos rechaza) y lo que pasa de U+10FFFF.
+        if (code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '';
+        return String.fromCodePoint(code);
       }
     }
   });
@@ -159,7 +222,7 @@ export function richText(inner: string): string {
     }
     const close = findClose(inner, 't', tagEnd + 1, inner.length);
     if (!close) throw new ImportFileError('INVALID_XLSX');
-    text += decodeEntities(inner.slice(tagEnd + 1, close[0]));
+    text += textContent(inner.slice(tagEnd + 1, close[0]));
     cursor = close[1];
   }
 }
@@ -167,5 +230,5 @@ export function richText(inner: string): string {
 /** Texto de un elemento hijo simple (`<v>`). */
 export function childText(inner: string, name: string): string {
   const el = firstElement(inner, name);
-  return el ? decodeEntities(el.inner) : '';
+  return el ? textContent(el.inner) : '';
 }

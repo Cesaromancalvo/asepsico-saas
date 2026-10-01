@@ -48,7 +48,14 @@ export interface PatientImportPreviewRequest {
 
 export type PatientImportIssueCode =
   | 'REQUIRED' | 'TOO_SHORT' | 'TOO_LONG' | 'INVALID_TEXT' | 'INVALID_EMAIL' | 'INVALID_PHONE' | 'INVALID_PREFIX'
-  | 'INVALID_DATE' | 'IMPLAUSIBLE_DATE' | 'INVALID_STATUS' | 'AMBIGUOUS_DATE' | 'MINOR';
+  | 'INVALID_DATE' | 'IMPLAUSIBLE_DATE' | 'INVALID_STATUS' | 'AMBIGUOUS_DATE' | 'MINOR'
+  // Solo en el informe de errores tras confirmar: la base de datos rechazó la fila (field = 'fila').
+  | 'ROW_REJECTED';
+
+// Códigos de rechazo del fichero en POST /patient-imports (cuerpo { code, message }).
+export type PatientImportFileErrorCode =
+  | 'FILE_REQUIRED' | 'FILE_TOO_LARGE' | 'TOO_MANY_ROWS' | 'TOO_MANY_COLUMNS' | 'LEGACY_XLS' | 'UNSUPPORTED_FORMAT'
+  | 'INVALID_CSV' | 'INVALID_XLSX' | 'XLSX_TOO_LARGE_UNCOMPRESSED' | 'SHEET_NOT_FOUND' | 'EMPTY_FILE' | 'UNSUPPORTED_ENCODING';
 
 export interface PatientImportIssue {
   field: PatientImportField;

@@ -21,7 +21,8 @@ export type RowIssueCode =
   | 'IMPLAUSIBLE_DATE'
   | 'INVALID_STATUS'
   | 'AMBIGUOUS_DATE'
-  | 'MINOR';
+  | 'MINOR'
+  | 'ROW_REJECTED';
 
 export const ROW_ISSUE_MESSAGES: Record<RowIssueCode, string> = {
   REQUIRED: 'Falta este dato obligatorio',
@@ -36,6 +37,7 @@ export const ROW_ISSUE_MESSAGES: Record<RowIssueCode, string> = {
   INVALID_STATUS: 'Estado no válido (usa "activo" o "alta")',
   AMBIGUOUS_DATE: 'Fecha ambigua: se ha interpretado como día/mes; revísala',
   MINOR: 'Menor de edad: completa tutores y modo de acceso al portal después de importar',
+  ROW_REJECTED: 'La base de datos rechazó esta fila al guardarla; revísala y vuelve a subirla',
 };
 
 export interface RowIssue {
@@ -80,6 +82,8 @@ const issue = (field: ImportField, code: RowIssueCode): RowIssue => ({ field, co
 // con caracteres de control. Un nombre real no empieza así.
 const FORMULA_START = /^[=+\-@\t\r]/;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+// Surrogate suelto (p. ej. de "&#xD800;"): no es texto Unicode válido y la base de datos lo rechaza.
+const LONE_SURROGATE = /\p{Cs}/u;
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -95,7 +99,9 @@ function cellsFor(row: RawRow, assignments: ColumnAssignment[], field: ImportFie
 
 function validateName(value: string, field: ImportField, errors: RowIssue[]): string {
   if (!value) errors.push(issue(field, 'REQUIRED'));
-  else if (FORMULA_START.test(value) || CONTROL_CHARS.test(value)) errors.push(issue(field, 'INVALID_TEXT'));
+  else if (FORMULA_START.test(value) || CONTROL_CHARS.test(value) || LONE_SURROGATE.test(value)) {
+    errors.push(issue(field, 'INVALID_TEXT'));
+  }
   else if (value.length < 2) errors.push(issue(field, 'TOO_SHORT'));
   else if (value.length > 80) errors.push(issue(field, 'TOO_LONG'));
   return value;
@@ -234,7 +240,7 @@ export function validateRows(rows: RawRow[], assignments: ColumnAssignment[], ct
     const email = single('email').toLowerCase();
     if (email) {
       if (email.length > 160) errors.push(issue('email', 'TOO_LONG'));
-      else if (!isEmail(email)) errors.push(issue('email', 'INVALID_EMAIL'));
+      else if (LONE_SURROGATE.test(email) || !isEmail(email)) errors.push(issue('email', 'INVALID_EMAIL'));
       else values.email = email;
     }
 

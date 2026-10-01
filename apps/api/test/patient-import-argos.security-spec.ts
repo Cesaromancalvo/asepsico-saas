@@ -1,4 +1,4 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import { ConflictException, HttpException, Logger } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { strToU8, zipSync } from 'fflate';
@@ -233,5 +233,47 @@ describe('Argos 7: integridad referencial del esquema', () => {
   it('suprimir al usuario importador no queda bloqueado: importerId opcional con SetNull', () => {
     expect(model('PatientImportJob')).toMatch(/importerId\s+String\?/);
     expect(model('PatientImportJob')).toMatch(/importer\s+User\?\s+@relation\(fields: \[importerId\], references: \[id\], onDelete: SetNull\)/);
+  });
+});
+
+describe('Quima: un fallo de datos de una fila no bloquea el lote', () => {
+  // Simula lo visto con Postgres real: el motor de Prisma rechaza el valor de UNA fila.
+  const dataError = () => Object.assign(new Error('Invalid argument (valor ficticio)'), { name: 'PrismaClientUnknownRequestError' });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('la fila culpable se rechaza, el resto del bloque se importa y el lote termina COMPLETED', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { db, prisma, svc, id } = await imported(150);
+    const realCreate = prisma.patient.create.getMockImplementation();
+    prisma.patient.create.mockImplementation(async (args: any) => {
+      if (args.data.firstName === 'Paciente119') throw dataError(); // falla SIEMPRE, también fila a fila
+      return realCreate(args);
+    });
+
+    const result = await svc.confirm.confirm('ws-1', therapist, id, []);
+    expect(result.status).toBe('COMPLETED');
+    expect(result.createdCount).toBe(149);
+    expect(result.errorCount).toBe(1);
+    expect(db.stores.patient).toHaveLength(149);
+    expect(db.stores.patient.some((p) => p.firstName === 'Paciente119')).toBe(false);
+    expect(db.stores.clinicalProcess).toHaveLength(149);
+    expect(db.stores.patientImportItem).toHaveLength(149);
+    expect(db.stores.patientImportJob[0].errorReport).toEqual(expect.arrayContaining([{ row: 120, field: 'fila', code: 'ROW_REJECTED' }]));
+    // Ni el log ni el informe llevan el valor ni el mensaje del error.
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/Paciente|Ficticio|valor ficticio/);
+    const csv = (await svc.imports.errorReport('ws-1', therapist, id)).buffer.toString('utf8');
+    expect(csv).toContain('120;fila;');
+  });
+
+  it('un fallo de sistema (conexión) sigue dejando el lote en PARTIAL para reintentar', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { svc, id, failOn } = await imported(150);
+    Object.assign(failOn, {
+      model: 'patient', op: 'create', nth: 120, calls: 0,
+      error: () => Object.assign(new Error('x'), { name: 'PrismaClientKnownRequestError', code: 'P1001' }),
+    });
+    const result = await svc.confirm.confirm('ws-1', therapist, id, []);
+    expect(result.status).toBe('PARTIAL');
+    expect(result.errorCount).toBe(0);
   });
 });

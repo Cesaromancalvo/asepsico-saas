@@ -2,7 +2,7 @@ import { Unzip, UnzipInflate } from 'fflate';
 import { IMPORT_LIMITS } from '../import-limits';
 import { ImportFileError } from './import-file-error';
 import { RawRow, RawSheet } from './raw-table';
-import { attr, childText, decodeXmlPart, eachElement, firstElement, richText } from './xml-scan';
+import { attr, childText, decodeXmlPart, eachElement, firstElement, resetXmlScan, richText } from './xml-scan';
 
 /**
  * Lector de XLSX con superficie mínima:
@@ -119,6 +119,14 @@ function cellValue(attrs: string, inner: string, sharedStrings: string[]): strin
 }
 
 export function readXlsx(buffer: Buffer, requestedSheet = 0): RawSheet {
+  try {
+    return readXlsxParts(buffer, requestedSheet);
+  } finally {
+    resetXmlScan(); // no retener textos del fichero entre peticiones
+  }
+}
+
+function readXlsxParts(buffer: Buffer, requestedSheet: number): RawSheet {
   const parts = unzipXlsxParts(buffer);
   const workbook = decodeXmlPart(parts.get('xl/workbook.xml'));
   const relsXml = decodeXmlPart(parts.get('xl/_rels/workbook.xml.rels'));

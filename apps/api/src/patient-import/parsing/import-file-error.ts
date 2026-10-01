@@ -16,6 +16,7 @@ export const IMPORT_FILE_ERRORS = {
   XLSX_TOO_LARGE_UNCOMPRESSED: 'El Excel es demasiado grande una vez descomprimido',
   SHEET_NOT_FOUND: 'La hoja indicada no existe en el fichero',
   EMPTY_FILE: 'El fichero no contiene filas',
+  UNSUPPORTED_ENCODING: 'El fichero usa una codificación no admitida (UTF-16): ábrelo y guárdalo de nuevo como .xlsx o como CSV UTF-8',
 } as const;
 
 export type ImportFileErrorCode = keyof typeof IMPORT_FILE_ERRORS;

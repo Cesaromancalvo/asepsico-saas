@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from 'fflate';
 import { IMPORT_LIMITS } from '../src/patient-import/import-limits';
 import { readXlsx } from '../src/patient-import/parsing/xlsx-reader';
+import { readCsv } from '../src/patient-import/parsing/csv-reader';
 import { decodeEntities, decodeXmlPart, richText } from '../src/patient-import/parsing/xml-scan';
 import { validateRows } from '../src/patient-import/row-validation';
 
@@ -53,13 +54,9 @@ describe('Escáner XML: referencias de entidad', () => {
     expect(decodeEntities('&#x41;&#66;')).toBe('AB');
   });
 
-  // BUG (código, sin arreglar): &#xD800; produce un surrogate suelto que pasa la validación como
-  // VALID; al confirmar, Prisma rechaza el valor (InvalidArg) y falla el bloque ENTERO, también
-  // en cada reintento: el lote se queda en PARTIAL sin poder importar ninguna de sus 100 filas
-  // (reproducido por HTTP contra PostgreSQL real). Cuando se arregle (descartar U+D800–U+DFFF en
-  // decodeEntities o marcar la fila como INVALID_TEXT), este test empezará a "fallar": cámbialo
-  // entonces de it.failing a it.
-  it.failing('&#xD800; (surrogate suelto) no llega como dato válido a la confirmación', () => {
+  // Corregido: decodeEntities descarta U+D800–U+DFFF y la validación rechaza cualquier surrogate
+  // suelto como INVALID_TEXT (además, un fallo de datos al guardar ya no bloquea el lote).
+  it('&#xD800; (surrogate suelto) no llega como dato válido a la confirmación', () => {
     const parsed = readXlsx(book(sheet(`<row r="1">${cell('A1', 'Ana&#xD800;')}${cell('B1', 'Ficticia')}</row>`)));
     const [row] = validateRows(parsed.rows, NAME_COLUMNS, { format: 'XLSX', date1904: false });
     const loneSurrogate = /[\uD800-\uDFFF]/.test(String(row.values.firstName ?? ''));
@@ -68,13 +65,9 @@ describe('Escáner XML: referencias de entidad', () => {
 });
 
 describe('Escáner XML: CDATA', () => {
-  // BUG (código, menor, sin arreglar): el contenido CDATA se importa LITERAL, con los
-  // delimitadores: "<![CDATA[Ana]]>" acaba como nombre VALID del paciente. Excel no escribe
-  // CDATA, pero otras herramientas sí. Tampoco se respeta el marcado dentro de CDATA (un "</t>"
-  // interno cierra la celda), sin impacto de seguridad: quien sube el fichero controla todo su
-  // contenido igualmente. Al arreglarlo (decodificar CDATA o rechazar la fila),
-  // cambia it.failing por it.
-  it.failing('el texto de una celda CDATA no se importa con los delimitadores "<![CDATA["', () => {
+  // Corregido: el contenido CDATA se toma literal (sin decodificar entidades) y su marcado interno
+  // no cierra la celda.
+  it('el texto de una celda CDATA no se importa con los delimitadores "<![CDATA["', () => {
     const parsed = readXlsx(book(sheet(`<row r="1">${cell('A1', '<![CDATA[Ana]]>')}${cell('B1', 'Ficticia')}</row>`)));
     const [row] = validateRows(parsed.rows, NAME_COLUMNS, { format: 'XLSX', date1904: false });
     expect(row.kind === 'ERROR' || !String(row.values.firstName).includes('CDATA')).toBe(true);
@@ -86,23 +79,15 @@ describe('Escáner XML: CDATA', () => {
 });
 
 describe('Escáner XML: codificación', () => {
-  it('una parte en UTF-16 (con DOCTYPE dentro) no produce filas ni expande entidades', () => {
+  it('una parte en UTF-16 (con o sin DOCTYPE) se rechaza con UNSUPPORTED_ENCODING, sin expandir nada', () => {
     const utf16 = (xml: string) => new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]));
     const withDtd = utf16(
       `<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x [<!ENTITY e "expandida">]><worksheet><sheetData><row r="1">${cell('A1', '&e;')}</row></sheetData></worksheet>`,
     );
     const plain = utf16(`<worksheet><sheetData><row r="1">${cell('A1', 'Ana')}</row></sheetData></worksheet>`);
-    for (const part of [withDtd, plain]) {
-      let rows: unknown[] = [];
-      try {
-        rows = readXlsx(book(part)).rows;
-      } catch (error) {
-        expect(error).toEqual(expect.objectContaining({ code: 'INVALID_XLSX' }));
-      }
-      // Se lee como UTF-8: el marcado intercalado con NUL no casa con ninguna etiqueta, así que
-      // no hay filas (la subida termina en EMPTY_FILE) y nunca aparece el texto de la entidad.
-      expect(rows).toEqual([]);
-      expect(JSON.stringify(rows)).not.toContain('expandida');
+    const noBom = new Uint8Array(Buffer.from(`<worksheet><sheetData><row r="1">${cell('A1', 'Ana')}</row></sheetData></worksheet>`, 'utf16le'));
+    for (const part of [withDtd, plain, noBom]) {
+      expect(() => readXlsx(book(part))).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_ENCODING' }));
     }
   });
 });
@@ -127,4 +112,42 @@ describe('Escáner XML: etiqueta sin cerrar de ~15 MB', () => {
     // ~15 MB de XML: descomprimido + texto decodificado. Medido en local: ≤ 66 MB de crecimiento.
     expect(rssGrowthMb).toBeLessThan(150);
   }, 30_000);
+});
+
+describe('Correcciones tras la verificación E2E de Quima', () => {
+  it('surrogate suelto: la fila sale con INVALID_TEXT y nunca como VALID', () => {
+    // Defensa en profundidad: aunque llegara un surrogate suelto por otra vía, la validación lo para.
+    const [row] = validateRows([{ rowNumber: 1, cells: ['Ana', 'Ficticia\uD800'] }], NAME_COLUMNS, { format: 'XLSX', date1904: false });
+    expect(row.kind).toBe('ERROR');
+    expect(row.errors.map((e) => e.code)).toEqual(['INVALID_TEXT']);
+    expect(decodeEntities('a&#xD800;b&#57343;c')).toBe('abc');
+  });
+
+  it('CDATA: contenido literal (sin decodificar), con "</t>" y "<c" dentro sin cerrar la celda', () => {
+    const parsed = readXlsx(
+      book(sheet(`<row r="1">${cell('A1', '<![CDATA[Ana </t><c r="Z9"> &amp; Co]]>')}${cell('B1', 'Fic<![CDATA[ti]]>cia &amp; X')}</row>`)),
+    );
+    expect(parsed.rows[0].cells).toEqual(['Ana </t><c r="Z9"> &amp; Co', 'Ficticia & X']);
+    expect(() => readXlsx(book(sheet(`<row r="1">${cell('A1', '<![CDATA[sin cerrar')}</row>`)))).toThrow(
+      expect.objectContaining({ code: 'INVALID_XLSX' }),
+    );
+  });
+
+  it('CDATA en sharedStrings y en <v>', () => {
+    const shared = strToU8('<sst><si><t><![CDATA[Eva]]></t></si></sst>');
+    const parsed = readXlsx(book(sheet('<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v><![CDATA[42]]></v></c></row>'), shared));
+    expect(parsed.rows[0].cells).toEqual(['Eva', '42']);
+  });
+
+  it('muchas filas con CDATA: sigue siendo lineal', () => {
+    const many = Array.from({ length: 20_000 }, (_, i) => `<row r="${i + 1}">${cell(`A${i + 1}`, `<![CDATA[N${i}]]>`)}</row>`).join('');
+    const started = Date.now();
+    expect(() => readXlsx(book(sheet(many)))).toThrow(expect.objectContaining({ code: 'TOO_MANY_ROWS' }));
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it('CSV en UTF-16 con BOM → UNSUPPORTED_ENCODING (no "fichero vacío")', () => {
+    const csv = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('nombre;apellidos\r\nAna;Ficticia', 'utf16le')]);
+    expect(() => readCsv(csv)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_ENCODING' }));
+  });
 });
