@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { hashSync } from 'bcryptjs';
 import { PatientsService } from '../src/patients/patients.service';
 import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
@@ -444,5 +444,62 @@ describe('Falla en cerrado', () => {
   it('paciente de otro workspace → 404, nunca contenido', async () => {
     const prisma = seedDb();
     await expect(new PatientsService(prisma).getClinicalHistory('ws-2', actor('t-active', { workspaceId: 'ws-2' }), 'pat-1')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ------------------------------------------------------------------------------------------
+// Condiciones de la revisión de seguridad.
+// ------------------------------------------------------------------------------------------
+
+describe('Reasignación de procesos (bloqueada hasta la reasignación controlada)', () => {
+  it.each(label(['owner-nc', 'admin-nc', 'owner-c', 't-active'] as ActorKey[]))('%s: PATCH con therapistId → 400 sin escribir', async (_l, key) => {
+    const prisma = seedDb();
+    const error = await new ClinicalProcessesService(prisma).update(WS, actor(key), 'proc-active', { therapistId: 't-none' } as any).catch((e) => e);
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect(error.message).toContain('cierra el proceso y abre uno nuevo');
+    expect(prisma.clinicalProcess.updateMany).not.toHaveBeenCalled();
+    expect(prisma.__store.clinicalProcess.find((p: any) => p.id === 'proc-active').therapistId).toBe('t-active');
+  });
+
+  it('enviar el mismo therapistId no cuenta como reasignación', async () => {
+    const prisma = seedDb();
+    await new ClinicalProcessesService(prisma).update(WS, actor('owner-nc'), 'proc-active', { therapistId: 't-active', frequency: 'BIWEEKLY' } as any);
+    expect(prisma.__store.clinicalProcess.find((p: any) => p.id === 'proc-active').frequency).toBe('BIWEEKLY');
+  });
+});
+
+describe('Apertura de un proceso propio: auditoría de la autoasignación', () => {
+  it('registra selfAssigned y si el paciente ya tenía otro profesional activo', async () => {
+    const prisma = seedDb();
+    await new ClinicalProcessesService(prisma).create(WS, actor('t-none'), { patientId: 'pat-1', title: 'Proceso ficticio' } as any);
+    const audit = prisma.__store.auditLog.find((a: any) => a.action === 'CLINICAL_PROCESS_CREATED');
+    expect(audit.metadata).toEqual(expect.objectContaining({ therapistId: 't-none', selfAssigned: true, hadOtherActiveClinician: true }));
+  });
+
+  it('sin otro profesional activo → hadOtherActiveClinician: false', async () => {
+    const prisma = seedDb();
+    prisma.__store.clinicalProcess = prisma.__store.clinicalProcess.filter((p: any) => p.patientId !== 'pat-2');
+    await new ClinicalProcessesService(prisma).create(WS, actor('t-none'), { patientId: 'pat-2', title: 'Proceso ficticio' } as any);
+    const audit = prisma.__store.auditLog.find((a: any) => a.action === 'CLINICAL_PROCESS_CREATED');
+    expect(audit.metadata).toEqual(expect.objectContaining({ selfAssigned: true, hadOtherActiveClinician: false }));
+  });
+});
+
+describe('Proceso en pausa: la ventana de mensajes termina en pausedAt, no en updatedAt', () => {
+  it('un cambio administrativo posterior (updatedAt) no amplía la ventana', async () => {
+    const prisma = seedDb();
+    const proc = prisma.__store.clinicalProcess.find((p: any) => p.id === 'proc-closed');
+    Object.assign(proc, { status: 'PAUSED', endedAt: null, pausedAt: d('2026-03-01T00:00:00Z'), updatedAt: d('2026-06-01T00:00:00Z') });
+    expectOnly(await new MessagesService(prisma).thread(WS, actor('t-closed'), 'conv-1'), [M.msgOld]);
+  });
+
+  it('pasar a PAUSED fija pausedAt y reactivar lo limpia', async () => {
+    const prisma = seedDb();
+    const service = new ClinicalProcessesService(prisma);
+    const row = () => prisma.__store.clinicalProcess.find((p: any) => p.id === 'proc-active');
+    await service.changeStatus(WS, actor('t-active'), 'proc-active', 'PAUSED');
+    expect(row().pausedAt).toBeInstanceOf(Date);
+    await service.changeStatus(WS, actor('t-active'), 'proc-active', 'ACTIVE');
+    expect(row().pausedAt).toBeNull();
   });
 });

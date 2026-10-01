@@ -23,3 +23,10 @@ WHERE wm."role" = 'ADMIN'
 ALTER TABLE "WorkspaceMember"
   ADD CONSTRAINT "WorkspaceMember_assistant_not_clinician"
   CHECK (NOT ("role" = 'ASSISTANT' AND "isClinician"));
+
+-- Fin de la ventana de un proceso en pausa (no depende de updatedAt, que cualquier cambio mueve).
+-- AlterTable
+ALTER TABLE "ClinicalProcess" ADD COLUMN     "pausedAt" TIMESTAMP(3);
+
+-- Procesos ya en pausa: la mejor aproximación disponible es su última modificación.
+UPDATE "ClinicalProcess" SET "pausedAt" = "updatedAt" WHERE "status" = 'PAUSED';

@@ -180,7 +180,7 @@ export class ClinicalAccessService {
 
     const processes = await this.prisma.clinicalProcess.findMany({
       where: { workspaceId, patientId, therapistId: actor.sub },
-      select: { id: true, status: true, createdAt: true, endedAt: true, updatedAt: true },
+      select: { id: true, status: true, createdAt: true, endedAt: true, pausedAt: true, updatedAt: true },
     });
     if (!processes.length) return { patient, scope: null, reason: 'NO_PROCESS' };
 
@@ -192,9 +192,9 @@ export class ClinicalAccessService {
       activeProcessIds: active.map((process) => process.id),
       processWindows: processes.map((process) => ({
         from: new Date(process.createdAt),
-        // Proceso activo: ventana abierta. No activo: hasta su fin (o su última modificación
-        // si está en pausa y no tiene fecha de fin).
-        to: process.status === 'ACTIVE' ? null : new Date(process.endedAt ?? process.updatedAt),
+        // Proceso activo: ventana abierta. Cerrado o de alta: hasta endedAt. En pausa: hasta pausedAt
+        // (updatedAt solo como último recurso, para datos sin ninguna de las dos fechas).
+        to: process.status === 'ACTIVE' ? null : new Date(process.endedAt ?? process.pausedAt ?? process.updatedAt),
       })),
     };
     return { patient, scope };

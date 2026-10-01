@@ -394,6 +394,8 @@ model ClinicalProcess {
   status             ClinicalProcessStatus @default(ACTIVE)
   startedAt          DateTime              @default(now())
   endedAt            DateTime?
+  /// Momento en que pasó a PAUSED (fin de la ventana de mensajes mientras está en pausa).
+  pausedAt           DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 

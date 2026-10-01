@@ -35,6 +35,9 @@ export class WorkspaceMembersService {
     return members.map(toMemberView);
   }
 
+  // TODO-E1: cuando exista el cambio de rol de un miembro, degradar a ASSISTANT debe poner
+  // isClinician=false en la MISMA transacción (el CHECK de la BD rechazaría ASSISTANT clínico).
+
   /** Solo el OWNER (según la BD) cambia el atributo clínico. ASSISTANT nunca es clínico. */
   async setClinician(workspaceId: string, actor: AuthUser, userId: string, dto: UpdateMemberClinicianDto) {
     assertStaffRole(actor);

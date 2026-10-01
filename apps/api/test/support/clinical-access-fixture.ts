@@ -76,7 +76,7 @@ export function withClinicalAccess<T extends Record<string, any>>(prisma: T, fix
   target.clinicalProcess.findMany = jest.fn(async (args: any) => {
     // Consultas propias de ClinicalAccessService (decide / listingContext), por su select exacto.
     const keys = args?.select ? Object.keys(args.select).sort().join() : '';
-    const isAccessQuery = keys === 'createdAt,endedAt,id,status,updatedAt' || keys === 'patientId';
+    const isAccessQuery = keys === 'createdAt,endedAt,id,pausedAt,status,updatedAt' || keys === 'patientId';
     if (isAccessQuery || !previousFindMany) return processes.filter((process) => matchesWhere(process, args?.where));
     return previousFindMany(args);
   });

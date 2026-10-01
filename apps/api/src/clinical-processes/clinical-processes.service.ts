@@ -196,6 +196,12 @@ export class ClinicalProcessesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Para distinguir la autoasignación en la auditoría: ¿el paciente ya tenía otro profesional
+      // con proceso activo? (el control de apertura llegará con su historia propia).
+      const otherActive = await tx.clinicalProcess.findFirst({
+        where: { workspaceId, patientId: dto.patientId, status: 'ACTIVE', therapistId: { not: therapistId } },
+        select: { id: true },
+      });
       const process = await tx.clinicalProcess.create({
         data: {
           workspaceId,
@@ -211,7 +217,7 @@ export class ClinicalProcessesService {
         },
       });
       await tx.auditLog.create({
-        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId, therapistId } },
+        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId, therapistId, selfAssigned: ownProcess, hadOtherActiveClinician: Boolean(otherActive) } },
       });
       return ownProcess ? decryptProcess(process) : toAdminView(process);
     });
@@ -222,6 +228,13 @@ export class ClinicalProcessesService {
     const process = await this.getRaw(workspaceId, id);
     const isAuthor = process.therapistId === actor.sub;
     const clinicalChange = CLINICAL_FIELDS.some((field) => dto[field] !== undefined);
+
+    // Reasignar cambiaría el autor del proceso entero: el nuevo profesional heredaría las notas
+    // internas y la ventana de mensajes del anterior, y este perdería su lectura. Hasta que exista
+    // la reasignación controlada, se rechaza y se pide cerrar el proceso y abrir uno nuevo.
+    if (dto.therapistId !== undefined && dto.therapistId !== process.therapistId) {
+      throw new BadRequestException('No se puede cambiar el profesional de un proceso: cierra el proceso y abre uno nuevo');
+    }
 
     if (clinicalChange) {
       // Contenido clínico: solo el autor, clínico, que trata al paciente, con ESTE proceso activo.
@@ -250,13 +263,6 @@ export class ClinicalProcessesService {
       startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
     };
 
-    if (dto.therapistId && dto.therapistId !== process.therapistId) {
-      // Reasignar el proceso a otro profesional es una decisión de gestión, no del día a día clínico.
-      if (!ADMIN_ROLES.includes(actor.role)) throw new ForbiddenException('Solo OWNER/ADMIN pueden reasignar un proceso clínico');
-      await this.assertClinicianMember(workspaceId, dto.therapistId);
-      data.therapistId = dto.therapistId;
-    }
-
     // updateMany + comprobación de count, en vez de update({where:{id}}): así el filtro por
     // workspaceId se aplica también en la escritura, no solo en la comprobación previa.
     const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data });
@@ -281,8 +287,12 @@ export class ClinicalProcessesService {
       throw new BadRequestException(`No se puede pasar de ${process.status} a ${status}`);
     }
 
-    const endedAt = status === 'DISCHARGED' || status === 'CLOSED' ? new Date() : null;
-    const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data: { status, endedAt } });
+    const now = new Date();
+    const endedAt = status === 'DISCHARGED' || status === 'CLOSED' ? now : null;
+    // pausedAt marca el fin de la ventana de un proceso en pausa (no depende de updatedAt, que
+    // cualquier cambio administrativo movería). Se limpia al salir de la pausa.
+    const pausedAt = status === 'PAUSED' ? now : null;
+    const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data: { status, endedAt, pausedAt } });
     if (count === 0) throw new NotFoundException('Proceso clínico no encontrado');
 
     await this.prisma.auditLog.create({
