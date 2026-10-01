@@ -11,8 +11,9 @@ type Conversation = {
   updatedAt: string;
   patient: { id: string; firstName: string; lastName: string };
   messages: Array<{ id: string; body: string; senderType: 'PROFESSIONAL' | 'PATIENT'; createdAt: string }>;
-  _count: { messages: number };
-  unreadCount: number;
+  // E1: la API ya no devuelve el número de mensajes; vista previa y no leídos solo si trata al paciente.
+  canReadMessages?: boolean;
+  unreadCount: number | null;
 };
 
 type Thread = Conversation & {
@@ -92,8 +93,8 @@ export default function MessagesPage() {
             <label className="field">Buscar paciente<input value={search} onChange={e => { setSearch(e.target.value); loadList(e.target.value).catch(err => setError(err.message)); }} placeholder="Nombre o apellidos" /></label>
             {conversations.map(c => <button key={c.id} type="button" className={`conversation-row ${selectedId === c.id ? 'active' : ''}`} onClick={() => setSelectedId(c.id)}>
               <strong>{c.patient.firstName} {c.patient.lastName}</strong>
-              <span>{c.messages[0]?.body || 'Sin mensajes todavía'}</span>
-              <small>{c.status === 'OPEN' ? 'Abierta' : 'Cerrada'} · {c._count.messages} mensajes{c.unreadCount ? ` · ${c.unreadCount} sin leer` : ''}</small>
+              <span>{c.canReadMessages === false ? 'Contenido privado de su profesional' : (c.messages[0]?.body || 'Sin mensajes todavía')}</span>
+              <small>{c.status === 'OPEN' ? 'Abierta' : 'Cerrada'}{c.unreadCount ? ` · ${c.unreadCount} sin leer` : ''}</small>
             </button>)}
             {!conversations.length && <div className="empty-state"><strong>No hay conversaciones</strong><p>Las conversaciones se crean desde la ficha del paciente.</p></div>}
           </aside>
