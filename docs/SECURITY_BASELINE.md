@@ -18,10 +18,16 @@ datos clínicos reales en producción.
 - Rate limiting: 5 intentos/minuto en login y registro; 10/minuto en refresh; 100/minuto global.
 - Aislamiento por `workspaceId` aplicado tanto en lectura como en las propias operaciones de
   escritura (defensa en profundidad, no solo una comprobación previa).
-- Control de acceso por rol a contenido clínico (`ClinicalProcess`): `ASSISTANT` sin acceso;
-  `THERAPIST` solo a sus propios procesos; `OWNER`/`ADMIN` a cualquiera. Las vistas generales de
-  Patients/Sessions nunca exponen motivo de consulta, objetivos, notas internas ni notas de
-  sesión — solo el detalle de cada proceso/sesión, que sí aplica ese control.
+- Acceso al contenido clínico decidido en un único punto (`ClinicalAccessService`, falla en
+  cerrado y audita las denegaciones como `CLINICAL_ACCESS_DENIED`): solo un miembro con
+  `WorkspaceMember.isClinician` (nunca `ASSISTANT`, garantizado también por un CHECK en la BD)
+  con proceso **ACTIVO** con el paciente; el autor de un proceso no activo conserva solo la
+  lectura de lo suyo. `OWNER`/`ADMIN` por su rol solo ven datos administrativos. Notas internas
+  (`ClinicalProcess.internalNotes`, `Session.internalSummary`): solo su autor. Mensajes con el
+  paciente: solo quien le trata y solo los de la ventana de sus procesos; el resto, metadatos.
+  `isClinician` solo lo cambia el OWNER (auditado) y no da acceso a ningún paciente por sí solo.
+  Las vistas generales de Patients/Sessions nunca exponen motivo de consulta, objetivos, notas
+  internas ni notas de sesión.
 - Soft delete y auditoría transaccional para altas, modificaciones y archivado de pacientes.
 
 ## Cifrado a nivel de campo (en reposo)
@@ -82,8 +88,10 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
 activa). Idempotente, por lotes transaccionales con compare-and-set, conserva `updatedAt`,
 nunca imprime valores y aborta sin escribir si algún valor cifrado no se puede descifrar.
 
-**Exportación (arts. 15/20 RGPD):** un THERAPIST solo exporta sus propios procesos y sesiones
-(ni facturación), con el mismo alcance que la API. La exportación clínica descifra con los mismos helpers y,
+**Exportación (arts. 15/20 RGPD):** mismo alcance que la API: quien trata al paciente exporta su
+contenido clínico (sin notas internas ajenas); el autor de un proceso no activo, solo lo suyo;
+OWNER/ADMIN que no le tratan, 403 (custodia y copia del art. 15 sin terapeuta: pendientes).
+THERAPIST nunca exporta facturación. La exportación clínica descifra con los mismos helpers y,
 como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
 la ruta, nunca el valor).
 

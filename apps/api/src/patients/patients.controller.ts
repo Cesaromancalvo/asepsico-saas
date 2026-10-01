@@ -31,7 +31,9 @@ export class PatientsController {
     return this.patients.get(user.workspaceId, user, id);
   }
 
-  // Contenido clínico: OWNER/ADMIN, o THERAPIST con proceso propio. ASSISTANT → 403.
+  // Contenido clínico: solo el profesional clínico con proceso ACTIVO con el paciente (o, en
+  // los endpoints que acotan por autor, el autor de un proceso cerrado). Decisión central en
+  // ClinicalAccessService. OWNER/ADMIN por serlo no ven nada clínico; ASSISTANT → 403.
   @Get(':id/consultation-reason') getConsultationReason(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.patients.getConsultationReason(user.workspaceId, user, id);
   }

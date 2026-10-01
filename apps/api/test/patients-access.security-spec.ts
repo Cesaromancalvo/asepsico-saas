@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from '../src/patients/patients.service';
+import { treating, withClinicalAccess } from './support/clinical-access-fixture';
 
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER', email: 'o@example.com' };
 const therapist = { sub: 'therapist-1', workspaceId: 'ws-1', role: 'THERAPIST', email: 't@example.com' };
@@ -42,7 +43,7 @@ describe('PatientsService clinical authorization', () => {
   it('bloquea THERAPIST sin proceso asignado', async () => {
     const prisma = prismaMock();
     prisma.patient.findFirst.mockResolvedValue({ id: 'patient-1', status: 'ACTIVE' });
-    prisma.clinicalProcess.findFirst.mockResolvedValue(null);
+    withClinicalAccess(prisma, { members: [{ userId: 'therapist-1', role: 'THERAPIST', isClinician: true }] });
     const service = new PatientsService(prisma);
     await expect(service.getClinicalAssessments('ws-1', therapist as any, 'patient-1')).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -50,6 +51,7 @@ describe('PatientsService clinical authorization', () => {
   it('rechaza respuestas fuera del rango real de PHQ-9', async () => {
     const prisma = prismaMock();
     prisma.patient.findFirst.mockResolvedValue({ id: 'patient-1', status: 'ACTIVE' });
+    treating(prisma, owner);
     const service = new PatientsService(prisma);
     await expect(service.createClinicalAssessment('ws-1', owner as any, 'patient-1', {
       scaleCode: 'PHQ9', answers: [0,0,0,0,0,0,0,0,4],
@@ -61,6 +63,7 @@ describe('PatientsService clinical authorization', () => {
     const prisma = prismaMock();
     prisma.patient.findFirst.mockResolvedValue({ id: 'patient-1', status: 'ACTIVE' });
     prisma.__tx.clinicalAssessment.create.mockImplementation(async ({ data }: any) => ({ id: 'assessment-1', ...data }));
+    treating(prisma, owner);
     const service = new PatientsService(prisma);
     const result: any = await service.createClinicalAssessment('ws-1', owner as any, 'patient-1', {
       scaleCode: 'PHQ9', answers: [0,0,0,0,0,0,0,0,1],

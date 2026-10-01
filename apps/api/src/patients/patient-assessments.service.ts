@@ -62,8 +62,9 @@ export class PatientAssessmentsService {
 
   async getClinicalAssessments(workspaceId: string, actor: AuthUser, patientId: string) {
     await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    // Acotado también al workspace por la relación patient (defensa en profundidad).
     const assessments = await this.prisma.clinicalAssessment.findMany({
-      where: { patientId },
+      where: patientChildScope(workspaceId, patientId),
       orderBy: [{ administeredAt: 'desc' }, { createdAt: 'desc' }],
     });
     return assessments.map(decryptAssessment);

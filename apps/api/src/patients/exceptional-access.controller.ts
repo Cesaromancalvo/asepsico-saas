@@ -10,9 +10,9 @@ import { LogExceptionalAccessDto } from './dto/exceptional-access.dto';
  * Cláusula 3.3 del contrato de encargo del tratamiento: el Encargado (nosotros) no accede
  * al contenido clínico de los pacientes salvo para resolver una incidencia, por necesidad
  * técnica imprescindible, o por obligación legal — y cada acceso de ese tipo debe quedar
- * registrado con su motivo. Este endpoint es ese registro: no bloquea nada (OWNER/ADMIN ya
- * tienen acceso completo por diseño), pero exige documentar explícitamente el porqué,
- * distinto del registro de auditoría automático que ya existe para el resto de acciones.
+ * registrado con su motivo. Este endpoint es solo ese registro: NO concede acceso al contenido
+ * clínico (OWNER/ADMIN ya no lo tienen por su rol; el acceso excepcional con concesión temporal
+ * es un trabajo posterior). Exige documentar explícitamente el porqué.
  */
 @ApiTags('exceptional-access')
 @Controller('patients')

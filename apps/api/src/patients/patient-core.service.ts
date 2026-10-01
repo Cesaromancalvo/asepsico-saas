@@ -10,11 +10,34 @@ import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
 import { PATIENT_VIEW_SELECT, assertCanWriteConsultationReason, projectSelect, toPatientView } from './patient-view.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
 export class PatientCoreService {
+  private clinicalAccessInstance?: ClinicalAccessService;
+
   constructor(protected readonly prisma: PrismaService) {}
+
+  /** Decisión central de acceso clínico (sin estado; se crea bajo demanda). */
+  protected get clinicalAccess(): ClinicalAccessService {
+    return (this.clinicalAccessInstance ??= new ClinicalAccessService(this.prisma));
+  }
+
+  /**
+   * El motivo de consulta (Patient.consultationReason) es contenido clínico:
+   *  - en el alta, solo lo registra un profesional clínico (aún no hay proceso con el paciente);
+   *  - al modificarlo, solo quien trata al paciente (proceso ACTIVO propio).
+   */
+  private async assertConsultationReasonWrite(workspaceId: string, actor: AuthUser, dto: { consultationReason?: unknown }, patientId?: string) {
+    assertCanWriteConsultationReason(actor, dto);
+    if (dto.consultationReason === undefined) return;
+    if (patientId) {
+      await this.clinicalAccess.assertTreating(workspaceId, actor, patientId, 'patient-consultation-reason');
+      return;
+    }
+    await this.clinicalAccess.assertClinician(workspaceId, actor, 'patient-consultation-reason');
+  }
   async list(
     workspaceId: string,
     actor: AuthUser,
@@ -342,7 +365,7 @@ export class PatientCoreService {
     dto: CreatePatientDto,
   ) {
     assertStaffRole(actor);
-    assertCanWriteConsultationReason(actor, dto);
+    await this.assertConsultationReasonWrite(workspaceId, actor, dto);
     return this.prisma.$transaction(async (tx) => {
       const patient = await tx.patient.create({
         select: PATIENT_VIEW_SELECT,
@@ -388,6 +411,7 @@ export class PatientCoreService {
     assertStaffRole(actor);
     assertCanWriteConsultationReason(actor, dto);
     await this.assertActive(workspaceId, actor, id);
+    await this.assertConsultationReasonWrite(workspaceId, actor, dto, id);
 
     // Escritura y auditoría en la misma transacción: si falla la auditoría no se confirma
     // la modificación (mismo patrón que create()). Si cambia portalAccessMode, la revocación

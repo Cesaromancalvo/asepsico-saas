@@ -1,4 +1,4 @@
-import { Logger, UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { hashSync } from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { ExportsService } from '../src/exports/exports.service';
@@ -8,6 +8,7 @@ import { DashboardService } from '../src/dashboard/dashboard.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { DECRYPTION_FAILED_PLACEHOLDER, encryptField } from '../src/common/crypto/field-encryption';
 import { encryptModelData } from '../src/common/crypto/clinical-crypto';
+import { treating, treatingAccessStub, withClinicalAccess } from './support/clinical-access-fixture';
 
 // Correcciones del veto de Argos sobre fix/clinical-field-encryption. Datos 100 % ficticios.
 const PASSWORD = 'contrasena-ficticia-de-test';
@@ -50,21 +51,42 @@ describe('B1: la exportación de un THERAPIST solo incluye SUS procesos y sesion
     } as any;
   }
 
-  it('THERAPIST exporta un paciente compartido y no aparece nada del otro terapeuta', async () => {
-    const p = prisma();
+  it('THERAPIST autor de un proceso CERRADO exporta solo lo suyo: nada del otro terapeuta', async () => {
+    const p = withClinicalAccess(prisma(), { workspaceId: 'w1', members: [{ userId: 'ther-a', role: 'THERAPIST', isClinician: true }], processes: [{ id: 'proc-a', patientId: 'p1', therapistId: 'ther-a', status: 'CLOSED' }] });
     const result: any = await new ExportsService(p).exportPatient(therapist, 'p1', PASSWORD);
     const include = p.patient.findFirst.mock.calls[1][0].include;
     expect(include.clinicalProcesses.where).toEqual({ workspaceId: 'w1', therapistId: 'ther-a' });
     expect(include.sessions.where).toEqual({ workspaceId: 'w1', therapistId: 'ther-a' });
     expect(include.invoices).toBeUndefined(); // la facturación no es accesible para THERAPIST
+    expect(include.clinicalHistory).toBe(false);
     const json = JSON.stringify(result);
     expect(json).toContain('Nota interna ficticia de A');
     expect(json).not.toMatch(/de B|proc-b|ses-b/);
     expect(json).not.toMatch(/enc:v[12]:/);
   });
 
-  it('OWNER sigue exportando todos los procesos y sesiones del paciente', async () => {
-    const p = prisma();
+  it('THERAPIST que trata al paciente exporta todos sus procesos y sesiones, sin notas internas ajenas', async () => {
+    const p = treating(prisma(), therapist, 'p1');
+    const result: any = await new ExportsService(p).exportPatient(therapist, 'p1', PASSWORD);
+    expect(result.patient.clinicalProcesses).toHaveLength(2);
+    expect(result.patient.sessions).toHaveLength(2);
+    const json = JSON.stringify(result);
+    expect(json).toContain('Nota interna ficticia de A');
+    expect(json).toContain('Nota de sesión ficticia de B');
+    expect(json).not.toContain('Nota interna ficticia de B');
+    expect(json).not.toContain('Resumen ficticio de B');
+    expect(json).not.toMatch(/enc:v[12]:/);
+  });
+
+  it('OWNER que NO trata al paciente ya no exporta su historia clínica (403, auditado)', async () => {
+    const p = withClinicalAccess(prisma(), { workspaceId: 'w1', members: [{ userId: 'owner-1', role: 'OWNER', isClinician: false }] });
+    await expect(new ExportsService(p).exportPatient(owner, 'p1', PASSWORD)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(p.patient.findFirst).toHaveBeenCalledTimes(1);
+    expect(p.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'CLINICAL_ACCESS_DENIED', entityId: 'p1' }) }));
+  });
+
+  it('OWNER clínico que trata al paciente exporta todo, con la facturación', async () => {
+    const p = treating(prisma(), owner, 'p1');
     const result: any = await new ExportsService(p).exportPatient(owner, 'p1', PASSWORD);
     expect(result.patient.clinicalProcesses).toHaveLength(2);
     expect(result.patient.sessions).toHaveLength(2);
@@ -88,10 +110,10 @@ describe('B2: el marcador de "no se pudo descifrar" nunca se persiste encima del
     delete process.env.FIELD_ENCRYPTION_KEYS; delete process.env.FIELD_ENCRYPTION_ACTIVE_KID;
     try {
       const row = { id: 's1', workspaceId: 'w1', therapistId: 'owner-1', status: 'SCHEDULED', startsAt: new Date(Date.now() + 86_400_000), endsAt: new Date(Date.now() + 90_000_000), notes: unreadable, internalSummary: unreadable };
-      const prisma: any = {
-        session: { findFirst: jest.fn(async (args: any) => (args?.where?.id === 's1' ? row : null)), updateMany: jest.fn(async () => ({ count: 1 })), update: jest.fn() },
+      const prisma: any = treating({
+        session: { findFirst: jest.fn(async (args: any) => (args?.where?.id === 's1' ? { ...row, patientId: 'p1' } : null)), updateMany: jest.fn(async () => ({ count: 1 })), update: jest.fn() },
         auditLog: { create: jest.fn(async () => ({})) },
-      };
+      }, owner, 'p1');
       const service = new SessionsService(prisma);
       const before: any = await service.get('w1', owner, 's1');
       expect(before.notes).toBe(DECRYPTION_FAILED_PLACEHOLDER);
@@ -110,7 +132,7 @@ describe('B2: el marcador de "no se pudo descifrar" nunca se persiste encima del
   it('guardar la historia con el marcador no escribe nada', async () => {
     const tx: any = { clinicalHistory: { updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() }, patient: { findFirst: jest.fn() }, auditLog: { create: jest.fn() } };
     const prisma: any = { ...tx, $transaction: jest.fn(async (cb: any) => cb(tx)) };
-    const access: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'p1', status: 'ACTIVE' })) };
+    const access: any = treatingAccessStub({ id: 'p1', status: 'ACTIVE' });
     await expect(new PatientCareService(prisma, access).updateClinicalHistory('w1', owner, 'p1', { currentProblem: DECRYPTION_FAILED_PLACEHOLDER, riskFactors: 'Texto ficticio' } as any))
       .rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(tx.clinicalHistory.updateMany).not.toHaveBeenCalled();
@@ -176,6 +198,7 @@ describe('Exportación: el registro cubre todos los modelos de la ficha (sin rut
         patient: { findFirst: jest.fn().mockResolvedValueOnce({ id: 'p1' }).mockResolvedValueOnce(patient) },
         auditLog: { create: jest.fn().mockResolvedValue({}) },
       };
+      treating(prisma, owner, 'p1');
       const result: any = await new ExportsService(prisma).exportPatient(owner, 'p1', PASSWORD);
       expect(warn).not.toHaveBeenCalled(); // leakedPaths.length === 0
       expect(JSON.stringify(result)).not.toMatch(/enc:v[12]:/);

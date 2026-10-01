@@ -1,8 +1,9 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 const ADMIN_ROLES = ['OWNER', 'ADMIN'];
@@ -11,7 +12,11 @@ const ADMIN_ROLES = ['OWNER', 'ADMIN'];
 export class ExportsService {
   private readonly logger = new Logger(ExportsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly access: ClinicalAccessService;
+
+  constructor(private readonly prisma: PrismaService, @Optional() access?: ClinicalAccessService) {
+    this.access = access ?? new ClinicalAccessService(prisma);
+  }
 
   private assertClinical(user: AuthUser) {
     if (!CLINICAL_ROLES.includes(user.role)) throw new ForbiddenException('No tienes permiso para exportar información clínica');
@@ -32,21 +37,6 @@ export class ExportsService {
     const account = await this.prisma.user.findUnique({ where: { id: user.sub }, select: { passwordHash: true } });
     const passwordOk = account ? await compare(password, account.passwordHash) : false;
     if (!passwordOk) throw new UnauthorizedException('Contraseña incorrecta');
-  }
-
-  private async assertPatientAccess(user: AuthUser, patientId: string) {
-    const patient = await this.prisma.patient.findFirst({
-      where: {
-        id: patientId,
-        workspaceId: user.workspaceId,
-        deletedAt: null,
-        ...(user.role === 'THERAPIST'
-          ? { clinicalProcesses: { some: { therapistId: user.sub } } }
-          : {}),
-      },
-      select: { id: true },
-    });
-    if (!patient) throw new NotFoundException('Paciente no encontrado');
   }
 
   private async audit(user: AuthUser, action: string, entityType: string, entityId?: string, metadata?: object) {
@@ -72,42 +62,55 @@ export class ExportsService {
   async exportPatient(user: AuthUser, patientId: string, password: string) {
     this.assertClinical(user);
     await this.assertPasswordConfirmed(user, password);
-    await this.assertPatientAccess(user, patientId);
-
-    // Mismo alcance que la API para un THERAPIST (ver getTimeline/sessions/clinical-processes):
-    // solo SUS procesos y SUS sesiones — nunca las notas internas, notas de sesión ni resúmenes
-    // de otro profesional que atienda al mismo paciente. La facturación tampoco es accesible
-    // para THERAPIST en la API (billing: OWNER/ADMIN/ASSISTANT), así que no se exporta.
-    // Historia, objetivos, tareas, escalas, consentimientos, informes y documentos son de nivel
-    // paciente: el THERAPIST con acceso clínico al paciente ya los ve en la API.
-    const isTherapist = user.role === 'THERAPIST';
-    const ownOnly = isTherapist ? { where: { workspaceId: user.workspaceId, therapistId: user.sub } } : { where: { workspaceId: user.workspaceId } };
+    // Mismo criterio que la API (ClinicalAccessService): quien trata al paciente exporta su
+    // contenido clínico (sin notas internas ajenas); el autor de un proceso cerrado, solo lo suyo;
+    // OWNER/ADMIN que no le tratan → 403 (la copia de custodia y la del art. 15 irán aparte).
+    const { scope } = await this.access.assertCanRead(user.workspaceId, user, patientId, 'patient-export');
+    const treating = scope.level === 'TREATING';
+    const ws = user.workspaceId;
+    const own = { workspaceId: ws, therapistId: user.sub };
     const patient = await this.prisma.patient.findFirst({
-      where: { id: patientId, workspaceId: user.workspaceId, deletedAt: null },
+      where: { id: patientId, workspaceId: ws, deletedAt: null },
       include: {
-        clinicalHistory: true,
-        clinicalProcesses: { ...ownOnly, orderBy: { startedAt: 'desc' } },
-        sessions: { ...ownOnly, orderBy: { startsAt: 'desc' } },
-        therapyGoals: { orderBy: { createdAt: 'desc' } },
-        therapeuticTasks: { orderBy: { createdAt: 'desc' } },
-        clinicalAssessments: { orderBy: { administeredAt: 'desc' } },
-        consentRecords: { orderBy: { createdAt: 'desc' } },
-        clinicalReports: { orderBy: { createdAt: 'desc' } },
-        patientDocuments: { orderBy: { createdAt: 'desc' } },
-        ...(isTherapist ? {} : { invoices: { where: { workspaceId: user.workspaceId }, include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' as const } } }),
-        resourceShares: { include: { resource: true }, orderBy: { sharedAt: 'desc' } },
+        clinicalHistory: treating,
+        clinicalProcesses: { where: treating ? { workspaceId: ws } : own, orderBy: { startedAt: 'desc' } },
+        sessions: { where: treating ? { workspaceId: ws } : own, orderBy: { startsAt: 'desc' } },
+        therapyGoals: treating ? { orderBy: { createdAt: 'desc' } } : false,
+        // Autor de un proceso cerrado: solo tareas enlazadas a sus sesiones.
+        therapeuticTasks: treating ? { orderBy: { createdAt: 'desc' } } : { where: { session: own }, orderBy: { createdAt: 'desc' } },
+        clinicalAssessments: treating ? { orderBy: { administeredAt: 'desc' } } : false,
+        consentRecords: { where: treating ? { workspaceId: ws } : { workspaceId: ws, createdById: user.sub }, orderBy: { createdAt: 'desc' } },
+        clinicalReports: { where: treating ? { workspaceId: ws } : { workspaceId: ws, createdById: user.sub }, orderBy: { createdAt: 'desc' } },
+        patientDocuments: { where: treating ? { workspaceId: ws } : { workspaceId: ws, createdById: user.sub }, orderBy: { createdAt: 'desc' } },
+        // Facturación: dato administrativo, solo para OWNER/ADMIN (THERAPIST no la ve en la API).
+        ...(['OWNER', 'ADMIN'].includes(user.role) ? { invoices: { where: { workspaceId: ws }, include: { lines: true, payments: true }, orderBy: { createdAt: 'desc' as const } } } : {}),
+        resourceShares: treating ? { where: { workspaceId: ws }, include: { resource: true }, orderBy: { sharedAt: 'desc' } } : false,
       },
     });
     if (!patient) throw new NotFoundException('Paciente no encontrado');
+    const record: any = decryptPatientRecord(patient);
+    // Notas internas: solo las propias (proceso y resumen interno de sesión).
+    record.clinicalProcesses = (record.clinicalProcesses ?? []).map((process: any) => {
+      if (process.therapistId === user.sub) return process;
+      const { internalNotes: _hidden, ...rest } = process;
+      return rest;
+    });
+    record.sessions = (record.sessions ?? []).map((session: any) => {
+      if (session.therapistId === user.sub) return session;
+      const { internalSummary: _hidden, ...rest } = session;
+      return rest;
+    });
+    // El motivo de consulta de la ficha no es atribuible a un autor: solo para quien trata.
+    if (!treating) delete record.consultationReason;
 
     const generatedAt = new Date().toISOString();
-    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON' });
+    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON', scope: scope.level });
     return {
       schemaVersion: '1.0',
       exportType: 'PATIENT_CLINICAL_RECORD',
       generatedAt,
       workspaceId: user.workspaceId,
-      patient: this.decryptForExport(decryptPatientRecord(patient), 'PATIENT_CLINICAL_RECORD'),
+      patient: this.decryptForExport(record, 'PATIENT_CLINICAL_RECORD'),
       notice: 'Exportación clínica confidencial. Debe almacenarse y transmitirse de forma segura.',
     };
   }
