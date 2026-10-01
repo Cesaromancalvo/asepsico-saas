@@ -11,9 +11,11 @@
 
   /* 1. Interruptores de bloques ---------------------------------------- */
   function applyFeatures() {
-    // Bloques presentes en el HTML: se quitan si su interruptor está apagado.
+    // Bloques presentes en el HTML: se muestran si su interruptor está encendido y se quitan si no.
+    // Los que van apagados por defecto llevan `hidden` en el HTML (respaldo sin JavaScript).
     document.querySelectorAll('[data-feature]').forEach(function (el) {
-      if (features[el.getAttribute('data-feature')] !== true) el.remove();
+      if (features[el.getAttribute('data-feature')] === true) el.hidden = false;
+      else el.remove();
     });
     // Calculadora: vive en un <template> y solo se inserta si está encendida.
     var slot = document.querySelector('[data-slot="calculadora"]');
@@ -37,8 +39,23 @@
     if (email) {
       document.querySelectorAll('[data-contact]').forEach(function (li) { li.hidden = false; });
       document.querySelectorAll('[data-contact-link]').forEach(function (a) { a.href = 'mailto:' + email; });
-      document.querySelectorAll('[data-contact-text]').forEach(function (el) { el.textContent = email; });
     }
+    // Política de privacidad del formulario: solo se enlaza si hay URL publicada.
+    var policy = (cfg.FORM_PRIVACY_URL || '').trim();
+    if (/^https:\/\//.test(policy)) {
+      document.querySelectorAll('[data-form-privacy]').forEach(function (a) {
+        a.href = policy;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.hidden = false;
+      });
+    }
+    // Datos del titular (aviso legal y privacidad), centralizados en config.js.
+    var legal = cfg.LEGAL || {};
+    document.querySelectorAll('[data-legal]').forEach(function (el) {
+      var value = legal[el.getAttribute('data-legal')];
+      if (value) el.textContent = value;
+    });
   }
 
   /* 3. Preguntas frecuentes (acordeón) ---------------------------------- */

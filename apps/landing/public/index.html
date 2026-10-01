@@ -32,8 +32,9 @@
     TODO(Plausible): descomentar cuando el Jefe tenga la cuenta de Plausible y haya creado el
     objetivo de evento personalizado con el nombre exacto "Lista espera" (no es retroactivo).
     - Sin cookies; recoge solas las UTM (utm_source, utm_medium, utm_campaign, utm_content) de la URL.
-    - El evento se dispara por las clases plausible-event-name=Lista+espera de los botones,
-      con la propiedad "seccion" (plausible-event-seccion=...) para saber desde qué bloque se pulsa.
+    - Hoy la web no tiene analítica (decisión del Jefe, 01/10). Si se activa, añadir a los botones
+      [data-cta] las clases plausible-event-name=Lista+espera (y plausible-event-seccion=...),
+      actualizar la FAQ 5 y la política de privacidad (versión con Plausible de Argos).
     - Añadir https://plausible.io a script-src y connect-src de la CSP (ver README).
   <script defer data-domain="asepsico.es" src="https://plausible.io/js/script.tagged-events.js"></script>
   -->
@@ -75,7 +76,7 @@
           <li><a href="#preguntas">Preguntas</a></li>
         </ul>
       </nav>
-      <a class="btn btn--primary btn--sm plausible-event-name=Lista+espera plausible-event-seccion=barra-superior"
+      <a class="btn btn--primary btn--sm"
          data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
         <span class="only-wide">Apúntate a la lista de espera</span><span class="only-narrow">Lista de espera</span>
         <span class="visually-hidden">(se abre en una pestaña nueva)</span>
@@ -90,7 +91,7 @@
         <div class="hero__text">
           <h1 id="hero-titulo">Software para psicólogos, pensado para el <span class="hl">seguimiento entre sesiones</span>.</h1>
           <p class="hero__lead">Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
-          <a class="btn btn--primary btn--lg plausible-event-name=Lista+espera plausible-event-seccion=hero"
+          <a class="btn btn--primary btn--lg"
              data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
             Apúntate a la lista de espera
             <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
@@ -99,7 +100,7 @@
           <ul class="trust">
             <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Piloto gratuito</li>
             <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Grupo reducido de psicólogos seleccionados</li>
-            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Sin tarjeta ni datos de pago</li>
+            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</li>
           </ul>
         </div>
 
@@ -266,14 +267,14 @@
           </figcaption>
         </figure>
       </div>
-      <p class="container hero__strip">Estamos construyendo AsePsico con psicólogos: por eso empezamos con un piloto.</p>
+      <p class="container hero__strip">Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
     </section>
 
     <!-- EL PROBLEMA -->
     <section class="section" aria-labelledby="problema-titulo">
       <div class="container narrow">
         <h2 id="problema-titulo">Lo que pasa entre sesiones también es parte del trabajo.</h2>
-        <p class="lead">Hay herramientas para casi todo: agenda, notas, cobros, videollamada. Pero cada una va por su lado. Y lo que pasa entre sesiones acaba en mensajes y papeles sueltos.</p>
+        <p class="lead">Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
         <ul class="pain">
           <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-return"/></svg></span>La tarea se da en consulta, pero vuelve por otra vía.</li>
           <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-split"/></svg></span>La respuesta llega por un canal y la ficha está en otro.</li>
@@ -302,7 +303,7 @@
               <p class="calc__out" aria-live="polite" data-calc-out></p>
               <p class="small">Es una estimación hecha con tus cifras. No calculamos cuánto tiempo ahorrarías con AsePsico: eso queremos medirlo de verdad en el piloto.</p>
               <p class="small">Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
-              <a class="btn btn--primary plausible-event-name=Lista+espera plausible-event-seccion=calculadora"
+              <a class="btn btn--primary"
                  data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
                 Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
               </a>
@@ -395,10 +396,10 @@
           <h3 class="pilot__sub">Cómo funciona</h3>
           <ol class="steps">
             <li>Te apuntas a la lista de espera.</li>
-            <li>Si encajas en el grupo del piloto, César te escribe para contártelo con detalle.</li>
+            <li>Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</li>
             <li>Lo usas y nos cuentas.</li>
           </ol>
-          <a class="btn btn--primary btn--block plausible-event-name=Lista+espera plausible-event-seccion=piloto"
+          <a class="btn btn--primary btn--block"
              data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
             Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
           </a>
@@ -414,7 +415,7 @@
         <div>
           <h2 id="detras-titulo">Quién está detrás</h2>
           <p class="lead">Soy César. He estudiado psicología y llevo unos meses desarrollando AsePsico.</p>
-          <p>Lo estamos construyendo con psicólogos: por eso empezamos con un piloto.</p>
+          <p>Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
         </div>
       </div>
     </section>
@@ -443,9 +444,8 @@
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-5">¿Y la privacidad de mis datos y los de mis pacientes?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
             <div class="faq__a" id="faq-5">
-              <p>Para apuntarte a la lista de espera solo te pedimos los datos del formulario, y puedes leer su política de privacidad antes de enviarlo.</p>
-              <p>Esta web mide las visitas sin cookies.</p>
-              <p>Durante el piloto te explicamos 1 a 1, y por escrito, cómo se tratan los datos antes de que trabajes con pacientes reales.</p>
+              <p>Para apuntarte a la lista de espera solo te pedimos los datos del formulario, que tiene su propia política de privacidad. <a data-form-privacy hidden href="#">Leer la política de privacidad del formulario<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></p>
+              <p>Esta web no usa cookies.</p>
             </div>
           </div>
           <div class="faq__item">
@@ -473,13 +473,13 @@
       <div class="container narrow center">
         <h2 id="final-titulo">Piloto gratuito para psicólogos</h2>
         <p class="lead">Estamos construyendo AsePsico. Apúntate a la lista de espera.</p>
-        <a class="btn btn--light btn--lg plausible-event-name=Lista+espera plausible-event-seccion=final"
+        <a class="btn btn--light btn--lg"
            data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
           Apúntate a la lista de espera
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
           <span class="visually-hidden">(se abre en una pestaña nueva)</span>
         </a>
-        <p class="small">Antes de enviarlo puedes leer la política de privacidad del formulario.</p>
+        <p class="small">El formulario tiene su propia política de privacidad. <a data-form-privacy hidden href="#">Leer la política de privacidad del formulario<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></p>
       </div>
     </section>
   </main>
@@ -491,8 +491,9 @@
         <ul class="footer__links">
           <li><a href="/aviso-legal/">Aviso legal</a></li>
           <li><a href="/privacidad/">Política de privacidad</a></li>
-          <li data-contact hidden><a data-contact-link href="#">Contacto</a></li>
-          <li><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
+          <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com">Contacto</a></li>
+          <!-- Interruptor FEATURES.instagram en js/config.js (apagado hasta corregir la bio) -->
+          <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
         </ul>
       </nav>
     </div>

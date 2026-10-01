@@ -19,7 +19,8 @@
     "db:encrypt-fields": "npm --workspace @asepsico/api run db:encrypt-fields --",
     "test:smoke": "node scripts/smoke-live.mjs",
     "db:migrate:ci": "npm --workspace @asepsico/api run prisma:migrate:deploy",
-    "test:ci-config": "node scripts/verify-ci-postgres.mjs"
+    "test:ci-config": "node scripts/verify-ci-postgres.mjs",
+    "test:landing": "node scripts/check-landing.mjs"
   },
   "engines": {
     "node": ">=20.9"
