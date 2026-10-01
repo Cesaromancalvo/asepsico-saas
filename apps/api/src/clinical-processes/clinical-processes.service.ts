@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
-import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, isClinicalProfile } from '../clinical-access/clinical-access.service';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
@@ -321,7 +321,7 @@ export class ClinicalProcessesService {
   private async assertClinicianMember(workspaceId: string, userId: string) {
     const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { role: true, isClinician: true } });
     if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
-    if (membership.role === 'ASSISTANT' || membership.isClinician !== true) {
+    if (!isClinicalProfile(membership)) {
       throw new BadRequestException('El profesional indicado no está marcado como profesional clínico');
     }
   }

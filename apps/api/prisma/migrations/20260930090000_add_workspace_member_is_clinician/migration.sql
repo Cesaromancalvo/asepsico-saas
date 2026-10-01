@@ -5,24 +5,27 @@
 -- AlterTable
 ALTER TABLE "WorkspaceMember" ADD COLUMN     "isClinician" BOOLEAN NOT NULL DEFAULT false;
 
--- Valores iniciales para los miembros existentes:
---  - THERAPIST: clínico.
---  - OWNER: clínico (el titular de una consulta de una sola persona es quien atiende; no nota cambios).
---  - ADMIN: clínico solo si ya es profesional responsable de algún proceso clínico del workspace.
+-- Valores iniciales para los miembros existentes (isClinician solo es configurable en OWNER/ADMIN):
+--  - THERAPIST: siempre clínico.
+--  - OWNER y ADMIN: clínicos solo si ya son profesionales responsables de algún proceso del workspace.
 --  - ASSISTANT: nunca clínico.
-UPDATE "WorkspaceMember" SET "isClinician" = true WHERE "role" IN ('THERAPIST', 'OWNER');
+UPDATE "WorkspaceMember" SET "isClinician" = true WHERE "role" = 'THERAPIST';
 
 UPDATE "WorkspaceMember" wm SET "isClinician" = true
-WHERE wm."role" = 'ADMIN'
+WHERE wm."role" IN ('OWNER', 'ADMIN')
   AND EXISTS (
     SELECT 1 FROM "ClinicalProcess" cp
     WHERE cp."workspaceId" = wm."workspaceId" AND cp."therapistId" = wm."userId"
   );
 
--- Garantía en la base de datos: un ASSISTANT nunca puede ser clínico.
+-- Garantías en la base de datos: un ASSISTANT nunca es clínico y un THERAPIST siempre lo es.
 ALTER TABLE "WorkspaceMember"
   ADD CONSTRAINT "WorkspaceMember_assistant_not_clinician"
   CHECK (NOT ("role" = 'ASSISTANT' AND "isClinician"));
+
+ALTER TABLE "WorkspaceMember"
+  ADD CONSTRAINT "WorkspaceMember_therapist_is_clinician"
+  CHECK (NOT ("role" = 'THERAPIST' AND NOT "isClinician"));
 
 -- Fin de la ventana de un proceso en pausa (no depende de updatedAt, que cualquier cambio mueve).
 -- AlterTable

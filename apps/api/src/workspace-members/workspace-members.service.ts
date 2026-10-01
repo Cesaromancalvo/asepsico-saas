@@ -35,8 +35,8 @@ export class WorkspaceMembersService {
     return members.map(toMemberView);
   }
 
-  // TODO-E1: cuando exista el cambio de rol de un miembro, degradar a ASSISTANT debe poner
-  // isClinician=false en la MISMA transacción (el CHECK de la BD rechazaría ASSISTANT clínico).
+  // TODO-E1: cuando exista el cambio de rol (o la invitación) de un miembro, fijar isClinician en
+  // la MISMA transacción: ASSISTANT → false, THERAPIST → true (los CHECK de la BD lo exigen).
 
   /** Solo el OWNER (según la BD) cambia el atributo clínico. ASSISTANT nunca es clínico. */
   async setClinician(workspaceId: string, actor: AuthUser, userId: string, dto: UpdateMemberClinicianDto) {
@@ -48,10 +48,11 @@ export class WorkspaceMembersService {
       const current = await tx.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { id: true, role: true, isClinician: true } });
       if (!current) throw new NotFoundException('Miembro no encontrado');
       if (current.role === 'ASSISTANT') throw new BadRequestException('Un asistente no puede ser profesional clínico');
+      if (current.role === 'THERAPIST') throw new BadRequestException('Un terapeuta siempre es profesional clínico');
       if (current.isClinician !== dto.isClinician) {
         // Escritura acotada al workspace, con compare-and-set del rol y del valor leído: nunca solo por id.
         const { count } = await tx.workspaceMember.updateMany({
-          where: { id: current.id, workspaceId, role: { not: 'ASSISTANT' }, isClinician: current.isClinician },
+          where: { id: current.id, workspaceId, role: { in: ['OWNER', 'ADMIN'] }, isClinician: current.isClinician },
           data: { isClinician: dto.isClinician },
         });
         if (count === 0) throw new BadRequestException('El miembro cambió mientras se guardaba; vuelve a intentarlo');

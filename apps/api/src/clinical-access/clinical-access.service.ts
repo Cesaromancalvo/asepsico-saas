@@ -64,11 +64,11 @@ export class ClinicalAccessService {
     return member ? { role: member.role, isClinician: member.isClinician === true } : null;
   }
 
-  /** ¿Es profesional clínico en este workspace? (rol no ASSISTANT en token y BD, e isClinician). */
+  /** ¿Es profesional clínico en este workspace? (rol no ASSISTANT en token y BD, y perfil clínico). */
   async isClinician(workspaceId: string, actor: AuthUser): Promise<boolean> {
     if (!actor || NON_CLINICAL_ROLES.has(actor.role)) return false;
     const profile = await this.getMemberProfile(workspaceId, actor);
-    return Boolean(profile && profile.isClinician && !NON_CLINICAL_ROLES.has(profile.role));
+    return Boolean(profile && isClinicalProfile(profile));
   }
 
   /** Exige ser profesional clínico (sin mirar pacientes): biblioteca de tareas, etc. */
@@ -176,7 +176,7 @@ export class ClinicalAccessService {
     const profile = await this.getMemberProfile(workspaceId, actor);
     if (!profile) return { patient, scope: null, reason: 'NOT_MEMBER' };
     if (NON_CLINICAL_ROLES.has(profile.role)) return { patient, scope: null, reason: 'ROLE' };
-    if (!profile.isClinician) return { patient, scope: null, reason: 'NOT_CLINICIAN' };
+    if (!isClinicalProfile(profile)) return { patient, scope: null, reason: 'NOT_CLINICIAN' };
 
     const processes = await this.prisma.clinicalProcess.findMany({
       where: { workspaceId, patientId, therapistId: actor.sub },
@@ -199,6 +199,17 @@ export class ClinicalAccessService {
     };
     return { patient, scope };
   }
+}
+
+/**
+ * Perfil clínico efectivo, decidido por el rol de la BD: THERAPIST siempre, ASSISTANT nunca y
+ * OWNER/ADMIN según isClinician. Cualquier otro rol → no (falla en cerrado). La BD lo garantiza
+ * además con CHECK para que el atributo nunca contradiga al rol.
+ */
+export function isClinicalProfile(profile: MemberClinicalProfile): boolean {
+  if (profile.role === 'THERAPIST') return true;
+  if (profile.role === 'OWNER' || profile.role === 'ADMIN') return profile.isClinician === true;
+  return false;
 }
 
 /** Filtro Prisma de mensajes dentro de las ventanas de los procesos propios. */

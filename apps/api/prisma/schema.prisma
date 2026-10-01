@@ -181,7 +181,8 @@ model WorkspaceMember {
   role        WorkspaceRole @default(THERAPIST)
   /// Profesional clínico: puede tratar pacientes. No da acceso por sí solo: el contenido clínico
   /// exige además un proceso ACTIVO con el paciente (o ser autor de un proceso cerrado, solo lo suyo).
-  /// ASSISTANT nunca es clínico (CHECK en la base de datos). Solo el OWNER lo cambia.
+  /// Solo es configurable en OWNER/ADMIN (lo cambia el OWNER): THERAPIST siempre es clínico y
+  /// ASSISTANT nunca (ambas cosas con CHECK en la base de datos).
   isClinician Boolean       @default(false)
   createdAt   DateTime      @default(now())
   onboardingStep Int        @default(0)

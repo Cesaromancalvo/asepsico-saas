@@ -27,7 +27,7 @@ const PASSWORD = 'contrasena-ficticia-de-test';
 const PASSWORD_HASH = hashSync(PASSWORD, 4);
 
 type ActorKey =
-  | 't-active' | 'owner-c' | 't-closed' | 't-other' | 't-none' | 't-flagoff'
+  | 't-active' | 'owner-c' | 't-closed' | 't-other' | 't-none' | 'owner-flagoff'
   | 'owner-nc' | 'admin-nc' | 'admin-c-none' | 'assistant';
 
 const MEMBERS: Record<ActorKey, { role: string; isClinician: boolean; label: string }> = {
@@ -36,7 +36,7 @@ const MEMBERS: Record<ActorKey, { role: string; isClinician: boolean; label: str
   't-closed': { role: 'THERAPIST', isClinician: true, label: 'THERAPIST autor de un proceso CERRADO' },
   't-other': { role: 'THERAPIST', isClinician: true, label: 'THERAPIST con proceso con OTRO paciente' },
   't-none': { role: 'THERAPIST', isClinician: true, label: 'THERAPIST clínico SIN proceso' },
-  't-flagoff': { role: 'THERAPIST', isClinician: false, label: 'THERAPIST NO clínico con proceso ACTIVO' },
+  'owner-flagoff': { role: 'OWNER', isClinician: false, label: 'OWNER NO clínico con proceso ACTIVO' },
   'owner-nc': { role: 'OWNER', isClinician: false, label: 'OWNER no clínico' },
   'admin-nc': { role: 'ADMIN', isClinician: false, label: 'ADMIN no clínico' },
   'admin-c-none': { role: 'ADMIN', isClinician: true, label: 'ADMIN clínico SIN proceso' },
@@ -48,7 +48,7 @@ const actor = (key: ActorKey, overrides: Record<string, unknown> = {}) =>
 
 const TREATING: ActorKey[] = ['t-active', 'owner-c'];
 const FORMER: ActorKey[] = ['t-closed'];
-const DENIED: ActorKey[] = ['t-other', 't-none', 't-flagoff', 'owner-nc', 'admin-nc', 'admin-c-none', 'assistant'];
+const DENIED: ActorKey[] = ['t-other', 't-none', 'owner-flagoff', 'owner-nc', 'admin-nc', 'admin-c-none', 'assistant'];
 const NOT_TREATING: ActorKey[] = [...FORMER, ...DENIED];
 
 const M = {
@@ -98,7 +98,7 @@ function seedDb() {
         title: M.titleActive, consultationReason: enc(M.procReasonActive), internalNotes: enc(M.internalActive),
       }),
       process('proc-owner', 'pat-1', 'owner-c', 'ACTIVE', '2026-04-01T00:00:00Z'),
-      process('proc-flagoff', 'pat-1', 't-flagoff', 'ACTIVE', '2026-04-01T00:00:00Z'),
+      process('proc-flagoff', 'pat-1', 'owner-flagoff', 'ACTIVE', '2026-04-01T00:00:00Z'),
       process('proc-other', 'pat-2', 't-other', 'ACTIVE', '2026-01-01T00:00:00Z'),
     ],
     session: [
@@ -295,13 +295,13 @@ describe('GET /sessions/:id (sesión del proceso cerrado)', () => {
     expectOnly(await new SessionsService(seedDb()).get(WS, actor(key), 'ses-closed'), [M.sesNotesClosed, M.titleClosed]);
   });
 
-  it.each(label(['owner-nc', 'admin-nc', 'admin-c-none', 'assistant'] as ActorKey[]))('%s → solo metadatos (agenda)', async (_l, key) => {
+  it.each(label(['owner-nc', 'admin-nc', 'admin-c-none', 'owner-flagoff', 'assistant'] as ActorKey[]))('%s → solo metadatos (agenda)', async (_l, key) => {
     const result: any = await new SessionsService(seedDb()).get(WS, actor(key), 'ses-closed');
     expect(result).toMatchObject({ id: 'ses-closed', therapistId: 't-closed' });
     expectOnly(result, []);
   });
 
-  it.each(label(['t-other', 't-none', 't-flagoff'] as ActorKey[]))('%s → 403', async (_l, key) => {
+  it.each(label(['t-other', 't-none'] as ActorKey[]))('%s → 403', async (_l, key) => {
     await expect(new SessionsService(seedDb()).get(WS, actor(key), 'ses-closed')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -433,6 +433,19 @@ describe('Falla en cerrado', () => {
     member.role = 'ASSISTANT';
     member.isClinician = false;
     await expectDenied(prisma, () => new PatientsService(prisma).getClinicalHistory(WS, actor('t-active'), 'pat-1'));
+  });
+
+  it('un THERAPIST cuenta siempre como clínico: el rol manda aunque el atributo diga otra cosa', async () => {
+    const prisma = seedDb();
+    prisma.__store.workspaceMember.find((m: any) => m.userId === 't-active').isClinician = false;
+    expect(json(await new PatientsService(prisma).getClinicalHistory(WS, actor('t-active'), 'pat-1'))).toContain(M.history);
+  });
+
+  it('un ASSISTANT nunca es clínico aunque el atributo diga lo contrario', async () => {
+    const prisma = seedDb();
+    Object.assign(prisma.__store.workspaceMember.find((m: any) => m.userId === 'assistant'), { isClinician: true });
+    prisma.__store.clinicalProcess.push({ ...prisma.__store.clinicalProcess[1], id: 'proc-asst', therapistId: 'assistant' });
+    await expect(new PatientsService(prisma).getClinicalHistory(WS, actor('assistant'), 'pat-1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('usuario que ya no es miembro del workspace → 403', async () => {
