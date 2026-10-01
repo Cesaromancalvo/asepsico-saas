@@ -41,7 +41,7 @@ export class AuthService {
         data: { email: dto.email.toLowerCase(), passwordHash: await hash(dto.password, 12), firstName: dto.firstName, lastName: dto.lastName },
       });
       const workspace = await tx.workspace.create({ data: { name: dto.workspaceName } });
-      const membership = await tx.workspaceMember.create({ data: { userId: user.id, workspaceId: workspace.id, role: 'OWNER' } });
+      const membership = await tx.workspaceMember.create({ data: { userId: user.id, workspaceId: workspace.id, role: 'OWNER', isClinician: true } });
       return { user, workspace, membership };
     });
     const session = await this.issueSession(result.user, result.workspace.id, result.membership.role, meta);
