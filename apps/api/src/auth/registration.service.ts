@@ -3,13 +3,19 @@ import { Prisma } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
 import { getCurrentLegalDocuments } from '../legal/legal-documents';
-import { assertAcceptsCurrentTerms, recordTermsAcceptances } from '../legal/terms-acceptance';
+import { assertAcceptsCurrentTerms, assertLegalDocumentsPublishable, legalDocumentRef, recordTermsAcceptances } from '../legal/terms-acceptance';
 import { clinicianFlagForRole, INVITABLE_ROLES } from '../workspace-members/member-role.util';
 import { AuthService } from './auth.service';
 import { RegisterDto, RegisterMemberDto } from './dto/register.dto';
 import { hashInviteToken, normalizeEmail } from './invite-token.util';
 
 export const REGISTRATION_NOT_ALLOWED = 'REGISTRATION_NOT_ALLOWED';
+
+/** Política de privacidad vigente (con texto) para informar al miembro que se da de alta. */
+function privacyNoticeFor(docs: ReturnType<typeof getCurrentLegalDocuments>) {
+  const doc = docs.find((d) => d.type === 'PRIVACY_PRODUCT');
+  return doc ? { ...legalDocumentRef(doc), text: doc.text } : null;
+}
 
 type Meta = { ip?: string; userAgent?: string };
 
@@ -28,6 +34,7 @@ export class RegistrationService {
   /** Workspace nuevo con su OWNER (invitación de plataforma + aceptación de las condiciones vigentes). */
   async register(dto: RegisterDto, meta: Meta) {
     const docs = getCurrentLegalDocuments();
+    assertLegalDocumentsPublishable(docs);
     assertAcceptsCurrentTerms(dto.acceptedTerms, docs);
     const email = normalizeEmail(dto.email);
     const now = new Date();
@@ -93,6 +100,9 @@ export class RegistrationService {
 
     // Coherencia rol/isClinician recalculada (además de los CHECK de la BD).
     const isClinician = clinicianFlagForRole(invite.role, invite.isClinician);
+    // Art. 13 RGPD: al miembro se le INFORMA de la política de privacidad vigente (no la acepta:
+    // el contrato lo firma el titular). Queda en la auditoría qué versión se le mostró.
+    const privacyNotice = privacyNoticeFor(getCurrentLegalDocuments());
     const passwordHash = await hash(dto.password, 12);
     const result = await this.runOrNeutral('miembro', invite.id, () => this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({ data: { email, passwordHash, firstName: dto.firstName, lastName: dto.lastName } });
@@ -111,7 +121,10 @@ export class RegistrationService {
           action: 'MEMBER_JOINED',
           entityType: 'WorkspaceMember',
           entityId: membership.id,
-          metadata: { workspaceInviteId: invite.id, invitedById: invite.invitedById, role: invite.role, isClinician },
+          metadata: {
+            workspaceInviteId: invite.id, invitedById: invite.invitedById, role: invite.role, isClinician,
+            privacyNoticeVersion: privacyNotice?.version ?? null, privacyNoticeHash: privacyNotice?.textHash ?? null,
+          },
           ipAddress: meta.ip,
           userAgent: meta.userAgent,
         },
@@ -120,7 +133,7 @@ export class RegistrationService {
     }));
 
     const session = await this.auth.issueSession(result.user, result.workspaceId, result.role, meta);
-    return { mfaRequired: false as const, ...session };
+    return { mfaRequired: false as const, ...session, privacyNotice };
   }
 
   /** Respuesta neutra. El motivo solo va al log del servidor (sin correo ni token). */

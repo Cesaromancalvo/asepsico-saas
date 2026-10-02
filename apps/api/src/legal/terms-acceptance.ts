@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
 import type { LegalDocumentType, Prisma, PrismaClient } from '@prisma/client';
 import { getCurrentLegalDocuments, LegalDocument } from './legal-documents';
 
@@ -6,6 +6,27 @@ import { getCurrentLegalDocuments, LegalDocument } from './legal-documents';
 export const TERMS_ACCEPTANCE_REQUIRED = 'TERMS_ACCEPTANCE_REQUIRED';
 /** Código del 400 cuando el registro o la aceptación no cubre las versiones vigentes. */
 export const TERMS_NOT_ACCEPTED = 'TERMS_NOT_ACCEPTED';
+
+/** Código del 503 cuando en producción alguna condición vigente sigue siendo un borrador. */
+export const LEGAL_TERMS_DRAFT = 'LEGAL_TERMS_DRAFT';
+
+/**
+ * En producción no se puede aceptar un borrador: registro y aceptación responden 503
+ * LEGAL_TERMS_DRAFT mientras algún documento vigente tenga marcadores [PENDIENTE DEL DESPACHO].
+ * Válvula explícita para un entorno de demostración: LEGAL_ALLOW_DRAFT=true (nunca en el piloto).
+ */
+export function assertLegalDocumentsPublishable(docs = getCurrentLegalDocuments(), env: NodeJS.ProcessEnv = process.env) {
+  if (env.NODE_ENV !== 'production' || env.LEGAL_ALLOW_DRAFT === 'true') return;
+  const drafts = docs.filter((d) => d.draft);
+  if (drafts.length > 0) {
+    throw new ServiceUnavailableException({
+      statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+      code: LEGAL_TERMS_DRAFT,
+      message: 'Las condiciones del servicio aún no están disponibles. Inténtalo más adelante.',
+      drafts: drafts.map((d) => d.type),
+    });
+  }
+}
 
 export type AcceptedTermInput = { documentType: LegalDocumentType; version: string; textHash: string };
 type Db = Pick<PrismaClient, 'termsAcceptance'> | Prisma.TransactionClient;

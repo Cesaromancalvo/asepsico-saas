@@ -8,7 +8,9 @@ import { AuthController } from '../src/auth/auth.controller';
 import { RegisterDto } from '../src/auth/dto/register.dto';
 import { hashInviteToken, INVITE_TTL_MS } from '../src/auth/invite-token.util';
 import * as legalDocs from '../src/legal/legal-documents';
-import { assertOwnerTermsAccepted, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { assertOwnerTermsAccepted, LEGAL_TERMS_DRAFT, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { JwtService } from '@nestjs/jwt';
+import { AuthService } from '../src/auth/auth.service';
 import { LegalService } from '../src/legal/legal.service';
 import { LegalController } from '../src/legal/legal.controller';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
@@ -484,6 +486,125 @@ describe('Invitar miembros a un workspace existente', () => {
       const prisma2 = fakeRegistrationDb({ registrationInvite: [invite()] });
       await expectNeutral(registration(prisma2).service.registerMember(memberDto({ email: EMAIL, inviteToken: TOKEN }), META));
     });
+  });
+});
+
+describe('Condiciones en borrador con NODE_ENV=production (condición de Argos)', () => {
+  const ENV = { ...process.env };
+  afterEach(() => { process.env = { ...ENV }; });
+  const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER', email: 'owner@example.com' } as any;
+  const ownerDb = () => fakeRegistrationDb({ workspaceMember: [{ id: 'm-1', workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: false }] });
+
+  async function expect503(promise: Promise<unknown>) {
+    const error = await promise.then(() => null, (e) => e);
+    expect(error?.getStatus?.()).toBe(503);
+    expect(error.getResponse()).toMatchObject({ statusCode: 503, code: LEGAL_TERMS_DRAFT, drafts: ['PILOT_TERMS', 'DPA_ART28', 'PRIVACY_PRODUCT'] });
+  }
+
+  it('registro → 503 LEGAL_TERMS_DRAFT sin crear nada ni consumir la invitación', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.LEGAL_ALLOW_DRAFT;
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await expect503(registration(prisma).service.register(validDto(), META));
+    expectNothingCreated(prisma);
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it('aceptar condiciones → 503 LEGAL_TERMS_DRAFT sin escribir', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.LEGAL_ALLOW_DRAFT;
+    const prisma = ownerDb();
+    await expect503(new LegalService(prisma).accept(owner, { acceptedTerms: currentTerms() } as any, META));
+    expect(prisma.__store.termsAcceptance).toEqual([]);
+    expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it.each(['1', 'TRUE', 'yes', ''])('LEGAL_ALLOW_DRAFT=%j no desbloquea (solo "true" exacto)', async (value) => {
+    process.env.NODE_ENV = 'production';
+    process.env.LEGAL_ALLOW_DRAFT = value;
+    await expect503(registration(fakeRegistrationDb({ registrationInvite: [invite()] })).service.register(validDto(), META));
+  });
+
+  it('LEGAL_ALLOW_DRAFT=true explícito (demo) sí permite registrar y aceptar', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.LEGAL_ALLOW_DRAFT = 'true';
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await registration(prisma).service.register(validDto(), META);
+    expect(prisma.__store.user).toHaveLength(1);
+    await expect(new LegalService(ownerDb()).accept(owner, { acceptedTerms: currentTerms() } as any, META)).resolves.toBeDefined();
+  });
+
+  it('fuera de producción (local, CI) los borradores no bloquean', async () => {
+    process.env.NODE_ENV = 'test';
+    delete process.env.LEGAL_ALLOW_DRAFT;
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await registration(prisma).service.register(validDto(), META);
+    expect(prisma.__store.user).toHaveLength(1);
+  });
+
+  it('en producción con textos definitivos (sin marcadores) no hay 503', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.LEGAL_ALLOW_DRAFT;
+    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(legalDocs.getCurrentLegalDocuments().map((d) => ({ ...d, draft: false })));
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await registration(prisma).service.register(validDto(), META);
+    expect(prisma.__store.user).toHaveLength(1);
+  });
+
+  it('.env.example documenta LEGAL_ALLOW_DRAFT vacío (bloqueado por defecto)', () => {
+    const example = readFileSync(join(__dirname, '..', '..', '..', '.env.example'), 'utf8');
+    expect(example).toMatch(/^LEGAL_ALLOW_DRAFT=$/m);
+    expect(example).toContain('LEGAL_TERMS_DRAFT');
+  });
+});
+
+describe('Miembro que entra por invitación (condiciones de Argos)', () => {
+  const WS = 'ws-1';
+  const TOKEN_M = 'token-ficticio-de-miembro-terapeuta-0123456789abcdefg';
+  const db = () => fakeRegistrationDb({
+    workspaceMember: [{ id: 'm-owner', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false }],
+    workspaceInvite: [{ id: 'wi-1', workspaceId: WS, tokenHash: hashInviteToken(TOKEN_M), email: 'tera@example.com', role: 'THERAPIST', isClinician: true, invitedById: 'owner-1', expiresAt: new Date(Date.now() + DAY), acceptedAt: null, revokedAt: null }],
+  });
+  const dto = { firstName: 'Tera', lastName: 'Ficticia', email: 'tera@example.com', password: 'contrasena-ficticia-larga', inviteToken: TOKEN_M } as any;
+
+  it('un THERAPIST recién invitado recibe 403 de MFA antes de tocar datos clínicos', async () => {
+    const prisma = db();
+    const jwt = new JwtService({ secret: 'secreto-solo-para-tests', signOptions: { expiresIn: '15m' } });
+    const service = new RegistrationService(prisma, new AuthService(prisma, jwt, {} as any));
+    const session: any = await service.registerMember(dto, META);
+    const payload = await jwt.verifyAsync(session.accessToken);
+    expect(payload).toMatchObject({ role: 'THERAPIST', workspaceId: WS, mfaEnabled: false });
+    const guard = new JwtAuthGuard();
+    for (const url of ['/api/v1/patients', '/api/v1/patients/p-1/history', '/api/v1/clinical-processes', '/api/v1/sessions', '/api/v1/messages/c-1', '/api/v1/legal/terms/status']) {
+      const ctx = { switchToHttp: () => ({ getRequest: () => ({ originalUrl: url, url }) }) } as unknown as ExecutionContext;
+      expect(() => guard.handleRequest(null, payload, null, ctx)).toThrow(/verificación en dos pasos/);
+    }
+    const setupCtx = { switchToHttp: () => ({ getRequest: () => ({ originalUrl: '/api/v1/auth/mfa/setup' }) }) } as unknown as ExecutionContext;
+    expect(guard.handleRequest(null, payload, null, setupCtx)).toBeTruthy();
+  });
+
+  it('recibe la política de privacidad vigente (art. 13) y queda auditada la versión informada', async () => {
+    const prisma = db();
+    const session: any = await registration(prisma).service.registerMember(dto, META);
+    const privacy = legalDocs.getCurrentLegalDocuments().find((d) => d.type === 'PRIVACY_PRODUCT')!;
+    expect(session.privacyNotice).toEqual(expect.objectContaining({ documentType: 'PRIVACY_PRODUCT', version: privacy.version, textHash: privacy.textHash, text: privacy.text }));
+    expect(prisma.__store.termsAcceptance).toEqual([]); // se informa, no se acepta
+    expect(prisma.__store.auditLog[0].metadata).toMatchObject({ privacyNoticeVersion: privacy.version, privacyNoticeHash: privacy.textHash });
+  });
+
+  it('el controlador devuelve privacyNotice en POST /auth/register/member', async () => {
+    const registrationMock: any = { registerMember: jest.fn(async () => ({ accessToken: 'a', refreshToken: 'r', refreshTokenExpiresAt: new Date(), user: { id: 'u' }, workspaceId: WS, role: 'THERAPIST', privacyNotice: { documentType: 'PRIVACY_PRODUCT' } })) };
+    const controller = new AuthController({} as any, {} as any, registrationMock);
+    const res: any = { cookie: jest.fn() };
+    const body: any = await controller.registerMember(dto, { ip: '1', get: () => 'jest' } as any, res);
+    expect(body.privacyNotice).toEqual({ documentType: 'PRIVACY_PRODUCT' });
+    expect(body.accessToken).toBeUndefined();
+  });
+
+  it('DELETE /workspace-members/invites/:id tiene throttle propio', () => {
+    const fn = WorkspaceMembersController.prototype.revokeInvite;
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', fn)).toBe(20);
+    expect(Reflect.getMetadata('THROTTLER:TTLdefault', fn)).toBe(60_000);
   });
 });
 

@@ -235,6 +235,9 @@ model WorkspaceInvite {
 
 /// Evidencia de aceptación de un documento legal en una versión concreta (hash del texto exacto).
 /// Se conserva aunque cambie la versión vigente: es la prueba de qué se aceptó y cuándo.
+/// RESTRICT a propósito: la evidencia se conserva frente a la supresión (art. 17.3.e RGPD).
+/// TODO(supresión): el futuro flujo de supresión de cuentas seudonimiza el User, nunca lo borra
+/// (ver docs/SECURITY_BASELINE.md, "Registro por invitación y aceptación de condiciones").
 model TermsAcceptance {
   id           String            @id @default(cuid())
   workspaceId  String

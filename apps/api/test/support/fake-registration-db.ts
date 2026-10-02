@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
  */
 type Row = Record<string, any>;
 
-const MODELS = ['user', 'workspace', 'workspaceMember', 'registrationInvite', 'workspaceInvite', 'termsAcceptance', 'auditLog'] as const;
+const MODELS = ['user', 'workspace', 'workspaceMember', 'registrationInvite', 'workspaceInvite', 'termsAcceptance', 'auditLog', 'refreshToken'] as const;
 const UNIQUE: Record<string, string[][]> = {
   user: [['email']],
   registrationInvite: [['tokenHash']],
@@ -72,6 +72,8 @@ export function fakeRegistrationDb(seed: Partial<Record<(typeof MODELS)[number],
     create: jest.fn(async ({ data, select }: Row) => {
       const row = { id: `${model}-${++seq}`, createdAt: new Date(), ...data };
       if (model === 'termsAcceptance' && !row.acceptedAt) row.acceptedAt = new Date();
+      // Defaults de la BD que importan para la seguridad.
+      if (model === 'user') Object.assign(row, { totpEnabled: false, mfaFailedAttempts: 0, ...data });
       checkConstraints(model, row);
       assertUnique(model, row);
       store[model].push(row);

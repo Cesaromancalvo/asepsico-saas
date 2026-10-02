@@ -187,6 +187,12 @@ jobs:
       - name: Run real HTTP smoke test
         run: npm run test:smoke
 
+      # Registro cerrado por invitación (hallazgo de Argos): ráfaga de registros con el mismo token
+      # → un solo 201 y sin usuarios ni workspaces huérfanos; el THERAPIST invitado recibe 403 de
+      # MFA antes de tocar datos clínicos. Usa X-Forwarded-For (TRUST_PROXY=loopback).
+      - name: Verify invitation-only registration under concurrency (real PostgreSQL)
+        run: node scripts/verify-registration-invite-live.mjs
+
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
       # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR

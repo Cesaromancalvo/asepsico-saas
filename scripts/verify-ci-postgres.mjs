@@ -48,6 +48,11 @@ const mfaIndex = workflow.indexOf('node scripts/verify-mfa-concurrency.mjs');
 if (mfaIndex < smokeIndex) {
   throw new Error('verify-mfa-concurrency debe ejecutarse después del smoke HTTP real');
 }
+// Registro por invitación: la ráfaga concurrente contra PostgreSQL real debe ejecutarse siempre.
+const inviteIndex = workflow.indexOf('node scripts/verify-registration-invite-live.mjs');
+if (inviteIndex < 0 || inviteIndex < smokeIndex) {
+  throw new Error('verify-registration-invite-live debe ejecutarse en CI después del smoke HTTP real');
+}
 if (/TRUST_PROXY:\s*['"]?true/i.test(workflow)) {
   throw new Error('La CI no debe usar TRUST_PROXY=true');
 }

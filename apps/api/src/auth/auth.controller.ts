@@ -46,7 +46,8 @@ export class AuthController {
   async registerMember(@Body() dto: RegisterMemberDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const session = await this.registration.registerMember(dto, meta(req));
     setAuthCookies(res, session);
-    return { user: session.user, workspaceId: session.workspaceId, role: session.role };
+    // privacyNotice: política de privacidad vigente que la web debe mostrar al miembro (art. 13 RGPD).
+    return { user: session.user, workspaceId: session.workspaceId, role: session.role, privacyNotice: session.privacyNotice };
   }
 
   @Throttle(AUTH_THROTTLE)

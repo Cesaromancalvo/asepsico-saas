@@ -5,7 +5,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { getCurrentLegalDocuments } from './legal-documents';
 import { AcceptTermsDto } from './dto/accept-terms.dto';
-import { assertAcceptsCurrentTerms, legalDocumentRef, pendingLegalDocuments, recordTermsAcceptances } from './terms-acceptance';
+import { assertAcceptsCurrentTerms, assertLegalDocumentsPublishable, legalDocumentRef, pendingLegalDocuments, recordTermsAcceptances } from './terms-acceptance';
 
 @Injectable()
 export class LegalService {
@@ -33,6 +33,7 @@ export class LegalService {
   /** El OWNER (según la BD) acepta las versiones vigentes. Evidencia y auditoría en la misma transacción. */
   async accept(actor: AuthUser, dto: AcceptTermsDto, meta: { ip?: string; userAgent?: string }) {
     assertStaffRole(actor);
+    assertLegalDocumentsPublishable();
     if ((await this.actorRole(actor)) !== 'OWNER') {
       throw new ForbiddenException('Solo el titular de la consulta puede aceptar las condiciones');
     }

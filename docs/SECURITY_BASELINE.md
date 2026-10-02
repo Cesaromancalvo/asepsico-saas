@@ -95,6 +95,32 @@ THERAPIST nunca exporta facturación. La exportación clínica descifra con los 
 como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
 la ruta, nunca el valor).
 
+## Registro por invitación y aceptación de condiciones
+
+- **Registro cerrado:** `POST /auth/register` solo funciona con una invitación de plataforma de un
+  solo uso (`npm run invites:create -- --email x`; solo el hash SHA-256 en la BD, caduca a los 14 días,
+  ligada al correo). Cualquier fallo responde 400 neutro `REGISTRATION_NOT_ALLOWED`.
+- **Condiciones versionadas** (`apps/api/src/legal/`): el OWNER acepta las condiciones del piloto,
+  el contrato art. 28 y la política de privacidad. Cada aceptación guarda la versión, el hash del
+  texto, la IP y el user agent, y se audita en la misma transacción. Si hay una versión nueva, el
+  OWNER recibe 428 `TERMS_ACCEPTANCE_REQUIRED`. Con `NODE_ENV=production` no se puede aceptar un
+  borrador: si algún texto conserva `[PENDIENTE DEL DESPACHO]`, el sistema responde 503
+  `LEGAL_TERMS_DRAFT` salvo que se defina `LEGAL_ALLOW_DRAFT=true`, que solo es válido en demos.
+- **Miembros invitados:** no aceptan el contrato, pero `POST /auth/register/member` devuelve la
+  política de privacidad vigente (`privacyNotice`) para informarles (art. 13 RGPD). La versión
+  mostrada queda en la auditoría (`MEMBER_JOINED`).
+- **Conservación de la evidencia frente a la supresión:** `TermsAcceptance` referencia a `User` y a
+  `Workspace` con `ON DELETE RESTRICT`. La prueba de qué contrato se aceptó, quién lo aceptó y cuándo
+  se conserva aunque el usuario pida la supresión, porque es necesaria para la formulación, el
+  ejercicio o la defensa de reclamaciones (art. 17.3.e RGPD). Por eso, al suprimir un usuario **no
+  se borra su fila de `User`**: se **seudonimiza**. Se sustituyen el correo, el nombre y los
+  apellidos por valores no identificativos, se invalidan la contraseña, el MFA y los refresh tokens,
+  y se eliminan sus membresías. Así se mantienen las aceptaciones y la auditoría. El plazo de
+  conservación de la evidencia lo fija la política de retención (pendiente, con el despacho).
+  **TODO (flujo de supresión de cuentas de profesionales):** todavía no existe. Cuando se
+  implemente, debe seudonimizar en lugar de borrar, en una transacción auditada, y nunca saltarse el
+  `RESTRICT`.
+
 ## Antes de producción (pendiente)
 
 - MFA para las cuentas de terapeutas/administradores.

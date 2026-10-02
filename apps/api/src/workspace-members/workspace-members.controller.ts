@@ -36,6 +36,7 @@ export class WorkspaceMembersController {
   }
 
   // Solo OWNER. Auditado.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Delete('invites/:inviteId')
   revokeInvite(@CurrentUser() user: AuthUser, @Param('inviteId') inviteId: string, @Req() req: Request) {
     return this.invites.revoke(user.workspaceId, user, inviteId, meta(req));
