@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
 } from 'class-validator';
 
@@ -58,6 +59,9 @@ export class CreateSessionDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
+  // Solo enlaces https absolutos: el enlace se muestra al paciente en el portal y se abre desde
+  // la web (nada de javascript:, data:, http: ni rutas relativas).
+  @IsUrl({ protocols: ['https'], require_protocol: true })
   videoCallUrl?: string;
 
   @ApiPropertyOptional()
