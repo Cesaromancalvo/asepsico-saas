@@ -98,7 +98,9 @@ export class DashboardService {
     };
 
     return {
-      professional: { firstName: member.user.firstName, lastName: member.user.lastName, role: member.role },
+      // userId e isClinician son datos del propio usuario: la web los usa solo como pista (p. ej.
+      // saber si es el autor de un proceso); el control real sigue en ClinicalAccessService.
+      professional: { userId: member.userId, firstName: member.user.firstName, lastName: member.user.lastName, role: member.role, isClinician: member.isClinician === true },
       summary: { sessionsToday: sessions.length, pendingReviews: submittedTasks.length, unreadMessages: unreadMessages.length, followUps: activeWithoutFuture.length },
       nextSession: sessions.find((session) => session.startsAt >= now) ?? null,
       sessions,
