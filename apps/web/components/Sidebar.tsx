@@ -2,10 +2,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
+import { isAdminRole, ROLE_LABEL, useViewer } from '../lib/clinical';
 type SidebarProps = {
   syncText?: string;
 };
-const navigation = [
+const navigation: { href: string; label: string; icon: string; adminOnly?: boolean }[] = [
   {
     href: '/',
     label: 'Mi jornada',
@@ -47,6 +48,12 @@ const navigation = [
     icon: '€',
   },
   {
+    href: '/settings/team',
+    label: 'Equipo',
+    icon: '☷',
+    adminOnly: true,
+  },
+  {
     href: '/settings/security',
     label: 'Seguridad',
     icon: '⛨',
@@ -61,6 +68,10 @@ export default function Sidebar({
   syncText = 'Conectado con AsePsico',
 }: SidebarProps) {
   const pathname = usePathname();
+  const viewer = useViewer();
+  const items = navigation.filter((item) => !item.adminOnly || isAdminRole(viewer?.role));
+  const displayName = [viewer?.firstName, viewer?.lastName].filter(Boolean).join(' ') || 'Profesional';
+  const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   function isActive(href: string) {
     if (href === '/') {
       return pathname === '/';
@@ -84,13 +95,14 @@ export default function Sidebar({
         </div>
       </Link>
       <nav className="sidebar-nav">
-        {navigation.map((item) => (
+        {items.map((item) => (
           <Link
             key={item.href}
             href={item.href}
             className={`sidebar-link ${
               isActive(item.href) ? 'active' : ''
             }`}
+            aria-current={isActive(item.href) ? 'page' : undefined}
           >
             <span aria-hidden="true">{item.icon}</span>
             <span>{item.label}</span>
@@ -106,10 +118,10 @@ export default function Sidebar({
           </div>
         </div>
         <div className="sidebar-profile">
-          <div className="profile-avatar">CR</div>
+          <div className="profile-avatar" aria-hidden="true">{initials}</div>
           <div>
-            <strong>César Román</strong>
-            <small>Profesional</small>
+            <strong>{displayName}</strong>
+            <small>{viewer?.role ? ROLE_LABEL[viewer.role] : 'Profesional'}</small>
           </div>
         </div>
         <button

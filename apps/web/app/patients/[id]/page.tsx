@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { fetchConsultationReason, modalityLabel, processLabel, useIsClinicalRole } from '@/lib/clinical';
+import { canManageProcess, fetchConsultationReason, isStaffWithProcessAccess, modalityLabel, processLabel, processTitle, therapistName, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
@@ -65,16 +65,21 @@ export default function PatientRecordPage(){
   const [documents,setDocuments]=useState<DocumentItem[]>([]);
   const [timeline,setTimeline]=useState<TimelineEvent[]>([]);
   const [view,setView]=useState<'overview'|'history'>('overview');
-  const isClinical=useIsClinicalRole();
+  const viewer=useViewer();
+  // Lo que la API deja leer de este paciente (canReadClinical de sus procesos). Un ASSISTANT no
+  // entra en el módulo de procesos: no se le pregunta a la API para no generar denegaciones.
+  const {access,reload:reloadAccess}=usePatientClinicalAccess(patientId,viewer!==null&&isStaffWithProcessAccess(viewer.role));
+  const [processBusy,setProcessBusy]=useState(false);
   // Motivo de consulta del paciente (endpoint con control clínico); solo se usa como placeholder.
   const [consultationReason,setConsultationReason]=useState<string|null>(null);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const [savedMessage,setSavedMessage]=useState('');
 
-  // La API responde 403 a la parte clínica (historia, objetivos, tareas, escalas...) si el rol no
-  // es clínico (ASSISTANT) o si un THERAPIST no tiene proceso propio con este paciente. En ese
-  // caso la ficha muestra solo los datos administrativos en lugar de romper la página entera.
+  // La parte clínica (historia, objetivos, tareas, escalas...) solo se pide si la API indica que el
+  // usuario TRATA a este paciente (proceso ACTIVO). Si aun así responde 403, se toleran y la
+  // ficha muestra solo los datos administrativos en lugar de romper la página entera.
   const [clinicalDenied,setClinicalDenied]=useState(false);
-  const showClinical=isClinical===true&&!clinicalDenied;
+  const showClinical=access.treating&&!clinicalDenied;
+  const accessResolved=access.state!=='loading'||(viewer!==null&&!isStaffWithProcessAccess(viewer.role));
 
   async function load(){
     try{
@@ -98,13 +103,22 @@ export default function PatientRecordPage(){
     setDocuments(settledOr(documentRes,[])); setTimeline(settledOr(timelineRes,[]));
   }
   useEffect(()=>{ if(patientId) load(); },[patientId]);
-  useEffect(()=>{ if(patientId&&isClinical) loadClinical(); },[patientId,isClinical]);
+  useEffect(()=>{ if(patientId&&access.treating) loadClinical(); },[patientId,access.treating]);
   useEffect(()=>{
-    if(!isClinical||!patientId){ setConsultationReason(null); return; }
+    if(!access.treating||!patientId){ setConsultationReason(null); return; }
     let cancelled=false;
     fetchConsultationReason(patientId).then(reason=>{ if(!cancelled) setConsultationReason(reason); });
     return ()=>{ cancelled=true; };
-  },[isClinical,patientId]);
+  },[access.treating,patientId]);
+
+  async function reactivate(processId:string){
+    try{
+      setProcessBusy(true); setError('');
+      await api(`/clinical-processes/${processId}/status`,{method:'PATCH',body:JSON.stringify({status:'ACTIVE'})});
+      setSavedMessage('Proceso reactivado'); reloadAccess(); await load();
+    }catch(err){ setError(err instanceof Error?err.message:'No se pudo reactivar el proceso'); }
+    finally{ setProcessBusy(false); }
+  }
 
   const age=useMemo(()=>calculateAge(patient?.birthDate),[patient?.birthDate]);
   const activeGoals=useMemo(()=>goals.filter(goal=>goal.status==='ACTIVE').sort((a,b)=>a.priority-b.priority),[goals]);
@@ -133,8 +147,15 @@ export default function PatientRecordPage(){
     finally{ setSaving(false); }
   }
 
-  if(loading||isClinical===null) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="patient-record-loading">Cargando ficha unificada…</div></main></div>;
+  if(loading||!viewer||!accessResolved) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="patient-record-loading">Cargando ficha unificada…</div></main></div>;
   if(!patient) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div><Link href="/patients" className="button secondary">Volver a pacientes</Link></main></div>;
+
+  // Procesos que el usuario puede reactivar: los suyos (solo lectura) o cualquiera si gestiona la consulta.
+  const reactivable=access.processes.filter(process=>(process.status==='PAUSED'||process.status==='DISCHARGED')&&canManageProcess(viewer,process));
+  const processList=access.processes.length>0?<section className="patient-record-card patient-unified-main-card" aria-labelledby="patient-processes-heading"><div className="patient-unified-card-heading"><div><span>Procesos</span><h2 id="patient-processes-heading">Procesos clínicos</h2></div></div><ul className="e1-list">{access.processes.map(process=>{
+    const readOnlyRow=process.canReadClinical&&process.status!=='ACTIVE';
+    return <li key={process.id} className="e1-row"><div><strong>{processTitle(process)}</strong><small>{therapistName(process.therapist)} · desde {formatDate(process.startedAt)}</small></div><div><span className={`e1-badge ${process.status==='ACTIVE'?'active':''}`}>{processLabel({status:process.status})}</span>{readOnlyRow&&<span className="e1-badge readonly">Solo lectura</span>}</div><div><Link href={`/patients/${patient.id}/processes/${process.id}`} className="button secondary" aria-label={`Abrir ${processTitle(process)}`}>Abrir</Link></div></li>;
+  })}</ul></section>:null;
 
   return <div className="app-layout"><Sidebar syncText={savedMessage||'Ficha clínica protegida'}/><main className="patient-record-page patient-unified-page">
     <header className="patient-record-header patient-unified-header">
@@ -149,7 +170,8 @@ export default function PatientRecordPage(){
     </header>
 
     {error&&<div className="agenda-error">{error}</div>}
-    {!showClinical&&<section className="patient-record-card"><p>Vista administrativa: la información clínica de este paciente solo es visible para su equipo clínico.</p></section>}
+    {!showClinical&&access.readOnly&&<div className="e1-notice" role="note"><div><strong>Solo lectura</strong><p>Tu proceso con este paciente no está activo. Conservas la lectura de lo que registraste (procesos y sesiones), pero no puedes añadir contenido clínico.</p></div>{reactivable.length>0&&<div className="e1-notice-actions">{reactivable.map(process=><button key={process.id} type="button" className="button" disabled={processBusy} onClick={()=>reactivate(process.id)}>{process.status==='DISCHARGED'?'Reabrir proceso':'Reactivar proceso'}{reactivable.length>1?` (${processTitle(process)})`:''}</button>)}</div>}</div>}
+    {!showClinical&&!access.readOnly&&<div className="e1-notice info" role="note"><div><strong>Vista administrativa</strong><p>La información clínica de este paciente solo la ve el profesional que le atiende.</p></div></div>}
     {showClinical&&<nav className="patient-unified-tabs" aria-label="Secciones de la ficha"><button className={view==='overview'?'active':''} onClick={()=>setView('overview')}>Resumen y seguimiento</button><button className={view==='history'?'active':''} onClick={()=>setView('history')}>Historia clínica</button></nav>}
 
     {!showClinical ? <div className="patient-unified-grid">
@@ -158,6 +180,7 @@ export default function PatientRecordPage(){
         <article className="patient-summary-card"><span>Sesiones</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
         <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{patient.summary.activeProcess?.frequency||'Frecuencia no definida'}</small></article>
       </section>
+      {processList}
       <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Gestión administrativa</h2></div></div><div className="patient-quick-links"><Link href={`/agenda?patientId=${patient.id}`}><strong>Agenda</strong><span>Programar o mover citas</span></Link><Link href={`/patients/${patient.id}/portal`}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
     </div> : view==='overview' ? <>
       <section className="patient-next-action"><div><span>Siguiente acción recomendada</span><h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div><Link href={nextAction.href} className="button">{nextAction.cta}</Link></section>
@@ -178,7 +201,9 @@ export default function PatientRecordPage(){
           </div>
         </section>
 
-        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{processLabel(patient.summary.activeProcess)}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{modalityLabel(patient.summary.activeProcess?.modality)||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl><Link href="/management" className="button secondary patient-card-button">Gestionar proceso</Link></aside>
+        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{processLabel(patient.summary.activeProcess)}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{modalityLabel(patient.summary.activeProcess?.modality)||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl>{patient.summary.activeProcess&&<Link href={`/patients/${patient.id}/processes/${patient.summary.activeProcess.id}`} className="button secondary patient-card-button">Abrir proceso</Link>}</aside>
+
+        {processList}
 
         <section className="patient-record-card patient-unified-main-card"><div className="patient-unified-card-heading"><div><span>Actividad reciente</span><h2>Línea temporal clínica</h2></div><Link href={`/patients/${patient.id}/plan`}>Ver todo</Link></div><div className="patient-mini-timeline">{recentTimeline.map(item=><article key={item.id}><span>{EVENT_LABEL[item.type]||'Evento'}</span><div><strong>{item.href?<Link href={item.href}>{item.title}</Link>:item.title}</strong><small>{formatDate(item.date,true)}{item.description?` · ${item.description}`:''}</small></div></article>)}{recentTimeline.length===0&&<p>No hay actividad registrada.</p>}</div></section>
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { isForbidden } from '@/lib/clinical';
 
 type Patient = { id: string; firstName: string; lastName: string };
 type Check = { key: string; label: string; status: 'READY'|'PENDING'|'WARNING'|'BLOCKED'|'MANUAL'; detail: string };
@@ -29,6 +30,8 @@ export default function DataSettingsPage() {
   const [patientId, setPatientId] = useState('');
   const [checks, setChecks] = useState<Check[]>([]);
   const [error, setError] = useState('');
+  // Aviso de la exportación por paciente (403 = no le trata), junto a su botón.
+  const [patientExportError, setPatientExportError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -44,12 +47,15 @@ export default function DataSettingsPage() {
     if (!patientId) return;
     const password = askPassword();
     if (!password) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setPatientExportError('');
     try {
       const data = await api(`/exports/patients/${patientId}`, { method: 'POST', body: JSON.stringify({ password }) });
       downloadJson(`asepsico-paciente-${patientId}.json`, data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo exportar');
+      // 403: OWNER/ADMIN que no trata al paciente (la exportación lleva contenido clínico).
+      setPatientExportError(isForbidden(e)
+        ? 'No puedes exportar el expediente de este paciente: contiene información clínica y solo puede exportarlo el profesional que le atiende (o, de lo suyo, quien le atendió). Si el paciente ha pedido una copia de sus datos, pide al profesional responsable que la genere.'
+        : e instanceof Error ? e.message : 'No se pudo exportar');
     } finally { setBusy(false); }
   }
 
@@ -61,15 +67,18 @@ export default function DataSettingsPage() {
       const data = await api('/exports/workspace', { method: 'POST', body: JSON.stringify({ password }) });
       downloadJson(`asepsico-workspace-${new Date().toISOString().slice(0,10)}.json`, data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo exportar');
+      setError(isForbidden(e)
+        ? 'La exportación administrativa solo está disponible para la persona titular y para administración.'
+        : e instanceof Error ? e.message : 'No se pudo exportar');
     } finally { setBusy(false); }
   }
 
   return <div className="app-layout"><Sidebar/><main className="patient-record-page">
     <header className="patient-record-header"><div><span className="eyebrow">Datos y continuidad</span><h1>Exportaciones y preparación del piloto</h1><p>Descarga información de forma controlada y revisa los puntos operativos antes de incorporar usuarios reales.</p></div></header>
-    {error && <div className="agenda-error">{error}</div>}
+    {error && <div className="agenda-error" role="alert">{error}</div>}
     <section className="patient-card"><h2>Exportar expediente de un paciente</h2><p>Incluye historia, procesos, sesiones, objetivos, tareas, escalas, consentimientos, informes, documentos, facturas y recursos compartidos.</p>
-      <div className="billing-form"><label>Paciente<select value={patientId} onChange={(e)=>setPatientId(e.target.value)}>{patients.map(p=><option value={p.id} key={p.id}>{p.firstName} {p.lastName}</option>)}</select></label><button className="button primary" disabled={busy||!patientId} onClick={exportPatient}>Descargar JSON</button></div>
+      <div className="billing-form"><label>Paciente<select value={patientId} onChange={(e)=>{ setPatientId(e.target.value); setPatientExportError(''); }}>{patients.map(p=><option value={p.id} key={p.id}>{p.firstName} {p.lastName}</option>)}</select></label><button className="button primary" disabled={busy||!patientId} onClick={exportPatient}>Descargar JSON</button></div>
+      {patientExportError && <div className="e1-notice danger" role="alert" style={{ marginTop: 14 }}><div><strong>Exportación no disponible</strong><p>{patientExportError}</p></div></div>}
       <small>El archivo contiene información clínica confidencial. Protégelo fuera de AsePsico. Se te pedirá tu contraseña antes de descargar.</small>
     </section>
     <section className="patient-card"><h2>Exportación administrativa del workspace</h2><p>Inventario de miembros, pacientes, actividad y últimos eventos de auditoría. Solo disponible para propietario y administración.</p><button className="button" disabled={busy} onClick={exportWorkspace}>Descargar exportación</button><br/><small>Se te pedirá tu contraseña antes de descargar.</small></section>
