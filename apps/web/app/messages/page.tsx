@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
-import { isForbidden, therapistName, useViewer } from '../../lib/clinical';
+import { fetchPatientClinicalAccess, isForbidden, isStaffWithProcessAccess, processLabel, therapistName, useViewer } from '../../lib/clinical';
 import Sidebar from '../../components/Sidebar';
 
 type Conversation = {
@@ -25,7 +25,21 @@ type Thread = Omit<Conversation, 'messages' | 'canReadMessages' | 'unreadCount'>
   messages: Array<{ id: string; body: string; senderType: 'PROFESSIONAL' | 'PATIENT'; createdAt: string; attachmentName?: string }>;
 };
 
-type PatientSummary = { summary?: { therapist?: { firstName: string; lastName: string } | null } };
+type ProcessRef = { status?: string | null; therapist?: { firstName: string; lastName: string } | null };
+// GET /patients/:id (vista administrativa): el profesional sale de sus procesos, no de los mensajes.
+type PatientSummary = { summary?: { therapist?: ProcessRef['therapist']; allProcesses?: ProcessRef[] } };
+
+/**
+ * Profesional de la conversación para quien solo ve metadatos. La bandeja no lo trae (pendiente
+ * de API: añadir el profesional del proceso activo a la fila); se toma de la ficha: el del proceso
+ * activo o, si no lo hay, el del último proceso indicando su estado.
+ */
+function professionalFrom(patient: PatientSummary): string {
+  if (patient.summary?.therapist) return therapistName(patient.summary.therapist);
+  const last = patient.summary?.allProcesses?.find((process) => process.therapist);
+  if (last?.therapist) return `${therapistName(last.therapist)} (${processLabel({ status: last.status }).toLowerCase()})`;
+  return 'Sin profesional asignado';
+}
 
 const STATUS_LABEL: Record<Conversation['status'], string> = { OPEN: 'Abierta', CLOSED: 'Cerrada', ARCHIVED: 'Archivada' };
 
@@ -66,11 +80,18 @@ export default function MessagesPage() {
     }
   }
 
+  const canUseMessages = viewer !== null && isStaffWithProcessAccess(viewer.role);
+
   useEffect(() => {
+    // Se espera a saber quién es: un ASSISTANT no entra en la mensajería clínica y no se le pide
+    // nada a la API (evita un 403 auditado por visita).
+    if (!viewer) return;
+    if (!canUseMessages) { setLoadingList(false); return; }
     const patientId = new URLSearchParams(window.location.search).get('patientId');
     (async () => {
       let openedId = '';
-      if (patientId) {
+      // Abrir (o crear) la conversación solo si le trata; si no, se muestra la existente con metadatos.
+      if (patientId && (await fetchPatientClinicalAccess(patientId)).treating) {
         try {
           const conversation = await api<Conversation>(`/patients/${patientId}/conversation`, { method: 'POST' });
           openedId = conversation.id;
@@ -85,7 +106,7 @@ export default function MessagesPage() {
     })()
       .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron cargar los mensajes'))
       .finally(() => setLoadingList(false));
-  }, []);
+  }, [viewer, canUseMessages]);
 
   const selected = useMemo(() => conversations.find((c) => c.id === selectedId), [conversations, selectedId]);
   const metadataOnly = selected?.canReadMessages === false && historyRequested !== selectedId;
@@ -109,7 +130,7 @@ export default function MessagesPage() {
       // No se pide el hilo: la API respondería 403 (y lo auditaría). Solo el profesional, de la ficha.
       if (professional?.patientId === selected.patient.id) return;
       api<PatientSummary>(`/patients/${selected.patient.id}`)
-        .then((patient) => setProfessional({ patientId: selected.patient.id, name: therapistName(patient.summary?.therapist) }))
+        .then((patient) => setProfessional({ patientId: selected.patient.id, name: professionalFrom(patient) }))
         .catch(() => setProfessional({ patientId: selected.patient.id, name: 'No disponible' }));
       return;
     }
@@ -153,6 +174,9 @@ export default function MessagesPage() {
           <div><span className="eyebrow">Continuidad entre sesiones</span><h1>Mensajes</h1><p>Comunicación asíncrona y estructurada. No es un canal de urgencias.</p></div>
         </header>
         {error && <div className="agenda-error" role="alert">{error}</div>}
+        {viewer && !canUseMessages ? (
+          <div className="e1-notice info" role="note"><div><strong>Mensajería reservada al equipo clínico</strong><p>Los mensajes con pacientes solo los gestionan sus profesionales. Si un paciente necesita algo administrativo (citas, facturas), consúltalo con su terapeuta.</p></div></div>
+        ) : (
         <section className="messages-layout">
           <aside className="messages-list" aria-label="Conversaciones">
             <label className="field">Buscar paciente<input value={search} onChange={e => { setSearch(e.target.value); loadList(e.target.value).catch(err => setError(err.message)); }} placeholder="Nombre o apellidos" /></label>
@@ -187,6 +211,7 @@ export default function MessagesPage() {
             </>}
           </article>
         </section>
+        )}
       </main>
     </div>
   );

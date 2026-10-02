@@ -64,7 +64,7 @@ export default function ProcessPage() {
   const [detail, setDetail] = useState<ProcessDetail | null>(null);
   // Sin acceso al contenido: metadatos del listado (estado, modalidad, profesional).
   const [summary, setSummary] = useState<ClinicalProcessRow | null>(null);
-  const [state, setState] = useState<'loading' | 'clinical' | 'administrative' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'clinical' | 'administrative' | 'no-module' | 'error'>('loading');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -81,6 +81,26 @@ export default function ProcessPage() {
       return;
     }
     if (!isStaffWithProcessAccess(viewer?.role)) {
+      // ASSISTANT: no entra en el módulo de procesos; no se le pide nada a la API.
+      setState('no-module');
+      return;
+    }
+    // Primero el listado (metadatos + canReadClinical): sin acceso al contenido no se pide el
+    // detalle, que respondería 403 y dejaría una denegación auditada en cada visita.
+    let row: ClinicalProcessRow | null = null;
+    try {
+      const list = await api<{ data: ClinicalProcessRow[] }>(`/clinical-processes?patientId=${encodeURIComponent(patientId)}&pageSize=100`);
+      row = list.data.find((item) => item.id === processId) ?? null;
+    } catch (err) {
+      if (!isForbidden(err)) {
+        setError(err instanceof Error ? err.message : 'No se pudo cargar el proceso');
+        setState('error');
+        return;
+      }
+    }
+    if (row?.canReadClinical !== true) {
+      setDetail(null);
+      setSummary(row);
       setState('administrative');
       return;
     }
@@ -95,14 +115,8 @@ export default function ProcessPage() {
         setState('error');
         return;
       }
-      // 403: no trata al paciente (o no es su autor). Solo metadatos administrativos.
       setDetail(null);
-      try {
-        const list = await api<{ data: ClinicalProcessRow[] }>(`/clinical-processes?patientId=${encodeURIComponent(patientId)}&pageSize=100`);
-        setSummary(list.data.find((row) => row.id === processId) ?? null);
-      } catch {
-        setSummary(null);
-      }
+      setSummary(row);
       setState('administrative');
     }
   }
@@ -184,7 +198,18 @@ export default function ProcessPage() {
     );
   }
 
-  const title = detail ? processTitle(detail) : processLabel(meta);
+  if (state === 'no-module') {
+    return (
+      <div className="app-layout"><Sidebar /><main className="patient-record-page">
+        <Link href={`/patients/${patientId}`} className="patient-record-back">← Volver a la ficha{patient ? ` de ${patient.firstName} ${patient.lastName}` : ''}</Link>
+        <div className="patient-record-kicker">Proceso clínico</div>
+        <h1>Proceso clínico</h1>
+        <div className="e1-notice info" role="note"><div><strong>Gestión reservada al equipo clínico y a administración</strong><p>Los procesos clínicos los gestionan los profesionales y la administración de la consulta. Desde la ficha del paciente puedes seguir con su agenda y su portal.</p></div></div>
+      </main></div>
+    );
+  }
+
+  const title = detail ? processTitle(detail) : meta ? processLabel(meta) : 'Proceso clínico';
   const canReactivate = canManage && meta && (meta.status === 'PAUSED' || meta.status === 'DISCHARGED');
 
   return (
@@ -249,7 +274,7 @@ export default function ProcessPage() {
               {meta.endedAt && <div><dt>Fin</dt><dd>{formatDate(meta.endedAt)}</dd></div>}
             </dl>
           ) : (
-            <p className="muted">No hay datos de gestión disponibles para este proceso.</p>
+            <p className="muted">Este proceso no figura entre los que puedes consultar o gestionar.</p>
           )}
         </section>
 

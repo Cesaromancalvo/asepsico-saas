@@ -150,6 +150,12 @@ export default function PatientRecordPage(){
   if(loading||!viewer||!accessResolved) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="patient-record-loading">Cargando ficha unificada…</div></main></div>;
   if(!patient) return <div className="app-layout"><Sidebar/><main className="patient-record-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div><Link href="/patients" className="button secondary">Volver a pacientes</Link></main></div>;
 
+  // La API solo devuelve a un THERAPIST sus propias sesiones de este paciente (no las de otros
+  // profesionales), así que el texto lo deja claro para no insinuar que no hay ninguna cita.
+  const ownSessionsOnly=viewer.role==='THERAPIST';
+  const nextSessionTitle=ownSessionsOnly?'Tu próxima sesión':'Próxima sesión';
+  const nextSessionEmpty=ownSessionsOnly?'No tienes citas programadas con este paciente':'Sin cita prevista';
+
   // Procesos que el usuario puede reactivar: los suyos (solo lectura) o cualquiera si gestiona la consulta.
   const reactivable=access.processes.filter(process=>(process.status==='PAUSED'||process.status==='DISCHARGED')&&canManageProcess(viewer,process));
   const processList=access.processes.length>0?<section className="patient-record-card patient-unified-main-card" aria-labelledby="patient-processes-heading"><div className="patient-unified-card-heading"><div><span>Procesos</span><h2 id="patient-processes-heading">Procesos clínicos</h2></div></div><ul className="e1-list">{access.processes.map(process=>{
@@ -176,8 +182,8 @@ export default function PatientRecordPage(){
 
     {!showClinical ? <div className="patient-unified-grid">
       <section className="patient-record-summary-grid patient-unified-summary">
-        <article className="patient-summary-card"><span>Próxima sesión</span><strong>{formatDate(patient.summary.nextSession?.startsAt,true)}</strong><small>{patient.summary.nextSession?'Cita programada':'Sin cita prevista'}</small></article>
-        <article className="patient-summary-card"><span>Sesiones</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
+        <article className="patient-summary-card"><span>{nextSessionTitle}</span><strong>{patient.summary.nextSession?formatDate(patient.summary.nextSession.startsAt,true):'Ninguna programada'}</strong><small>{patient.summary.nextSession?'Cita programada':nextSessionEmpty}</small></article>
+        <article className="patient-summary-card"><span>{ownSessionsOnly?'Tus sesiones':'Sesiones'}</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
         <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{patient.summary.activeProcess?.frequency||'Frecuencia no definida'}</small></article>
       </section>
       {processList}
@@ -186,7 +192,7 @@ export default function PatientRecordPage(){
       <section className="patient-next-action"><div><span>Siguiente acción recomendada</span><h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div><Link href={nextAction.href} className="button">{nextAction.cta}</Link></section>
 
       <section className="patient-record-summary-grid patient-unified-summary">
-        <article className="patient-summary-card"><span>Próxima sesión</span><strong>{formatDate(patient.summary.nextSession?.startsAt,true)}</strong><small>{patient.summary.nextSession?'Cita programada':'Sin cita prevista'}</small></article>
+        <article className="patient-summary-card"><span>{nextSessionTitle}</span><strong>{patient.summary.nextSession?formatDate(patient.summary.nextSession.startsAt,true):'Ninguna programada'}</strong><small>{patient.summary.nextSession?'Cita programada':nextSessionEmpty}</small></article>
         <article className="patient-summary-card"><span>Objetivos activos</span><strong>{activeGoals.length}</strong><small>{activeGoals[0]?.title||'Sin objetivos definidos'}</small></article>
         <article className="patient-summary-card"><span>Tareas abiertas</span><strong>{pendingTasks.length}</strong><small>{deliveredTasks.length?`${deliveredTasks.length} pendiente de revisión`:'Sin entregas por revisar'}</small></article>
         <article className="patient-summary-card"><span>Última escala</span><strong>{latestAssessment?`${latestAssessment.scaleName} · ${latestAssessment.totalScore}`:'Sin escalas'}</strong><small>{latestAssessment?.severity||'No hay evaluación registrada'}</small></article>

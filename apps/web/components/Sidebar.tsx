@@ -2,11 +2,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
-import { invalidateViewer, isAdminRole, ROLE_LABEL, useViewer } from '../lib/clinical';
+import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
 type SidebarProps = {
   syncText?: string;
 };
-const navigation: { href: string; label: string; icon: string; adminOnly?: boolean }[] = [
+// adminOnly: solo OWNER/ADMIN. processAccess: roles que entran en procesos y mensajes (no ASSISTANT).
+const navigation: { href: string; label: string; icon: string; adminOnly?: boolean; processAccess?: boolean }[] = [
   {
     href: '/',
     label: 'Mi jornada',
@@ -31,6 +32,7 @@ const navigation: { href: string; label: string; icon: string; adminOnly?: boole
     href: '/messages',
     label: 'Mensajes',
     icon: '✉',
+    processAccess: true,
   },
   {
     href: '/library',
@@ -69,7 +71,9 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const viewer = useViewer();
-  const items = navigation.filter((item) => !item.adminOnly || isAdminRole(viewer?.role));
+  const items = navigation.filter((item) =>
+    (!item.adminOnly || isAdminRole(viewer?.role)) &&
+    (!item.processAccess || isStaffWithProcessAccess(viewer?.role)));
   const displayName = [viewer?.firstName, viewer?.lastName].filter(Boolean).join(' ') || 'Profesional';
   const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   function isActive(href: string) {
@@ -92,7 +96,7 @@ export default function Sidebar({
         <div className="brand-mark">A</div>
         <div>
           <strong>AsePsico</strong>
-          <span>Consulta Demo</span>
+          <span>{viewer?.workspaceName || 'Tu consulta'}</span>
         </div>
       </Link>
       <nav className="sidebar-nav">

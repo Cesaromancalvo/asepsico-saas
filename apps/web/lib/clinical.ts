@@ -26,12 +26,14 @@ export type Viewer = {
   isClinician: boolean;
   firstName: string | null;
   lastName: string | null;
+  /** Nombre de la consulta (dato administrativo). Un ASSISTANT no lo recibe del dashboard. */
+  workspaceName: string | null;
 };
 
-const ANONYMOUS_VIEWER: Viewer = { userId: null, role: null, isClinician: false, firstName: null, lastName: null };
+const ANONYMOUS_VIEWER: Viewer = { userId: null, role: null, isClinician: false, firstName: null, lastName: null, workspaceName: null };
 
 type DashboardProfessional = {
-  professional?: { userId?: string; role?: string; isClinician?: boolean; firstName?: string; lastName?: string };
+  professional?: { userId?: string; role?: string; isClinician?: boolean; firstName?: string; lastName?: string; workspaceName?: string | null };
 };
 
 let viewerCache: Promise<Viewer> | null = null;
@@ -53,6 +55,7 @@ export function fetchViewer(): Promise<Viewer> {
         isClinician: role === 'THERAPIST' || ((role === 'OWNER' || role === 'ADMIN') && professional?.isClinician === true),
         firstName: professional?.firstName ?? null,
         lastName: professional?.lastName ?? null,
+        workspaceName: professional?.workspaceName ?? null,
       };
     })
     .catch((err: unknown) => {
