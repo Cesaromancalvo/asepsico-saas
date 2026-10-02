@@ -10,12 +10,32 @@
 // Variables: ASEPSICO_API_URL, DATABASE_URL, QA_OUT.
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { realpathSync, writeFileSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1', '[::1]'];
 const API = process.env.ASEPSICO_API_URL || 'http://127.0.0.1:4000/api/v1';
-if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(API).hostname)) throw new Error('Solo contra una API local');
+if (!LOCAL_HOSTS.includes(new URL(API).hostname)) throw new Error('Solo contra una API local');
+
+// La BD también tiene que ser local: el script escribe directamente con Prisma.
 if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL');
+let dbUrl;
+try { dbUrl = new URL(process.env.DATABASE_URL); } catch { throw new Error('DATABASE_URL no es una URL válida'); }
+const socketHost = dbUrl.searchParams.get('host');
+if (!LOCAL_HOSTS.includes(dbUrl.hostname) || (socketHost && !LOCAL_HOSTS.includes(socketHost))) {
+  throw new Error('DATABASE_URL debe apuntar a una BD local desechable (localhost, 127.0.0.1 o ::1)');
+}
+
+// QA_OUT lleva la contraseña y los secretos TOTP de prueba: nunca dentro de un repositorio git.
 if (!process.env.QA_OUT) throw new Error('Falta QA_OUT (ruta del JSON de salida, fuera del repo)');
+const QA_OUT = resolve(process.env.QA_OUT);
+const outDir = realpathSync(dirname(QA_OUT));
+const repoRoot = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
+const insideRepo = outDir === repoRoot || outDir.startsWith(repoRoot + sep);
+const insideAnyGitRepo = spawnSync('git', ['-C', outDir, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).stdout.trim() === 'true';
+if (insideRepo || insideAnyGitRepo) throw new Error('QA_OUT no puede estar dentro de un repositorio git (lleva secretos de prueba); usa una carpeta temporal');
 
 const requireFromApi = createRequire(new URL('../apps/api/package.json', import.meta.url));
 const { generate } = requireFromApi('otplib');
@@ -113,7 +133,7 @@ async function main() {
     sessions: { s1: s1.id, s2: s2.id, s3: s3.id },
     conversations: { c1: conv1.id, c2: conv2.id },
   });
-  writeFileSync(process.env.QA_OUT, JSON.stringify(out, null, 2), { mode: 0o600 });
+  writeFileSync(QA_OUT, JSON.stringify(out, null, 2), { mode: 0o600 });
   console.log(`Sembrado workspace ${workspace.id}: 5 miembros, 3 pacientes (ACTIVE/PAUSED/CLOSED), 3 sesiones, 2 conversaciones.`);
 }
 
