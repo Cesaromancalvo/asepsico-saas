@@ -5,6 +5,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { invalidateViewer } from '@/lib/clinical';
+import { SELF_REGISTRATION_ENABLED } from '@/lib/features';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -46,6 +47,19 @@ export default function RegisterPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!SELF_REGISTRATION_ENABLED) {
+    return (
+      <main className="shell">
+        <div className="card" style={{ maxWidth: 520, margin: '60px auto' }}>
+          <div className="brand">AsePsico</div>
+          <h1>Alta no disponible</h1>
+          <p className="muted">Por ahora el acceso a AsePsico es solo por invitación. Si te han invitado, usa el enlace de tu correo.</p>
+          <Link href="/login" className="button secondary">Ir a iniciar sesión</Link>
+        </div>
+      </main>
+    );
   }
 
   return (

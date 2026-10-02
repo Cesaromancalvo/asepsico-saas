@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
-import { isAdminRole, ROLE_LABEL, useViewer } from '../lib/clinical';
+import { invalidateViewer, isAdminRole, ROLE_LABEL, useViewer } from '../lib/clinical';
 type SidebarProps = {
   syncText?: string;
 };
@@ -81,6 +81,7 @@ export default function Sidebar({
   async function handleLogout() {
     try {
       await logout();
+      invalidateViewer();
     } finally {
       window.location.href = '/login';
     }

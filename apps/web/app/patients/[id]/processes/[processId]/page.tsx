@@ -108,7 +108,14 @@ export default function ProcessPage() {
   }
 
   useEffect(() => {
-    if (patientId && processId && viewer) load();
+    if (!patientId || !processId || !viewer) return;
+    // Nunca mostrar datos del proceso anterior mientras carga el nuevo.
+    setDetail(null);
+    setSummary(null);
+    setSwitching(false);
+    setStatus('');
+    setState('loading');
+    load();
   }, [patientId, processId, viewer]);
 
   const meta = detail ?? summary;
@@ -305,11 +312,14 @@ export default function ProcessPage() {
                 viewer={viewer}
                 heading="Nuevo proceso"
                 submitLabel={meta.status === 'DISCHARGED' ? 'Abrir proceso nuevo' : 'Cerrar este proceso y abrir el nuevo'}
-                beforeCreate={async () => {
-                  if (meta.status !== 'DISCHARGED' && !window.confirm('Se cerrará el proceso actual (no se puede deshacer) y se abrirá uno nuevo. ¿Continuar?')) {
-                    throw new Error('Operación cancelada: no se ha cambiado nada.');
+                confirm={() => meta.status === 'DISCHARGED' || window.confirm('Se abrirá el proceso nuevo y, después, se cerrará el actual (no se puede deshacer). ¿Continuar?')}
+                // Primero se crea el nuevo; solo si sale bien se cierra el actual.
+                afterCreate={async () => {
+                  try {
+                    await closeCurrent();
+                  } catch (err) {
+                    throw new Error(`el proceso anterior sigue abierto (${err instanceof Error ? err.message : 'error'}); ciérralo desde su ficha`);
                   }
-                  await closeCurrent();
                 }}
                 onCreated={(created) => router.push(`/patients/${patientId}/processes/${created.id}`)}
                 onCancel={() => setSwitching(false)}

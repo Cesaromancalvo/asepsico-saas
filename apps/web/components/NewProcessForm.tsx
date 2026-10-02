@@ -14,8 +14,13 @@ type Props = {
   submitLabel?: string;
   /** Motivo de consulta ya registrado (solo si la API lo ha servido al usuario). */
   initialReason?: string | null;
-  /** Se ejecuta antes de crear el proceso (p. ej. cerrar el anterior). Si lanza, no se crea. */
-  beforeCreate?: () => Promise<void>;
+  /** Pregunta previa (p. ej. confirmar). Si devuelve false no se hace nada. */
+  confirm?: () => boolean;
+  /**
+   * Se ejecuta SOLO si el proceso nuevo se creó bien (p. ej. cerrar el anterior). Así, si la
+   * creación falla, el paciente no se queda sin proceso. Si este paso falla, se informa.
+   */
+  afterCreate?: (created: { id: string }) => Promise<void>;
   onCreated: (process: { id: string }) => void | Promise<void>;
   onCancel?: () => void;
 };
@@ -30,7 +35,7 @@ function clinicianName(member: Clinician) {
  * objetivos) solo se pide cuando el proceso es del propio usuario y atiende pacientes: abrirlo a
  * nombre de otro es una operación administrativa y la API rechazaría ese contenido (403).
  */
-export default function NewProcessForm({ patientId, viewer, heading = 'Abrir proceso clínico', submitLabel = 'Crear proceso', initialReason, beforeCreate, onCreated, onCancel }: Props) {
+export default function NewProcessForm({ patientId, viewer, heading = 'Abrir proceso clínico', submitLabel = 'Crear proceso', initialReason, confirm, afterCreate, onCreated, onCancel }: Props) {
   const ids = useId();
   const isAdmin = isAdminRole(viewer.role);
   const [clinicians, setClinicians] = useState<Clinician[] | null>(isAdmin ? null : []);
@@ -71,10 +76,10 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
       setError('Elige el profesional responsable del proceso.');
       return;
     }
+    if (confirm && !confirm()) return;
     setBusy(true);
     setError('');
     try {
-      await beforeCreate?.();
       const reason = canWriteClinical ? String(data.get('consultationReason') ?? '').trim() : '';
       const goals = canWriteClinical ? String(data.get('goals') ?? '').trim() : '';
       const created = await api<{ id: string }>('/clinical-processes', {
@@ -89,6 +94,14 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
           frequency: String(data.get('frequency') ?? '').trim() || undefined,
         }),
       });
+      if (afterCreate) {
+        try {
+          await afterCreate(created);
+        } catch (err) {
+          setError(`El proceso nuevo se ha creado, pero no se pudo completar el paso siguiente: ${err instanceof Error ? err.message : 'error desconocido'}. Revísalo antes de continuar.`);
+          return;
+        }
+      }
       form.reset();
       await onCreated(created);
     } catch (err) {

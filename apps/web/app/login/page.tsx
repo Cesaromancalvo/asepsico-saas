@@ -3,6 +3,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
+import { SELF_REGISTRATION_ENABLED } from '@/lib/features';
 import { api, ApiError } from '@/lib/api';
 
 type LoginResponse =
@@ -120,7 +121,7 @@ export default function LoginPage() {
           {error && <p className="error" role="alert">{error}</p>}
           <button className="button" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         </form>
-        <p className="muted" style={{ marginTop: 16 }}>¿Todavía no tienes cuenta? <Link href="/register">Crea tu consulta</Link></p>
+        {SELF_REGISTRATION_ENABLED && <p className="muted" style={{ marginTop: 16 }}>¿Todavía no tienes cuenta? <Link href="/register">Crea tu consulta</Link></p>}
       </div>
     </main>
   );
