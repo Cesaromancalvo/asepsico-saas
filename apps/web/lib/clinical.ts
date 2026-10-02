@@ -212,6 +212,30 @@ export function canManageProcess(viewer: Viewer | null, process: { therapistId?:
 }
 
 /**
+ * PATCH /clinical-processes/:id/status. Al cerrar o dar de alta, si el proceso tiene citas futuras
+ * programadas la API responde 409 PROCESS_HAS_FUTURE_SESSIONS con esas citas: se pide confirmación
+ * y, solo si el usuario acepta, se repite con `cancelFutureSessions: true` (la API las cancela en la
+ * misma transacción). Si no acepta, se lanza un error y el proceso sigue como estaba.
+ * Apaño mínimo de backend: Fina puede sustituir el window.confirm por un diálogo propio.
+ */
+export async function changeProcessStatus(processId: string, status: ProcessStatus): Promise<void> {
+  const path = `/clinical-processes/${processId}/status`;
+  try {
+    await api(path, { method: 'PATCH', body: JSON.stringify({ status }) });
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 409 || err.body.code !== 'PROCESS_HAS_FUTURE_SESSIONS') throw err;
+    const sessions = Array.isArray(err.body.sessions) ? (err.body.sessions as Array<{ startsAt: string }>) : [];
+    const dates = sessions.slice(0, 5).map((session) => new Date(session.startsAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }));
+    const more = sessions.length > dates.length ? ` y ${sessions.length - dates.length} más` : '';
+    const ok = typeof window !== 'undefined' && window.confirm(
+      `Este proceso tiene ${sessions.length} cita(s) futura(s) programada(s): ${dates.join(', ')}${more}. ¿Cancelarlas y continuar?`,
+    );
+    if (!ok) throw new Error('No se ha cambiado el estado: el proceso tiene citas futuras programadas');
+    await api(path, { method: 'PATCH', body: JSON.stringify({ status, cancelFutureSessions: true }) });
+  }
+}
+
+/**
  * Motivo de consulta del paciente desde GET /patients/:id/consultation-reason. Solo se pide si
  * la API ya indicó que el usuario lee contenido clínico de este paciente; un 403 o cualquier
  * otro fallo se tolera devolviendo null.

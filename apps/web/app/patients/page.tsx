@@ -11,6 +11,7 @@ import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
 import {
   canManageProcess,
+  changeProcessStatus as patchProcessStatus,
   fetchConsultationReason,
   isAdminRole,
   isStaffWithProcessAccess,
@@ -383,10 +384,7 @@ export default function PatientsPage() {
   async function changeProcessStatus(processId: string, next: ProcessStatus) {
     try {
       setError('');
-      await api(`/clinical-processes/${processId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: next }),
-      });
+      await patchProcessStatus(processId, next);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado del proceso');

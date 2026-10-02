@@ -22,6 +22,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Respons
 
 /** Error de la API con el código HTTP, para que las pantallas distingan 401, 429, 400… */
 export class ApiError extends Error {
+  /** Cuerpo JSON de la respuesta de error (p. ej. `code` y `sessions` del 409 al cerrar un proceso). */
+  body: Record<string, unknown> = {};
+
   constructor(message: string, readonly status: number) {
     super(message);
     this.name = 'ApiError';
@@ -66,12 +69,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
   if (!response.ok) {
+    const body = (await response.clone().json().catch(() => ({}))) as Record<string, unknown>;
     let message = (await readMessage(response)) ?? 'Error de conexión';
     // El límite genérico por IP (Throttler) responde en inglés; el del MFA ya trae su texto.
     if (response.status === 429 && message.startsWith('ThrottlerException')) {
       message = 'Demasiadas peticiones seguidas. Espera un minuto y vuelve a intentarlo.';
     }
-    throw new ApiError(message, response.status);
+    const error = new ApiError(message, response.status);
+    error.body = body && typeof body === 'object' ? body : {};
+    throw error;
   }
   return response.json();
 }
