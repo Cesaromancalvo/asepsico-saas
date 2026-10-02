@@ -12,6 +12,7 @@ import { hashRecoveryCodes } from '../src/auth/recovery-codes.util';
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { CsrfGuard } from '../src/common/guards/csrf.guard';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { RegistrationService } from '../src/auth/registration.service';
 import { PrismaService } from '../src/database/prisma.service';
 
 /**
@@ -198,7 +199,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [JwtModule.register({ secret: 'secreto-solo-para-tests', signOptions: { expiresIn: '15m' } })],
       controllers: [AuthController],
-      providers: [AuthService, MfaService, CsrfGuard, { provide: PrismaService, useFactory: () => db }],
+      providers: [AuthService, MfaService, RegistrationService, CsrfGuard, { provide: PrismaService, useFactory: () => db }],
     })
       .overrideGuard(JwtAuthGuard)
       .useClass(TestJwtGuard)

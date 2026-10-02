@@ -1,0 +1,508 @@
+import { BadRequestException, ExecutionContext, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { RegistrationService, REGISTRATION_NOT_ALLOWED } from '../src/auth/registration.service';
+import { AuthController } from '../src/auth/auth.controller';
+import { RegisterDto } from '../src/auth/dto/register.dto';
+import { hashInviteToken, INVITE_TTL_MS } from '../src/auth/invite-token.util';
+import * as legalDocs from '../src/legal/legal-documents';
+import { assertOwnerTermsAccepted, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { LegalService } from '../src/legal/legal.service';
+import { LegalController } from '../src/legal/legal.controller';
+import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { WorkspaceInvitesService } from '../src/workspace-members/workspace-invites.service';
+import { WorkspaceMembersController } from '../src/workspace-members/workspace-members.controller';
+import { CreateMemberInviteDto } from '../src/workspace-members/dto/create-member-invite.dto';
+import { fakeRegistrationDb } from './support/fake-registration-db';
+
+/**
+ * Registro cerrado por invitación, aceptación versionada de condiciones e invitación de miembros.
+ * Datos 100 % ficticios.
+ */
+
+const DAY = 24 * 60 * 60 * 1000;
+const TOKEN = 'token-ficticio-de-invitacion-0123456789abcdefghijk';
+const EMAIL = 'titular@example.com';
+const currentTerms = () => legalDocs.getCurrentLegalDocuments().map((d) => ({ documentType: d.type, version: d.version, textHash: d.textHash }));
+const validDto = (extra: Record<string, unknown> = {}) => ({
+  firstName: 'Titular', lastName: 'Ficticio', email: EMAIL, password: 'contrasena-ficticia-larga',
+  workspaceName: 'Consulta ficticia', inviteToken: TOKEN, acceptedTerms: currentTerms(), ...extra,
+}) as any;
+const invite = (extra: Record<string, unknown> = {}) => ({
+  id: 'inv-1', tokenHash: hashInviteToken(TOKEN), email: EMAIL, expiresAt: new Date(Date.now() + 14 * DAY),
+  createdBy: 'cli', createdAt: new Date(), usedAt: null, revokedAt: null, usedByUserId: null, workspaceId: null, ...extra,
+});
+const META = { ip: '203.0.113.7', userAgent: 'jest' };
+
+function registration(prisma: any) {
+  const auth: any = { issueSession: jest.fn(async (user: any, workspaceId: string, role: string) => ({ user: { id: user.id }, workspaceId, role })) };
+  return { service: new RegistrationService(prisma, auth), auth };
+}
+
+async function expectNeutral(promise: Promise<unknown>) {
+  const error = await promise.then(() => null, (e) => e);
+  expect(error).toBeInstanceOf(BadRequestException);
+  expect(error.getResponse()).toEqual({
+    statusCode: 400, code: REGISTRATION_NOT_ALLOWED,
+    message: 'No se ha podido completar el registro. Revisa el enlace de invitación o pide uno nuevo.',
+  });
+}
+
+function expectNothingCreated(prisma: any) {
+  expect(prisma.__store.user).toEqual([]);
+  expect(prisma.__store.workspace).toEqual([]);
+  expect(prisma.__store.workspaceMember).toEqual([]);
+  expect(prisma.__store.termsAcceptance).toEqual([]);
+  expect(prisma.__store.auditLog).toEqual([]);
+}
+
+afterEach(() => jest.restoreAllMocks());
+
+describe('POST /auth/register: registro solo por invitación', () => {
+  it('sin invitación → 400 neutro y no crea nada', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await expectNeutral(registration(prisma).service.register(validDto({ inviteToken: undefined }), META));
+    expectNothingCreated(prisma);
+  });
+
+  it('token inventado → la MISMA respuesta neutra', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await expectNeutral(registration(prisma).service.register(validDto({ inviteToken: 'otro-token-que-no-existe-en-la-base-de-datos' }), META));
+    expectNothingCreated(prisma);
+  });
+
+  it('token caducado → neutro y la invitación sigue sin usar', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite({ expiresAt: new Date(Date.now() - 1000) })] });
+    await expectNeutral(registration(prisma).service.register(validDto(), META));
+    expectNothingCreated(prisma);
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it('token revocado → neutro', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite({ revokedAt: new Date() })] });
+    await expectNeutral(registration(prisma).service.register(validDto(), META));
+    expectNothingCreated(prisma);
+  });
+
+  it('token de un solo uso: el segundo registro con el mismo token → neutro', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    const { service } = registration(prisma);
+    await service.register(validDto(), META);
+    await expectNeutral(service.register(validDto(), META));
+    await expectNeutral(service.register(validDto({ email: 'otra@example.com' }), META));
+    expect(prisma.__store.user).toHaveLength(1);
+    expect(prisma.__store.workspace).toHaveLength(1);
+  });
+
+  it('consumo atómico: si otra petición gana la carrera, rollback completo (sin usuario ni workspace)', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    // La invitación se lee válida, pero alguien la consume antes del compare-and-set.
+    prisma.registrationInvite.updateMany.mockImplementationOnce(async () => ({ count: 0 }));
+    await expectNeutral(registration(prisma).service.register(validDto(), META));
+    expectNothingCreated(prisma);
+  });
+
+  it('token emitido a otro correo → neutro y la invitación no se consume', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await expectNeutral(registration(prisma).service.register(validDto({ email: 'intruso@example.com' }), META));
+    expectNothingCreated(prisma);
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it('correo ya registrado → neutro (no revela cuentas existentes)', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()], user: [{ id: 'u-x', email: EMAIL }] });
+    await expectNeutral(registration(prisma).service.register(validDto(), META));
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it('el correo se compara normalizado (mayúsculas y espacios)', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await registration(prisma).service.register(validDto({ email: '  Titular@Example.COM ' }), META);
+    expect(prisma.__store.user[0].email).toBe(EMAIL);
+  });
+
+  it.each([
+    ['sin acceptedTerms', undefined],
+    ['lista vacía', []],
+    ['falta un documento', () => currentTerms().slice(1)],
+    ['versión antigua', () => currentTerms().map((t, i) => (i === 0 ? { ...t, version: '0.0-antigua' } : t))],
+    ['hash de otro texto', () => currentTerms().map((t, i) => (i === 1 ? { ...t, textHash: 'a'.repeat(64) } : t))],
+  ])('sin aceptar las condiciones vigentes (%s) → 400 TERMS_NOT_ACCEPTED y no consume la invitación', async (_label, terms) => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    const acceptedTerms = typeof terms === 'function' ? terms() : terms;
+    const error = await registration(prisma).service.register(validDto({ acceptedTerms }), META).catch((e) => e);
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect(error.getResponse()).toMatchObject({ code: TERMS_NOT_ACCEPTED });
+    expectNothingCreated(prisma);
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it('registro válido: workspace + OWNER + evidencia de aceptación + auditoría, todo en una transacción', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    const { service, auth } = registration(prisma);
+    await service.register(validDto(), META);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    const [user] = prisma.__store.user;
+    const [workspace] = prisma.__store.workspace;
+    expect(prisma.__store.workspaceMember).toEqual([expect.objectContaining({ userId: user.id, workspaceId: workspace.id, role: 'OWNER', isClinician: false })]);
+    expect(prisma.__store.registrationInvite[0]).toMatchObject({ usedByUserId: user.id, workspaceId: workspace.id });
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeInstanceOf(Date);
+    const docs = legalDocs.getCurrentLegalDocuments();
+    expect(prisma.__store.termsAcceptance).toHaveLength(docs.length);
+    for (const doc of docs) {
+      expect(prisma.__store.termsAcceptance).toContainEqual(expect.objectContaining({
+        workspaceId: workspace.id, userId: user.id, documentType: doc.type, version: doc.version, textHash: doc.textHash, ipAddress: META.ip, userAgent: META.userAgent,
+      }));
+    }
+    const actions = prisma.__store.auditLog.map((a: any) => a.action).sort();
+    expect(actions).toEqual(['TERMS_ACCEPTED', 'TERMS_ACCEPTED', 'TERMS_ACCEPTED', 'WORKSPACE_REGISTERED']);
+    expect(prisma.__store.auditLog.every((a: any) => a.workspaceId === workspace.id && a.actorId === user.id)).toBe(true);
+    expect(JSON.stringify(prisma.__store.auditLog)).not.toContain(TOKEN);
+    expect(auth.issueSession).toHaveBeenCalledWith(expect.objectContaining({ id: user.id }), workspace.id, 'OWNER', META);
+  });
+
+  it('si falla la auditoría, rollback: ni cuenta ni evidencia, y la invitación sigue disponible', async () => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    prisma.auditLog.create.mockRejectedValueOnce(new Error('fallo de BD simulado'));
+    await expect(registration(prisma).service.register(validDto(), META)).rejects.toThrow('fallo de BD simulado');
+    expectNothingCreated(prisma);
+    expect(prisma.__store.registrationInvite[0].usedAt).toBeNull();
+  });
+
+  it.each([[undefined, false], [false, false], [true, true]])('isClinician=%s → OWNER con isClinician=%s', async (input, expected) => {
+    const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
+    await registration(prisma).service.register(validDto(input === undefined ? {} : { isClinician: input }), META);
+    expect(prisma.__store.workspaceMember[0]).toMatchObject({ role: 'OWNER', isClinician: expected });
+  });
+
+  it('el token nunca se guarda en claro: solo su SHA-256', () => {
+    expect(hashInviteToken(TOKEN)).toMatch(/^[a-f0-9]{64}$/);
+    expect(hashInviteToken(TOKEN)).not.toContain(TOKEN);
+    expect(INVITE_TTL_MS).toBe(14 * DAY);
+  });
+
+  it('DTO con whitelist: rechaza campos extra (p. ej. role) y valida acceptedTerms', async () => {
+    const opts = { whitelist: true, forbidNonWhitelisted: true };
+    expect(await validate(plainToInstance(RegisterDto, validDto()), opts)).toEqual([]);
+    const extra = await validate(plainToInstance(RegisterDto, validDto({ role: 'ADMIN' })), opts);
+    expect(extra.map((e) => e.property)).toEqual(['role']);
+    const bad = await validate(plainToInstance(RegisterDto, validDto({ acceptedTerms: [{ documentType: 'OTRO', version: '1', textHash: 'x' }] })), opts);
+    expect(bad.map((e) => e.property)).toEqual(['acceptedTerms']);
+    const clin = await validate(plainToInstance(RegisterDto, validDto({ isClinician: 'sí' })), opts);
+    expect(clin.map((e) => e.property)).toEqual(['isClinician']);
+  });
+
+  it.each(['register', 'registerMember'])('%s tiene límite 5/min por IP', (handler) => {
+    const fn = (AuthController.prototype as any)[handler];
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', fn)).toBe(5);
+    expect(Reflect.getMetadata('THROTTLER:TTLdefault', fn)).toBe(60_000);
+  });
+
+  it('ningún controlador ni servicio de la API crea invitaciones de registro (solo el CLI y el seed)', () => {
+    const files: string[] = [];
+    const walk = (dir: string) => readdirSync(dir, { withFileTypes: true }).forEach((d) => (d.isDirectory() ? walk(join(dir, d.name)) : d.name.endsWith('.ts') && files.push(join(dir, d.name))));
+    walk(join(__dirname, '..', 'src'));
+    const writers = files.filter((f) => /registrationInvite\.create\b|createRegistrationInvite\(/.test(readFileSync(f, 'utf8')));
+    expect(writers.map((f) => f.split('/src/')[1])).toEqual(['auth/invite-token.util.ts']);
+    const importers = files.filter((f) => !f.endsWith('invite-token.util.ts') && readFileSync(f, 'utf8').includes('createRegistrationInvite'));
+    expect(importers).toEqual([]);
+  });
+});
+
+describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
+  const WS = 'ws-1';
+  const acceptedRows = (docs = legalDocs.getCurrentLegalDocuments(), userId = 'owner-1') =>
+    docs.map((d, i) => ({ id: `ta-${i}`, workspaceId: WS, userId, documentType: d.type, version: d.version, textHash: d.textHash }));
+  const owner = { sub: 'owner-1', workspaceId: WS, role: 'OWNER', email: 'owner@example.com' } as any;
+  const members = [
+    { id: 'm-1', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: true },
+    { id: 'm-2', workspaceId: WS, userId: 'admin-1', role: 'ADMIN', isClinician: false },
+  ];
+  /** Simula publicar una versión nueva de PILOT_TERMS (texto distinto → hash distinto). */
+  function publishNewPilotVersion() {
+    const current = legalDocs.getCurrentLegalDocuments();
+    const next = current.map((d) => (d.type === 'PILOT_TERMS'
+      ? { ...d, version: '0.2-borrador', text: `${d.text}\n(cambio)`, textHash: legalDocs.hashLegalText(`${d.text}\n(cambio)`) }
+      : d));
+    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(next);
+    return next;
+  }
+
+  it('con todo aceptado, el OWNER pasa', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
+    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
+  });
+
+  it('versión nueva publicada → 428 TERMS_ACCEPTANCE_REQUIRED con lo pendiente (sin texto)', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
+    publishNewPilotVersion();
+    const error = await assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients').catch((e) => e);
+    expect(error).toBeInstanceOf(HttpException);
+    expect(error.getStatus()).toBe(428);
+    expect(error.getResponse()).toMatchObject({ code: TERMS_ACCEPTANCE_REQUIRED, pending: [expect.objectContaining({ documentType: 'PILOT_TERMS', version: '0.2-borrador' })] });
+    expect(error.getResponse().pending[0].text).toBeUndefined();
+  });
+
+  it('cambiar el texto sin subir la versión también obliga a aceptar (el hash forma parte)', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
+    const current = legalDocs.getCurrentLegalDocuments();
+    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(current.map((d, i) => (i === 0 ? { ...d, textHash: 'b'.repeat(64) } : d)));
+    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it.each(['/api/v1/legal/terms', '/api/v1/legal/terms/status', '/api/v1/legal/terms/accept', '/api/v1/auth/logout', '/api/v1/auth/mfa/setup'])(
+    'con condiciones pendientes el OWNER aún alcanza %s', async (path) => {
+      const prisma = fakeRegistrationDb({ termsAcceptance: [] });
+      await expect(assertOwnerTermsAccepted(prisma, owner, path)).resolves.toBeUndefined();
+    });
+
+  it.each(['ADMIN', 'THERAPIST', 'ASSISTANT'])('%s no queda bloqueado (acepta el titular)', async (role) => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: [] });
+    await expect(assertOwnerTermsAccepted(prisma, { ...owner, role }, '/api/v1/patients')).resolves.toBeUndefined();
+  });
+
+  it('la aceptación de OTRO workspace no cuenta (multi-tenant)', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows().map((r) => ({ ...r, workspaceId: 'ws-2' })) });
+    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it('JwtAuthGuard aplica el bloqueo tras autenticar (y falla cerrado sin BD)', async () => {
+    jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockResolvedValue(true);
+    const ctx = { switchToHttp: () => ({ getRequest: () => ({ originalUrl: '/api/v1/patients', user: owner }) }) } as unknown as ExecutionContext;
+    const pendingDb = fakeRegistrationDb({ termsAcceptance: [] });
+    await expect(new JwtAuthGuard(pendingDb).canActivate(ctx)).rejects.toMatchObject({ status: 428 });
+    await expect(new JwtAuthGuard(fakeRegistrationDb({ termsAcceptance: acceptedRows() })).canActivate(ctx)).resolves.toBe(true);
+    await expect(new JwtAuthGuard(undefined).canActivate(ctx)).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('el OWNER acepta la versión nueva: solo se registra lo pendiente, con auditoría en la transacción, y deja de recibir 428', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows(), workspaceMember: members });
+    const next = publishNewPilotVersion();
+    const accepted = next.map((d) => ({ documentType: d.type, version: d.version, textHash: d.textHash }));
+    const status = await new LegalService(prisma).accept(owner, { acceptedTerms: accepted } as any, META);
+    expect(status).toMatchObject({ acceptanceRequired: false, canAccept: true, pending: [] });
+    expect(prisma.$transaction).toHaveBeenCalled();
+    const added = prisma.__store.termsAcceptance.filter((r: any) => r.version === '0.2-borrador');
+    expect(added).toEqual([expect.objectContaining({ workspaceId: WS, userId: 'owner-1', documentType: 'PILOT_TERMS', ipAddress: META.ip })]);
+    expect(prisma.__store.termsAcceptance).toHaveLength(next.length + 1);
+    expect(prisma.__store.auditLog).toEqual([expect.objectContaining({
+      workspaceId: WS, actorId: 'owner-1', action: 'TERMS_ACCEPTED', entityType: 'TermsAcceptance', entityId: added[0].id,
+      metadata: { documentType: 'PILOT_TERMS', version: '0.2-borrador', textHash: added[0].textHash },
+    })]);
+    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
+  });
+
+  it('aceptar con la versión anterior → 400 TERMS_NOT_ACCEPTED sin escribir', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows(), workspaceMember: members });
+    const old = currentTerms();
+    publishNewPilotVersion();
+    const error = await new LegalService(prisma).accept(owner, { acceptedTerms: old } as any, META).catch((e) => e);
+    expect(error.getResponse()).toMatchObject({ code: TERMS_NOT_ACCEPTED });
+    expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it('solo el OWNER según la BD acepta: ADMIN (o token OWNER desactualizado) → 403', async () => {
+    const prisma = fakeRegistrationDb({ workspaceMember: members });
+    await expect(new LegalService(prisma).accept({ ...owner, sub: 'admin-1', role: 'ADMIN' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(new LegalService(prisma).accept({ ...owner, sub: 'admin-1' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.__store.termsAcceptance).toEqual([]);
+  });
+
+  it('aceptar es idempotente: sin pendientes no escribe ni audita', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows(), workspaceMember: members });
+    await new LegalService(prisma).accept(owner, { acceptedTerms: currentTerms() } as any, META);
+    expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it('POST /legal/terms/accept: JWT + CSRF y 5/min', () => {
+    const fn = LegalController.prototype.accept;
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', fn)).toBe(5);
+    const guards = Reflect.getMetadata('__guards__', fn).map((g: any) => g.name);
+    expect(guards).toEqual(['JwtAuthGuard', 'CsrfGuard']);
+  });
+
+  it('los textos son borradores con marcadores del despacho: ninguno se presenta como definitivo', () => {
+    const docs = legalDocs.getCurrentLegalDocuments();
+    expect(docs.map((d) => d.type).sort()).toEqual(['DPA_ART28', 'PILOT_TERMS', 'PRIVACY_PRODUCT']);
+    for (const doc of docs) {
+      expect(doc.text).toContain(legalDocs.PENDING_LEGAL_MARKER);
+      expect(doc.draft).toBe(true);
+      expect(doc.textHash).toBe(legalDocs.hashLegalText(doc.text));
+    }
+  });
+});
+
+describe('Invitar miembros a un workspace existente', () => {
+  const WS = 'ws-1';
+  const members = [
+    { id: 'm-owner', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
+    { id: 'm-admin', workspaceId: WS, userId: 'admin-1', role: 'ADMIN', isClinician: false },
+    { id: 'm-ther', workspaceId: WS, userId: 'ther-1', role: 'THERAPIST', isClinician: true },
+    { id: 'm-asst', workspaceId: WS, userId: 'asst-1', role: 'ASSISTANT', isClinician: false },
+    { id: 'm-ws2', workspaceId: 'ws-2', userId: 'owner-2', role: 'OWNER', isClinician: false },
+  ];
+  const users = [{ id: 'ther-1', email: 'terapeuta@example.com' }, { id: 'owner-2', email: 'otro-titular@example.com' }];
+  const actor = (sub: string, role: string, workspaceId = WS) => ({ sub, workspaceId, role, email: `${sub}@example.com` }) as any;
+  const db = (extra: Record<string, any[]> = {}) => fakeRegistrationDb({ workspaceMember: members, user: users, ...extra });
+
+  it.each([
+    ['THERAPIST', undefined, true],
+    ['THERAPIST', true, true],
+    ['ASSISTANT', undefined, false],
+    ['ASSISTANT', false, false],
+    ['ADMIN', undefined, false],
+    ['ADMIN', true, true],
+  ])('OWNER invita %s (isClinician=%s) → invitación con isClinician=%s, auditada en la transacción', async (role, requested, expected) => {
+    const prisma = db();
+    const result: any = await new WorkspaceInvitesService(prisma).create(WS, actor('owner-1', 'OWNER'), { email: 'Nueva@Example.com', role, isClinician: requested } as any, META);
+    expect(result).toMatchObject({ email: 'nueva@example.com', role, isClinician: expected });
+    expect(result.inviteUrl).toMatch(/\/join#invite=[A-Za-z0-9_-]{43}$/);
+    expect(result.tokenHash).toBeUndefined();
+    expect(prisma.__store.workspaceInvite).toEqual([expect.objectContaining({ workspaceId: WS, role, isClinician: expected, invitedById: 'owner-1' })]);
+    expect(prisma.__store.workspaceInvite[0].tokenHash).toBe(hashInviteToken(result.inviteUrl.split('#invite=')[1]));
+    expect(prisma.__store.auditLog).toEqual([expect.objectContaining({ workspaceId: WS, actorId: 'owner-1', action: 'MEMBER_INVITED', metadata: { role, isClinician: expected } })]);
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it.each([['THERAPIST', false], ['ASSISTANT', true]])('rol/isClinician incoherente (%s, isClinician=%s) → 400 sin escribir', async (role, requested) => {
+    const prisma = db();
+    await expect(new WorkspaceInvitesService(prisma).create(WS, actor('owner-1', 'OWNER'), { email: 'x@example.com', role, isClinician: requested } as any, META)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.__store.workspaceInvite).toEqual([]);
+    expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it('la BD también lo impide (CHECK): THERAPIST no clínico, ASSISTANT clínico, OWNER', async () => {
+    const prisma = db();
+    const base = { workspaceId: WS, email: 'x@example.com', tokenHash: 'h', expiresAt: new Date() };
+    await expect(prisma.workspaceInvite.create({ data: { ...base, role: 'THERAPIST', isClinician: false } })).rejects.toThrow(/therapist_is_clinician/);
+    await expect(prisma.workspaceInvite.create({ data: { ...base, role: 'ASSISTANT', isClinician: true } })).rejects.toThrow(/assistant_not_clinician/);
+    await expect(prisma.workspaceInvite.create({ data: { ...base, role: 'OWNER', isClinician: false } })).rejects.toThrow(/not_owner/);
+  });
+
+  it('el DTO nunca acepta OWNER como rol ni campos extra', async () => {
+    const opts = { whitelist: true, forbidNonWhitelisted: true };
+    expect((await validate(plainToInstance(CreateMemberInviteDto, { email: 'x@example.com', role: 'OWNER' }), opts)).map((e) => e.property)).toEqual(['role']);
+    expect((await validate(plainToInstance(CreateMemberInviteDto, { email: 'x@example.com', role: 'ADMIN', workspaceId: 'ws-2' }), opts)).map((e) => e.property)).toEqual(['workspaceId']);
+  });
+
+  it.each([['ADMIN', 'admin-1'], ['THERAPIST', 'ther-1'], ['ASSISTANT', 'asst-1']])('%s no puede invitar → 403', async (role, sub) => {
+    const prisma = db();
+    await expect(new WorkspaceInvitesService(prisma).create(WS, actor(sub, role), { email: 'x@example.com', role: 'ASSISTANT' } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.__store.workspaceInvite).toEqual([]);
+  });
+
+  it('token con rol OWNER pero la BD dice ADMIN → 403 (decide la BD)', async () => {
+    await expect(new WorkspaceInvitesService(db()).create(WS, actor('admin-1', 'OWNER'), { email: 'x@example.com', role: 'ASSISTANT' } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('invitar a alguien que ya está en el equipo → 400; un correo de OTRO workspace no se revela', async () => {
+    const service = new WorkspaceInvitesService(db());
+    await expect(service.create(WS, actor('owner-1', 'OWNER'), { email: 'terapeuta@example.com', role: 'THERAPIST' } as any, META)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create(WS, actor('owner-1', 'OWNER'), { email: 'otro-titular@example.com', role: 'THERAPIST' } as any, META)).resolves.toBeDefined();
+  });
+
+  it('una invitación nueva al mismo correo revoca la anterior', async () => {
+    const prisma = db();
+    const service = new WorkspaceInvitesService(prisma);
+    await service.create(WS, actor('owner-1', 'OWNER'), { email: 'x@example.com', role: 'ASSISTANT' } as any, META);
+    await service.create(WS, actor('owner-1', 'OWNER'), { email: 'x@example.com', role: 'THERAPIST' } as any, META);
+    const [first, second] = prisma.__store.workspaceInvite;
+    expect(first.revokedAt).toBeInstanceOf(Date);
+    expect(second.revokedAt).toBeUndefined();
+  });
+
+  it('revocar una invitación de OTRO workspace → 404 sin escribir (filtro por workspaceId)', async () => {
+    const prisma = db({ workspaceInvite: [{ id: 'wi-2', workspaceId: 'ws-2', email: 'x@example.com', role: 'ASSISTANT', isClinician: false, tokenHash: 'h2', expiresAt: new Date(Date.now() + DAY), acceptedAt: null, revokedAt: null }] });
+    await expect(new WorkspaceInvitesService(prisma).revoke(WS, actor('owner-1', 'OWNER'), 'wi-2', META)).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.__store.workspaceInvite[0].revokedAt).toBeNull();
+    expect(prisma.workspaceInvite.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'wi-2', workspaceId: WS }) }));
+    expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it('el listado (OWNER/ADMIN) es solo del workspace y nunca lleva tokenHash', async () => {
+    const prisma = db({ workspaceInvite: [
+      { id: 'wi-1', workspaceId: WS, email: 'a@example.com', role: 'ASSISTANT', isClinician: false, tokenHash: 'h1', expiresAt: new Date(), createdAt: new Date() },
+      { id: 'wi-2', workspaceId: 'ws-2', email: 'b@example.com', role: 'ASSISTANT', isClinician: false, tokenHash: 'h2', expiresAt: new Date(), createdAt: new Date() },
+    ] });
+    await new WorkspaceInvitesService(prisma).list(WS, actor('admin-1', 'ADMIN'));
+    const args = prisma.workspaceInvite.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ workspaceId: WS });
+    expect(args.select.tokenHash).toBeUndefined();
+    await expect(new WorkspaceInvitesService(prisma).list(WS, actor('ther-1', 'THERAPIST'))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('las rutas de invitaciones van con JWT + CSRF (guards del controlador)', () => {
+    const guards = Reflect.getMetadata('__guards__', WorkspaceMembersController).map((g: any) => g.name);
+    expect(guards).toEqual(['JwtAuthGuard', 'CsrfGuard']);
+  });
+
+  describe('POST /auth/register/member', () => {
+    const MEMBER_TOKEN = 'token-ficticio-de-miembro-0123456789abcdefghijklm';
+    const memberInvite = (extra: Record<string, unknown> = {}) => ({
+      id: 'wi-1', workspaceId: WS, tokenHash: hashInviteToken(MEMBER_TOKEN), email: 'nuevo@example.com', role: 'THERAPIST', isClinician: true,
+      invitedById: 'owner-1', expiresAt: new Date(Date.now() + 14 * DAY), acceptedAt: null, revokedAt: null, ...extra,
+    });
+    const memberDto = (extra: Record<string, unknown> = {}) => ({ firstName: 'Nuevo', lastName: 'Ficticio', email: 'nuevo@example.com', password: 'contrasena-ficticia-larga', inviteToken: MEMBER_TOKEN, ...extra }) as any;
+
+    it.each([['THERAPIST', true], ['ASSISTANT', false], ['ADMIN', true], ['ADMIN', false]])(
+      'alta como %s (isClinician=%s): membresía coherente en el workspace de la invitación, auditada', async (role, isClinician) => {
+        const prisma = db({ workspaceInvite: [memberInvite({ role, isClinician })] });
+        const { service, auth } = registration(prisma);
+        await service.registerMember(memberDto(), META);
+        const user = prisma.__store.user.find((u: any) => u.email === 'nuevo@example.com');
+        expect(prisma.__store.workspaceMember).toContainEqual(expect.objectContaining({ workspaceId: WS, userId: user.id, role, isClinician }));
+        expect(prisma.__store.workspaceInvite[0]).toMatchObject({ acceptedUserId: user.id });
+        expect(prisma.__store.auditLog).toEqual([expect.objectContaining({ workspaceId: WS, actorId: user.id, action: 'MEMBER_JOINED', metadata: expect.objectContaining({ workspaceInviteId: 'wi-1', role, isClinician }) })]);
+        expect(prisma.__store.workspace).toEqual([]);
+        expect(auth.issueSession).toHaveBeenCalledWith(expect.anything(), WS, role, META);
+      });
+
+    it.each([
+      ['sin token', {}, { inviteToken: undefined }],
+      ['ya usada', { acceptedAt: new Date() }, {}],
+      ['revocada', { revokedAt: new Date() }, {}],
+      ['caducada', { expiresAt: new Date(Date.now() - 1000) }, {}],
+      ['de otro correo', {}, { email: 'intruso@example.com' }],
+    ])('invitación %s → 400 neutro sin crear nada', async (_label, inviteExtra, dtoExtra) => {
+      const prisma = db({ workspaceInvite: [memberInvite(inviteExtra)] });
+      await expectNeutral(registration(prisma).service.registerMember(memberDto(dtoExtra), META));
+      expect(prisma.__store.user).toEqual(users);
+      expect(prisma.__store.workspaceMember).toEqual(members);
+      expect(prisma.__store.auditLog).toEqual([]);
+    });
+
+    it('una cuenta que ya existe (en cualquier workspace) → neutro', async () => {
+      const prisma = db({ workspaceInvite: [memberInvite({ email: 'otro-titular@example.com' })] });
+      await expectNeutral(registration(prisma).service.registerMember(memberDto({ email: 'otro-titular@example.com' }), META));
+    });
+
+    it('el token de miembro no sirve para crear un workspace (y viceversa)', async () => {
+      const prisma = db({ workspaceInvite: [memberInvite()] });
+      await expectNeutral(registration(prisma).service.register(validDto({ email: 'nuevo@example.com', inviteToken: MEMBER_TOKEN }), META));
+      const prisma2 = fakeRegistrationDb({ registrationInvite: [invite()] });
+      await expectNeutral(registration(prisma2).service.registerMember(memberDto({ email: EMAIL, inviteToken: TOKEN }), META));
+    });
+  });
+});
+
+describe('Migración registro_por_invitacion', () => {
+  const dir = join(__dirname, '..', 'prisma', 'migrations');
+  const name = readdirSync(dir).find((d) => d.endsWith('_registro_por_invitacion'));
+  const sql = name ? readFileSync(join(dir, name, 'migration.sql'), 'utf8') : '';
+
+  it('crea las tablas con el token solo como hash único y los CHECK de rol/isClinician', () => {
+    expect(name).toBeDefined();
+    expect(sql).toContain('CREATE TABLE "RegistrationInvite"');
+    expect(sql).toContain('CREATE TABLE "WorkspaceInvite"');
+    expect(sql).toContain('CREATE TABLE "TermsAcceptance"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "RegistrationInvite_tokenHash_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "WorkspaceInvite_tokenHash_key"');
+    expect(sql).not.toMatch(/"token" TEXT/);
+    expect(sql).toMatch(/CHECK \("role" <> 'OWNER'\)/);
+    expect(sql).toMatch(/CHECK \(NOT \("role" = 'ASSISTANT' AND "isClinician"\)\)/);
+    expect(sql).toMatch(/CHECK \(NOT \("role" = 'THERAPIST' AND NOT "isClinician"\)\)/);
+    expect(sql).toMatch(/"TermsAcceptance_workspaceId_fkey"[^;]*ON DELETE RESTRICT/);
+  });
+});
