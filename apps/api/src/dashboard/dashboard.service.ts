@@ -29,7 +29,7 @@ export class DashboardService {
 
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: user.workspaceId, userId: user.sub } },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: { user: { select: { firstName: true, lastName: true } }, workspace: { select: { name: true } } },
     });
     if (!member) throw new NotFoundException('Miembro no encontrado');
 
@@ -100,7 +100,7 @@ export class DashboardService {
     return {
       // userId e isClinician son datos del propio usuario: la web los usa solo como pista (p. ej.
       // saber si es el autor de un proceso); el control real sigue en ClinicalAccessService.
-      professional: { userId: member.userId, firstName: member.user.firstName, lastName: member.user.lastName, role: member.role, isClinician: member.isClinician === true },
+      professional: { userId: member.userId, firstName: member.user.firstName, lastName: member.user.lastName, role: member.role, isClinician: member.isClinician === true, workspaceName: member.workspace?.name ?? null },
       summary: { sessionsToday: sessions.length, pendingReviews: submittedTasks.length, unreadMessages: unreadMessages.length, followUps: activeWithoutFuture.length },
       nextSession: sessions.find((session) => session.startsAt >= now) ?? null,
       sessions,
