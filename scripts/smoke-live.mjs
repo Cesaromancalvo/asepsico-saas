@@ -204,9 +204,25 @@ async function checkReasonExposure(patient) {
   console.log('   ASSISTANT: 403 en /consultation-reason y en la escritura del motivo');
 }
 
+// Registro cerrado (solo por invitación): sin token o con uno inventado → 400 neutro, sin cuenta.
+// Usa un tarro de cookies aparte para no mezclarse con la sesión del smoke.
+async function checkClosedRegistration() {
+  const docs = await req('/legal/terms', { jar: new Map() });
+  assert(Array.isArray(docs) && docs.length === 3 && docs.every((d) => /^[a-f0-9]{64}$/.test(d.textHash)), 'GET /legal/terms no devolvió los 3 documentos con su hash');
+  const acceptedTerms = docs.map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
+  const base = { firstName: 'Intruso', lastName: 'Ficticio', email: `smoke-registro-${Date.now()}@example.test`, password: 'contrasena-ficticia-larga', workspaceName: 'Consulta no invitada', acceptedTerms };
+  for (const [label, extra] of [['sin invitación', {}], ['con token inventado', { inviteToken: randomBytes(32).toString('base64url') }]]) {
+    const res = await rawReq('/auth/register', { method: 'POST', body: { ...base, ...extra }, jar: new Map() });
+    assert(res.status === 400 && res.data?.code === 'REGISTRATION_NOT_ALLOWED', `Registro ${label}: se esperaba 400 REGISTRATION_NOT_ALLOWED y llegó ${res.status} ${JSON.stringify(res.data)}`);
+  }
+  console.log('   POST /auth/register sin invitación válida → 400 REGISTRATION_NOT_ALLOWED');
+}
+
 async function main() {
   const stamp = Date.now();
+  console.log('0/11 Registro cerrado y condiciones vigentes'); await checkClosedRegistration();
   console.log('1/11 Login'); await login();
+  const terms = await req('/legal/terms/status'); assert(terms.acceptanceRequired === false, `La cuenta demo tiene condiciones pendientes: ${JSON.stringify(terms.pending)}`); console.log('   condiciones vigentes aceptadas por el OWNER demo (sin 428)');
   console.log('2/11 Crear paciente y abrir su proceso clínico'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id'); await openClinicalProcess(patient); console.log('   sin proceso: 403 en historia y motivo; proceso clínico abierto a nombre de la cuenta demo');
   console.log('3/11 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
   console.log('4/11 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
