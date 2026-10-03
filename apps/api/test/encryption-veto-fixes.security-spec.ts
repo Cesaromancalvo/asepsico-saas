@@ -109,11 +109,14 @@ describe('B2: el marcador de "no se pudo descifrar" nunca se persiste encima del
     const unreadable = encryptField('Nota ficticia cifrada con una clave retirada')!;
     delete process.env.FIELD_ENCRYPTION_KEYS; delete process.env.FIELD_ENCRYPTION_ACTIVE_KID;
     try {
-      const row = { id: 's1', workspaceId: 'w1', therapistId: 'owner-1', status: 'SCHEDULED', startsAt: new Date(Date.now() + 86_400_000), endsAt: new Date(Date.now() + 90_000_000), notes: unreadable, internalSummary: unreadable };
+      const row = { id: 's1', workspaceId: 'w1', therapistId: 'owner-1', clinicalProcessId: 'proc-owner-1', status: 'SCHEDULED', startsAt: new Date(Date.now() + 86_400_000), endsAt: new Date(Date.now() + 90_000_000), notes: unreadable, internalSummary: unreadable };
       const prisma: any = treating({
         session: { findFirst: jest.fn(async (args: any) => (args?.where?.id === 's1' ? { ...row, patientId: 'p1' } : null)), updateMany: jest.fn(async () => ({ count: 1 })), update: jest.fn() },
         auditLog: { create: jest.fn(async () => ({})) },
+        // Reprogramar exige proceso ACTIVO y bloquea su fila dentro de la transacción.
+        clinicalProcess: { updateMany: jest.fn(async () => ({ count: 1 })) },
       }, owner, 'p1');
+      prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
       const service = new SessionsService(prisma);
       const before: any = await service.get('w1', owner, 's1');
       expect(before.notes).toBe(DECRYPTION_FAILED_PLACEHOLDER);
@@ -121,7 +124,7 @@ describe('B2: el marcador de "no se pudo descifrar" nunca se persiste encima del
       await service.reschedule('w1', owner, 's1', { startsAt: new Date(Date.now() + 172_800_000).toISOString(), endsAt: new Date(Date.now() + 176_400_000).toISOString() } as any);
       expect(prisma.session.update).not.toHaveBeenCalled();
       const call = prisma.session.updateMany.mock.calls[0][0];
-      expect(call.where).toEqual({ id: 's1', workspaceId: 'w1' });
+      expect(call.where).toEqual({ id: 's1', workspaceId: 'w1', status: 'SCHEDULED' });
       expect(call.data).not.toHaveProperty('notes');
       expect(call.data).not.toHaveProperty('internalSummary');
     } finally {

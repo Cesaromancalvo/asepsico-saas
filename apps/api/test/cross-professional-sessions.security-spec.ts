@@ -1,5 +1,9 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PatientAgendaService } from '../src/sessions/patient-agenda.service';
+import { SessionsService } from '../src/sessions/sessions.service';
+import { ChangeClinicalProcessStatusDto } from '../src/clinical-processes/dto/change-clinical-process-status.dto';
 import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
@@ -66,6 +70,13 @@ function seed() {
       ses('ses-b-future', 't-b', 'proc-b', at(2), {
         type: 'COUPLE', location: M.locationB, videoCallUrl: M.urlB, notes: enc(M.notesB), internalSummary: enc(M.summaryB),
       }),
+      // Citas ajenas que NO deben salir como hueco: pasadas, ausencias, canceladas, proceso cerrado.
+      ses('ses-b-past', 't-b', 'proc-b', at(-3), { status: 'COMPLETED' }),
+      ses('ses-b-noshow', 't-b', 'proc-b', at(-1), { status: 'NO_SHOW' }),
+      ses('ses-b-cancelled', 't-b', 'proc-b', at(4), { status: 'CANCELLED' }),
+      ses('ses-b-past-scheduled', 't-b', 'proc-b', at(-2)),
+      // Dato heredado: cita programada en un proceso ya cerrado (no debería poder moverse).
+      ses('ses-closed-sched', 't-closed', 'proc-closed', at(8)),
       // Fila de OTRO workspace que apunta (mal) al mismo paciente y proceso: nunca debe salir ni tocarse.
       { ...ses('ses-ws2', 't-ws2', 'proc-a', at(3), { notes: M.otherTenant }), workspaceId: WS2 },
     ],
@@ -96,13 +107,24 @@ describe('Agenda del paciente: citas con otros profesionales', () => {
     expect(result.view).toBe('TREATING');
     const busy = result.data.find((item: any) => item.id === 'ses-b-future');
     expect(busy.visibility).toBe('BUSY');
-    expect(Object.keys(busy).sort()).toEqual(['endsAt', 'id', 'patientId', 'startsAt', 'status', 'therapist', 'visibility']);
+    expect(Object.keys(busy).sort()).toEqual(['endsAt', 'id', 'patientId', 'startsAt', 'therapist', 'visibility']);
     expect(Object.keys(busy.therapist).sort()).toEqual(['firstName', 'id', 'lastName']);
     expect(busy.therapist.id).toBe('t-b');
     // Nada que delate el tipo de cita, el lugar, el enlace ni el proceso.
     expect(json(busy)).not.toContain('COUPLE');
     expect(json(busy)).not.toContain('proc-b');
     expectNoContent(result);
+  });
+
+  it('de otros profesionales solo salen las SCHEDULED futuras de procesos vivos (sin ausencias, cancelaciones ni historial)', async () => {
+    const result: any = await new PatientAgendaService(seed()).agenda(WS, actor('t-a', 'THERAPIST'), 'pat-1');
+    const others = result.data.filter((item: any) => item.therapist?.id !== 't-a');
+    expect(others.map((item: any) => item.id)).toEqual(['ses-b-future']);
+    expect(others.every((item: any) => item.visibility === 'BUSY' && !('status' in item))).toBe(true);
+    expect(json(others)).not.toMatch(/NO_SHOW|CANCELLED|COMPLETED/);
+    // Las propias, en cambio, salen todas (también canceladas y pasadas).
+    const own = result.data.filter((item: any) => item.therapist?.id === 't-a').map((item: any) => item.id).sort();
+    expect(own).toEqual(['ses-a-cancelled', 'ses-a-future', 'ses-a-past']);
   });
 
   it('sus propias citas salen con metadatos de agenda (sin notas ni título del proceso)', async () => {
@@ -146,7 +168,10 @@ describe('Agenda del paciente: citas con otros profesionales', () => {
     '%s mantiene la vista administrativa (todas las citas, sin contenido)', async (sub, role) => {
       const result: any = await new PatientAgendaService(seed()).agenda(WS, actor(sub, role), 'pat-1');
       expect(result.view).toBe('ADMINISTRATIVE');
-      expect(result.data.map((item: any) => item.id).sort()).toEqual(['ses-a-cancelled', 'ses-a-future', 'ses-a-past', 'ses-b-future']);
+      expect(result.data.map((item: any) => item.id).sort()).toEqual([
+        'ses-a-cancelled', 'ses-a-future', 'ses-a-past', 'ses-b-cancelled', 'ses-b-future', 'ses-b-noshow', 'ses-b-past',
+        'ses-b-past-scheduled', 'ses-closed-sched',
+      ]);
       expect(result.data.every((item: any) => item.visibility === 'FULL')).toBe(true);
       // Lo mismo que ya ven en GET /sessions (lugar y enlace incluidos), nunca notas ni título.
       expectNoContent(result, true);
@@ -167,12 +192,36 @@ describe('Cerrar o dar de alta un proceso con citas futuras', () => {
     expect(body.statusCode).toBe(409);
     // Solo la futura programada de ESTE proceso y workspace (ni la pasada, ni la cancelada, ni la de otro).
     expect(body.sessions.map((session: any) => session.id)).toEqual(['ses-a-future']);
-    expect(Object.keys(body.sessions[0]).sort()).toEqual(['endsAt', 'id', 'patientId', 'startsAt', 'status', 'therapist']);
+    // Lista blanca exacta del cuerpo del 409 y de cada cita.
+    expect(Object.keys(body).sort()).toEqual(['code', 'error', 'message', 'sessions', 'statusCode']);
+    expect(Object.keys(body.sessions[0]).sort()).toEqual(['endsAt', 'id', 'patientId', 'startsAt', 'therapist']);
+    expect(Object.keys(body.sessions[0].therapist).sort()).toEqual(['firstName', 'id', 'lastName']);
     expectNoContent(body);
     const store = prisma.__store;
     expect(store.clinicalProcess.find((row: any) => row.id === 'proc-a').status).toBe('ACTIVE');
     expect(store.session.find((row: any) => row.id === 'ses-a-future').status).toBe('SCHEDULED');
     expect(store.auditLog.filter((row: any) => row.action === 'CLINICAL_PROCESS_STATUS_CHANGED')).toHaveLength(0);
+  });
+
+  it('cancelFutureSessions solo admite booleano: "true" como texto → 400 del ValidationPipe', async () => {
+    const errorsFor = (body: Record<string, unknown>) =>
+      validate(plainToInstance(ChangeClinicalProcessStatusDto, body), { whitelist: true, forbidNonWhitelisted: true });
+    expect(await errorsFor({ status: 'CLOSED', cancelFutureSessions: 'true' })).not.toHaveLength(0);
+    expect(await errorsFor({ status: 'CLOSED', cancelFutureSessions: 1 })).not.toHaveLength(0);
+    expect(await errorsFor({ status: 'CLOSED', cancelFutureSessions: true })).toHaveLength(0);
+    expect(await errorsFor({ status: 'CLOSED' })).toHaveLength(0);
+  });
+
+  it('el cambio de estado bloquea primero la fila del proceso (CAS) y después lee las citas futuras', async () => {
+    const prisma = seed();
+    const order: string[] = [];
+    const processUpdate = prisma.clinicalProcess.updateMany;
+    const sessionFind = prisma.session.findMany;
+    prisma.clinicalProcess.updateMany = jest.fn(async (args: any) => { order.push('process.updateMany'); return processUpdate(args); });
+    prisma.session.findMany = jest.fn(async (args: any) => { order.push('session.findMany'); return sessionFind(args); });
+    await new ClinicalProcessesService(prisma).changeStatus(WS, actor('t-a', 'THERAPIST'), 'proc-a', 'CLOSED').catch(() => undefined);
+    expect(order.slice(0, 2)).toEqual(['process.updateMany', 'session.findMany']);
+    expect(prisma.clinicalProcess.updateMany.mock.calls[0][0].where).toEqual({ id: 'proc-a', workspaceId: WS, status: 'ACTIVE' });
   });
 
   it('con cancelFutureSessions cancela solo las futuras del proceso, en la misma transacción y con auditoría', async () => {
@@ -286,5 +335,42 @@ describe('GET /messages: profesional del proceso activo', () => {
     const rows: any[] = await new MessagesService(seed()).list(WS, actor('owner', 'OWNER'));
     expect(rows.map((item) => item.id)).not.toContain('conv-ws2');
     expect(json(rows)).not.toContain('t-ws2');
+  });
+});
+
+describe('Crear o reprogramar citas solo en procesos ACTIVOS (carrera con el cierre)', () => {
+  it('reprogramar una cita de un proceso cerrado → 400 y la cita no se mueve', async () => {
+    const prisma = seed();
+    const before = prisma.__store.session.find((row: any) => row.id === 'ses-closed-sched').startsAt;
+    await expect(new SessionsService(prisma).reschedule(WS, actor('owner', 'OWNER'), 'ses-closed-sched', {
+      startsAt: at(9).toISOString(), endsAt: at(9, 11).toISOString(),
+    } as any)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.__store.session.find((row: any) => row.id === 'ses-closed-sched').startsAt).toEqual(before);
+    expect(prisma.__store.auditLog.filter((row: any) => row.action === 'SESSION_RESCHEDULED')).toHaveLength(0);
+  });
+
+  it('reprogramar en un proceso activo bloquea la fila del proceso exigiendo ACTIVE dentro de la transacción', async () => {
+    const prisma = seed();
+    const target = at(10);
+    await new SessionsService(prisma).reschedule(WS, actor('t-a', 'THERAPIST'), 'ses-a-future', {
+      startsAt: target.toISOString(), endsAt: new Date(target.getTime() + 50 * 60 * 1000).toISOString(),
+    } as any);
+    expect(prisma.clinicalProcess.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'proc-a', workspaceId: WS, status: 'ACTIVE' } }));
+    expect(prisma.__store.session.find((row: any) => row.id === 'ses-a-future').startsAt).toEqual(target);
+  });
+
+  it('si el proceso se cierra entre la comprobación y la transacción de alta, la cita no se crea (400)', async () => {
+    const prisma = seed();
+    // El proceso estaba ACTIVO al leerlo, pero otro usuario lo cerró justo después.
+    const activeRow = { ...prisma.__store.clinicalProcess.find((row: any) => row.id === 'proc-b') };
+    prisma.__store.clinicalProcess.find((row: any) => row.id === 'proc-b').status = 'CLOSED';
+    const findFirst = prisma.clinicalProcess.findFirst;
+    prisma.clinicalProcess.findFirst = jest.fn(async (args: any) => (args?.where?.id === 'proc-b' ? activeRow : findFirst(args)));
+    const sessionsBefore = prisma.__store.session.length;
+    await expect(new SessionsService(prisma).create(WS, actor('owner', 'OWNER'), {
+      patientId: 'pat-1', clinicalProcessId: 'proc-b', therapistId: 't-b', startsAt: at(20).toISOString(), endsAt: at(20, 11).toISOString(),
+    } as any)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.__store.session.length).toBe(sessionsBefore);
+    expect(prisma.__store.session.some((row: any) => row.clinicalProcessId === 'proc-b' && row.status === 'SCHEDULED' && row.startsAt.getTime() === at(20).getTime())).toBe(false);
   });
 });

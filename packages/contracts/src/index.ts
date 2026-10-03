@@ -8,19 +8,20 @@ export interface ProfessionalRef { id: string; firstName: string; lastName: stri
 
 /**
  * Cita de otro profesional vista por un clínico que trata al paciente: solo cuándo y con quién.
- * También es la forma de cada cita del 409 PROCESS_HAS_FUTURE_SESSIONS.
+ * Siempre es una cita programada y futura (por eso no lleva estado). También es la forma de cada
+ * cita del 409 PROCESS_HAS_FUTURE_SESSIONS.
  */
 export interface BusySessionContract {
   id: string;
   patientId: string;
   startsAt: string;
   endsAt: string;
-  status: SessionStatusValue;
   therapist: ProfessionalRef | null;
 }
 
 /** Cita con metadatos de agenda (las propias, o todas en la vista administrativa). Sin notas. */
 export interface FullAgendaSessionContract extends BusySessionContract {
+  status: SessionStatusValue;
   workspaceId: string;
   therapistId: string;
   clinicalProcessId: string | null;

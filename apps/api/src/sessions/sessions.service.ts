@@ -52,6 +52,25 @@ function assertCanWriteSessionNotes(actor: Pick<AuthUser, 'role'>, dto: { notes?
 
 // notes e internalSummary se cifran en reposo (lista única en common/crypto/clinical-crypto.ts).
 
+/**
+ * Dentro de la transacción que crea o mueve una cita: toca la fila del proceso exigiendo que siga
+ * ACTIVO. El UPDATE bloquea la fila hasta el commit, igual que el cierre del proceso (que también
+ * la actualiza primero), así que crear/reprogramar y cerrar quedan serializados: o la cita entra
+ * antes y el cierre la ve (409 o cancelación), o el cierre gana y aquí count = 0 → 400.
+ */
+async function lockActiveProcess(tx: Prisma.TransactionClient, workspaceId: string, clinicalProcessId: string | null | undefined) {
+  if (!clinicalProcessId) {
+    throw new BadRequestException('La sesión no pertenece a ningún proceso clínico activo');
+  }
+  const { count } = await tx.clinicalProcess.updateMany({
+    where: { id: clinicalProcessId, workspaceId, status: 'ACTIVE' },
+    data: { updatedAt: new Date() },
+  });
+  if (count === 0) {
+    throw new BadRequestException('Solo se pueden programar o mover sesiones de un proceso clínico activo');
+  }
+}
+
 @Injectable()
 export class SessionsService {
   private readonly access: ClinicalAccessService;
@@ -307,6 +326,8 @@ export class SessionsService {
     const session =
       await this.prisma.$transaction(
         async (tx) => {
+          await lockActiveProcess(tx, workspaceId, clinicalProcess.id);
+
           const created =
             await tx.session.create({
               data: {
@@ -422,52 +443,42 @@ export class SessionsService {
       );
     }
 
-    // Las notas SOLO se escriben si llegan en el dto. Antes se re-cifraba session.notes (ya
-    // descifrado por get()): si el descifrado había fallado, se persistía el marcador
-    // "[No se pudo descifrar…]" encima del original y el dato se perdía para siempre.
-    // updateMany con workspaceId: la escritura también queda acotada al workspace.
-    const { count } =
-      await this.prisma.session.updateMany({
-        where: {
-          id,
-          workspaceId,
-        },
+    // Solo se reprograma dentro de un proceso ACTIVO (un proceso cerrado o de alta no recibe
+    // citas nuevas ni movidas). Comprobación y escritura en la misma transacción, con la fila
+    // del proceso bloqueada (ver lockActiveProcess).
+    await this.prisma.$transaction(async (tx) => {
+      await lockActiveProcess(tx, workspaceId, session.clinicalProcessId);
 
+      // Las notas SOLO se escriben si llegan en el dto. Antes se re-cifraba session.notes (ya
+      // descifrado por get()): si el descifrado había fallado, se persistía el marcador
+      // "[No se pudo descifrar…]" encima del original y el dato se perdía para siempre.
+      // updateMany con workspaceId y compare-and-set del estado: acotado al workspace y sin
+      // mover una cita que se cerró entretanto.
+      const { count } = await tx.session.updateMany({
+        where: { id, workspaceId, status: SessionStatus.SCHEDULED },
         data: {
           startsAt,
           endsAt,
-          ...(dto.notes !== undefined
-            ? { notes: encryptField(dto.notes) }
-            : {}),
+          ...(dto.notes !== undefined ? { notes: encryptField(dto.notes) } : {}),
         },
       });
+      if (count === 0) {
+        throw new NotFoundException('Sesión no encontrada');
+      }
 
-    if (count === 0) {
-      throw new NotFoundException('Sesión no encontrada');
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action: 'SESSION_RESCHEDULED',
-        entityType: 'Session',
-        entityId: id,
-
-        metadata: {
-          from: {
-            startsAt:
-              session.startsAt,
-            endsAt:
-              session.endsAt,
-          },
-
-          to: {
-            startsAt,
-            endsAt,
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: 'SESSION_RESCHEDULED',
+          entityType: 'Session',
+          entityId: id,
+          metadata: {
+            from: { startsAt: session.startsAt, endsAt: session.endsAt },
+            to: { startsAt, endsAt },
           },
         },
-      },
+      });
     });
 
     return this.get(

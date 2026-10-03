@@ -280,8 +280,8 @@ export class ClinicalProcessesService {
    * Cambio de estado. Al cerrar o dar de alta (CLOSED / DISCHARGED) con citas futuras programadas
    * del proceso, no cierra a ciegas: 409 PROCESS_HAS_FUTURE_SESSIONS con esas citas (solo
    * metadatos), salvo `cancelFutureSessions: true`, que las cancela en la MISMA transacción que el
-   * cambio de estado, con auditoría por cita. La comprobación va dentro de la transacción para
-   * que una cita creada entre medias no se quede huérfana.
+   * cambio de estado, con auditoría por cita. Las citas pasadas que sigan SCHEDULED no se tocan
+   * (quedan para marcarlas como realizadas o ausencia), pero ya no se pueden reprogramar.
    */
   async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue, options: { cancelFutureSessions?: boolean } = {}) {
     await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-status');
@@ -305,6 +305,15 @@ export class ClinicalProcessesService {
     const closing = status === 'DISCHARGED' || status === 'CLOSED';
 
     await this.prisma.$transaction(async (tx) => {
+      // 1) Compare-and-set del estado, acotado al workspace (nunca solo por id). Va PRIMERO: el
+      //    UPDATE bloquea la fila del proceso hasta el commit, y la creación/reprogramación de
+      //    citas toca esa misma fila exigiendo ACTIVE, así que no puede colarse una cita nueva
+      //    entre la lectura de las citas futuras y el cierre.
+      const { count } = await tx.clinicalProcess.updateMany({ where: { id, workspaceId, status: process.status }, data: { status, endedAt, pausedAt } });
+      if (count === 0) throw new ConflictException('El proceso ha cambiado mientras se actualizaba; recarga e inténtalo de nuevo');
+
+      // 2) Citas futuras programadas, leídas ya con la fila bloqueada. Si las hay y no se pidió
+      //    cancelarlas, el 409 revierte también el paso 1.
       const futureWhere: Prisma.SessionWhereInput = { workspaceId, clinicalProcessId: id, status: SessionStatus.SCHEDULED, startsAt: { gte: now } };
       const future = closing
         ? await tx.session.findMany({ where: futureWhere, orderBy: { startsAt: 'asc' }, select: SESSION_BUSY_SELECT })
@@ -318,10 +327,6 @@ export class ClinicalProcessesService {
           sessions: future.map((session) => projectSelect<Record<string, unknown>>(session, SESSION_BUSY_SELECT)),
         });
       }
-
-      // Compare-and-set del estado y acotado al workspace: nunca solo por id.
-      const { count } = await tx.clinicalProcess.updateMany({ where: { id, workspaceId, status: process.status }, data: { status, endedAt, pausedAt } });
-      if (count === 0) throw new ConflictException('El proceso ha cambiado mientras se actualizaba; recarga e inténtalo de nuevo');
 
       const cancelledIds = future.map((session) => session.id);
       if (cancelledIds.length) {
