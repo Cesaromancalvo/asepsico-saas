@@ -51,11 +51,17 @@ export function clearUrlFragment() {
   window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
 }
 
-/** Token de invitación de la URL, leído tras montar (el fragmento no existe en el servidor). */
+/**
+ * Token de invitación de la URL, leído tras montar (el fragmento no existe en el servidor). En el
+ * MISMO efecto se quita #invite= de la barra y del historial: el token queda solo en el estado de
+ * React (los reintentos funcionan) y no se queda en la URL aunque el alta falle o se abandone.
+ */
 export function useInviteToken(): { ready: boolean; token: string | null } {
   const [state, setState] = useState<{ ready: boolean; token: string | null }>({ ready: false, token: null });
   useEffect(() => {
-    setState({ ready: true, token: readInviteTokenFromHash() });
+    const token = readInviteTokenFromHash();
+    clearUrlFragment();
+    setState({ ready: true, token });
   }, []);
   return state;
 }

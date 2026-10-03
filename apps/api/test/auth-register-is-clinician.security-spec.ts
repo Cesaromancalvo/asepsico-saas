@@ -95,6 +95,8 @@ describe('POST /auth/register valida isClinician como booleano estricto', () => 
     expect(store().workspace).toHaveLength(0);
     expect(store().workspaceMember).toHaveLength(0);
     expect(store().refreshToken).toHaveLength(0);
+    // Una invitación rechazada no se gasta.
+    expect(store().registrationInvite[0].usedAt).toBeNull();
   });
 
   it.each([
@@ -119,5 +121,6 @@ describe('POST /auth/register valida isClinician como booleano estricto', () => 
       .send(body({ email: email(), role: 'THERAPIST' }));
     expect(res.status).toBe(400);
     expect(store().workspaceMember).toHaveLength(0);
+    expect(store().registrationInvite[0].usedAt).toBeNull();
   });
 });

@@ -8,7 +8,7 @@ import InviteOnlyCard from '@/components/InviteOnlyCard';
 import TermsChecklist from '@/components/TermsChecklist';
 import { api, ApiError } from '@/lib/api';
 import { invalidateViewer } from '@/lib/clinical';
-import { clearUrlFragment, fetchLegalTerms, invalidateTermsStatus, LegalDocument, registrationErrorMessage, toAcceptedTerm, useInviteToken } from '@/lib/legal';
+import { fetchLegalTerms, invalidateTermsStatus, LegalDocument, registrationErrorMessage, toAcceptedTerm, useInviteToken } from '@/lib/legal';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -76,7 +76,6 @@ export default function RegisterPage() {
     try {
       await api('/auth/register', { method: 'POST', body: JSON.stringify(body) });
       if (passwordField instanceof HTMLInputElement) passwordField.value = '';
-      clearUrlFragment();
       invalidateViewer();
       invalidateTermsStatus();
       // La persona titular necesita la verificación en dos pasos antes de usar la aplicación.

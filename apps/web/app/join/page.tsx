@@ -7,7 +7,7 @@ import type { RegisterMemberRequestContract } from '@asepsico/contracts';
 import InviteOnlyCard from '@/components/InviteOnlyCard';
 import { api } from '@/lib/api';
 import { invalidateViewer, ROLE_LABEL, StaffRole } from '@/lib/clinical';
-import { clearUrlFragment, invalidateTermsStatus, registrationErrorMessage, useInviteToken } from '@/lib/legal';
+import { invalidateTermsStatus, registrationErrorMessage, useInviteToken } from '@/lib/legal';
 
 type PrivacyNotice = { documentType: string; version: string; title: string; textHash: string; draft: boolean; text: string };
 type JoinResponse = { role: StaffRole; privacyNotice: PrivacyNotice | null };
@@ -53,7 +53,6 @@ export default function JoinPage() {
     try {
       const result = await api<JoinResponse>('/auth/register/member', { method: 'POST', body: JSON.stringify(body) });
       if (passwordField instanceof HTMLInputElement) passwordField.value = '';
-      clearUrlFragment();
       invalidateViewer();
       invalidateTermsStatus();
       setJoined({ role: result.role, privacyNotice: result.privacyNotice ?? null });
