@@ -8,6 +8,7 @@ typecheck ni el build del monorepo la tocan, y ella no depende de la app.
 
 ```
 apps/landing/
+  borradores/              <- bloques NO publicados (p. ej. la calculadora); fuera de public/
   public/                  <- directorio que se publica
     index.html             <- la landing
     aviso-legal/index.html <- aviso legal (texto final de Argos)
@@ -42,6 +43,10 @@ apps/landing/
 `forms.gle`, `instagram.com`), un `<iframe>`/`<object>`/`<embed>`, estilos en línea (`style=`,
 `<style>`), un `<script>` en línea, un manejador `on*=` o una URL `javascript:`. Ignora los
 comentarios. Avisa, sin fallar, si quedan los marcadores `[[NIF]]` o `[[DOMICILIO]]`.
+Excepción: los bloques `<script type="application/ld+json">` (datos estructurados) se permiten si
+son JSON válido, no llevan `src` y solo contienen URLs de la propia web o el identificador
+`https://schema.org` (que no se descarga). Fuera del JSON-LD, `schema.org` no está permitido.
+No hace falta tocar la CSP: un bloque de datos no se ejecuta.
 
 ```bash
 npm run test:landing
@@ -60,7 +65,13 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `LEGAL.NIF`, `LEGAL.DOMICILIO` | `[[NIF]]`, `[[DOMICILIO]]` | Único sitio donde van. Los rellena el Jefe antes de publicar (art. 10 LSSI); después, quitar el `noindex` de las páginas legales |
 | `FEATURES.calculadora` | `false` | Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?". Pendiente de decisión del Jefe. Vive en un `<template>` y no se pinta si está apagada. Calcula en el navegador: no envía ni guarda nada |
 | `FEATURES.faqPacientes` | `true` | Pregunta "Soy paciente, ¿puedo apuntarme?" con el 024 y el 112. Verificar el 024 la víspera de cada publicación |
-| `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio |
+| `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio. Al encenderlo, añadir `"sameAs": ["https://www.instagram.com/asepsico/"]` al `Organization` del JSON-LD |
+| `FEATURES.leadPopup` | `true` | Aviso "¿Te avisamos cuando abramos el piloto?" a los 8 s o al 50 % del scroll. Solo enlaza al formulario: no recoge datos ni guarda nada en el navegador (sin cookies ni localStorage), así que puede volver a salir al recargar. Se cierra con la X, "Ahora no", Esc o clic fuera; foco atrapado y devuelto al cerrar |
+
+Bloques que **no deben existir** en `public/` hasta que se aprueben: la calculadora (guardada en
+`borradores/calculadora.html`; `FEATURES.calculadora` no hace nada sin pegar antes ese bloque) y
+"Experiencias del piloto" (solo con testimonios reales y consentimiento escrito; sin `Review` ni
+`aggregateRating` en el JSON-LD).
 
 ## Previsualizar en local
 
@@ -101,6 +112,20 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 
 Tras desplegar, comprobar que no hay cookies (`curl -sI https://asepsico.es` sin `Set-Cookie`, y la
 pestaña Almacenamiento del navegador vacía): la FAQ 5 y la política dicen "no usa cookies".
+
+Comprobaciones para Dora tras el primer despliegue (auditoría SEO de Mou, C4 y C7):
+
+- `http://asepsico.es/` y `https://www.asepsico.es/` redirigen (301/308) a `https://asepsico.es/`.
+- `/aviso-legal` sin barra: 301 a `/aviso-legal/` o 200 con el mismo contenido.
+- `/no-existe/` devuelve **404 real** (sin reglas de *rewrite* `/*` → `/index.html`). Valorar una
+  `404.html` con `noindex` si Render la sirve.
+- `Cache-Control`: `/fonts/*` un año `immutable`, `/img/*` 30 días, `/css/*` y `/js/*` una hora.
+- Ninguna respuesta con `Set-Cookie`.
+
+## Sitemap
+
+Solo la home, con `lastmod` (cambiarlo solo cuando cambie el contenido). Las páginas legales entran
+cuando se quite su `noindex`; nunca una URL con `noindex`, oculta o que redirija.
 
 ## Pendiente antes de publicar
 

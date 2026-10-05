@@ -147,11 +147,93 @@
     inputs.forEach(function (input) { input.addEventListener('input', update); });
   }
 
+  /* 6. Aviso al entrar ---------------------------------------------------- */
+  // Aparece una vez por visita a los 8 s o al 50 % del scroll (lo que ocurra antes).
+  // Sin cookies ni almacenamiento: si se recarga la página, puede volver a salir.
+  function initLeadPopup() {
+    var root = document.querySelector('[data-lead]');
+    if (!root) return;
+    if (features.leadPopup !== true) { root.remove(); return; }
+    var card = root.querySelector('[data-lead-card]');
+    var DELAY = 8000;
+    var shown = false;
+    var lastFocus = null;
+    var timer = null;
+
+    function focusables() {
+      return Array.prototype.filter.call(
+        card.querySelectorAll('a[href], button:not([disabled])'),
+        function (el) { return el.offsetParent !== null; }
+      );
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key !== 'Tab') return;
+      var items = focusables();
+      if (!items.length) return;
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === card)) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    }
+    function onPointer(e) {
+      if (!card.contains(e.target)) close();
+    }
+    function onFocusIn(e) {
+      if (!card.contains(e.target)) card.focus();
+    }
+    function cleanupTriggers() {
+      if (timer) { clearTimeout(timer); timer = null; }
+      window.removeEventListener('scroll', onScroll);
+    }
+    function open() {
+      if (shown) return;
+      shown = true;
+      cleanupTriggers();
+      lastFocus = document.activeElement;
+      root.hidden = false;
+      card.focus();
+      document.addEventListener('keydown', onKey);
+      document.addEventListener('pointerdown', onPointer);
+      document.addEventListener('focusin', onFocusIn);
+    }
+    function close() {
+      if (root.hidden) return;
+      root.hidden = true;
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('focusin', onFocusIn);
+      if (lastFocus && typeof lastFocus.focus === 'function' && lastFocus !== document.body) {
+        lastFocus.focus();
+      }
+    }
+    function onScroll() {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      if (max > 0 && window.scrollY / max >= 0.5) open();
+    }
+
+    root.querySelectorAll('[data-lead-close]').forEach(function (b) { b.addEventListener('click', close); });
+    // Al pulsar "Apuntarme" se abre el formulario en otra pestaña y el aviso se cierra.
+    var cta = root.querySelector('[data-lead-cta]');
+    if (cta) cta.addEventListener('click', function () { setTimeout(close, 0); });
+    // Si la persona ya ha ido al formulario desde otro botón, no se le vuelve a ofrecer.
+    document.querySelectorAll('a[data-cta]').forEach(function (a) {
+      if (a !== cta) a.addEventListener('click', function () { shown = true; cleanupTriggers(); });
+    });
+
+    timer = setTimeout(open, DELAY);
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
   function init() {
     applyFeatures();
     applyLinks();
     initFaq();
     initMock();
+    initLeadPopup();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -1,0 +1,37 @@
+<!--
+  BORRADOR NO PUBLICADO: calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?".
+  Fuera de public/ para que no viaje en el HTML servido: sus frases no están en la lista de
+  afirmaciones permitidas. Aplazada (decisión del Jefe: se retoma con datos reales del piloto).
+  Para activarla, cuando Clio, Argos, Pax y el Jefe la aprueben: pegar este bloque en
+  public/index.html después de "Por qué unirte" y poner FEATURES.calculadora = true en
+  public/js/config.js (main.js ya tiene la lógica y tolera que no exista).
+-->
+    <!-- CALCULADORA (interruptor FEATURES.calculadora en js/config.js; apagada por defecto) -->
+    <div data-slot="calculadora"></div>
+    <template id="tpl-calculadora">
+      <section class="section section--tint" id="calculadora" aria-labelledby="calc-titulo">
+        <div class="container narrow">
+          <h2 id="calc-titulo">¿Cuánto tiempo te lleva lo que no sale en la agenda?</h2>
+          <p class="lead">Haz la cuenta con tus propias cifras. Es tu estimación, no la nuestra.</p>
+          <div class="calc">
+            <fieldset class="calc__fields">
+              <legend>Horas a la semana (admite medias horas; todos los campos son opcionales)</legend>
+              <div class="field"><label for="calc-1">Preparar las sesiones (releer notas, revisar lo pendiente)</label><input id="calc-1" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
+              <div class="field"><label for="calc-2">Dar, recoger y revisar tareas entre sesiones</label><input id="calc-2" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
+              <div class="field"><label for="calc-3">Responder mensajes de pacientes fuera de sesión</label><input id="calc-3" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
+              <div class="field"><label for="calc-4">Agenda, cambios de cita y avisos</label><input id="calc-4" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
+              <div class="field"><label for="calc-5">Cobros y papeleo</label><input id="calc-5" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
+            </fieldset>
+            <div class="calc__result">
+              <p class="calc__out" aria-live="polite" data-calc-out></p>
+              <p class="small">Es una estimación hecha con tus cifras. No calculamos cuánto tiempo ahorrarías con AsePsico: eso queremos medirlo de verdad en el piloto.</p>
+              <p class="small">Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
+              <a class="btn btn--primary"
+                 data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+                Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </template>

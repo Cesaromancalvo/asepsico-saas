@@ -80,10 +80,29 @@ for (const full of files) {
   const raw = readFileSync(full, 'utf8');
   const text = stripComments(raw, ext);
 
+  // 0. Bloques de datos JSON-LD: no se ejecutan ni descargan nada (la CSP no les aplica). Se exige
+  //    JSON válido, sin src, y que sus URLs sean de la propia web o el identificador de schema.org.
+  //    Después se ocultan para el resto de comprobaciones (schema.org NO es un dominio permitido fuera).
+  let scan = text;
+  if (MARKUP_EXTENSIONS.has(ext)) {
+    scan = text.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (block, attrs, body, offset) => {
+      if (!/\stype\s*=\s*["']application\/ld\+json["']/i.test(` ${attrs}`)) return block;
+      if (/\ssrc\s*=/i.test(` ${attrs}`)) report(problems, rel, text, offset, 'JSON-LD con src');
+      try { JSON.parse(body); } catch { report(problems, rel, text, offset, 'JSON-LD no es JSON válido'); }
+      for (const u of body.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) {
+        const host = u[1].toLowerCase();
+        if (host !== 'schema.org' && !hostAllowed(host)) {
+          report(problems, rel, text, offset + block.indexOf(u[0]), `dominio externo no permitido en JSON-LD: ${host}`);
+        }
+      }
+      return blank(block);
+    });
+  }
+
   // 1. Dominios externos (absolutos o relativos al protocolo).
   const urlRe = /(?:\b(?:https?|wss?|ftp):)?\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?/gi;
-  for (const m of text.matchAll(urlRe)) {
-    const before = text.slice(Math.max(0, m.index - 16), m.index);
+  for (const m of scan.matchAll(urlRe)) {
+    const before = scan.slice(Math.max(0, m.index - 16), m.index);
     if (/xmlns(?::[a-z]+)?\s*=\s*["']?(?:https?:)?$/i.test(before)) continue; // espacios de nombres XML
     if (!/^(?:https?|wss?|ftp):/i.test(m[0]) && !/["'(=\s]$/.test(before)) continue; // no es una URL
     if (!hostAllowed(m[1])) report(problems, rel, text, m.index, `dominio externo no permitido: ${m[1]}`);
@@ -91,20 +110,20 @@ for (const full of files) {
 
   if (MARKUP_EXTENSIONS.has(ext)) {
     // 2. Contenido incrustado.
-    for (const m of text.matchAll(/<(iframe|frame|object|embed)\b/gi)) {
+    for (const m of scan.matchAll(/<(iframe|frame|object|embed)\b/gi)) {
       report(problems, rel, text, m.index, `etiqueta <${m[1].toLowerCase()}> no permitida`);
     }
     // 3. Estilos en línea.
-    for (const m of text.matchAll(/<style\b/gi)) report(problems, rel, text, m.index, 'etiqueta <style> en línea');
-    for (const m of text.matchAll(/<[a-z][^>]*?\sstyle\s*=/gi)) report(problems, rel, text, m.index, 'atributo style= en línea');
-    // 4. Scripts en línea.
-    for (const m of text.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    for (const m of scan.matchAll(/<style\b/gi)) report(problems, rel, text, m.index, 'etiqueta <style> en línea');
+    for (const m of scan.matchAll(/<[a-z][^>]*?\sstyle\s*=/gi)) report(problems, rel, text, m.index, 'atributo style= en línea');
+    // 4. Scripts en línea (los JSON-LD ya se han validado y ocultado en el paso 0).
+    for (const m of scan.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
       const hasSrc = /\ssrc\s*=/i.test(` ${m[1]}`);
       if (!hasSrc || m[2].trim() !== '') report(problems, rel, text, m.index, '<script> en línea (usa un archivo con src)');
     }
-    for (const m of text.matchAll(/<[a-z][^>]*?\son[a-z]+\s*=/gi)) report(problems, rel, text, m.index, 'manejador de eventos on*= en línea');
+    for (const m of scan.matchAll(/<[a-z][^>]*?\son[a-z]+\s*=/gi)) report(problems, rel, text, m.index, 'manejador de eventos on*= en línea');
   }
-  for (const m of text.matchAll(/javascript\s*:/gi)) report(problems, rel, text, m.index, 'URL javascript: no permitida');
+  for (const m of scan.matchAll(/javascript\s*:/gi)) report(problems, rel, text, m.index, 'URL javascript: no permitida');
 
   // Aviso (no falla): datos legales pendientes.
   for (const m of raw.matchAll(/\[\[(NIF|DOMICILIO)\]\]/g)) {

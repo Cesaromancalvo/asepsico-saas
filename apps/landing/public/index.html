@@ -6,6 +6,34 @@
   <title>AsePsico · Seguimiento entre sesiones para psicólogos</title>
   <meta name="description" content="Software para psicólogos y consultas, pensado para el seguimiento entre sesiones. Piloto gratuito: apúntate a la lista de espera.">
   <link rel="canonical" href="https://asepsico.es/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://asepsico.es/#organization",
+        "name": "AsePsico",
+        "url": "https://asepsico.es/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://asepsico.es/img/logo-192.png",
+          "width": 192,
+          "height": 192
+        },
+        "description": "Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://asepsico.es/#website",
+        "name": "AsePsico",
+        "url": "https://asepsico.es/",
+        "inLanguage": "es-ES",
+        "publisher": { "@id": "https://asepsico.es/#organization" }
+      }
+    ]
+  }
+  </script>
   <meta name="theme-color" content="#7064D2">
   <meta name="color-scheme" content="light">
 
@@ -18,6 +46,7 @@
   <meta property="og:image" content="https://asepsico.es/img/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
   <meta property="og:image:alt" content="Logo de AsePsico sobre fondo morado">
   <meta name="twitter:card" content="summary_large_image">
 
@@ -58,6 +87,7 @@
     <symbol id="i-puzzle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></g></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.5 6v12M15.5 6v12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
 
@@ -72,7 +102,8 @@
       <nav class="topbar__nav" aria-label="Secciones">
         <ul>
           <li><a href="#que-incluye">Qué incluye</a></li>
-          <li><a href="#piloto">El piloto</a></li>
+          <li><a href="#unete">El piloto</a></li>
+          <li><a href="#quienes-somos">Quiénes somos</a></li>
           <li><a href="#preguntas">Preguntas</a></li>
         </ul>
       </nav>
@@ -283,38 +314,38 @@
       </div>
     </section>
 
-    <!-- CALCULADORA (interruptor FEATURES.calculadora en js/config.js; apagada por defecto) -->
-    <div data-slot="calculadora"></div>
-    <template id="tpl-calculadora">
-      <section class="section section--tint" id="calculadora" aria-labelledby="calc-titulo">
-        <div class="container narrow">
-          <h2 id="calc-titulo">¿Cuánto tiempo te lleva lo que no sale en la agenda?</h2>
-          <p class="lead">Haz la cuenta con tus propias cifras. Es tu estimación, no la nuestra.</p>
-          <div class="calc">
-            <fieldset class="calc__fields">
-              <legend>Horas a la semana (admite medias horas; todos los campos son opcionales)</legend>
-              <div class="field"><label for="calc-1">Preparar las sesiones (releer notas, revisar lo pendiente)</label><input id="calc-1" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
-              <div class="field"><label for="calc-2">Dar, recoger y revisar tareas entre sesiones</label><input id="calc-2" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
-              <div class="field"><label for="calc-3">Responder mensajes de pacientes fuera de sesión</label><input id="calc-3" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
-              <div class="field"><label for="calc-4">Agenda, cambios de cita y avisos</label><input id="calc-4" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
-              <div class="field"><label for="calc-5">Cobros y papeleo</label><input id="calc-5" type="number" inputmode="decimal" min="0" max="80" step="0.5" autocomplete="off" data-calc></div>
-            </fieldset>
-            <div class="calc__result">
-              <p class="calc__out" aria-live="polite" data-calc-out></p>
-              <p class="small">Es una estimación hecha con tus cifras. No calculamos cuánto tiempo ahorrarías con AsePsico: eso queremos medirlo de verdad en el piloto.</p>
-              <p class="small">Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
-              <a class="btn btn--primary"
-                 data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
-                Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-    </template>
+
+    <!-- POR QUÉ UNIRTE (beneficios en texto; sin calculadora ni gráfico hasta tener datos del piloto) -->
+    <section class="section section--tint" id="por-que-unirte" aria-labelledby="porque-titulo">
+      <div class="container">
+        <h2 id="porque-titulo" class="center">Por qué unirte</h2>
+        <ul class="benefits">
+          <li class="benefit">
+            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span>
+            <h3>Seguimiento entre sesiones</h3>
+            <p>AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
+          </li>
+          <li class="benefit">
+            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-file"/></svg></span>
+            <h3>En un solo sitio</h3>
+            <p>AsePsico reúne en un solo sitio la agenda, los pacientes y la historia clínica.</p>
+          </li>
+          <li class="benefit">
+            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span>
+            <h3>Piloto gratuito</h3>
+            <p>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
+          </li>
+          <li class="benefit">
+            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span>
+            <h3>Tu opinión en el piloto</h3>
+            <p>Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen. A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
 
     <!-- QUÉ INCLUYE EL PILOTO -->
-    <section class="section section--tint" id="que-incluye" aria-labelledby="incluye-titulo">
+    <section class="section section--panel" id="que-incluye" aria-labelledby="incluye-titulo">
       <div class="container">
         <div class="panel">
           <h2 id="incluye-titulo">Qué incluye el piloto</h2>
@@ -378,19 +409,31 @@
       </div>
     </section>
 
-    <!-- PILOTO GRATUITO -->
-    <section class="section section--tint" id="piloto" aria-labelledby="piloto-titulo">
+    <!-- ÚNETE: una sola tarjeta, sin cifras (no se publican precios) -->
+    <section class="section section--tint" id="unete" aria-labelledby="unete-titulo">
       <div class="container">
         <article class="pilot">
-          <span class="pilot__tag">Piloto</span>
-          <h2 id="piloto-titulo">Piloto gratuito</h2>
+          <span class="pilot__tag">Únete</span>
+          <h2 id="unete-titulo">Piloto gratuito</h2>
           <p>El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
-          <h3 class="pilot__sub">Qué incluye</h3>
-          <ul class="checks">
-            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Agenda, pacientes e historia clínica en un solo sitio</li>
-            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Tareas entre sesiones</li>
-            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Portal del paciente con citas, tareas y mensajes</li>
-          </ul>
+
+          <details class="disclosure">
+            <summary>Qué incluye<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+            <div class="disclosure__body">
+              <ul class="checks">
+                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Agenda, pacientes e historia clínica en un solo sitio</li>
+                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Tareas entre sesiones</li>
+                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Portal del paciente con citas, tareas y mensajes</li>
+              </ul>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Precios<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+            <div class="disclosure__body">
+              <p>El piloto es gratuito; los precios los compartimos con quienes participan en él.</p>
+            </div>
+          </details>
+
           <h3 class="pilot__sub">Qué te pedimos</h3>
           <p>A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p>
           <h3 class="pilot__sub">Cómo funciona</h3>
@@ -403,18 +446,22 @@
              data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
             Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
           </a>
-          <p class="small center">El piloto es gratuito; los precios los compartimos con quienes participan en él.</p>
+          <p class="small center">El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
         </article>
       </div>
     </section>
 
-    <!-- QUIÉN ESTÁ DETRÁS -->
-    <section class="section" aria-labelledby="detras-titulo">
+    <!-- QUIÉNES SOMOS (versión corta; sin foto) -->
+    <section class="section" id="quienes-somos" aria-labelledby="quienes-titulo">
       <div class="container narrow about">
-        <img class="about__logo" src="/img/logo-192.png" width="96" height="96" alt="">
+        <figure class="about__figure">
+          <img class="about__logo" src="/img/logo-192.png" width="120" height="120" alt="Logotipo de AsePsico">
+          <figcaption>César Román · AsePsico</figcaption>
+        </figure>
         <div>
-          <h2 id="detras-titulo">Quién está detrás</h2>
-          <p class="lead">Soy César. He estudiado psicología y llevo unos meses desarrollando AsePsico.</p>
+          <h2 id="quienes-titulo">Quiénes somos</h2>
+          <p class="lead">Soy César Román. He estudiado psicología y llevo unos meses desarrollando AsePsico.</p>
+          <p>Lo que pasa entre sesiones también es parte del trabajo, y AsePsico está pensado para ese seguimiento entre sesiones.</p>
           <p>Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
         </div>
       </div>
@@ -483,6 +530,26 @@
       </div>
     </section>
   </main>
+
+  <!-- AVISO AL ENTRAR (interruptor FEATURES.leadPopup en js/config.js).
+       No recoge datos: el botón abre el formulario de la lista de espera, que tiene su propia
+       información de privacidad. No guarda nada en el navegador: se muestra una vez por visita. -->
+  <div class="leadpop" data-lead hidden>
+    <div class="leadpop__card" role="dialog" aria-modal="true" aria-labelledby="lead-titulo" aria-describedby="lead-texto" tabindex="-1" data-lead-card>
+      <button type="button" class="leadpop__x" data-lead-close>
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
+        <span class="visually-hidden">Cerrar el aviso</span>
+      </button>
+      <h2 id="lead-titulo" class="leadpop__title">¿Te avisamos cuando abramos el piloto?</h2>
+      <p id="lead-texto" class="leadpop__text">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
+      <div class="leadpop__actions">
+        <a class="btn btn--primary" data-cta data-lead-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+          Apuntarme<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
+        </a>
+        <button type="button" class="btn btn--ghost" data-lead-close>Ahora no</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="footer">
     <div class="container footer__inner">

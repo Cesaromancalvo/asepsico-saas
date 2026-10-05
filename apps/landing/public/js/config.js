@@ -36,5 +36,9 @@ window.ASEPSICO_CONFIG = Object.freeze({
 
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
     instagram: false,
+
+    // Aviso al entrar "¿Te avisamos cuando abramos el piloto?" (a los 8 s o al 50 % del scroll).
+    // Solo enlaza al formulario; no recoge datos ni guarda nada en el navegador.
+    leadPopup: true,
   }),
 });
