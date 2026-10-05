@@ -59,7 +59,6 @@ enum TherapeuticTaskStatus {
   CANCELLED
 }
 
-
 enum PatientDocumentType {
   CLINICAL
   REFERRAL
@@ -123,95 +122,95 @@ enum SessionType {
 }
 
 model Workspace {
-  id                String            @id @default(cuid())
-  name              String
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  members           WorkspaceMember[]
-  patients          Patient[]
-  sessions          Session[]
-  auditLogs         AuditLog[]
-  clinicalProcesses ClinicalProcess[]
-  patientDocuments  PatientDocument[]
-  consentRecords    ConsentRecord[]
-  clinicalReports   ClinicalReport[]
-  invoices          Invoice[]
-  payments          Payment[]
-  portalAccounts    PatientPortalAccount[]
+  id                   String                 @id @default(cuid())
+  name                 String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  members              WorkspaceMember[]
+  patients             Patient[]
+  sessions             Session[]
+  auditLogs            AuditLog[]
+  clinicalProcesses    ClinicalProcess[]
+  patientDocuments     PatientDocument[]
+  consentRecords       ConsentRecord[]
+  clinicalReports      ClinicalReport[]
+  invoices             Invoice[]
+  payments             Payment[]
+  portalAccounts       PatientPortalAccount[]
   therapeuticResources TherapeuticResource[]
-  resourceShares    ResourceShare[]
-  conversations     Conversation[]
+  resourceShares       ResourceShare[]
+  conversations        Conversation[]
 }
 
 model User {
-  id                           String            @id @default(cuid())
-  email                        String            @unique
+  id                           String                @id @default(cuid())
+  email                        String                @unique
   passwordHash                 String
   firstName                    String
   lastName                     String
   totpSecret                   String?
-  totpEnabled                  Boolean           @default(false)
-  mfaRecoveryCodes             String[]          @default([])
+  totpEnabled                  Boolean               @default(false)
+  mfaRecoveryCodes             String[]              @default([])
   /// Último paso TOTP (floor(epoch/30)) aceptado; impide reutilizar un código (RFC 6238 §5.2).
   totpLastUsedStep             Int?
   /// Fallos de segundo factor seguidos (se pone a 0 con cualquier verificación correcta).
-  mfaFailedAttempts            Int               @default(0)
+  mfaFailedAttempts            Int                   @default(0)
   /// Espera temporal tras varios fallos seguidos. Nunca es un bloqueo permanente.
   mfaLockedUntil               DateTime?
-  createdAt                    DateTime          @default(now())
-  updatedAt                    DateTime          @updatedAt
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
   memberships                  WorkspaceMember[]
-  auditLogs                    AuditLog[]        @relation("AuditActor")
+  auditLogs                    AuditLog[]            @relation("AuditActor")
   refreshTokens                RefreshToken[]
   sessionsAsTherapist          Session[]
   clinicalProcessesAsTherapist ClinicalProcess[]
-  patientDocumentsCreated       PatientDocument[]
-  consentRecordsCreated         ConsentRecord[]
-  clinicalReportsCreated        ClinicalReport[]
-  invoicesCreated               Invoice[]
-  paymentsRecorded              Payment[]
-  resourcesCreated              TherapeuticResource[]
-  messagesSent                  Message[]
+  patientDocumentsCreated      PatientDocument[]
+  consentRecordsCreated        ConsentRecord[]
+  clinicalReportsCreated       ClinicalReport[]
+  invoicesCreated              Invoice[]
+  paymentsRecorded             Payment[]
+  resourcesCreated             TherapeuticResource[]
+  messagesSent                 Message[]
 }
 
 model WorkspaceMember {
-  id          String        @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceRole @default(THERAPIST)
-  createdAt   DateTime      @default(now())
-  onboardingStep Int        @default(0)
+  id                    String        @id @default(cuid())
+  workspaceId           String
+  userId                String
+  role                  WorkspaceRole @default(THERAPIST)
+  createdAt             DateTime      @default(now())
+  onboardingStep        Int           @default(0)
   onboardingCompletedAt DateTime?
   onboardingDismissedAt DateTime?
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace             Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
   @@index([userId])
 }
 
 model Patient {
-  id                 String            @id @default(cuid())
-  workspaceId        String
-  firstName          String
-  lastName           String
-  email              String?
-  phone              String?
-  birthDate          DateTime?
-  consultationReason String?
-  status             PatientStatus     @default(ACTIVE)
-  portalAccessMode   PortalAccessMode  @default(PATIENT_ONLY)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  deletedAt          DateTime?
-  blockedAt          DateTime?
-  retentionUntil     DateTime?
-  workspace          Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  sessions           Session[]
-  clinicalProcesses  ClinicalProcess[]
-  clinicalHistory    ClinicalHistory?
-  therapyGoals       TherapyGoal[]
-  therapeuticTasks   TherapeuticTask[]
+  id                  String                 @id @default(cuid())
+  workspaceId         String
+  firstName           String
+  lastName            String
+  email               String?
+  phone               String?
+  birthDate           DateTime?
+  consultationReason  String?
+  status              PatientStatus          @default(ACTIVE)
+  portalAccessMode    PortalAccessMode       @default(PATIENT_ONLY)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  deletedAt           DateTime?
+  blockedAt           DateTime?
+  retentionUntil      DateTime?
+  workspace           Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  sessions            Session[]
+  clinicalProcesses   ClinicalProcess[]
+  clinicalHistory     ClinicalHistory?
+  therapyGoals        TherapyGoal[]
+  therapeuticTasks    TherapeuticTask[]
   clinicalAssessments ClinicalAssessment[]
   patientDocuments    PatientDocument[]
   consentRecords      ConsentRecord[]
@@ -227,21 +226,21 @@ model Patient {
 }
 
 model ClinicalHistory {
-  id                     String   @id @default(cuid())
-  patientId              String   @unique
-  reasonForConsultation  String?
-  currentProblem         String?
-  personalHistory        String?
-  familyHistory          String?
-  medicalHistory         String?
-  currentMedication      String?
-  primaryDiagnosis       String?
-  riskFactors            String?
-  protectiveFactors      String?
-  clinicalObservations   String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  patient                Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  patientId             String   @unique
+  reasonForConsultation String?
+  currentProblem        String?
+  personalHistory       String?
+  familyHistory         String?
+  medicalHistory        String?
+  currentMedication     String?
+  primaryDiagnosis      String?
+  riskFactors           String?
+  protectiveFactors     String?
+  clinicalObservations  String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  patient               Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
 }
@@ -264,7 +263,6 @@ model TherapyGoal {
   @@index([patientId, priority])
 }
 
-
 model TherapeuticTaskTemplate {
   id           String   @id @default(cuid())
   workspaceId  String
@@ -281,27 +279,27 @@ model TherapeuticTaskTemplate {
 }
 
 model TherapeuticTask {
-  id             String                @id @default(cuid())
-  patientId      String
-  therapyGoalId  String?
-  sessionId      String?
-  title          String
-  instructions   String?
-  status         TherapeuticTaskStatus @default(PENDING)
-  dueDate        DateTime?
-  assignedAt     DateTime?
-  startedAt      DateTime?
-  submittedAt    DateTime?
-  reviewedAt     DateTime?
-  completedAt    DateTime?
+  id              String                @id @default(cuid())
+  patientId       String
+  therapyGoalId   String?
+  sessionId       String?
+  title           String
+  instructions    String?
+  status          TherapeuticTaskStatus @default(PENDING)
+  dueDate         DateTime?
+  assignedAt      DateTime?
+  startedAt       DateTime?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  completedAt     DateTime?
   patientFeedback String?
-  clinicianNotes String?
-  reviewComment  String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  patient        Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  therapyGoal    TherapyGoal?          @relation(fields: [therapyGoalId], references: [id], onDelete: SetNull)
-  session        Session?              @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  clinicianNotes  String?
+  reviewComment   String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  patient         Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  therapyGoal     TherapyGoal?          @relation(fields: [therapyGoalId], references: [id], onDelete: SetNull)
+  session         Session?              @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([patientId, status])
   @@index([patientId, dueDate])
@@ -310,20 +308,20 @@ model TherapeuticTask {
 }
 
 model ClinicalAssessment {
-  id              String   @id @default(cuid())
-  patientId       String
-  scaleCode       String
-  scaleName       String
-  answers         Json
+  id             String   @id @default(cuid())
+  patientId      String
+  scaleCode      String
+  scaleName      String
+  answers        Json
   // Puntuación, gravedad y alerta de riesgo cifradas juntas: JSON {totalScore, severity, riskFlag}
   // cifrado con encryptField (ver src/common/crypto/clinical-crypto.ts).
-  result          String?
-  interpretation  String
-  clinicalNotes   String?
-  administeredAt  DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  result         String?
+  interpretation String
+  clinicalNotes  String?
+  administeredAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId, administeredAt])
   @@index([patientId, scaleCode])
@@ -364,10 +362,10 @@ model Session {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  therapist       User             @relation(fields: [therapistId], references: [id], onDelete: Restrict)
-  clinicalProcess ClinicalProcess? @relation(fields: [clinicalProcessId], references: [id], onDelete: SetNull)
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient          Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist        User              @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+  clinicalProcess  ClinicalProcess?  @relation(fields: [clinicalProcessId], references: [id], onDelete: SetNull)
   therapeuticTasks TherapeuticTask[]
 
   @@index([workspaceId, startsAt])
@@ -402,7 +400,6 @@ model ClinicalProcess {
   @@index([patientId, status])
   @@index([therapistId, status])
 }
-
 
 model TherapeuticResource {
   id          String           @id @default(cuid())
@@ -459,7 +456,6 @@ model AuditLog {
   @@index([workspaceId, createdAt])
   @@index([entityType, entityId])
 }
-
 
 model PatientDocument {
   id          String              @id @default(cuid())
@@ -540,29 +536,29 @@ enum PaymentMethod {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  workspaceId    String
-  patientId      String
-  sequence       Int
-  invoiceNumber  String
-  status         InvoiceStatus @default(DRAFT)
-  currency       String        @default("EUR")
-  issueDate      DateTime?
-  dueDate        DateTime?
-  subtotalCents  Int
-  taxCents       Int           @default(0)
-  totalCents     Int
-  paidCents      Int           @default(0)
-  notes          String?
-  voidReason     String?
-  createdById    String
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  createdBy      User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  lines          InvoiceLine[]
-  payments       Payment[]
+  id            String        @id @default(cuid())
+  workspaceId   String
+  patientId     String
+  sequence      Int
+  invoiceNumber String
+  status        InvoiceStatus @default(DRAFT)
+  currency      String        @default("EUR")
+  issueDate     DateTime?
+  dueDate       DateTime?
+  subtotalCents Int
+  taxCents      Int           @default(0)
+  totalCents    Int
+  paidCents     Int           @default(0)
+  notes         String?
+  voidReason    String?
+  createdById   String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  createdBy     User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines         InvoiceLine[]
+  payments      Payment[]
 
   @@unique([workspaceId, sequence])
   @@unique([workspaceId, invoiceNumber])
@@ -571,17 +567,17 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id             String   @id @default(cuid())
-  invoiceId      String
-  description    String
-  quantity       Int      @default(1)
-  unitPriceCents Int
-  taxRateBps     Int      @default(0)
+  id                String   @id @default(cuid())
+  invoiceId         String
+  description       String
+  quantity          Int      @default(1)
+  unitPriceCents    Int
+  taxRateBps        Int      @default(0)
   lineSubtotalCents Int
-  lineTaxCents   Int
-  lineTotalCents Int
-  createdAt      DateTime @default(now())
-  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  lineTaxCents      Int
+  lineTotalCents    Int
+  createdAt         DateTime @default(now())
+  invoice           Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
 }
@@ -612,25 +608,24 @@ model Payment {
   @@index([patientId, paidAt])
 }
 
-
 model PatientPortalAccount {
-  id              String    @id @default(cuid())
-  workspaceId     String
-  patientId       String
-  accessorType    PortalAccessorType @default(PATIENT)
-  guardianName    String?
+  id                   String             @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  accessorType         PortalAccessorType @default(PATIENT)
+  guardianName         String?
   guardianRelationship String?
-  email           String
-  passwordHash    String
-  isActive        Boolean   @default(true)
-  mustChangePassword Boolean @default(true)
-  failedLoginAttempts Int    @default(0)
-  lockedUntil     DateTime?
-  lastLoginAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  email                String
+  passwordHash         String
+  isActive             Boolean            @default(true)
+  mustChangePassword   Boolean            @default(true)
+  failedLoginAttempts  Int                @default(0)
+  lockedUntil          DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient              Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@unique([email])
   @@index([workspaceId, isActive])
@@ -694,7 +689,7 @@ model NotificationPreference {
 }
 
 model Notification {
-  id          String               @id @default(cuid())
+  id          String                 @id @default(cuid())
   workspaceId String
   audience    NotificationAudience
   userId      String?
@@ -703,14 +698,14 @@ model Notification {
   title       String
   body        String
   actionUrl   String?
-  status      NotificationStatus   @default(PENDING)
+  status      NotificationStatus     @default(PENDING)
   scheduledAt DateTime
   sentAt      DateTime?
   readAt      DateTime?
-  dedupeKey   String               @unique
+  dedupeKey   String                 @unique
   metadata    Json?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
   deliveries  NotificationDelivery[]
 
   @@index([workspaceId, audience, status, scheduledAt])
@@ -745,18 +740,18 @@ enum MessageSenderType {
 }
 
 model Conversation {
-  id             String             @id @default(cuid())
-  workspaceId    String
-  patientId      String
-  status         ConversationStatus @default(OPEN)
+  id              String             @id @default(cuid())
+  workspaceId     String
+  patientId       String
+  status          ConversationStatus @default(OPEN)
   patientCanReply Boolean            @default(true)
-  closedAt       DateTime?
-  archivedAt     DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient        Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  messages       Message[]
+  closedAt        DateTime?
+  archivedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient         Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages        Message[]
 
   @@unique([workspaceId, patientId])
   @@index([workspaceId, status, updatedAt])
@@ -764,20 +759,70 @@ model Conversation {
 }
 
 model Message {
-  id             String            @id @default(cuid())
-  conversationId String
-  senderType     MessageSenderType
-  senderUserId   String?
-  body           String
-  attachmentName String?
-  attachmentKey  String?
-  mimeType       String?
+  id                   String            @id @default(cuid())
+  conversationId       String
+  senderType           MessageSenderType
+  senderUserId         String?
+  body                 String
+  attachmentName       String?
+  attachmentKey        String?
+  mimeType             String?
   readByProfessionalAt DateTime?
-  readByPatientAt DateTime?
-  createdAt      DateTime          @default(now())
-  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderUser     User?             @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+  readByPatientAt      DateTime?
+  createdAt            DateTime          @default(now())
+  conversation         Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser           User?             @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
 
   @@index([conversationId, createdAt])
   @@index([senderUserId])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Lista de espera pública de asepsico.es (profesionales de la psicología). NO pertenece a ningún
+// workspace: es anterior a tener cuenta y no contiene datos de salud ni de pacientes.
+// name/email/tools van cifrados en reposo (registro en common/crypto/clinical-crypto.ts).
+// emailHash = HMAC-SHA256 del email normalizado con una clave derivada de WAITLIST_SECRET: sirve
+// para deduplicar sin guardar el email en claro. No se guarda IP ni user-agent.
+// Supresión (art. 17 RGPD): se vacían todos los datos personales (incluido emailHash) y queda
+// solo deletedAt; ver prisma/scripts/waitlist-delete.ts.
+// ---------------------------------------------------------------------------------------------
+
+enum WaitlistSituation {
+  SELF_EMPLOYED
+  PRACTICE
+  STUDENT
+  OTHER
+}
+
+enum WaitlistSource {
+  INSTAGRAM
+  COLLEAGUE
+  PROFESSIONAL_COLLEGE
+  SEARCH_ENGINE
+  OTHER
+}
+
+model WaitlistEntry {
+  id                   String             @id @default(cuid())
+  /// Cifrado (enc:v1/v2). Null tras la supresión.
+  name                 String?
+  /// Cifrado (enc:v1/v2). Null tras la supresión.
+  email                String?
+  /// HMAC del email normalizado. Null tras la supresión (Postgres admite varios NULL en un UNIQUE).
+  emailHash            String?            @unique
+  situation            WaitlistSituation?
+  /// Texto libre cifrado: herramientas que usa hoy.
+  tools                String?
+  professionalsCount   Int?
+  source               WaitlistSource?
+  privacyPolicyVersion String
+  privacyAcceptedAt    DateTime
+  commercialConsent    Boolean            @default(false)
+  /// Fecha en que se dio el consentimiento comercial vigente; null si no lo hay.
+  commercialConsentAt  DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  deletedAt            DateTime?
+
+  @@index([deletedAt, createdAt])
 }
