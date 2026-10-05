@@ -46,6 +46,7 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
 | `ConsentRecord` | `notes` |
 | `Message` | `body`, `attachmentName` |
 | `User` | `totpSecret` |
+| `WaitlistEntry` (lista de espera pública, sin workspace) | `name`, `email`, `tools` (+ `emailHash` HMAC para deduplicar) |
 
 **Fuera del cifrado (decisión consciente o pendiente):**
 
@@ -86,6 +87,27 @@ nunca imprime valores y aborta sin escribir si algún valor cifrado no se puede 
 (ni facturación), con el mismo alcance que la API. La exportación clínica descifra con los mismos helpers y,
 como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
 la ruta, nunca el valor).
+
+## Lista de espera pública (`/api/v1/public/waitlist`)
+
+Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (módulo `apps/api/src/waitlist/`; contrato en
+`docs/WAITLIST_API.md`). No pertenece a ningún workspace y no admite datos de salud.
+
+- CORS propio solo para esa ruta (`WAITLIST_ALLOWED_ORIGINS`, por defecto `https://asepsico.es` y
+  `https://www.asepsico.es`, sin credenciales) y además se exige la cabecera `Origin` permitida
+  (403 si falta o no coincide). El resto de la API sigue con `WEB_ORIGIN`.
+- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
+  cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
+  (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
+- Email repetido: upsert por `emailHash`, misma respuesta 202 (no revela si ya estaba).
+- No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
+  Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
+- `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
+  token. Rotarlo rompe la deduplicación y `waitlist:delete` de las altas previas.
+- Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,
+  permisos 600, sin sobrescribir, celdas neutralizadas contra fórmulas) y
+  `npm run waitlist:delete -- --email <email>` (vacía todos los datos personales y el hash; deja
+  `deletedAt`).
 
 ## Antes de producción (pendiente)
 

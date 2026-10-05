@@ -43,6 +43,8 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 |---|---|---|
 | `NODE_ENV` | `production` | Cookies `secure` y `trust proxy` por defecto. |
 | `TRUST_PROXY` | `1` | Explícito aunque coincide con el valor por defecto en producción. |
+| `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. Lista de espera (ver `docs/WAITLIST_API.md`). |
+| `WAITLIST_ALLOWED_ORIGINS` | vacío | = `https://asepsico.es,https://www.asepsico.es`. Solo afecta a `/public/waitlist`. |
 
 La API valida `TRUST_PROXY` al arrancar; un valor mal escrito hace fallar el despliegue (Render
 mantiene la versión anterior en marcha). El log de arranque muestra
