@@ -427,10 +427,11 @@
               </ul>
             </div>
           </details>
-          <details class="disclosure">
+          <!-- Interruptor FEATURES.pricingDetails y texto PRICING_TEXT en js/config.js -->
+          <details class="disclosure" data-feature="pricingDetails" hidden>
             <summary>Precios<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
-              <p>El piloto es gratuito; los precios los compartimos con quienes participan en él.</p>
+              <p data-pricing-text></p>
             </div>
           </details>
 
@@ -482,7 +483,7 @@
           </div>
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-3">¿Cuánto cuesta?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
-            <div class="faq__a" id="faq-3"><p>El piloto es gratuito; los precios los compartimos con quienes participan en él.</p></div>
+            <div class="faq__a" id="faq-3"><p>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p></div>
           </div>
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-4">¿Usa inteligencia artificial?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
@@ -491,7 +492,7 @@
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-5">¿Y la privacidad de mis datos y los de mis pacientes?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
             <div class="faq__a" id="faq-5">
-              <p>Para apuntarte a la lista de espera solo te pedimos los datos del formulario, que tiene su propia política de privacidad. <a data-form-privacy hidden href="#">Leer la política de privacidad del formulario<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></p>
+              <p>Para apuntarte a la lista de espera solo te pedimos los datos del formulario, que tiene su propia política de privacidad. <a data-form-privacy href="/privacidad-lista-espera/">Leer la política de privacidad del formulario</a></p>
               <p>Esta web no usa cookies.</p>
             </div>
           </div>
@@ -526,7 +527,7 @@
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
           <span class="visually-hidden">(se abre en una pestaña nueva)</span>
         </a>
-        <p class="small">El formulario tiene su propia política de privacidad. <a data-form-privacy hidden href="#">Leer la política de privacidad del formulario<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></p>
+        <p class="small">El formulario tiene su propia política de privacidad. <a data-form-privacy href="/privacidad-lista-espera/">Leer la política de privacidad del formulario</a></p>
       </div>
     </section>
   </main>
@@ -540,7 +541,7 @@
         <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
         <span class="visually-hidden">Cerrar el aviso</span>
       </button>
-      <h2 id="lead-titulo" class="leadpop__title">¿Te avisamos cuando abramos el piloto?</h2>
+      <h2 id="lead-titulo" class="leadpop__title" data-lead-title></h2>
       <p id="lead-texto" class="leadpop__text">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
       <div class="leadpop__actions">
         <a class="btn btn--primary" data-cta data-lead-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
@@ -558,6 +559,7 @@
         <ul class="footer__links">
           <li><a href="/aviso-legal/">Aviso legal</a></li>
           <li><a href="/privacidad/">Política de privacidad</a></li>
+          <li><a href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
           <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com">Contacto</a></li>
           <!-- Interruptor FEATURES.instagram en js/config.js (apagado hasta corregir la bio) -->
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>

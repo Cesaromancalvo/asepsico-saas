@@ -9,21 +9,21 @@ window.ASEPSICO_CONFIG = Object.freeze({
   // (son el respaldo para quien navega sin JavaScript).
   FORM_URL: 'https://forms.gle/ceKKYV85j1rq4EHZ9',
 
-  // TODO(Jefe): URL publicada de la política de privacidad del formulario de la lista de espera.
-  // Mientras esté vacía, la web dice que el formulario tiene su propia política pero no la enlaza.
-  // Al rellenarla, añade su dominio a ALLOWED_HOSTS en scripts/check-landing.mjs.
-  FORM_PRIVACY_URL: '',
+  // Política de privacidad del formulario de la lista de espera (página propia de la web).
+  // Los enlaces ya van con este href en el HTML; esta constante solo lo sobrescribe si cambia.
+  FORM_PRIVACY_URL: '/privacidad-lista-espera/',
 
   // Email de contacto del pie y de las páginas legales.
   CONTACT_EMAIL: 'asepsico1@gmail.com',
 
-  // Datos del titular para el aviso legal y la política de privacidad (art. 10 LSSI).
-  // Único sitio donde van. TODO(Jefe): sustituir los marcadores antes de publicar; sin ellos
-  // no se publica la web.
-  LEGAL: Object.freeze({
-    NIF: '[[NIF]]',
-    DOMICILIO: '[[DOMICILIO]]',
-  }),
+  // TODO(Jefe): título del aviso al entrar. Mientras esté vacío, el aviso no se muestra.
+  POPUP_TITLE: '',
+
+  // TODO(Jefe): texto del desplegable "Precios" de la tarjeta del piloto (sin cifras).
+  // Solo se muestra si FEATURES.pricingDetails es true y este texto no está vacío.
+  PRICING_TEXT: '',
+
+  // El NIF y el domicilio del titular están escritos en HTML estático en aviso-legal/index.html.
 
   FEATURES: Object.freeze({
     // Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?".
@@ -37,8 +37,11 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
     instagram: false,
 
-    // Aviso al entrar "¿Te avisamos cuando abramos el piloto?" (a los 8 s o al 50 % del scroll).
+    // Aviso al entrar (título en POPUP_TITLE), a los 8 s o al 50 % del scroll.
     // Solo enlaza al formulario; no recoge datos ni guarda nada en el navegador.
     leadPopup: true,
+
+    // Desplegable "Precios" en la tarjeta del piloto. APAGADO hasta que el Jefe elija el texto.
+    pricingDetails: false,
   }),
 });

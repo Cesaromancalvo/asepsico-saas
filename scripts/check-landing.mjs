@@ -16,9 +16,8 @@ import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Dominios permitidos (y sus subdominios). Solo enlaces que el visitante pulsa, nunca recursos
-// que se carguen solos. TODO: añadir aquí el dominio de la política de privacidad del formulario
-// de la lista de espera cuando se rellene FORM_PRIVACY_URL en js/config.js.
-const ALLOWED_HOSTS = ['asepsico.es', 'forms.gle', 'instagram.com'];
+// que se carguen solos. Los tres últimos los cita la política de la lista de espera.
+const ALLOWED_HOSTS = ['asepsico.es', 'forms.gle', 'instagram.com', 'policies.google.com', 'dataprivacyframework.gov', 'aepd.es'];
 
 // Archivos que no son contenido de la web (licencias) y pueden citar URLs ajenas.
 const IGNORED_FILES = new Set(['fonts/OFL.txt']);

@@ -13,8 +13,12 @@
   function applyFeatures() {
     // Bloques presentes en el HTML: se muestran si su interruptor está encendido y se quitan si no.
     // Los que van apagados por defecto llevan `hidden` en el HTML (respaldo sin JavaScript).
+    var pricing = (cfg.PRICING_TEXT || '').trim();
+    document.querySelectorAll('[data-pricing-text]').forEach(function (el) { el.textContent = pricing; });
     document.querySelectorAll('[data-feature]').forEach(function (el) {
-      if (features[el.getAttribute('data-feature')] === true) el.hidden = false;
+      var name = el.getAttribute('data-feature');
+      var on = features[name] === true && (name !== 'pricingDetails' || pricing !== '');
+      if (on) el.hidden = false;
       else el.remove();
     });
     // Calculadora: vive en un <template> y solo se inserta si está encendida.
@@ -40,22 +44,11 @@
       document.querySelectorAll('[data-contact]').forEach(function (li) { li.hidden = false; });
       document.querySelectorAll('[data-contact-link]').forEach(function (a) { a.href = 'mailto:' + email; });
     }
-    // Política de privacidad del formulario: solo se enlaza si hay URL publicada.
+    // Política de privacidad del formulario (ruta de la propia web o URL https).
     var policy = (cfg.FORM_PRIVACY_URL || '').trim();
-    if (/^https:\/\//.test(policy)) {
-      document.querySelectorAll('[data-form-privacy]').forEach(function (a) {
-        a.href = policy;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.hidden = false;
-      });
+    if (/^(\/|https:\/\/)/.test(policy)) {
+      document.querySelectorAll('[data-form-privacy]').forEach(function (a) { a.href = policy; });
     }
-    // Datos del titular (aviso legal y privacidad), centralizados en config.js.
-    var legal = cfg.LEGAL || {};
-    document.querySelectorAll('[data-legal]').forEach(function (el) {
-      var value = legal[el.getAttribute('data-legal')];
-      if (value) el.textContent = value;
-    });
   }
 
   /* 3. Preguntas frecuentes (acordeón) ---------------------------------- */
@@ -153,7 +146,9 @@
   function initLeadPopup() {
     var root = document.querySelector('[data-lead]');
     if (!root) return;
-    if (features.leadPopup !== true) { root.remove(); return; }
+    var title = (cfg.POPUP_TITLE || '').trim();
+    if (features.leadPopup !== true || !title) { root.remove(); return; }
+    root.querySelector('[data-lead-title]').textContent = title;
     var card = root.querySelector('[data-lead-card]');
     var DELAY = 8000;
     var shown = false;
