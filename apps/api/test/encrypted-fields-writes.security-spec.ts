@@ -10,6 +10,8 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { PortalService } from '../src/portal/portal.service';
 import { MfaService } from '../src/auth/mfa.service';
+import { WaitlistService } from '../src/waitlist/waitlist.service';
+import { issueFormToken } from '../src/waitlist/waitlist-crypto';
 
 /**
  * Test tabla-driven: por CADA campo marcado como cifrado en common/crypto/clinical-crypto.ts,
@@ -109,6 +111,8 @@ const CASES: Case[] = [
     run: (p) => new MessagesService(p).portalSend(portal, { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
   { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
+  { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
+    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v2', formToken: issueFormToken(Date.now() - 10_000) } as any) },
 ];
 
 function registeredFields(): string[] {
