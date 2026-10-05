@@ -16,10 +16,10 @@ window.ASEPSICO_CONFIG = Object.freeze({
   // Email de contacto del pie y de las páginas legales.
   CONTACT_EMAIL: 'asepsico1@gmail.com',
 
-  // TODO(Jefe): título del aviso al entrar. Mientras esté vacío, el aviso no se muestra.
-  POPUP_TITLE: '',
+  // Título del aviso al entrar (decisión del Jefe). Si se deja vacío, el aviso no se muestra.
+  POPUP_TITLE: 'Sé de los primeros en probar AsePsico',
 
-  // TODO(Jefe): texto del desplegable "Precios" de la tarjeta del piloto (sin cifras).
+  // Texto del desplegable "Precios" (sin uso: FEATURES.pricingDetails está apagado).
   // Solo se muestra si FEATURES.pricingDetails es true y este texto no está vacío.
   PRICING_TEXT: '',
 
@@ -41,7 +41,7 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Solo enlaza al formulario; no recoge datos ni guarda nada en el navegador.
     leadPopup: true,
 
-    // Desplegable "Precios" en la tarjeta del piloto. APAGADO hasta que el Jefe elija el texto.
+    // Desplegable "Precios" en la tarjeta del piloto. APAGADO por decisión del Jefe: sin precios en la web.
     pricingDetails: false,
   }),
 });

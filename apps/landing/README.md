@@ -62,9 +62,9 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `FORM_URL` | formulario de Google Forms de la lista de espera | Si cambia, actualizar también los `href` de `index.html` (respaldo sin JavaScript) |
 | `FORM_PRIVACY_URL` | `/privacidad-lista-espera/` | Política de la lista de espera (página propia, texto del Jefe del 29/09). Enlazada en la FAQ 5, la llamada final y el pie, con `href` estático |
 | `CONTACT_EMAIL` | `asepsico1@gmail.com` | También está escrito en los `mailto:` de las páginas (respaldo sin JavaScript) |
-| `POPUP_TITLE` | vacío (TODO) | Título del aviso al entrar. Mientras esté vacío, el aviso no se muestra aunque `FEATURES.leadPopup` esté encendido |
-| `PRICING_TEXT` | vacío (TODO) | Texto del desplegable "Precios" (sin cifras). Solo se ve con `FEATURES.pricingDetails: true` y texto no vacío |
-| `FEATURES.pricingDetails` | `false` | Desplegable "Precios" de la tarjeta del piloto |
+| `POPUP_TITLE` | "Sé de los primeros en probar AsePsico" | Título del aviso al entrar. Mientras esté vacío, el aviso no se muestra aunque `FEATURES.leadPopup` esté encendido |
+| `PRICING_TEXT` | vacío | Texto del desplegable "Precios" (sin cifras). Solo se ve con `FEATURES.pricingDetails: true` y texto no vacío |
+| `FEATURES.pricingDetails` | `false` | Desplegable "Precios" de la tarjeta del piloto. Apagado por decisión del Jefe: la web no habla de precios |
 | `FEATURES.calculadora` | `false` | Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?". Pendiente de decisión del Jefe. Vive en un `<template>` y no se pinta si está apagada. Calcula en el navegador: no envía ni guarda nada |
 | `FEATURES.faqPacientes` | `true` | Pregunta "Soy paciente, ¿puedo apuntarme?" con el 024 y el 112. Verificar el 024 la víspera de cada publicación |
 | `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio. Al encenderlo, añadir `"sameAs": ["https://www.instagram.com/asepsico/"]` al `Organization` del JSON-LD |
@@ -132,7 +132,7 @@ cuando se quite su `noindex`; nunca una URL con `noindex`, oculta o que redirija
 ## Pendiente antes de publicar
 
 - NIF: sustituir `[[NIF]]` en `public/aviso-legal/index.html` (único sitio; el check de CI avisa mientras siga) y quitar el `noindex` de `/aviso-legal/` y `/privacidad/`; añadirlas entonces al sitemap.
-- `POPUP_TITLE` y, si se quiere el desplegable, `PRICING_TEXT` + `FEATURES.pricingDetails`.
+
 - Confirmar el DPA de Render con cláusulas contractuales tipo (condición de Argos para el apartado 4
   de la privacidad).
 - Verificar el 024 la víspera de publicar.
