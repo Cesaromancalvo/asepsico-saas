@@ -15,6 +15,7 @@ import { ResourcesModule } from './resources/resources.module';
 import { MessagesModule } from './messages/messages.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
+import { PatientImportModule } from './patient-import/patient-import.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ExportsModule } from './exports/exports.module';
     MessagesModule,
     DashboardModule,
     ExportsModule,
+    PatientImportModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

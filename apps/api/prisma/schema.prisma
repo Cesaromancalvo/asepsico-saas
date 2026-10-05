@@ -141,6 +141,8 @@ model Workspace {
   therapeuticResources TherapeuticResource[]
   resourceShares    ResourceShare[]
   conversations     Conversation[]
+  patientImportJobs  PatientImportJob[]
+  patientImportItems PatientImportItem[]
 }
 
 model User {
@@ -172,6 +174,7 @@ model User {
   paymentsRecorded              Payment[]
   resourcesCreated              TherapeuticResource[]
   messagesSent                  Message[]
+  patientImportJobs             PatientImportJob[]
 }
 
 model WorkspaceMember {
@@ -221,6 +224,7 @@ model Patient {
   portalAccounts      PatientPortalAccount[]
   resourceShares      ResourceShare[]
   conversations       Conversation[]
+  importItem          PatientImportItem?
 
   @@index([workspaceId, status])
   @@index([workspaceId, lastName, firstName])
@@ -397,6 +401,7 @@ model ClinicalProcess {
   patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Restrict)
   therapist User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
   sessions  Session[]
+  importItem PatientImportItem?
 
   @@index([workspaceId, status])
   @@index([patientId, status])
@@ -780,4 +785,71 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([senderUserId])
+}
+
+// ─── Importación de pacientes (docs/producto/importacion-pacientes-csv.md) ───────────────────
+
+enum PatientImportStatus {
+  UPLOADED // fichero leído y guardado cifrado; falta el mapeo
+  PREVIEWED // mapeo guardado; se puede confirmar
+  PROCESSING // confirmación en curso (bloqueo optimista frente a dobles confirmaciones)
+  COMPLETED
+  PARTIAL // falló un bloque; se puede reintentar la confirmación (reanuda en el cursor)
+  CANCELLED
+  EXPIRED // pasaron 24 h sin confirmar: el fichero se borró
+  REVERTING // deshacer en curso (bloqueo optimista frente a reverts o reintentos simultáneos)
+  REVERTED
+}
+
+/// Un lote de importación. Nunca guarda valores de celdas en claro: la tabla leída del fichero
+/// va cifrada en `payload` y se borra al terminar, al cancelar o a las 24 horas. `mapping`,
+/// `plan` y `errorReport` solo contienen índices, números de fila, nombres de campo y códigos.
+model PatientImportJob {
+  id               String              @id @default(cuid())
+  workspaceId      String
+  /// null si se suprime el usuario de staff que importó (el lote y su auditoría se conservan).
+  importerId       String?
+  status           PatientImportStatus @default(UPLOADED)
+  format           String
+  payload          String?
+  payloadExpiresAt DateTime?
+  mapping          Json?
+  plan             Json?
+  errorReport      Json?
+  totalRows        Int                 @default(0)
+  cursor           Int                 @default(0)
+  createdCount     Int                 @default(0)
+  completedCount   Int                 @default(0)
+  skippedCount     Int                 @default(0)
+  errorCount       Int                 @default(0)
+  revertedCount    Int                 @default(0)
+  confirmedAt      DateTime?
+  finishedAt       DateTime?
+  revertibleUntil  DateTime?
+  revertedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  workspace        Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  importer         User?               @relation(fields: [importerId], references: [id], onDelete: SetNull)
+  items            PatientImportItem[]
+
+  @@index([workspaceId, importerId, createdAt])
+  @@index([status, payloadExpiresAt])
+}
+
+/// Paciente creado por un lote (para deshacerlo). Solo ids y número de fila.
+model PatientImportItem {
+  id                String           @id @default(cuid())
+  workspaceId       String
+  jobId             String
+  patientId         String           @unique
+  clinicalProcessId String           @unique
+  rowNumber         Int
+  createdAt         DateTime         @default(now())
+  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  job               PatientImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  patient           Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalProcess   ClinicalProcess  @relation(fields: [clinicalProcessId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, jobId])
 }
