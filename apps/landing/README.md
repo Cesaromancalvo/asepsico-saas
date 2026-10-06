@@ -16,7 +16,7 @@ apps/landing/
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
     js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, estimación de tiempo
-    fonts/                 <- Poppins y Fraunces (titulares) autoalojadas (woff2, latino) + OFL.txt y OFL-Fraunces.txt
+    fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
     img/                   <- logo y og-image.png (1200x630)
     favicon.ico, favicon.png, apple-touch-icon.png, robots.txt, sitemap.xml
 ```

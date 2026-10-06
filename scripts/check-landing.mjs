@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const ALLOWED_HOSTS = ['asepsico.es', 'forms.gle', 'instagram.com', 'policies.google.com', 'dataprivacyframework.gov', 'aepd.es'];
 
 // Archivos que no son contenido de la web (licencias) y pueden citar URLs ajenas.
-const IGNORED_FILES = new Set(['fonts/OFL.txt', 'fonts/OFL-Fraunces.txt']);
+const IGNORED_FILES = new Set(['fonts/OFL.txt']);
 const TEXT_EXTENSIONS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.xml', '.txt', '.json', '.svg', '.webmanifest']);
 const MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.svg', '.xml']);
 

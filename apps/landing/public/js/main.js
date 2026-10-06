@@ -149,15 +149,21 @@
     if (!box) return;
     var reminders = features.savingsReminders === true;
     var remField = box.querySelector('[data-sv-reminders]');
-    var remRow = box.querySelector('[data-sv-row="rem"]');
     if (remField) { if (reminders) remField.hidden = false; else remField.remove(); }
-    if (remRow && !reminders) remRow.remove();
+    var KEYS = reminders ? ['prep', 'tasks', 'rem'] : ['prep', 'tasks'];
+    if (!reminders) {
+      var remLeg = box.querySelector('[data-leg="rem"]');
+      var remSeg = box.querySelector('[data-seg="rem"]');
+      if (remLeg) remLeg.remove();
+      if (remSeg) remSeg.remove();
+    }
 
     var inputs = {};
     box.querySelectorAll('[data-sv]').forEach(function (el) { inputs[el.getAttribute('data-sv')] = el; });
     var out = box.querySelector('[data-sv-out]');
     var eur = box.querySelector('[data-sv-eur]');
-    var chart = box.querySelector('[data-sv-chart]');
+    var legend = box.querySelector('[data-sv-legend]');
+    var total = box.querySelector('[data-sv-total]');
     var form = box.querySelector('[data-savings-form]');
     if (form) form.addEventListener('submit', function (e) { e.preventDefault(); });
 
@@ -187,23 +193,45 @@
       if (a === b) return 'Unas ' + fmtH(a) + (a === 1 ? ' hora' : ' horas') + ' al mes';
       return 'Entre ' + fmtH(a) + ' y ' + fmtH(b) + ' horas al mes';
     }
+    function shortTotal(lo, hi) {
+      var a = floorHalf(lo);
+      var b = floorHalf(hi);
+      if (b < 0.5) return '< 0,5';
+      return a === b ? fmtH(a) : fmtH(a) + '–' + fmtH(b);
+    }
     function fmtEur(n) {
       return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' €';
     }
     function shortRange(lo, hi) {
       var a = Math.round(lo * 10) / 10;
       var b = Math.round(hi * 10) / 10;
-      return String(a).replace('.', ',') + '–' + String(b).replace('.', ',') + ' h';
+      return String(a).replace('.', ',') + '–' + String(b).replace('.', ',') + ' h al mes';
     }
-    function setBar(row, lo, hi, scale) {
-      if (!row) return;
-      var x1 = scale > 0 ? (lo / scale) * 100 : 0;
-      var x2 = scale > 0 ? (hi / scale) * 100 : 0;
-      var span = row.querySelector('[data-span]');
-      var low = row.querySelector('[data-low]');
-      span.setAttribute('width', String(Math.max(x2, 0)));
-      low.setAttribute('width', String(Math.max(x1, 0)));
-      row.querySelector('[data-val]').textContent = shortRange(lo, hi);
+    // Porcentajes enteros que suman 100 (método del mayor resto).
+    function percents(values) {
+      var sum = values.reduce(function (s, v) { return s + v; }, 0);
+      if (sum <= 0) return values.map(function () { return 0; });
+      var raw = values.map(function (v) { return (v / sum) * 100; });
+      var base = raw.map(Math.floor);
+      var left = 100 - base.reduce(function (s, v) { return s + v; }, 0);
+      raw.map(function (v, i) { return { i: i, r: v - base[i] }; })
+        .sort(function (x, y) { return y.r - x.r; })
+        .slice(0, left).forEach(function (o) { base[o.i] += 1; });
+      return base;
+    }
+    function drawDonut(shares) {
+      // Cada parte es un arco del círculo (pathLength = 100); un pequeño hueco las separa.
+      var start = 0;
+      var visible = shares.filter(function (p) { return p > 0; }).length;
+      var gap = visible > 1 ? 1 : 0;
+      KEYS.forEach(function (k, i) {
+        var seg = box.querySelector('[data-seg="' + k + '"]');
+        if (!seg) return;
+        var len = Math.max(shares[i] - gap, 0);
+        seg.setAttribute('stroke-dasharray', len + ' ' + (100 - len));
+        seg.setAttribute('stroke-dashoffset', String(-start));
+        start += shares[i];
+      });
     }
 
     function update() {
@@ -216,16 +244,28 @@
 
       if (hiTotal <= 0) {
         out.textContent = 'Rellena los campos para ver tu estimación.';
+        out.classList.remove('visually-hidden');
+        total.textContent = '–';
+        legend.hidden = true;
         eur.hidden = true;
-        chart.hidden = true;
+        drawDonut(KEYS.map(function () { return 0; }));
         return;
       }
-      out.textContent = fmtRange(loTotal, hiTotal);
-      chart.hidden = false;
-      var scale = Math.max(hours(hi.prep), hours(hi.tasks), hours(hi.rem));
-      setBar(box.querySelector('[data-sv-row="prep"]'), hours(lo.prep), hours(hi.prep), scale);
-      setBar(box.querySelector('[data-sv-row="tasks"]'), hours(lo.tasks), hours(hi.tasks), scale);
-      setBar(box.querySelector('[data-sv-row="rem"]'), hours(lo.rem), hours(hi.rem), scale);
+      out.textContent = fmtRange(loTotal, hiTotal) + '.';
+      out.classList.add('visually-hidden');
+      total.textContent = shortTotal(loTotal, hiTotal);
+
+      // Reparto del punto medio entre el escenario prudente y el optimista.
+      var mids = KEYS.map(function (k) { return (lo[k] + hi[k]) / 2; });
+      var shares = percents(mids);
+      drawDonut(shares);
+      KEYS.forEach(function (k, i) {
+        var li = legend.querySelector('[data-leg="' + k + '"]');
+        if (!li) return;
+        li.querySelector('[data-pct]').textContent = shares[i] + ' %';
+        li.querySelector('[data-h]').textContent = shortRange(hours(lo[k]), hours(hi[k]));
+      });
+      legend.hidden = false;
 
       if (v > 0) {
         var eLo = floorHalf(loTotal) * v;
