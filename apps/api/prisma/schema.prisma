@@ -800,29 +800,36 @@ enum WaitlistSource {
   PROFESSIONAL_COLLEGE
   SEARCH_ENGINE
   OTHER
+  NOT_SAID
 }
 
 model WaitlistEntry {
-  id                   String             @id @default(cuid())
+  id                           String             @id @default(cuid())
   /// Cifrado (enc:v1/v2). Null tras la supresión.
-  name                 String?
+  name                         String?
   /// Cifrado (enc:v1/v2). Null tras la supresión.
-  email                String?
+  email                        String?
   /// HMAC del email normalizado. Null tras la supresión (Postgres admite varios NULL en un UNIQUE).
-  emailHash            String?            @unique
-  situation            WaitlistSituation?
+  emailHash                    String?            @unique
+  situation                    WaitlistSituation?
   /// Texto libre cifrado: herramientas que usa hoy.
-  tools                String?
-  professionalsCount   Int?
-  source               WaitlistSource?
-  privacyPolicyVersion String
-  privacyAcceptedAt    DateTime
-  commercialConsent    Boolean            @default(false)
-  /// Fecha en que se dio el consentimiento comercial vigente; null si no lo hay.
-  commercialConsentAt  DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  deletedAt            DateTime?
+  tools                        String?
+  professionalsCount           Int?
+  source                       WaitlistSource?
+  privacyPolicyVersion         String
+  privacyAcceptedAt            DateTime
+  /// El formulario solo registra que se MARCÓ la casilla comercial (y cuándo). No es un consentimiento
+  /// válido: falta el doble opt-in (confirmación por email, de momento manual con waitlist:confirm-commercial).
+  commercialConsentRequested   Boolean            @default(false)
+  commercialConsentRequestedAt DateTime?
+  /// Consentimiento comercial VÁLIDO: solo lo activa waitlist:confirm-commercial tras la respuesta "Sí".
+  commercialConsent            Boolean            @default(false)
+  commercialConsentAt          DateTime?
+  /// Retirada (waitlist:withdraw-commercial o enlace de baja futuro); nunca desde el formulario.
+  commercialConsentWithdrawnAt DateTime?
+  createdAt                    DateTime           @default(now())
+  updatedAt                    DateTime           @updatedAt
+  deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
 }

@@ -99,15 +99,21 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
   cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
   (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
-- Email repetido: upsert por `emailHash`, misma respuesta 202 (no revela si ya estaba).
+- Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.
+- Alta solo con `create` (nunca upsert): un email repetido o dos altas simultáneas chocan en el
+  índice único de `emailHash` (P2002) y reciben el mismo 202 sin tocar la fila existente.
+- El formulario solo registra la solicitud comercial (`commercialConsentRequested` + fecha). El
+  consentimiento válido lo fija únicamente `waitlist:confirm-commercial` (doble opt-in manual) y
+  se retira con `waitlist:withdraw-commercial`. Nada comercial sin doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
-  token. Rotarlo rompe la deduplicación y `waitlist:delete` de las altas previas.
+  token. No se rota: rompe la deduplicación y `waitlist:delete` de las altas previas.
 - Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,
   permisos 600, sin sobrescribir, celdas neutralizadas contra fórmulas) y
   `npm run waitlist:delete -- --email <email>` (vacía todos los datos personales y el hash; deja
-  `deletedAt`).
+  `deletedAt`) y `npm run waitlist:purge` (plazo de 12 meses; tarea mensual en el runbook). Las
+  claves de producción solo se usan en ejecuciones puntuales, nunca en un `.env` permanente.
 
 ## Antes de producción (pendiente)
 

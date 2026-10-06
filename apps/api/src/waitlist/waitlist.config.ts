@@ -22,7 +22,7 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * su versión aquí (y en packages/contracts), desplegar la API y DESPUÉS la landing; retirar la
  * anterior cuando la landing ya no la sirva.
  *  - lista-espera-v1: texto del 29/09/2026 (Google Forms). No se acepta: no describe este formulario.
- *  - lista-espera-v2: formulario propio en asepsico.es (pendiente de redacción final de Pax/Argos).
+ *  - lista-espera-v2: formulario propio en asepsico.es (texto de Lex Psi; pendiente de revisión del abogado humano).
  */
 export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2'] as const;
 

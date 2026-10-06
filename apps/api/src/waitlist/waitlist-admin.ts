@@ -12,7 +12,9 @@ import { hashWaitlistEmail } from './waitlist-crypto';
 
 export const WAITLIST_CSV_COLUMNS = [
   'createdAt', 'name', 'email', 'situation', 'tools', 'professionalsCount', 'source',
-  'privacyPolicyVersion', 'privacyAcceptedAt', 'commercialConsent', 'commercialConsentAt',
+  'privacyPolicyVersion', 'privacyAcceptedAt',
+  'commercialConsentRequested', 'commercialConsentRequestedAt',
+  'commercialConsent', 'commercialConsentAt', 'commercialConsentWithdrawnAt',
 ] as const;
 
 type Row = Record<string, unknown>;
@@ -62,6 +64,25 @@ export async function exportWaitlist(prisma: PrismaClient) {
   return { ...waitlistCsv(rows), count: rows.length };
 }
 
+/** Lo que queda de una fila suprimida: ningún dato personal, ni siquiera el hash del email. */
+function suppressedData(now: Date) {
+  return {
+    name: null,
+    email: null,
+    emailHash: null,
+    tools: null,
+    professionalsCount: null,
+    situation: null,
+    source: null,
+    commercialConsentRequested: false,
+    commercialConsentRequestedAt: null,
+    commercialConsent: false,
+    commercialConsentAt: null,
+    commercialConsentWithdrawnAt: null,
+    deletedAt: now,
+  };
+}
+
 /**
  * Supresión (art. 17 RGPD): vacía TODOS los datos personales de la fila (también emailHash, que
  * es un seudónimo del email) y deja solo la marca deletedAt con datos no identificativos. Si la
@@ -69,20 +90,59 @@ export async function exportWaitlist(prisma: PrismaClient) {
  */
 export async function deleteWaitlistEntry(prisma: PrismaClient, email: string, now: Date = new Date()): Promise<number> {
   const emailHash = hashWaitlistEmail(email);
+  const result = await prisma.waitlistEntry.updateMany({ where: { emailHash, deletedAt: null }, data: suppressedData(now) });
+  return result.count;
+}
+
+export type CommercialConsentResult = 'confirmed' | 'withdrawn' | 'not-found' | 'not-requested';
+
+/**
+ * Doble opt-in manual: César lo ejecuta cuando la persona responde "Sí" al email de confirmación.
+ * Solo confirma si la casilla se marcó en el formulario (commercialConsentRequested) y no se
+ * retiró después. Es la ÚNICA vía que pone commercialConsent=true.
+ */
+export async function confirmCommercialConsent(prisma: PrismaClient, email: string, now: Date = new Date()): Promise<CommercialConsentResult> {
+  const emailHash = hashWaitlistEmail(email);
+  const result = await prisma.waitlistEntry.updateMany({
+    where: { emailHash, deletedAt: null, commercialConsentRequested: true },
+    data: { commercialConsent: true, commercialConsentAt: now, commercialConsentWithdrawnAt: null },
+  });
+  if (result.count) return 'confirmed';
+  const exists = await prisma.waitlistEntry.count({ where: { emailHash, deletedAt: null } });
+  return exists ? 'not-requested' : 'not-found';
+}
+
+/**
+ * Retirada del consentimiento comercial (y de la solicitud, para que no se pueda volver a
+ * confirmar sin una nueva petición expresa). Solo por CLI o por el futuro enlace de baja; el
+ * formulario público no puede retirarlo ni concederlo.
+ */
+export async function withdrawCommercialConsent(prisma: PrismaClient, email: string, now: Date = new Date()): Promise<CommercialConsentResult> {
+  const emailHash = hashWaitlistEmail(email);
   const result = await prisma.waitlistEntry.updateMany({
     where: { emailHash, deletedAt: null },
-    data: {
-      name: null,
-      email: null,
-      emailHash: null,
-      tools: null,
-      professionalsCount: null,
-      situation: null,
-      source: null,
-      commercialConsent: false,
-      commercialConsentAt: null,
-      deletedAt: now,
-    },
+    data: { commercialConsent: false, commercialConsentAt: null, commercialConsentRequested: false, commercialConsentRequestedAt: null, commercialConsentWithdrawnAt: now },
   });
+  return result.count ? 'withdrawn' : 'not-found';
+}
+
+/** Fecha de corte: altas creadas antes de hace `months` meses (0 = todas las altas activas). */
+export function purgeCutoff(months: number, now: Date = new Date()): Date {
+  if (!Number.isInteger(months) || months < 0 || months > 120) throw new Error('--older-than-months debe ser un entero entre 0 y 120');
+  const cutoff = new Date(now);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+  return cutoff;
+}
+
+/**
+ * Purga por plazo de conservación (política: máximo 12 meses desde el alta, o 3 meses tras el
+ * lanzamiento público, lo que ocurra antes). Se cuenta desde createdAt (la primera alta), que es
+ * lo más prudente. Misma supresión que deleteWaitlistEntry. Con dryRun solo cuenta.
+ */
+export async function purgeWaitlist(prisma: PrismaClient, months: number, options: { dryRun?: boolean; now?: Date } = {}): Promise<number> {
+  const now = options.now ?? new Date();
+  const where = { deletedAt: null, createdAt: { lt: purgeCutoff(months, now) } };
+  if (options.dryRun) return prisma.waitlistEntry.count({ where });
+  const result = await prisma.waitlistEntry.updateMany({ where, data: suppressedData(now) });
   return result.count;
 }

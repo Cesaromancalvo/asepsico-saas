@@ -32,9 +32,9 @@ export class CreateWaitlistEntryDto {
   @IsOptional() @IsInt() @Min(1) @Max(500)
   professionalsCount?: number;
 
-  @ApiProperty({ enum: WaitlistSource })
-  @IsEnum(WaitlistSource)
-  source!: WaitlistSource;
+  @ApiPropertyOptional({ enum: WaitlistSource, description: 'Opcional; NOT_SAID = "Prefiero no decirlo"' })
+  @IsOptional() @IsEnum(WaitlistSource)
+  source?: WaitlistSource;
 
   @ApiProperty({ description: 'Debe ser true: aceptación de la política de privacidad de la lista de espera' })
   @IsBoolean() @Equals(true, { message: 'privacyAccepted debe ser true' })
@@ -44,9 +44,9 @@ export class CreateWaitlistEntryDto {
   @IsString() @IsIn([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS], { message: 'privacyPolicyVersion no es una versión vigente' })
   privacyPolicyVersion!: string;
 
-  @ApiPropertyOptional({ description: 'Casilla opcional de comunicaciones comerciales' })
+  @ApiPropertyOptional({ description: 'Casilla opcional de comunicaciones comerciales. Solo registra la solicitud: el consentimiento válido requiere doble opt-in por email' })
   @IsOptional() @IsBoolean()
-  commercialConsent?: boolean;
+  commercialConsentRequested?: boolean;
 
   @ApiProperty({ description: 'Token de GET /public/waitlist/form-token' })
   @IsString() @MaxLength(200)

@@ -14,8 +14,10 @@ import { WaitlistController } from '../src/waitlist/waitlist.controller';
 import { WaitlistOriginGuard } from '../src/waitlist/waitlist-origin.guard';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from '../src/waitlist/waitlist-crypto';
-import { csvCell, deleteWaitlistEntry, resolveExportPath, waitlistCsv } from '../src/waitlist/waitlist-admin';
-import { InvalidWaitlistConfigError, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
+import { confirmCommercialConsent, csvCell, deleteWaitlistEntry, withdrawCommercialConsent, purgeCutoff, purgeWaitlist, resolveExportPath, waitlistCsv } from '../src/waitlist/waitlist-admin';
+import { InvalidWaitlistConfigError, WAITLIST_PATH, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
+import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
+import { Prisma } from '@prisma/client';
 
 /**
  * Lista de espera pública (POST /api/v1/public/waitlist). Datos 100 % ficticios.
@@ -40,7 +42,7 @@ const validBody = (overrides: Record<string, unknown> = {}) => ({
   source: 'COLLEAGUE',
   privacyAccepted: true,
   privacyPolicyVersion: 'lista-espera-v2',
-  commercialConsent: false,
+  commercialConsentRequested: false,
   formToken: issueFormToken(Date.now() - 10_000),
   ...overrides,
 });
@@ -56,9 +58,23 @@ class CapturingLogger implements LoggerService {
   log = this.push; error = this.push; warn = this.push; debug = this.push; verbose = this.push; fatal = this.push;
 }
 
+/**
+ * Prisma simulado con el índice único de emailHash: un segundo create con el mismo hash lanza
+ * P2002, como Postgres. update/upsert existen solo para comprobar que el alta NUNCA los usa.
+ */
 function mockPrisma() {
-  const upsert = jest.fn(async (args: any) => ({ id: 'wl-1', ...args.create }));
-  return { waitlistEntry: { upsert } } as any;
+  const rows = new Map<string, any>();
+  const create = jest.fn(async (args: any) => {
+    await new Promise((r) => setImmediate(r)); // deja intercalarse a las peticiones simultáneas
+    if (args.data.emailHash && rows.has(args.data.emailHash)) {
+      throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`emailHash`)', { code: 'P2002', clientVersion: 'test' });
+    }
+    const row = { id: `wl-${rows.size + 1}`, ...args.data };
+    rows.set(args.data.emailHash, row);
+    return row;
+  });
+  const forbidden = () => jest.fn(async () => { throw new Error('el alta pública no debe actualizar filas'); });
+  return { rows, waitlistEntry: { create, upsert: forbidden(), update: forbidden(), updateMany: forbidden() } } as any;
 }
 
 /**
@@ -77,6 +93,7 @@ async function buildApp(prisma: any, logger?: LoggerService, trustLoopback = tru
   app.setGlobalPrefix('api/v1');
   applyTrustProxy(app.getHttpAdapter().getInstance(), { NODE_ENV: 'test', TRUST_PROXY: trustLoopback ? 'loopback' : 'false' });
   app.enableCors(buildCorsDelegate(env));
+  app.use(WAITLIST_PATH, waitlistBodyParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   await app.init();
   return app;
@@ -105,31 +122,46 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     const res = await post(app, validBody()).expect(202);
     expect(res.body).toEqual({ status: 'accepted' });
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(prisma.waitlistEntry.upsert).toHaveBeenCalledTimes(1);
-    const args = prisma.waitlistEntry.upsert.mock.calls[0][0];
-    for (const data of [args.create, args.update]) {
-      for (const [field, plain] of [['name', NAME], ['email', EMAIL], ['tools', TOOLS]] as const) {
-        expect(data[field]).toMatch(ENC);
-        expect(data[field]).not.toContain(plain);
-        expect(decryptField(data[field])).toBe(plain);
-      }
-      expect(data.privacyPolicyVersion).toBe('lista-espera-v2');
-      expect(data.privacyAcceptedAt).toBeInstanceOf(Date);
-      expect(data.commercialConsent).toBe(false);
-      expect(data.commercialConsentAt).toBeNull();
-      // Ni IP ni user-agent ni nada que no sea del formulario.
-      expect(Object.keys(data)).not.toEqual(expect.arrayContaining(['ip']));
-      expect(JSON.stringify(data)).not.toMatch(/127\.0\.0\.1|::1|supertest|userAgent/i);
+    expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(1);
+    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
+    for (const [field, plain] of [['name', NAME], ['email', EMAIL], ['tools', TOOLS]] as const) {
+      expect(data[field]).toMatch(ENC);
+      expect(data[field]).not.toContain(plain);
+      expect(decryptField(data[field])).toBe(plain);
     }
-    expect(args.where).toEqual({ emailHash: hashWaitlistEmail(EMAIL) });
-    expect(args.create.emailHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.privacyPolicyVersion).toBe('lista-espera-v2');
+    expect(data.privacyAcceptedAt).toBeInstanceOf(Date);
+    expect(data.commercialConsentRequested).toBe(false);
+    expect(data.commercialConsentRequestedAt).toBeNull();
+    expect(data.emailHash).toBe(hashWaitlistEmail(EMAIL));
+    expect(data.emailHash).toMatch(/^[0-9a-f]{64}$/);
+    // Ni IP ni user-agent ni nada que no sea del formulario.
+    expect(Object.keys(data)).not.toEqual(expect.arrayContaining(['ip']));
+    expect(JSON.stringify(data)).not.toMatch(/127\.0\.0\.1|::1|supertest|userAgent/i);
   });
 
-  it('el consentimiento comercial se guarda con fecha solo si se marca', async () => {
-    await post(app, validBody({ commercialConsent: true })).expect(202);
-    const { create } = prisma.waitlistEntry.upsert.mock.calls[0][0];
-    expect(create.commercialConsent).toBe(true);
-    expect(create.commercialConsentAt).toBeInstanceOf(Date);
+  it('la casilla comercial solo registra la SOLICITUD con fecha; el formulario nunca fija el consentimiento válido', async () => {
+    await post(app, validBody({ commercialConsentRequested: true })).expect(202);
+    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
+    expect(data).toMatchObject({ commercialConsentRequested: true, commercialConsentRequestedAt: expect.any(Date) });
+    for (const field of ['commercialConsent', 'commercialConsentAt', 'commercialConsentWithdrawnAt']) expect(field in data).toBe(false);
+  });
+
+  it.each([
+    ['consentimiento válido inyectado', { commercialConsent: true }],
+    ['fecha de consentimiento inyectada', { commercialConsentAt: new Date().toISOString() }],
+    ['retirada inyectada', { commercialConsentWithdrawnAt: new Date().toISOString() }],
+  ])('400: el formulario no puede tocar el consentimiento válido (%s)', async (_label, overrides) => {
+    await post(app, validBody(overrides)).expect(400);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('source es opcional y admite NOT_SAID ("Prefiero no decirlo")', async () => {
+    await post(app, validBody({ source: undefined })).expect(202);
+    await post(app, validBody({ email: 'otra.ficticia@example.com', source: 'NOT_SAID' })).expect(202);
+    const [a, b] = prisma.waitlistEntry.create.mock.calls.map((c: any[]) => c[0].data);
+    expect(a.source).toBeNull();
+    expect(b.source).toBe('NOT_SAID');
   });
 
   it.each([
@@ -145,12 +177,12 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['fuente fuera del enum', { source: 'TIKTOK' }],
     ['nº de profesionales 0', { professionalsCount: 0 }],
     ['nº de profesionales no entero', { professionalsCount: 2.5 }],
-    ['consentimiento comercial no booleano', { commercialConsent: 'sí' }],
+    ['casilla comercial no booleana', { commercialConsentRequested: 'sí' }],
     ['honeypot demasiado largo', { website: 'x'.repeat(501) }],
   ])('400 por validación/whitelist: %s', async (_label, overrides) => {
     const res = await post(app, validBody(overrides)).expect(400);
     expect(JSON.stringify(res.body)).not.toContain(EMAIL);
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -161,31 +193,83 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['sin versión de política', { privacyPolicyVersion: undefined }],
   ])('400 si no se acepta la política vigente: %s', async (_label, overrides) => {
     await post(app, validBody(overrides)).expect(400);
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
-  it('email repetido (con otras mayúsculas/espacios) → misma respuesta y actualiza la misma fila', async () => {
+  it('email repetido (otras mayúsculas/espacios, otros datos, casilla marcada) → mismo 202 y la fila NO cambia', async () => {
     const first = await post(app, validBody()).expect(202);
-    const second = await post(app, validBody({ email: `  ${EMAIL.toUpperCase()} `, name: 'Otro Nombre Ficticio' })).expect(202);
+    const stored = { ...prisma.rows.get(hashWaitlistEmail(EMAIL)) };
+    const second = await post(app, validBody({
+      email: `  ${EMAIL.toUpperCase()} `, name: 'Otro Nombre Ficticio', tools: 'Otra herramienta', situation: 'STUDENT', commercialConsentRequested: true,
+    })).expect(202);
     expect(second.body).toEqual(first.body);
     expect(second.headers['content-length']).toBe(first.headers['content-length']);
-    const [a, b] = prisma.waitlistEntry.upsert.mock.calls.map((c: any[]) => c[0]);
-    expect(b.where).toEqual(a.where);
-    expect(decryptField(b.update.name)).toBe('Otro Nombre Ficticio');
+    expect(prisma.rows.get(hashWaitlistEmail(EMAIL))).toEqual(stored);
+    expect(prisma.rows.size).toBe(1);
+    for (const method of ['upsert', 'update', 'updateMany']) expect(prisma.waitlistEntry[method]).not.toHaveBeenCalled();
+  });
+
+  it('un reenvío NUNCA concede ni retira el consentimiento comercial', async () => {
+    await post(app, validBody({ commercialConsentRequested: true })).expect(202);
+    await post(app, validBody({ commercialConsentRequested: false })).expect(202);
+    expect(prisma.rows.get(hashWaitlistEmail(EMAIL)).commercialConsentRequested).toBe(true);
+    await post(app, validBody({ email: 'sin.casilla@example.com' })).expect(202);
+    await post(app, validBody({ email: 'sin.casilla@example.com', commercialConsentRequested: true })).expect(202);
+    expect(prisma.rows.get(hashWaitlistEmail('sin.casilla@example.com')).commercialConsentRequested).toBe(false);
+  });
+
+  it('altas concurrentes con el mismo email (P2002) → todas 202, nunca 500, una sola fila', async () => {
+    const results = await Promise.all([1, 2, 3].map(() => post(app, validBody())));
+    expect(results.map((r) => r.status)).toEqual([202, 202, 202]);
+    expect(new Set(results.map((r) => JSON.stringify(r.body))).size).toBe(1);
+    expect(prisma.rows.size).toBe(1);
+  });
+
+  it('otro error de base de datos sigue siendo 500 (no se oculta como 202)', async () => {
+    prisma.waitlistEntry.create.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('fallo', { code: 'P1001', clientVersion: 'test' }));
+    await post(app, validBody()).expect(500);
+  });
+
+  it('cuerpo de más de 16 KB → 413 sin llegar al servicio (con Content-Length y en chunked)', async () => {
+    const big = validBody({ tools: 'x'.repeat(17 * 1024) });
+    const res = await post(app, big).expect(413);
+    expect(res.body).toEqual({ statusCode: 413, message: 'Payload Too Large' });
+    // Sin Content-Length (transfer-encoding: chunked): el parser corta igualmente a los 16 KB.
+    const server = app.getHttpServer();
+    if (!server.listening) await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const { port } = server.address();
+    const chunked = await new Promise<number>((resolveStatus, reject) => {
+      const http = require('node:http');
+      const req = http.request({ host: '127.0.0.1', port, path: URL, method: 'POST', headers: { 'Content-Type': 'application/json', Origin: LANDING, 'Transfer-Encoding': 'chunked', 'X-Forwarded-For': nextClientIp() } }, (r: any) => { r.resume(); resolveStatus(r.statusCode); });
+      req.on('error', reject);
+      req.write(JSON.stringify(big));
+      req.end();
+    });
+    expect(chunked).toBe(413);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('cuerpo que no es JSON → 415; JSON roto → 400 sin repetir lo recibido', async () => {
+    await request(app.getHttpServer()).post(URL).set('Origin', LANDING).set('X-Forwarded-For', nextClientIp())
+      .type('form').send(`name=${encodeURIComponent(NAME)}`).expect(415);
+    const res = await request(app.getHttpServer()).post(URL).set('Origin', LANDING).set('X-Forwarded-For', nextClientIp())
+      .set('Content-Type', 'application/json').send(`{"email":"${EMAIL}",`).expect(400);
+    expect(JSON.stringify(res.body)).not.toContain(EMAIL);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it('honeypot relleno → misma respuesta 202 y no se guarda nada', async () => {
     const ok = await post(app, validBody()).expect(202);
-    prisma.waitlistEntry.upsert.mockClear();
+    prisma.waitlistEntry.create.mockClear();
     const res = await post(app, validBody({ website: 'https://spam.example' })).expect(202);
     expect(res.body).toEqual(ok.body);
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it('tiempo mínimo de rellenado: token recién emitido → 400 WAITLIST_FORM_TOO_FAST', async () => {
     const res = await post(app, validBody({ formToken: issueFormToken() })).expect(400);
     expect(res.body.code).toBe('WAITLIST_FORM_TOO_FAST');
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -195,7 +279,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['token caducado', { formToken: issueFormToken(Date.now() - 3 * 60 * 60 * 1000) }, 400],
   ])('token de formulario inválido: %s', async (_label, overrides, status) => {
     await post(app, validBody(overrides)).expect(status);
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it('GET form-token devuelve un token válido que aún no se puede usar', async () => {
@@ -215,7 +299,7 @@ describe('Lista de espera: CORS y origen', () => {
     app = await buildApp(prisma);
   });
   afterAll(() => app.close());
-  beforeEach(() => prisma.waitlistEntry.upsert.mockClear());
+  beforeEach(() => prisma.waitlistEntry.create.mockClear());
 
   it.each([LANDING, 'https://www.asepsico.es'])('preflight desde %s: permitido, sin credenciales', async (origin) => {
     const res = await request(app.getHttpServer())
@@ -234,13 +318,13 @@ describe('Lista de espera: CORS y origen', () => {
       expect(pre.headers['access-control-allow-origin']).toBeUndefined();
       const res = await post(app, validBody(), origin).expect(403);
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
-      expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+      expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
     },
   );
 
   it('sin cabecera Origin (petición que no viene de un navegador en la landing) → 403', async () => {
     await post(app, validBody(), null).expect(403);
-    expect(prisma.waitlistEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it('el origen de la landing NO obtiene CORS en otros endpoints; la app conserva el suyo con credenciales', async () => {
@@ -308,7 +392,7 @@ describe('Lista de espera: nada de datos personales en los logs', () => {
       await post(app, validBody({ privacyAccepted: false })).expect(400);
       await post(app, validBody({ email: 'no-valido' })).expect(400);
       await post(app, validBody(), 'https://evil.example').expect(403);
-      prisma.waitlistEntry.upsert.mockRejectedValueOnce(new Error(`Unique constraint failed: ${EMAIL} ${NAME}`));
+      prisma.waitlistEntry.create.mockRejectedValueOnce(new Error(`Unique constraint failed: ${EMAIL} ${NAME}`));
       await post(app, validBody()).expect(500);
     } finally {
       await app.close();
@@ -332,7 +416,7 @@ describe('Lista de espera: cifrado en reposo, exportación y supresión', () => 
   it('la exportación CSV descifra y neutraliza fórmulas', async () => {
     const prisma = mockPrisma();
     await new WaitlistService(prisma).submit(validBody({ name: '=HYPERLINK("http://x")', tools: 'Excel, "papel"' }) as any);
-    const stored = prisma.waitlistEntry.upsert.mock.calls[0][0].create;
+    const stored = prisma.waitlistEntry.create.mock.calls[0][0].data;
     expect(stored.name).toMatch(ENC);
     const { csv, unreadable } = waitlistCsv([stored]);
     expect(unreadable).toBe(0);
@@ -359,8 +443,47 @@ describe('Lista de espera: cifrado en reposo, exportación y supresión', () => 
     expect(count).toBe(1);
     const [args] = (updateMany.mock.calls[0] as any[]);
     expect(args.where).toEqual({ emailHash: hashWaitlistEmail(EMAIL), deletedAt: null });
-    expect(args.data).toMatchObject({ name: null, email: null, emailHash: null, tools: null, professionalsCount: null, situation: null, source: null, commercialConsent: false, commercialConsentAt: null });
+    expect(args.data).toMatchObject({ name: null, email: null, emailHash: null, tools: null, professionalsCount: null, situation: null, source: null, commercialConsentRequested: false, commercialConsentRequestedAt: null, commercialConsent: false, commercialConsentAt: null, commercialConsentWithdrawnAt: null });
     expect(args.data.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('confirmación manual (doble opt-in): solo si se marcó la casilla; es la única vía al consentimiento válido', async () => {
+    const now = new Date('2026-11-02T09:00:00Z');
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const fake = { waitlistEntry: { updateMany, count: jest.fn(async () => 1) } } as any;
+    expect(await confirmCommercialConsent(fake, ` ${EMAIL.toUpperCase()}`, now)).toBe('confirmed');
+    const [args] = updateMany.mock.calls[0] as any[];
+    expect(args.where).toEqual({ emailHash: hashWaitlistEmail(EMAIL), deletedAt: null, commercialConsentRequested: true });
+    expect(args.data).toEqual({ commercialConsent: true, commercialConsentAt: now, commercialConsentWithdrawnAt: null });
+
+    const notRequested = { waitlistEntry: { updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 1) } } as any;
+    expect(await confirmCommercialConsent(notRequested, EMAIL, now)).toBe('not-requested');
+    const missing = { waitlistEntry: { updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0) } } as any;
+    expect(await confirmCommercialConsent(missing, EMAIL, now)).toBe('not-found');
+  });
+
+  it('retirada por CLI: quita consentimiento y solicitud y deja la fecha de retirada', async () => {
+    const now = new Date('2026-12-01T09:00:00Z');
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    expect(await withdrawCommercialConsent({ waitlistEntry: { updateMany } } as any, EMAIL, now)).toBe('withdrawn');
+    const [args] = updateMany.mock.calls[0] as any[];
+    expect(args.where).toEqual({ emailHash: hashWaitlistEmail(EMAIL), deletedAt: null });
+    expect(args.data).toEqual({ commercialConsent: false, commercialConsentAt: null, commercialConsentRequested: false, commercialConsentRequestedAt: null, commercialConsentWithdrawnAt: now });
+  });
+
+  it('purga por plazo: suprime las altas activas anteriores al corte, con la misma supresión total', async () => {
+    const now = new Date('2027-10-15T10:00:00Z');
+    expect(purgeCutoff(12, now).toISOString()).toBe('2026-10-15T10:00:00.000Z');
+    expect(() => purgeCutoff(-1, now)).toThrow();
+    const updateMany = jest.fn(async () => ({ count: 4 }));
+    const count = jest.fn(async () => 4);
+    const fake = { waitlistEntry: { updateMany, count } } as any;
+    expect(await purgeWaitlist(fake, 12, { dryRun: true, now })).toBe(4);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(await purgeWaitlist(fake, 12, { now })).toBe(4);
+    const [args] = updateMany.mock.calls[0] as any[];
+    expect(args.where).toEqual({ deletedAt: null, createdAt: { lt: new Date('2026-10-15T10:00:00Z') } });
+    expect(args.data).toMatchObject({ name: null, email: null, emailHash: null, tools: null, deletedAt: now });
   });
 
   it('el hash del email es un HMAC con clave: no coincide con un SHA-256 simple y cambia con el secreto', () => {

@@ -43,7 +43,7 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 |---|---|---|
 | `NODE_ENV` | `production` | Cookies `secure` y `trust proxy` por defecto. |
 | `TRUST_PROXY` | `1` | Explícito aunque coincide con el valor por defecto en producción. |
-| `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. Lista de espera (ver `docs/WAITLIST_API.md`). |
+| `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. **No se rota** (rompe la deduplicación y la supresión de las altas previas). Lista de espera (ver `docs/WAITLIST_API.md`). |
 | `WAITLIST_ALLOWED_ORIGINS` | vacío | = `https://asepsico.es,https://www.asepsico.es`. Solo afecta a `/public/waitlist`. |
 
 La API valida `TRUST_PROXY` al arrancar; un valor mal escrito hace fallar el despliegue (Render
@@ -180,3 +180,31 @@ Antes de dar por cerrado cualquier cambio de dominio o DNS de la API:
 3. Rotar secretos cuando exista sospecha de compromiso.
 4. Restaurar únicamente desde una copia verificada.
 5. Documentar causa, corrección y medidas preventivas.
+
+## Lista de espera pública (asepsico.es)
+
+Contrato y detalles en `docs/WAITLIST_API.md`.
+
+- **Host de la API para la landing: a confirmar por Dora** (`asepsico-api.onrender.com` no está
+  verificado). Es configurable en la landing y debe coincidir con `connect-src` de su CSP.
+- **Nada comercial sin doble opt-in por email.** El formulario solo guarda la solicitud
+  (`commercialConsentRequested`). Doble opt-in manual: email de confirmación de César → si la
+  persona responde "Sí", conservar ese email y ejecutar `waitlist:confirm-commercial`. Solo se
+  envía algo comercial a filas con `commercialConsent=true`. Retirada solo con
+  `waitlist:withdraw-commercial` (o el futuro enlace de baja). Un segundo envío del formulario
+  con el mismo email no cambia nada.
+- **Claves de producción solo en ejecuciones puntuales de los CLI** (`waitlist:export`,
+  `waitlist:delete`, `waitlist:purge`, `waitlist:confirm-commercial`, `waitlist:withdraw-commercial`): se pasan en la línea de la orden y se descartan al
+  terminar; nunca en un `.env` permanente, en el perfil del shell ni en el repo.
+- **`WAITLIST_SECRET` no se rota.**
+
+### Tarea programada: purga por plazo de conservación
+
+| Cuándo | Qué |
+|---|---|
+| El día 1 de cada mes **a partir del 01/10/2027** (12 meses después de las primeras altas posibles) | `DATABASE_URL=… npm run waitlist:purge -- --dry-run` y, si el recuento cuadra, `DATABASE_URL=… npm run waitlist:purge` (suprime las altas de hace más de 12 meses) |
+| **3 meses después del lanzamiento público** (anotar la fecha aquí cuando se conozca: ____) | `DATABASE_URL=… npm run waitlist:purge -- --older-than-months 0` (suprime todas las altas activas que queden) |
+
+La purga vacía todos los datos personales y el hash del email (queda solo `deletedAt`). El
+comando solo imprime recuentos. Anotar fecha y número de altas suprimidas en el registro del piloto.
+

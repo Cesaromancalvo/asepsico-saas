@@ -6,7 +6,8 @@ import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { describeTrustProxy, parseTrustProxy } from './config/trust-proxy';
 import { buildCorsDelegate } from './config/cors';
-import { assertWaitlistConfig } from './waitlist/waitlist.config';
+import { WAITLIST_PATH, assertWaitlistConfig } from './waitlist/waitlist.config';
+import { waitlistBodyParser } from './waitlist/waitlist-body.middleware';
 
 async function bootstrap() {
   // Se valida ANTES de crear la app: un TRUST_PROXY mal escrito debe impedir el arranque, no
@@ -45,6 +46,8 @@ async function bootstrap() {
   );
   // CORS por ruta: la app (WEB_ORIGIN, con credenciales) y, solo en /public/waitlist, la landing.
   app.enableCors(buildCorsDelegate());
+  // Límite de 16 KB en la ruta pública (después de CORS, antes de los parsers globales de 100 KB).
+  app.use(WAITLIST_PATH, waitlistBodyParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
   const config = new DocumentBuilder()
