@@ -37,8 +37,10 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Límites de cada campo (también en los atributos min/max del HTML).
     max: Object.freeze({ s: 80, a: 120, t: 200, r: 600, v: 500 }),
     // [REVISAR] Valores de EJEMPLO con los que se rellenan los campos al cargar (v4, petición del
-    // Jefe: la tarjeta no debe salir vacía). v = valor de la hora en euros. No son datos de nadie.
-    defaults: Object.freeze({ s: 20, a: 10, t: 10, r: 0, v: 50 }),
+    // Jefe: la tarjeta no debe salir vacía). No son datos de nadie.
+    // Sin valor de la hora por defecto (decisión del Jefe, v4): los euros solo aparecen cuando la
+    // persona lo escribe. El "p. ej. 50" del campo es un placeholder y no cuenta para el cálculo.
+    defaults: Object.freeze({ s: 20, a: 10, t: 10, r: 0 }),
   }),
 
   // El NIF y el domicilio del titular están escritos en HTML estático en aviso-legal/index.html.

@@ -188,7 +188,7 @@
     low: { prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 },
     high: { prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 },
     max: { s: 80, a: 120, t: 200, r: 600, v: 500 },
-    defaults: { s: 20, a: 10, t: 10, r: 0, v: 50 }
+    defaults: { s: 20, a: 10, t: 10, r: 0 }
   };
 
   function initSavings() {
@@ -210,7 +210,8 @@
     box.querySelectorAll('[data-sv]').forEach(function (el) {
       var k = el.getAttribute('data-sv');
       inputs[k] = el;
-      if (el.value === '' && typeof defaults[k] === 'number' && defaults[k] > 0) el.value = String(defaults[k]);
+      // El valor de la hora nunca se rellena: los euros solo salen si la persona lo escribe.
+      if (k !== 'v' && el.value === '' && typeof defaults[k] === 'number' && defaults[k] > 0) el.value = String(defaults[k]);
     });
     var out = box.querySelector('[data-sv-out]');
     var month = box.querySelector('[data-sv-month]');
@@ -308,6 +309,7 @@
         month.textContent = hiTotal > 0 ? '< 0,5 h' : '–';
         year.textContent = '–';
         eur.textContent = '–';
+        eur.classList.remove('is-hint');
         legend.hidden = true;
         drawDonut(KEYS.map(function () { return 0; }));
         return;
@@ -322,22 +324,28 @@
       KEYS.forEach(function (k, i) {
         var li = legend.querySelector('[data-leg="' + k + '"]');
         if (!li) return;
-        li.querySelector('[data-pct]').textContent = '· ' + shares[i] + ' %';
+        var pct = shares[i] + '\u00a0%';
+        // Sin valor de la hora, la leyenda muestra solo el %; con él, el % junto al nombre y los €.
         // Cada parte se redondea hacia abajo a la media hora, igual que el total.
         var hLo = floorHalf(hours(lo[k]));
         var hHi = floorHalf(hours(hi[k]));
-        li.querySelector('[data-val]').textContent = v > 0
-          ? fmtRangeShort(hLo * v, hHi * v, '€')
-          : fmtRangeShort(hLo, hHi, 'h');
+        li.querySelector('[data-pct]').textContent = v > 0 ? '· ' + pct : '';
+        li.querySelector('[data-val]').textContent = v > 0 ? fmtRangeShort(hLo * v, hHi * v, '€') : pct;
       });
       legend.hidden = false;
 
-      var summary = fmtRangeText(loTotal, hiTotal) + '.';
+      var summary = fmtRangeText(loTotal, hiTotal) + ' (' + fmtRangeShort(a * 12, b * 12, 'horas') + ' al año).';
+      summary += ' Reparto: ' + KEYS.map(function (k, i) {
+        return legend.querySelector('[data-leg="' + k + '"] .donut__name').firstChild.textContent.trim() + ', ' + shares[i] + ' %';
+      }).join('; ') + '.';
       if (v > 0) {
         eur.textContent = fmtRangeShort(a * v, b * v, '€');
+        eur.classList.remove('is-hint');
         summary += ' Con el valor de tu hora, unos ' + fmtRangeShort(a * v, b * v, 'euros') + ' al mes.';
       } else {
-        eur.textContent = '–';
+        eur.textContent = 'Escribe el valor de tu hora para verlo en euros.';
+        eur.classList.add('is-hint');
+        summary += ' Escribe el valor de tu hora para verlo en euros.';
       }
       out.textContent = summary;
     }

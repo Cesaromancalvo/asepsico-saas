@@ -453,7 +453,7 @@
 
     <!-- ESTIMACIÓN DE TIEMPO (interruptor FEATURES.savingsCalculator en js/config.js).
          Modelo de Vega (01/10): rango prudente–optimista, horas al mes y al año, euros con el valor de la
-         hora (valor de ejemplo en config.js), sin ROI y sin precios. Composición v4 (campos + tarjeta). Todo se calcula en el navegador: no se envía ni se guarda nada.
+         hora solo si la persona lo escribe, sin ROI y sin precios. Composición v4 (campos + tarjeta). Todo se calcula en el navegador: no se envía ni se guarda nada.
          PENDIENTE ANTES DE PUBLICAR: revisión de Argos y Pax (publicidad engañosa, LCD arts. 5 y 7) y
          textos [CLIO]: todas las frases de este bloque son nuevas (salvo el aviso de VeriFactu, que es de Vega).
          Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
@@ -501,7 +501,7 @@
                   <!-- [CLIO] Etiqueta nueva (v4). -->
                   <label for="sv-v">Valor de tu hora (€)</label>
                   <p class="sfield__help" id="sv-v-help">Por ejemplo, lo que cobras por sesión. No es lo mismo que ganar ese dinero: solo si usas ese tiempo para trabajar.</p>
-                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" aria-describedby="sv-v-help sv-v-err" data-sv="v">
+                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="p. ej. 50" aria-describedby="sv-v-help sv-v-err" data-sv="v">
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
                 </div>
               </fieldset>
@@ -587,8 +587,8 @@
               </div>
               <p><strong>Qué no cuenta:</strong> revisar las tareas, responder mensajes, escribir notas y facturar. Eso lleva el mismo tiempo.</p>
               <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
-              <!-- [CLIO] Texto ajustado en v4: el campo viene relleno con un valor de ejemplo. -->
-              <p>Los campos vienen rellenos con un ejemplo; cámbialos por tus cifras. El valor en euros es las horas multiplicadas por el valor de tu hora. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
+              <!-- [CLIO] Texto ajustado en v4: los campos vienen con un ejemplo, salvo el valor de la hora. -->
+              <p>Los campos vienen rellenos con un ejemplo; cámbialos por tus cifras. El valor de tu hora empieza vacío: solo si lo escribes, multiplicamos las horas por ese valor para verlo en euros. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
               <!-- [CLIO]/[ARGOS] Del borrador de calculadora de Iris; cierto en esta implementación. -->
               <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
             </div>
