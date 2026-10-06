@@ -23,6 +23,24 @@ window.ASEPSICO_CONFIG = Object.freeze({
   // Solo se muestra si FEATURES.pricingDetails es true y este texto no está vacío.
   PRICING_TEXT: '',
 
+  // Estimación de tiempo (FEATURES.savingsCalculator). Modelo de Vega (01/10).
+  // [REVISAR] Todas las cifras de este bloque son SUPUESTOS del equipo, sin medir: las tienen que
+  // validar Pax (metodología) y Lex Psi (publicidad: LCD arts. 5 y 7) antes de publicar.
+  // Si cambian low/high, actualiza también la tabla "Cómo calculamos esto" de index.html.
+  SAVINGS: Object.freeze({
+    WEEKS_PER_MONTH: 4.33,
+    // [REVISAR] Escenario prudente: parte de la preparación que deja de hacerse, minutos ahorrados
+    // por tarea, parte de pacientes que usa el portal y minutos por recordatorio.
+    low: Object.freeze({ prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 }),
+    // [REVISAR] Escenario optimista.
+    high: Object.freeze({ prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 }),
+    // Límites de cada campo (también en los atributos min/max del HTML).
+    max: Object.freeze({ s: 80, a: 120, t: 200, r: 600, v: 500 }),
+    // [REVISAR] Valores de EJEMPLO con los que se rellenan los campos al cargar (v4, petición del
+    // Jefe: la tarjeta no debe salir vacía). v = valor de la hora en euros. No son datos de nadie.
+    defaults: Object.freeze({ s: 20, a: 10, t: 10, r: 0, v: 50 }),
+  }),
+
   // El NIF y el domicilio del titular están escritos en HTML estático en aviso-legal/index.html.
 
   FEATURES: Object.freeze({
@@ -37,8 +55,9 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
     instagram: false,
 
-    // Estimación de tiempo ("Haz la cuenta con tus propias cifras"): rango de horas al mes con el
-    // modelo de Vega, euros solo si se da el valor de la hora, sin ROI ni precios. Todo en el navegador.
+    // Estimación de tiempo ("¿Cuánto tiempo podrías recuperar cada mes?"): rango de horas al mes y al
+    // año con el modelo de Vega y su valor en euros con el valor de la hora (ejemplo en SAVINGS.defaults),
+    // sin ROI ni precios. Todo en el navegador.
     // ENCENDIDA en la rama feat/landing-v2 por decisión del Jefe (05/10).
     // OJO: APAGAR (false) antes de fusionar en main si Argos y Pax no la han aprobado: main se
     // despliega solo en asepsico.es.

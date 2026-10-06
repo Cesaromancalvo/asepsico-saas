@@ -77,18 +77,54 @@
 
   /* 4. Narrativa con scroll ("Seguimiento entre sesiones") --------------- */
   // Solo en escritorio y sin "reducir movimiento". En el resto de casos (y sin JavaScript) queda la
-  // pila estática: texto y pantalla de cada paso, uno detrás de otro.
+  // pila estática: texto y pantalla de cada paso, uno detrás de otro (en móvil, con una aparición
+  // suave hecha solo con CSS si el navegador la admite).
+  // Dos capas: (a) IntersectionObserver decide el paso activo; (b) un lector de scroll (rAF, pasivo,
+  // solo mientras la sección está en pantalla) escribe tres variables CSS que mueven, con transform
+  // y opacity, la anatomía (--open), la barra de progreso (--prog) y un ligero desplazamiento (--drift).
   function initStory() {
     var root = document.querySelector('[data-story]');
     if (!root || !('IntersectionObserver' in window)) return;
     var steps = Array.prototype.slice.call(root.querySelectorAll('[data-step]'));
+    var dots = Array.prototype.slice.call(root.querySelectorAll('[data-dot]'));
     var mq = window.matchMedia('(min-width: 960px) and (prefers-reduced-motion: no-preference)');
     var io = null;
+    var ticking = false;
+    var current = '0';
 
+    function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
     function setActive(n) {
       if (root.getAttribute('data-active') === n) return;
+      current = n;
       root.setAttribute('data-active', n);
       steps.forEach(function (s) { s.classList.toggle('is-current', s.getAttribute('data-step') === n); });
+      dots.forEach(function (d) { d.classList.toggle('is-done', Number(d.getAttribute('data-dot')) <= Number(n)); });
+    }
+    function measure() {
+      ticking = false;
+      var vh = window.innerHeight || document.documentElement.clientHeight;
+      var box = root.getBoundingClientRect();
+      if (box.bottom < -vh || box.top > vh * 2) return; // fuera de pantalla: no se toca nada
+      var mid = vh / 2;
+      var first = steps[1].getBoundingClientRect();
+      var last = steps[steps.length - 1].getBoundingClientRect();
+      // La anatomía se cierra mientras el paso 01 sube desde el pie de la pantalla hasta el centro.
+      var open = clamp((first.top - mid) / (vh * 0.55));
+      var prog = clamp((mid - first.top) / Math.max(last.bottom - first.top, 1));
+      var drift = 0;
+      if (current !== '0') {
+        var cur = root.querySelector('[data-step="' + current + '"]');
+        if (cur) {
+          var r = cur.getBoundingClientRect();
+          drift = (clamp((mid - r.top) / Math.max(r.height, 1)) - 0.5) * 2;
+        }
+      }
+      root.style.setProperty('--open', open.toFixed(3));
+      root.style.setProperty('--prog', prog.toFixed(3));
+      root.style.setProperty('--drift', drift.toFixed(3));
+    }
+    function onScroll() {
+      if (!ticking) { ticking = true; window.requestAnimationFrame(measure); }
     }
     function enable() {
       if (io) return;
@@ -96,15 +132,24 @@
       setActive('0');
       // Franja estrecha en el centro de la pantalla: el paso que la cruza es el activo.
       io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) { if (e.isIntersecting) setActive(e.target.getAttribute('data-step')); });
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { setActive(e.target.getAttribute('data-step')); onScroll(); }
+        });
       }, { rootMargin: '-48% 0px -48% 0px', threshold: 0 });
       steps.forEach(function (s) { io.observe(s); });
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll, { passive: true });
+      measure();
     }
     function disable() {
       if (io) { io.disconnect(); io = null; }
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
       root.classList.remove('is-live');
       root.removeAttribute('data-active');
+      ['--open', '--prog', '--drift'].forEach(function (p) { root.style.removeProperty(p); });
       steps.forEach(function (s) { s.classList.remove('is-current'); });
+      dots.forEach(function (d) { d.classList.remove('is-done'); });
     }
     function apply() { if (mq.matches) enable(); else disable(); }
     if (mq.addEventListener) mq.addEventListener('change', apply);
@@ -136,12 +181,14 @@
 
   /* 6. Estimación de tiempo (solo si está encendida) ---------------------- */
   // Modelo de Vega: rango prudente–optimista. Todo ocurre en el navegador: no se envía, no se guarda
-  // y no va a ninguna analítica.
-  var SAVINGS = {
+  // y no va a ninguna analítica. [REVISAR] Los supuestos viven en SAVINGS de js/config.js; estos de
+  // aquí son solo el respaldo si faltara config.js y deben ser idénticos.
+  var SAVINGS = cfg.SAVINGS || {
     WEEKS_PER_MONTH: 4.33,
     low: { prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 },
     high: { prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 },
-    max: { s: 80, a: 120, t: 200, r: 600, v: 500 }
+    max: { s: 80, a: 120, t: 200, r: 600, v: 500 },
+    defaults: { s: 20, a: 10, t: 10, r: 0, v: 50 }
   };
 
   function initSavings() {
@@ -159,20 +206,40 @@
     }
 
     var inputs = {};
-    box.querySelectorAll('[data-sv]').forEach(function (el) { inputs[el.getAttribute('data-sv')] = el; });
+    var defaults = SAVINGS.defaults || {};
+    box.querySelectorAll('[data-sv]').forEach(function (el) {
+      var k = el.getAttribute('data-sv');
+      inputs[k] = el;
+      if (el.value === '' && typeof defaults[k] === 'number' && defaults[k] > 0) el.value = String(defaults[k]);
+    });
     var out = box.querySelector('[data-sv-out]');
+    var month = box.querySelector('[data-sv-month]');
+    var year = box.querySelector('[data-sv-year]');
     var eur = box.querySelector('[data-sv-eur]');
     var legend = box.querySelector('[data-sv-legend]');
-    var total = box.querySelector('[data-sv-total]');
     var form = box.querySelector('[data-savings-form]');
     if (form) form.addEventListener('submit', function (e) { e.preventDefault(); });
 
+    // Valida un campo: vacío cuenta 0 sin error; texto no numérico, negativo o por encima del máximo
+    // se marca (aria-invalid + mensaje) y el cálculo usa el valor acotado. Nunca NaN ni negativos.
     function read(key) {
       var el = inputs[key];
       if (!el) return 0;
-      var v = parseFloat(String(el.value).replace(',', '.'));
+      var max = SAVINGS.max[key];
+      var raw = String(el.value).trim();
+      var v = raw === '' ? 0 : parseFloat(raw.replace(',', '.'));
+      // Un type=number con texto inválido devuelve '' pero marca badInput.
+      var bad = (el.validity && el.validity.badInput) || !isFinite(v) || v < 0 || v > max;
+      var err = el.parentNode.querySelector('[data-sv-err]');
+      if (bad) {
+        el.setAttribute('aria-invalid', 'true');
+        if (err) { err.textContent = 'Escribe un número entre 0 y ' + max + '.'; err.hidden = false; }
+      } else {
+        el.removeAttribute('aria-invalid');
+        if (err) { err.textContent = ''; err.hidden = true; }
+      }
       if (!isFinite(v) || v <= 0) return 0;
-      return Math.min(v, SAVINGS.max[key]);
+      return Math.min(v, max);
     }
     // Minutos a la semana de cada bloque con un juego de supuestos.
     function blocks(k, d) {
@@ -184,28 +251,20 @@
     }
     function hours(minWeek) { return minWeek * SAVINGS.WEEKS_PER_MONTH / 60; }
     function floorHalf(h) { return Math.floor(h * 2) / 2; }
-    function fmtH(h) { return String(h).replace('.', ','); }
-    function fmtRange(lo, hi) {
+    function fmtN(n) {
+      var parts = String(n).split('.');
+      return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (parts[1] ? ',' + parts[1] : '');
+    }
+    function fmtRangeShort(a, b, unit) {
+      return (a === b ? fmtN(a) : fmtN(a) + '–' + fmtN(b)) + ' ' + unit;
+    }
+    function fmtRangeText(lo, hi) {
       var a = floorHalf(lo);
       var b = floorHalf(hi);
       if (b < 0.5) return 'Menos de media hora al mes';
-      if (a < 0.5) return 'Hasta ' + fmtH(b) + (b === 1 ? ' hora' : ' horas') + ' al mes';
-      if (a === b) return 'Unas ' + fmtH(a) + (a === 1 ? ' hora' : ' horas') + ' al mes';
-      return 'Entre ' + fmtH(a) + ' y ' + fmtH(b) + ' horas al mes';
-    }
-    function shortTotal(lo, hi) {
-      var a = floorHalf(lo);
-      var b = floorHalf(hi);
-      if (b < 0.5) return '< 0,5';
-      return a === b ? fmtH(a) : fmtH(a) + '–' + fmtH(b);
-    }
-    function fmtEur(n) {
-      return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' €';
-    }
-    function shortRange(lo, hi) {
-      var a = Math.round(lo * 10) / 10;
-      var b = Math.round(hi * 10) / 10;
-      return String(a).replace('.', ',') + '–' + String(b).replace('.', ',') + ' h al mes';
+      if (a < 0.5) return 'Hasta ' + fmtN(b) + (b === 1 ? ' hora' : ' horas') + ' al mes';
+      if (a === b) return 'Unas ' + fmtN(a) + (a === 1 ? ' hora' : ' horas') + ' al mes';
+      return 'Entre ' + fmtN(a) + ' y ' + fmtN(b) + ' horas al mes';
     }
     // Porcentajes enteros que suman 100 (método del mayor resto).
     function percents(values) {
@@ -236,24 +295,25 @@
 
     function update() {
       var d = { s: read('s'), a: read('a'), t: read('t'), r: reminders ? read('r') : 0 };
-      var v = read('v');
+      var v = Math.round(read('v'));
       var lo = blocks(SAVINGS.low, d);
       var hi = blocks(SAVINGS.high, d);
       var loTotal = hours(lo.prep + lo.tasks + lo.rem);
       var hiTotal = hours(hi.prep + hi.tasks + hi.rem);
+      var a = floorHalf(loTotal);
+      var b = floorHalf(hiTotal);
 
-      if (hiTotal <= 0) {
-        out.textContent = 'Rellena los campos para ver tu estimación.';
-        out.classList.remove('visually-hidden');
-        total.textContent = '–';
+      if (b < 0.5) {
+        out.textContent = hiTotal > 0 ? 'Menos de media hora al mes.' : 'Rellena los campos para ver tu estimación.';
+        month.textContent = hiTotal > 0 ? '< 0,5 h' : '–';
+        year.textContent = '–';
+        eur.textContent = '–';
         legend.hidden = true;
-        eur.hidden = true;
         drawDonut(KEYS.map(function () { return 0; }));
         return;
       }
-      out.textContent = fmtRange(loTotal, hiTotal) + '.';
-      out.classList.add('visually-hidden');
-      total.textContent = shortTotal(loTotal, hiTotal);
+      month.textContent = fmtRangeShort(a, b, 'h');
+      year.textContent = fmtRangeShort(a * 12, b * 12, 'h');
 
       // Reparto del punto medio entre el escenario prudente y el optimista.
       var mids = KEYS.map(function (k) { return (lo[k] + hi[k]) / 2; });
@@ -262,20 +322,24 @@
       KEYS.forEach(function (k, i) {
         var li = legend.querySelector('[data-leg="' + k + '"]');
         if (!li) return;
-        li.querySelector('[data-pct]').textContent = shares[i] + ' %';
-        li.querySelector('[data-h]').textContent = shortRange(hours(lo[k]), hours(hi[k]));
+        li.querySelector('[data-pct]').textContent = '· ' + shares[i] + ' %';
+        // Cada parte se redondea hacia abajo a la media hora, igual que el total.
+        var hLo = floorHalf(hours(lo[k]));
+        var hHi = floorHalf(hours(hi[k]));
+        li.querySelector('[data-val]').textContent = v > 0
+          ? fmtRangeShort(hLo * v, hHi * v, '€')
+          : fmtRangeShort(hLo, hHi, 'h');
       });
       legend.hidden = false;
 
+      var summary = fmtRangeText(loTotal, hiTotal) + '.';
       if (v > 0) {
-        var eLo = floorHalf(loTotal) * v;
-        var eHi = floorHalf(hiTotal) * v;
-        eur.textContent = 'Con lo que vale tu hora, ese tiempo equivale a ' +
-          (eLo === eHi ? fmtEur(eHi) : 'entre ' + fmtEur(eLo) + ' y ' + fmtEur(eHi)) + ' al mes.';
-        eur.hidden = false;
+        eur.textContent = fmtRangeShort(a * v, b * v, '€');
+        summary += ' Con el valor de tu hora, unos ' + fmtRangeShort(a * v, b * v, 'euros') + ' al mes.';
       } else {
-        eur.hidden = true;
+        eur.textContent = '–';
       }
+      out.textContent = summary;
     }
     Object.keys(inputs).forEach(function (k) { inputs[k].addEventListener('input', update); });
     update();

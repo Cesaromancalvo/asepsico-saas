@@ -452,8 +452,8 @@
     </section>
 
     <!-- ESTIMACIÓN DE TIEMPO (interruptor FEATURES.savingsCalculator en js/config.js).
-         Modelo de Vega (01/10): rango prudente–optimista, horas al mes, euros solo con el valor de la
-         hora, sin ROI y sin precios. Todo se calcula en el navegador: no se envía ni se guarda nada.
+         Modelo de Vega (01/10): rango prudente–optimista, horas al mes y al año, euros con el valor de la
+         hora (valor de ejemplo en config.js), sin ROI y sin precios. Composición v4 (campos + tarjeta). Todo se calcula en el navegador: no se envía ni se guarda nada.
          PENDIENTE ANTES DE PUBLICAR: revisión de Argos y Pax (publicidad engañosa, LCD arts. 5 y 7) y
          textos [CLIO]: todas las frases de este bloque son nuevas (salvo el aviso de VeriFactu, que es de Vega).
          Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
@@ -461,106 +461,138 @@
     <template id="tpl-ahorro">
       <section class="section section--soft grain" id="estimacion" aria-labelledby="ahorro-titulo">
         <div class="container">
-          <div class="split split--head">
-            <!-- [CLIO] Del borrador de calculadora de Iris (no está en la lista de afirmaciones). -->
-            <h2 id="ahorro-titulo" class="display display--md">Haz la cuenta con tus propias cifras.</h2>
+          <header class="savings__head">
+            <!-- [CLIO] Titular nuevo (v4). -->
+            <h2 id="ahorro-titulo" class="display display--md">¿Cuánto tiempo podrías recuperar cada mes?</h2>
             <!-- [CLIO] -->
-            <p class="lead">Una estimación del tiempo que AsePsico podría liberarte al mes, con tus datos y nuestros supuestos.</p>
-          </div>
+            <p class="lead">Haz la cuenta con tus propias cifras. Una estimación con tus datos y nuestros supuestos.</p>
+          </header>
 
           <div class="savings" data-savings>
             <form class="savings__form" novalidate data-savings-form>
               <fieldset class="savings__fields">
-                <legend>Tus datos (todos los campos son opcionales)</legend>
+                <legend class="visually-hidden">Tus datos</legend>
+                <!-- Los valores iniciales salen de SAVINGS.defaults en js/config.js ([REVISAR]). -->
                 <div class="sfield">
                   <label for="sv-s">¿Cuántas sesiones haces a la semana?</label>
-                  <input id="sv-s" name="s" type="number" inputmode="numeric" min="0" max="80" step="1" autocomplete="off" data-sv="s">
+                  <input id="sv-s" name="s" type="number" inputmode="numeric" min="0" max="80" step="1" autocomplete="off" aria-describedby="sv-s-err" data-sv="s">
+                  <p class="sfield__err" id="sv-s-err" data-sv-err hidden></p>
                 </div>
                 <div class="sfield">
                   <label for="sv-a">¿Cuántos minutos dedicas a preparar cada sesión buscando qué ha pasado desde la última?</label>
                   <p class="sfield__help" id="sv-a-help">Releer notas, mirar WhatsApp, correo o papeles. Solo la parte de buscar y reconstruir, no la de pensar la sesión.</p>
-                  <input id="sv-a" name="a" type="number" inputmode="numeric" min="0" max="120" step="1" autocomplete="off" aria-describedby="sv-a-help" data-sv="a">
+                  <input id="sv-a" name="a" type="number" inputmode="numeric" min="0" max="120" step="1" autocomplete="off" aria-describedby="sv-a-help sv-a-err" data-sv="a">
+                  <p class="sfield__err" id="sv-a-err" data-sv-err hidden></p>
                 </div>
                 <div class="sfield">
                   <label for="sv-t">¿Cuántas tareas entre sesiones mandas y recoges a la semana por WhatsApp, email o papel?</label>
                   <p class="sfield__help" id="sv-t-help">Si ya usas otra herramienta con portal para las tareas, pon 0.</p>
-                  <input id="sv-t" name="t" type="number" inputmode="numeric" min="0" max="200" step="1" autocomplete="off" aria-describedby="sv-t-help" data-sv="t">
+                  <input id="sv-t" name="t" type="number" inputmode="numeric" min="0" max="200" step="1" autocomplete="off" aria-describedby="sv-t-help sv-t-err" data-sv="t">
+                  <p class="sfield__err" id="sv-t-err" data-sv-err hidden></p>
                 </div>
                 <!-- Recordatorios: OCULTO hasta que los emails de recordatorio estén en producción
-                     (SAVINGS_REMINDERS en js/config.js). Mientras esté oculto, cuenta 0. -->
+                     (FEATURES.savingsReminders en js/config.js). Mientras esté oculto, cuenta 0. -->
                 <div class="sfield" data-sv-reminders hidden>
                   <label for="sv-r">¿Cuántos minutos a la semana dedicas a recordar citas a mano?</label>
-                  <input id="sv-r" name="r" type="number" inputmode="numeric" min="0" max="600" step="1" autocomplete="off" data-sv="r">
+                  <input id="sv-r" name="r" type="number" inputmode="numeric" min="0" max="600" step="1" autocomplete="off" aria-describedby="sv-r-err" data-sv="r">
+                  <p class="sfield__err" id="sv-r-err" data-sv-err hidden></p>
                 </div>
                 <div class="sfield">
-                  <label for="sv-v">¿Cuánto vale para ti una hora de tu tiempo, en euros? (opcional)</label>
+                  <!-- [CLIO] Etiqueta nueva (v4). -->
+                  <label for="sv-v">Valor de tu hora (€)</label>
                   <p class="sfield__help" id="sv-v-help">Por ejemplo, lo que cobras por sesión. No es lo mismo que ganar ese dinero: solo si usas ese tiempo para trabajar.</p>
-                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" aria-describedby="sv-v-help" data-sv="v">
+                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" aria-describedby="sv-v-help sv-v-err" data-sv="v">
+                  <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
                 </div>
               </fieldset>
             </form>
 
             <div class="savings__result">
-              <p class="savings__k">Tiempo que podría liberarte al mes</p>
-              <div class="donut">
+              <!-- [CLIO] Textos nuevos de la tarjeta (v4). -->
+              <h3 class="savings__title">Con AsePsico, cada mes podrías recuperar</h3>
+              <dl class="savings__stats">
+                <div class="savings__stat">
+                  <dt>Horas al mes</dt>
+                  <dd><span class="savings__big" data-sv-month>–</span></dd>
+                </div>
+                <div class="savings__stat">
+                  <dt>Horas al año</dt>
+                  <dd><span class="savings__big" data-sv-year>–</span></dd>
+                </div>
+              </dl>
+
+              <div class="savings__money">
+                <div class="savings__breakdown">
+                  <p class="savings__k">Valor de ese tiempo al mes</p>
+                  <p class="savings__eurbig" data-sv-eur>–</p>
+                  <!-- Lo que dice el gráfico, en texto (no depende del color). -->
+                  <ul class="donut__legend" data-sv-legend hidden>
+                    <li data-leg="prep"><span class="donut__key donut__key--prep" aria-hidden="true"></span><span class="donut__name">Preparar las sesiones <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
+                    <li data-leg="tasks"><span class="donut__key donut__key--tasks" aria-hidden="true"></span><span class="donut__name">Tareas por WhatsApp, email o papel <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
+                    <li data-leg="rem"><span class="donut__key donut__key--rem" aria-hidden="true"></span><span class="donut__name">Recordatorios de cita <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
+                  </ul>
+                </div>
                 <div class="donut__chart">
                   <svg class="donut__svg" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
                     <g transform="rotate(-90 60 60)">
-                      <circle class="donut__track" cx="60" cy="60" r="46" pathLength="100"/>
-                      <circle class="donut__seg donut__seg--prep" cx="60" cy="60" r="46" pathLength="100" stroke-dasharray="0 100" data-seg="prep"/>
-                      <circle class="donut__seg donut__seg--tasks" cx="60" cy="60" r="46" pathLength="100" stroke-dasharray="0 100" data-seg="tasks"/>
-                      <circle class="donut__seg donut__seg--rem" cx="60" cy="60" r="46" pathLength="100" stroke-dasharray="0 100" data-seg="rem"/>
+                      <circle class="donut__track" cx="60" cy="60" r="44" pathLength="100"/>
+                      <circle class="donut__seg donut__seg--prep" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="prep"/>
+                      <circle class="donut__seg donut__seg--tasks" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="tasks"/>
+                      <circle class="donut__seg donut__seg--rem" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="rem"/>
                     </g>
                   </svg>
-                  <p class="donut__center" aria-hidden="true"><span class="donut__total" data-sv-total>–</span><span class="donut__unit">horas al mes</span></p>
-                </div>
-
-                <!-- Lo que dice el gráfico, en texto (no depende del color). -->
-                <div class="donut__text" aria-live="polite" aria-atomic="true">
-                  <p class="savings__out" data-sv-out>Rellena los campos para ver tu estimación.</p>
-                  <ul class="donut__legend" data-sv-legend hidden>
-                    <li data-leg="prep"><span class="donut__key donut__key--prep" aria-hidden="true"></span><span class="donut__name">Preparar las sesiones</span><span class="donut__pct" data-pct></span><span class="donut__h" data-h></span></li>
-                    <li data-leg="tasks"><span class="donut__key donut__key--tasks" aria-hidden="true"></span><span class="donut__name">Tareas por WhatsApp, email o papel</span><span class="donut__pct" data-pct></span><span class="donut__h" data-h></span></li>
-                    <li data-leg="rem"><span class="donut__key donut__key--rem" aria-hidden="true"></span><span class="donut__name">Recordatorios de cita</span><span class="donut__pct" data-pct></span><span class="donut__h" data-h></span></li>
-                  </ul>
-                  <p class="savings__eur" data-sv-eur hidden></p>
                 </div>
               </div>
 
-              <p class="savings__disclaimer"><strong>Estimación, no garantía.</strong> Depende sobre todo de cuántos de tus pacientes usen su portal.</p>
+              <!-- Resumen para lectores de pantalla: se anuncia al cambiar los datos. -->
+              <p class="visually-hidden" aria-live="polite" aria-atomic="true" data-sv-out>Rellena los campos para ver tu estimación.</p>
 
-              <details class="disclosure savings__how">
-                <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
-                <div class="disclosure__body">
-                  <!-- [CLIO] Texto público de supuestos redactado por Fina a partir de Vega §4–5.6. -->
-                  <p>Sumamos dos bloques de tiempo y lo pasamos a horas al mes (4,33 semanas por mes):</p>
-                  <ul class="legal-list">
-                    <li><strong>Preparar las sesiones:</strong> sesiones a la semana × minutos que dedicas a buscar qué ha pasado × la parte de esa búsqueda que deja de hacerse.</li>
-                    <li><strong>Tareas entre sesiones:</strong> tareas a la semana × minutos que se ahorran por tarea × la parte de tus pacientes que usa el portal.</li>
-                  </ul>
-                  <p>Lo calculamos dos veces, con todos los supuestos en su valor prudente y en su valor optimista, y redondeamos hacia abajo a la media hora.</p>
-                  <!-- [CLIO] -->
-                  <p>El gráfico reparte en porcentaje el punto medio entre los dos escenarios: qué parte de ese tiempo viene de cada tarea.</p>
-                  <div class="table-wrap">
-                    <table class="assume">
-                      <caption>Supuestos del equipo de AsePsico (todavía sin medir)</caption>
-                      <thead><tr><th scope="col">Supuesto</th><th scope="col">Prudente</th><th scope="col">Optimista</th><th scope="col">De dónde sale</th></tr></thead>
-                      <tbody>
-                        <tr><th scope="row">Parte de la preparación que deja de hacerse</th><td>15 %</td><td>35 %</td><td>Estimación del equipo. La ficha, la entrega de la tarea, los mensajes y la última nota están en un mismo sitio, así que desaparece buscar en varios canales. Leer y pensar la sesión no cambia. Certeza baja.</td></tr>
-                        <tr><th scope="row">Minutos que se ahorran por tarea</th><td>3 min</td><td>7 min</td><td>Estimación del equipo, sin cronometrar. Sin AsePsico: buscar el documento, enviarlo, recordarlo, recibir la respuesta y guardarla en la ficha. Con AsePsico: asignarla y ver la entrega. Revisar el contenido lleva lo mismo y no se cuenta. Certeza baja.</td></tr>
-                        <tr><th scope="row">Pacientes que usan el portal</th><td>50 %</td><td>80 %</td><td>Estimación del equipo. Es el dato más incierto: si un paciente no usa el portal, su tarea sigue yendo por otra vía. Certeza muy baja.</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <p><strong>Qué no cuenta:</strong> revisar las tareas, responder mensajes, escribir notas y facturar. Eso lleva el mismo tiempo.</p>
-                  <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
-                  <p>Si das el valor de tu hora, multiplicamos las horas por ese valor. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
-                  <!-- [CLIO]/[ARGOS] Del borrador de calculadora de Iris; cierto en esta implementación. -->
-                  <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
-                </div>
-              </details>
+              <div class="savings__actions">
+                <a class="btn btn--primary"
+                   data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+                  Apuntarme a la lista de espera
+                  <span class="visually-hidden">(se abre en una pestaña nueva)</span>
+                </a>
+                <a class="btn btn--outline" href="#como-funciona">Ver cómo funciona</a>
+              </div>
+
+              <!-- [CLIO]/[LEX] Aviso pedido por el Jefe (v4). -->
+              <p class="savings__disclaimer">Estimación orientativa basada en supuestos; no es una promesa de resultados. Depende sobre todo de cuántos de tus pacientes usen su portal.</p>
             </div>
           </div>
+
+          <details class="disclosure savings__how">
+            <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+            <div class="disclosure__body">
+              <!-- [CLIO] Texto público de supuestos redactado por Fina a partir de Vega §4–5.6.
+                   [REVISAR] Las cifras de la tabla deben coincidir con SAVINGS.low/high de js/config.js. -->
+              <p>Sumamos dos bloques de tiempo y lo pasamos a horas al mes (4,33 semanas por mes):</p>
+              <ul class="legal-list">
+                <li><strong>Preparar las sesiones:</strong> sesiones a la semana × minutos que dedicas a buscar qué ha pasado × la parte de esa búsqueda que deja de hacerse.</li>
+                <li><strong>Tareas entre sesiones:</strong> tareas a la semana × minutos que se ahorran por tarea × la parte de tus pacientes que usa el portal.</li>
+              </ul>
+              <p>Lo calculamos dos veces, con todos los supuestos en su valor prudente y en su valor optimista, y redondeamos hacia abajo a la media hora. Las horas al año son las del mes multiplicadas por 12.</p>
+              <!-- [CLIO] -->
+              <p>El gráfico reparte en porcentaje el punto medio entre los dos escenarios: qué parte de ese tiempo viene de cada tarea.</p>
+              <div class="table-wrap">
+                <table class="assume">
+                  <caption>Supuestos del equipo de AsePsico (todavía sin medir)</caption>
+                  <thead><tr><th scope="col">Supuesto</th><th scope="col">Prudente</th><th scope="col">Optimista</th><th scope="col">De dónde sale</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Parte de la preparación que deja de hacerse</th><td>15 %</td><td>35 %</td><td>Estimación del equipo. La ficha, la entrega de la tarea, los mensajes y la última nota están en un mismo sitio, así que desaparece buscar en varios canales. Leer y pensar la sesión no cambia. Certeza baja.</td></tr>
+                    <tr><th scope="row">Minutos que se ahorran por tarea</th><td>3 min</td><td>7 min</td><td>Estimación del equipo, sin cronometrar. Sin AsePsico: buscar el documento, enviarlo, recordarlo, recibir la respuesta y guardarla en la ficha. Con AsePsico: asignarla y ver la entrega. Revisar el contenido lleva lo mismo y no se cuenta. Certeza baja.</td></tr>
+                    <tr><th scope="row">Pacientes que usan el portal</th><td>50 %</td><td>80 %</td><td>Estimación del equipo. Es el dato más incierto: si un paciente no usa el portal, su tarea sigue yendo por otra vía. Certeza muy baja.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p><strong>Qué no cuenta:</strong> revisar las tareas, responder mensajes, escribir notas y facturar. Eso lleva el mismo tiempo.</p>
+              <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
+              <!-- [CLIO] Texto ajustado en v4: el campo viene relleno con un valor de ejemplo. -->
+              <p>Los campos vienen rellenos con un ejemplo; cámbialos por tus cifras. El valor en euros es las horas multiplicadas por el valor de tu hora. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
+              <!-- [CLIO]/[ARGOS] Del borrador de calculadora de Iris; cierto en esta implementación. -->
+              <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
+            </div>
+          </details>
         </div>
       </section>
     </template>
