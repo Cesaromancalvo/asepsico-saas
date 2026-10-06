@@ -190,6 +190,12 @@ jobs:
       - name: Run real HTTP smoke test
         run: npm run test:smoke
 
+      # Lista de espera pública: alta cifrada, deduplicación (también simultánea), Origin, tipo
+      # de contenido, envío demasiado rápido y rate limit por IP. Usa IPs 203.0.113.x vía
+      # X-Forwarded-For (TRUST_PROXY=loopback) y borra las filas que crea. Tarda ~5 s.
+      - name: Verify public waitlist (real PostgreSQL)
+        run: node scripts/verify-waitlist.mjs
+
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
       # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR
