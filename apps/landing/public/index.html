@@ -54,7 +54,7 @@
   <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preload" href="/fonts/poppins-regular-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/poppins-bold-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/fraunces-semibold-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/styles.css">
 
   <!--
@@ -85,8 +85,6 @@
     <symbol id="i-return" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></g></symbol>
     <symbol id="i-split" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7.5" height="16" rx="2"/><rect x="13.5" y="4" width="7.5" height="16" rx="2"/><path d="M6 9h1.5M16.5 9h1.5"/></g></symbol>
     <symbol id="i-puzzle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></g></symbol>
-    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.5 6v12M15.5 6v12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
-    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
@@ -101,6 +99,7 @@
       </a>
       <nav class="topbar__nav" aria-label="Secciones">
         <ul>
+          <li><a href="#como-funciona">Cómo funciona</a></li>
           <li><a href="#que-incluye">Qué incluye</a></li>
           <li><a href="#unete">El piloto</a></li>
           <li><a href="#quienes-somos">Quiénes somos</a></li>
@@ -116,18 +115,21 @@
   </header>
 
   <main id="contenido">
-    <!-- HERO -->
-    <section class="hero" aria-labelledby="hero-titulo">
+    <!-- HERO: titular editorial + composición de producto (escritorio + móvil del paciente).
+         La inclinación 3D se endereza con el scroll (CSS scroll-driven; sin soporte, queda recta). -->
+    <section class="hero grain" aria-labelledby="hero-titulo">
       <div class="container hero__inner">
         <div class="hero__text">
-          <h1 id="hero-titulo">Software para psicólogos, pensado para el <span class="hl">seguimiento entre sesiones</span>.</h1>
+          <h1 id="hero-titulo" class="display">Software para psicólogos, pensado para el <span class="hl">seguimiento entre sesiones</span>.</h1>
           <p class="hero__lead">Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
-          <a class="btn btn--primary btn--lg"
-             data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
-            Apúntate a la lista de espera
-            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
-            <span class="visually-hidden">(se abre en una pestaña nueva)</span>
-          </a>
+          <div class="hero__actions">
+            <a class="btn btn--primary btn--lg"
+               data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+              Apúntate a la lista de espera
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
+              <span class="visually-hidden">(se abre en una pestaña nueva)</span>
+            </a>
+          </div>
           <ul class="trust">
             <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Piloto gratuito</li>
             <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Grupo reducido de psicólogos seleccionados</li>
@@ -135,208 +137,314 @@
           </ul>
         </div>
 
-        <figure class="mock" data-mock>
-          <div class="mock__frame">
-            <div class="mock__window">
-              <div class="mock__bar" aria-hidden="true">
-                <span class="mock__dots"><i></i><i></i><i></i></span>
-                <span class="mock__app" data-mock-app>AsePsico</span>
-              </div>
-
-              <div class="mock__screens" role="img"
-                   aria-label="Diseño / prototipo de AsePsico con datos ficticios: el ciclo de una tarea entre sesiones. La agenda de la semana, la ficha de Paciente Demo con una tarea asignada, el portal del paciente con la tarea pendiente, la tarea entregada y la tarea revisada y devuelta por el profesional.">
-
-                <!-- C1 · Agenda de la semana (profesional) -->
-                <div class="screen screen--pro" data-screen="1" data-app="AsePsico · Agenda">
-                  <div class="pro">
-                    <div class="pro__side">
-                      <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
-                      <span class="pro__nav is-on">Agenda</span>
-                      <span class="pro__nav">Pacientes</span>
-                      <span class="pro__nav">Tareas</span>
-                      <span class="pro__nav">Mensajes</span>
-                    </div>
-                    <div class="pro__main">
-                      <div class="pro__head"><b>Agenda</b><span class="chip">Esta semana</span></div>
-                      <div class="cal">
-                        <div class="cal__day"><span class="cal__dn">Lun</span>
-                          <span class="appt">10:00<br>Paciente Demo A</span>
-                          <span class="appt appt--alt">16:00<br>Paciente Demo D</span>
-                        </div>
-                        <div class="cal__day"><span class="cal__dn">Mar</span>
-                          <span class="appt appt--alt">12:00<br>Paciente Demo B</span>
-                        </div>
-                        <div class="cal__day"><span class="cal__dn">Mié</span>
-                          <span class="appt">09:30<br>Paciente Demo E</span>
-                          <span class="appt">18:00<br>Paciente Demo F</span>
-                        </div>
-                        <div class="cal__day"><span class="cal__dn">Jue</span>
-                          <span class="appt appt--focus">17:00<br>Paciente Demo</span>
-                        </div>
-                        <div class="cal__day"><span class="cal__dn">Vie</span>
-                          <span class="appt appt--alt">11:00<br>Paciente Demo C</span>
-                        </div>
-                      </div>
-                    </div>
+        <div class="hero__art">
+          <div class="hero__device">
+            <!-- Escritorio · ficha del paciente con su tarea (C2) -->
+            <div class="win win--hero" role="img"
+                 aria-label="Diseño / prototipo de AsePsico con datos ficticios: ficha de Paciente Demo con una tarea entre sesiones asignada.">
+              <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Pacientes</span></div>
+              <div class="win__body" aria-hidden="true">
+                <div class="pro">
+                  <div class="pro__side">
+                    <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
+                    <span class="pro__nav">Agenda</span>
+                    <span class="pro__nav is-on">Pacientes</span>
+                    <span class="pro__nav">Tareas</span>
+                    <span class="pro__nav">Mensajes</span>
                   </div>
-                </div>
-
-                <!-- C2 · Ficha del paciente con su tarea (profesional) -->
-                <div class="screen screen--pro is-active" data-screen="2" data-app="AsePsico · Pacientes">
-                  <div class="pro">
-                    <div class="pro__side">
-                      <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
-                      <span class="pro__nav">Agenda</span>
-                      <span class="pro__nav is-on">Pacientes</span>
-                      <span class="pro__nav">Tareas</span>
-                      <span class="pro__nav">Mensajes</span>
-                    </div>
-                    <div class="pro__main">
-                      <div class="pro__head"><span class="avatar">PD</span><b>Paciente Demo</b></div>
-                      <div class="tabs"><span class="is-on">Resumen</span><span>Citas</span><span>Tareas</span></div>
-                      <div class="card">
-                        <span class="card__k">Próxima cita</span>
-                        <span class="card__v">Jueves · 17:00</span>
-                      </div>
-                      <div class="card">
-                        <span class="card__k">Tareas entre sesiones</span>
-                        <div class="task task--new">
-                          <span class="task__t">Registro de actividades de la semana</span>
-                          <span class="badge badge--violet">Asignada</span>
-                        </div>
-                        <div class="task task--muted">
-                          <span class="task__t">Lectura breve</span>
-                          <span class="badge badge--grey">Revisada</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- C3 · Portal del paciente: tarea pendiente -->
-                <div class="screen screen--portal" data-screen="3" data-app="Portal del paciente">
-                  <div class="portal">
-                    <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Hola, Paciente Demo</b></div>
+                  <div class="pro__main">
+                    <div class="pro__head"><span class="avatar">PD</span><b>Paciente Demo</b></div>
+                    <div class="tabs"><span class="is-on">Resumen</span><span>Citas</span><span>Tareas</span></div>
                     <div class="card">
-                      <span class="card__k">Tu próxima cita</span>
+                      <span class="card__k">Próxima cita</span>
                       <span class="card__v">Jueves · 17:00</span>
                     </div>
                     <div class="card">
-                      <span class="card__k">Tus tareas</span>
-                      <div class="task">
+                      <span class="card__k">Tareas entre sesiones</span>
+                      <div class="task task--new">
                         <span class="task__t">Registro de actividades de la semana</span>
-                        <span class="badge badge--amber">Pendiente</span>
+                        <span class="badge badge--violet">Asignada</span>
                       </div>
-                      <span class="fakebtn fakebtn--pulse">Entregar tarea</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- C4 · Portal del paciente: tarea entregada -->
-                <div class="screen screen--portal" data-screen="4" data-app="Portal del paciente">
-                  <div class="portal">
-                    <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Hola, Paciente Demo</b></div>
-                    <div class="card">
-                      <span class="card__k">Tu próxima cita</span>
-                      <span class="card__v">Jueves · 17:00</span>
-                    </div>
-                    <div class="card">
-                      <span class="card__k">Tus tareas</span>
-                      <div class="task task--done">
-                        <span class="task__t">Registro de actividades de la semana</span>
-                        <span class="badge badge--green">Entregada</span>
-                      </div>
-                      <span class="note">Entregada el martes</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- C5 · Tarea revisada y devuelta (profesional) -->
-                <div class="screen screen--pro" data-screen="5" data-app="AsePsico · Tareas">
-                  <div class="pro">
-                    <div class="pro__side">
-                      <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
-                      <span class="pro__nav">Agenda</span>
-                      <span class="pro__nav">Pacientes</span>
-                      <span class="pro__nav is-on">Tareas</span>
-                      <span class="pro__nav">Mensajes</span>
-                    </div>
-                    <div class="pro__main">
-                      <div class="pro__head"><b>Registro de actividades de la semana</b></div>
-                      <div class="meta"><span>Paciente Demo</span><span class="badge badge--green">Entregada</span></div>
-                      <div class="card">
-                        <span class="card__k">Tu devolución</span>
-                        <span class="comment">Revisado, lo vemos en la próxima sesión.</span>
-                        <div class="row-end">
-                          <span class="badge badge--violet">Revisada</span>
-                          <span class="fakebtn fakebtn--pulse">Devolver al paciente</span>
-                        </div>
+                      <div class="task task--muted">
+                        <span class="task__t">Lectura breve</span>
+                        <span class="badge badge--grey">Revisada</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <p class="mock__label" aria-hidden="true">Diseño / prototipo · datos ficticios</p>
             </div>
 
-            <button type="button" class="mock__pause" data-mock-toggle aria-pressed="false" hidden>
-              <svg class="icon icon--pause" aria-hidden="true" focusable="false"><use href="#i-pause"/></svg>
-              <svg class="icon icon--play" aria-hidden="true" focusable="false"><use href="#i-play"/></svg>
-              <span class="visually-hidden" data-mock-toggle-label>Pausar la animación</span>
-            </button>
+            <!-- Móvil · portal del paciente con la tarea pendiente (C3) -->
+            <div class="phone" role="img"
+                 aria-label="Diseño / prototipo de AsePsico con datos ficticios: el portal del paciente con la tarea pendiente.">
+              <div class="phone__screen" aria-hidden="true">
+                <div class="portal">
+                  <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Hola, Paciente Demo</b></div>
+                  <div class="card">
+                    <span class="card__k">Tu próxima cita</span>
+                    <span class="card__v">Jueves · 17:00</span>
+                  </div>
+                  <div class="card">
+                    <span class="card__k">Tus tareas</span>
+                    <div class="task">
+                      <span class="task__t">Registro de actividades de la semana</span>
+                      <span class="badge badge--amber">Pendiente</span>
+                    </div>
+                    <span class="fakebtn">Entregar tarea</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <figcaption>
-            <ol class="mock__steps" data-mock-steps>
-              <li data-step="1">Tu agenda</li>
-              <li data-step="2" class="is-on">Asignas una tarea</li>
-              <li data-step="3">El paciente la ve en su portal</li>
-              <li data-step="4">La entrega</li>
-              <li data-step="5">La revisas y se la devuelves</li>
-            </ol>
-          </figcaption>
-        </figure>
+          <p class="proto-label">Diseño / prototipo · datos ficticios</p>
+        </div>
       </div>
       <p class="container hero__strip">Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
     </section>
 
     <!-- EL PROBLEMA -->
-    <section class="section" aria-labelledby="problema-titulo">
-      <div class="container narrow">
-        <h2 id="problema-titulo">Lo que pasa entre sesiones también es parte del trabajo.</h2>
-        <p class="lead">Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
-        <ul class="pain">
-          <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-return"/></svg></span>La tarea se da en consulta, pero vuelve por otra vía.</li>
-          <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-split"/></svg></span>La respuesta llega por un canal y la ficha está en otro.</li>
-          <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-puzzle"/></svg></span>Antes de la siguiente sesión, toca reconstruir qué pasó.</li>
-        </ul>
+    <section class="section section--paper" aria-labelledby="problema-titulo">
+      <div class="container split">
+        <h2 id="problema-titulo" class="display display--md reveal">Lo que pasa entre sesiones también es parte del trabajo.</h2>
+        <div class="reveal">
+          <p class="lead">Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
+          <ul class="pain">
+            <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-return"/></svg></span>La tarea se da en consulta, pero vuelve por otra vía.</li>
+            <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-split"/></svg></span>La respuesta llega por un canal y la ficha está en otro.</li>
+            <li><span class="pain__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-puzzle"/></svg></span>Antes de la siguiente sesión, toca reconstruir qué pasó.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
+    <!-- NARRATIVA CON SCROLL: el ciclo de una tarea entre sesiones.
+         Sin JavaScript, en móvil o con "reducir movimiento": pila estática (texto + pantalla de cada paso).
+         En escritorio con JavaScript: la pantalla se fija (sticky), se abre en capas ("anatomía")
+         y se recompone paso a paso. Todas las pantallas usan datos ficticios. -->
+    <section class="story grain" id="como-funciona" aria-labelledby="story-titulo">
+      <div class="container story__grid" data-story>
+        <div class="story__steps">
+          <header class="step step--intro" data-step="0">
+            <h2 id="story-titulo" class="display display--md">Seguimiento entre sesiones</h2>
+            <p class="lead">AsePsico reúne en un solo sitio la agenda, los pacientes y la historia clínica.</p>
+          </header>
+          <article class="step" data-step="1">
+            <span class="step__n" aria-hidden="true">01</span>
+            <h3 class="step__t">Tu agenda</h3>
+            <p>La agenda, en el mismo sitio que tus pacientes y su historia clínica.</p>
+          </article>
+          <article class="step" data-step="2">
+            <span class="step__n" aria-hidden="true">02</span>
+            <h3 class="step__t">Asignas una tarea</h3>
+            <p>Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
+          </article>
+          <article class="step" data-step="3">
+            <span class="step__n" aria-hidden="true">03</span>
+            <h3 class="step__t">El paciente la ve en su portal</h3>
+            <p>Tus pacientes ven sus citas y tareas en su propio portal.</p>
+          </article>
+          <article class="step" data-step="4">
+            <span class="step__n" aria-hidden="true">04</span>
+            <h3 class="step__t">La entrega</h3>
+            <p>Tus pacientes tienen su propio portal: ven sus citas y tareas, te entregan las tareas y te escriben mensajes.</p>
+          </article>
+          <article class="step" data-step="5">
+            <span class="step__n" aria-hidden="true">05</span>
+            <h3 class="step__t">La revisas y se la devuelves</h3>
+            <p>Lo que pasa entre sesiones también es parte del trabajo, y AsePsico está pensado para ese seguimiento entre sesiones.</p>
+          </article>
+        </div>
+
+        <div class="story__stage">
+          <div class="stage">
+            <div class="layers">
+              <!-- C1 · Agenda de la semana (profesional) -->
+              <div class="layer" data-layer="1">
+                <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la agenda de la semana.">
+                  <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Agenda</span></div>
+                  <div class="win__body" aria-hidden="true">
+                    <div class="pro">
+                      <div class="pro__side">
+                        <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
+                        <span class="pro__nav is-on">Agenda</span>
+                        <span class="pro__nav">Pacientes</span>
+                        <span class="pro__nav">Tareas</span>
+                        <span class="pro__nav">Mensajes</span>
+                      </div>
+                      <div class="pro__main">
+                        <div class="pro__head"><b>Agenda</b><span class="chip">Esta semana</span></div>
+                        <div class="cal">
+                          <div class="cal__day"><span class="cal__dn">Lun</span>
+                            <span class="appt">10:00<br>Paciente Demo A</span>
+                            <span class="appt appt--alt">16:00<br>Paciente Demo D</span>
+                          </div>
+                          <div class="cal__day"><span class="cal__dn">Mar</span>
+                            <span class="appt appt--alt">12:00<br>Paciente Demo B</span>
+                          </div>
+                          <div class="cal__day"><span class="cal__dn">Mié</span>
+                            <span class="appt">09:30<br>Paciente Demo E</span>
+                            <span class="appt">18:00<br>Paciente Demo F</span>
+                          </div>
+                          <div class="cal__day"><span class="cal__dn">Jue</span>
+                            <span class="appt appt--focus">17:00<br>Paciente Demo</span>
+                          </div>
+                          <div class="cal__day"><span class="cal__dn">Vie</span>
+                            <span class="appt appt--alt">11:00<br>Paciente Demo C</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="win__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+                </div>
+              </div>
+
+              <!-- C2 · Ficha del paciente con su tarea (profesional) -->
+              <div class="layer" data-layer="2">
+                <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: ficha de Paciente Demo con una tarea entre sesiones asignada.">
+                  <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Pacientes</span></div>
+                  <div class="win__body" aria-hidden="true">
+                    <div class="pro">
+                      <div class="pro__side">
+                        <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
+                        <span class="pro__nav">Agenda</span>
+                        <span class="pro__nav is-on">Pacientes</span>
+                        <span class="pro__nav">Tareas</span>
+                        <span class="pro__nav">Mensajes</span>
+                      </div>
+                      <div class="pro__main">
+                        <div class="pro__head"><span class="avatar">PD</span><b>Paciente Demo</b></div>
+                        <div class="tabs"><span>Resumen</span><span>Citas</span><span class="is-on">Tareas</span></div>
+                        <div class="card">
+                          <span class="card__k">Tareas entre sesiones</span>
+                          <div class="task task--new">
+                            <span class="task__t">Registro de actividades de la semana</span>
+                            <span class="badge badge--violet">Asignada</span>
+                          </div>
+                          <div class="task task--muted">
+                            <span class="task__t">Lectura breve</span>
+                            <span class="badge badge--grey">Revisada</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="win__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+                </div>
+              </div>
+
+              <!-- C3 · Portal del paciente: tarea pendiente -->
+              <div class="layer" data-layer="3">
+                <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: el portal del paciente con la tarea pendiente.">
+                  <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">Portal del paciente</span></div>
+                  <div class="win__body" aria-hidden="true">
+                    <div class="portal">
+                      <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Hola, Paciente Demo</b></div>
+                      <div class="card">
+                        <span class="card__k">Tu próxima cita</span>
+                        <span class="card__v">Jueves · 17:00</span>
+                      </div>
+                      <div class="card">
+                        <span class="card__k">Tus tareas</span>
+                        <div class="task">
+                          <span class="task__t">Registro de actividades de la semana</span>
+                          <span class="badge badge--amber">Pendiente</span>
+                        </div>
+                        <span class="fakebtn fakebtn--pulse">Entregar tarea</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="win__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+                </div>
+              </div>
+
+              <!-- C4 · Portal del paciente: tarea entregada -->
+              <div class="layer" data-layer="4">
+                <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la tarea entregada desde el portal del paciente.">
+                  <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">Portal del paciente</span></div>
+                  <div class="win__body" aria-hidden="true">
+                    <div class="portal">
+                      <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Hola, Paciente Demo</b></div>
+                      <div class="card">
+                        <span class="card__k">Tu próxima cita</span>
+                        <span class="card__v">Jueves · 17:00</span>
+                      </div>
+                      <div class="card">
+                        <span class="card__k">Tus tareas</span>
+                        <div class="task task--done">
+                          <span class="task__t">Registro de actividades de la semana</span>
+                          <span class="badge badge--green">Entregada</span>
+                        </div>
+                        <span class="note">Entregada el martes</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="win__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+                </div>
+              </div>
+
+              <!-- C5 · Tarea revisada y devuelta (profesional) -->
+              <div class="layer" data-layer="5">
+                <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la tarea revisada y devuelta por el profesional.">
+                  <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Tareas</span></div>
+                  <div class="win__body" aria-hidden="true">
+                    <div class="pro">
+                      <div class="pro__side">
+                        <img class="pro__logo" src="/img/logo-96.png" width="24" height="24" alt="">
+                        <span class="pro__nav">Agenda</span>
+                        <span class="pro__nav">Pacientes</span>
+                        <span class="pro__nav is-on">Tareas</span>
+                        <span class="pro__nav">Mensajes</span>
+                      </div>
+                      <div class="pro__main">
+                        <div class="pro__head"><b>Registro de actividades de la semana</b></div>
+                        <div class="meta"><span>Paciente Demo</span><span class="badge badge--green">Entregada</span></div>
+                        <div class="card">
+                          <span class="card__k">Tu devolución</span>
+                          <span class="comment">Revisado, lo vemos en la próxima sesión.</span>
+                          <div class="row-end">
+                            <span class="badge badge--violet">Revisada</span>
+                            <span class="fakebtn fakebtn--pulse">Devolver al paciente</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="win__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+                </div>
+              </div>
+            </div>
+            <ol class="rail" aria-hidden="true">
+              <li data-dot="1"></li><li data-dot="2"></li><li data-dot="3"></li><li data-dot="4"></li><li data-dot="5"></li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- POR QUÉ UNIRTE (beneficios en texto; sin calculadora ni gráfico hasta tener datos del piloto) -->
-    <section class="section section--tint" id="por-que-unirte" aria-labelledby="porque-titulo">
+    <section class="section section--paper" id="por-que-unirte" aria-labelledby="porque-titulo">
       <div class="container">
-        <h2 id="porque-titulo" class="center">Por qué unirte</h2>
-        <ul class="benefits">
-          <li class="benefit">
-            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span>
+        <h2 id="porque-titulo" class="display display--md reveal">Por qué unirte</h2>
+        <ul class="bento">
+          <li class="tile tile--dark reveal">
+            <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span>
             <h3>Seguimiento entre sesiones</h3>
             <p>AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
           </li>
-          <li class="benefit">
-            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-file"/></svg></span>
+          <li class="tile reveal">
+            <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-file"/></svg></span>
             <h3>En un solo sitio</h3>
             <p>AsePsico reúne en un solo sitio la agenda, los pacientes y la historia clínica.</p>
           </li>
-          <li class="benefit">
-            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span>
+          <li class="tile tile--mauve reveal">
+            <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span>
             <h3>Piloto gratuito</h3>
             <p>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
           </li>
-          <li class="benefit">
-            <span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span>
+          <li class="tile reveal">
+            <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span>
             <h3>Tu opinión en el piloto</h3>
             <p>Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen. A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p>
           </li>
@@ -344,134 +452,251 @@
       </div>
     </section>
 
+    <!-- ESTIMACIÓN DE TIEMPO (interruptor FEATURES.savingsCalculator en js/config.js).
+         Modelo de Vega (01/10): rango prudente–optimista, horas al mes, euros solo con el valor de la
+         hora, sin ROI y sin precios. Todo se calcula en el navegador: no se envía ni se guarda nada.
+         PENDIENTE ANTES DE PUBLICAR: revisión de Argos y Pax (publicidad engañosa, LCD arts. 5 y 7) y
+         textos [CLIO]: todas las frases de este bloque son nuevas (salvo el aviso de VeriFactu, que es de Vega).
+         Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
+    <div data-slot="ahorro"></div>
+    <template id="tpl-ahorro">
+      <section class="section section--soft grain" id="estimacion" aria-labelledby="ahorro-titulo">
+        <div class="container">
+          <div class="split split--head">
+            <!-- [CLIO] Del borrador de calculadora de Iris (no está en la lista de afirmaciones). -->
+            <h2 id="ahorro-titulo" class="display display--md">Haz la cuenta con tus propias cifras.</h2>
+            <!-- [CLIO] -->
+            <p class="lead">Una estimación del tiempo que AsePsico podría liberarte al mes, con tus datos y nuestros supuestos.</p>
+          </div>
+
+          <div class="savings" data-savings>
+            <form class="savings__form" novalidate data-savings-form>
+              <fieldset class="savings__fields">
+                <legend>Tus datos (todos los campos son opcionales)</legend>
+                <div class="sfield">
+                  <label for="sv-s">¿Cuántas sesiones haces a la semana?</label>
+                  <input id="sv-s" name="s" type="number" inputmode="numeric" min="0" max="80" step="1" autocomplete="off" data-sv="s">
+                </div>
+                <div class="sfield">
+                  <label for="sv-a">¿Cuántos minutos dedicas a preparar cada sesión buscando qué ha pasado desde la última?</label>
+                  <p class="sfield__help" id="sv-a-help">Releer notas, mirar WhatsApp, correo o papeles. Solo la parte de buscar y reconstruir, no la de pensar la sesión.</p>
+                  <input id="sv-a" name="a" type="number" inputmode="numeric" min="0" max="120" step="1" autocomplete="off" aria-describedby="sv-a-help" data-sv="a">
+                </div>
+                <div class="sfield">
+                  <label for="sv-t">¿Cuántas tareas entre sesiones mandas y recoges a la semana por WhatsApp, email o papel?</label>
+                  <p class="sfield__help" id="sv-t-help">Si ya usas otra herramienta con portal para las tareas, pon 0.</p>
+                  <input id="sv-t" name="t" type="number" inputmode="numeric" min="0" max="200" step="1" autocomplete="off" aria-describedby="sv-t-help" data-sv="t">
+                </div>
+                <!-- Recordatorios: OCULTO hasta que los emails de recordatorio estén en producción
+                     (SAVINGS_REMINDERS en js/config.js). Mientras esté oculto, cuenta 0. -->
+                <div class="sfield" data-sv-reminders hidden>
+                  <label for="sv-r">¿Cuántos minutos a la semana dedicas a recordar citas a mano?</label>
+                  <input id="sv-r" name="r" type="number" inputmode="numeric" min="0" max="600" step="1" autocomplete="off" data-sv="r">
+                </div>
+                <div class="sfield">
+                  <label for="sv-v">¿Cuánto vale para ti una hora de tu tiempo, en euros? (opcional)</label>
+                  <p class="sfield__help" id="sv-v-help">Por ejemplo, lo que cobras por sesión. No es lo mismo que ganar ese dinero: solo si usas ese tiempo para trabajar.</p>
+                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" aria-describedby="sv-v-help" data-sv="v">
+                </div>
+              </fieldset>
+            </form>
+
+            <div class="savings__result">
+              <div aria-live="polite" aria-atomic="true">
+                <p class="savings__k">Tiempo que podría liberarte al mes</p>
+                <p class="savings__out" data-sv-out>Rellena los campos para ver tu estimación.</p>
+                <p class="savings__eur" data-sv-eur hidden></p>
+              </div>
+
+              <div class="range" data-sv-chart hidden>
+                <p class="range__legend" aria-hidden="true"><span class="range__key range__key--low"></span>Prudente <span class="range__key range__key--high"></span>Optimista</p>
+                <div class="range__row" data-sv-row="prep">
+                  <span class="range__label">Preparar las sesiones</span>
+                  <svg class="range__bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <rect class="range__track" x="0" y="0" width="100" height="10" rx="5"/>
+                    <rect class="range__span" x="0" y="0" width="0" height="10" rx="5" data-span/>
+                    <rect class="range__low" x="0" y="0" width="0" height="10" rx="5" data-low/>
+                  </svg>
+                  <span class="range__val" data-val></span>
+                </div>
+                <div class="range__row" data-sv-row="tasks">
+                  <span class="range__label">Tareas entre sesiones</span>
+                  <svg class="range__bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <rect class="range__track" x="0" y="0" width="100" height="10" rx="5"/>
+                    <rect class="range__span" x="0" y="0" width="0" height="10" rx="5" data-span/>
+                    <rect class="range__low" x="0" y="0" width="0" height="10" rx="5" data-low/>
+                  </svg>
+                  <span class="range__val" data-val></span>
+                </div>
+                <div class="range__row" data-sv-row="rem" hidden>
+                  <span class="range__label">Recordatorios de cita</span>
+                  <svg class="range__bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <rect class="range__track" x="0" y="0" width="100" height="10" rx="5"/>
+                    <rect class="range__span" x="0" y="0" width="0" height="10" rx="5" data-span/>
+                    <rect class="range__low" x="0" y="0" width="0" height="10" rx="5" data-low/>
+                  </svg>
+                  <span class="range__val" data-val></span>
+                </div>
+              </div>
+
+              <p class="savings__disclaimer"><strong>Estimación, no garantía.</strong> Depende sobre todo de cuántos de tus pacientes usen su portal.</p>
+
+              <details class="disclosure savings__how">
+                <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+                <div class="disclosure__body">
+                  <!-- [CLIO] Texto público de supuestos redactado por Fina a partir de Vega §4–5.6. -->
+                  <p>Sumamos dos bloques de tiempo y lo pasamos a horas al mes (4,33 semanas por mes):</p>
+                  <ul class="legal-list">
+                    <li><strong>Preparar las sesiones:</strong> sesiones a la semana × minutos que dedicas a buscar qué ha pasado × la parte de esa búsqueda que deja de hacerse.</li>
+                    <li><strong>Tareas entre sesiones:</strong> tareas a la semana × minutos que se ahorran por tarea × la parte de tus pacientes que usa el portal.</li>
+                  </ul>
+                  <p>Lo calculamos dos veces, con todos los supuestos en su valor prudente y en su valor optimista, y redondeamos hacia abajo a la media hora.</p>
+                  <div class="table-wrap">
+                    <table class="assume">
+                      <caption>Supuestos del equipo de AsePsico (todavía sin medir)</caption>
+                      <thead><tr><th scope="col">Supuesto</th><th scope="col">Prudente</th><th scope="col">Optimista</th><th scope="col">De dónde sale</th></tr></thead>
+                      <tbody>
+                        <tr><th scope="row">Parte de la preparación que deja de hacerse</th><td>15 %</td><td>35 %</td><td>Estimación del equipo. La ficha, la entrega de la tarea, los mensajes y la última nota están en un mismo sitio, así que desaparece buscar en varios canales. Leer y pensar la sesión no cambia. Certeza baja.</td></tr>
+                        <tr><th scope="row">Minutos que se ahorran por tarea</th><td>3 min</td><td>7 min</td><td>Estimación del equipo, sin cronometrar. Sin AsePsico: buscar el documento, enviarlo, recordarlo, recibir la respuesta y guardarla en la ficha. Con AsePsico: asignarla y ver la entrega. Revisar el contenido lleva lo mismo y no se cuenta. Certeza baja.</td></tr>
+                        <tr><th scope="row">Pacientes que usan el portal</th><td>50 %</td><td>80 %</td><td>Estimación del equipo. Es el dato más incierto: si un paciente no usa el portal, su tarea sigue yendo por otra vía. Certeza muy baja.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p><strong>Qué no cuenta:</strong> revisar las tareas, responder mensajes, escribir notas y facturar. Eso lleva el mismo tiempo.</p>
+                  <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
+                  <p>Si das el valor de tu hora, multiplicamos las horas por ese valor. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
+                  <!-- [CLIO]/[ARGOS] Del borrador de calculadora de Iris; cierto en esta implementación. -->
+                  <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+      </section>
+    </template>
+
     <!-- QUÉ INCLUYE EL PILOTO -->
-    <section class="section section--panel" id="que-incluye" aria-labelledby="incluye-titulo">
+    <section class="section section--paper" id="que-incluye" aria-labelledby="incluye-titulo">
       <div class="container">
-        <div class="panel">
-          <h2 id="incluye-titulo">Qué incluye el piloto</h2>
-          <p class="lead">Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología.</p>
+        <div class="split split--head">
+          <h2 id="incluye-titulo" class="display display--md reveal">Qué incluye el piloto</h2>
+          <p class="lead reveal">Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología.</p>
+        </div>
+        <div class="incluye">
           <ul class="features">
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg></span><h3>Agenda</h3><p>La agenda, en el mismo sitio que tus pacientes y su historia clínica.</p></li>
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg></span><h3>Pacientes</h3><p>Todos tus pacientes en un solo sitio.</p></li>
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-file"/></svg></span><h3>Historia clínica</h3><p>La historia clínica, junto a la agenda y la ficha del paciente.</p></li>
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span><h3>Tareas entre sesiones</h3><p>Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p></li>
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-portal"/></svg></span><h3>Portal del paciente</h3><p>Tus pacientes ven sus citas y tareas en su propio portal.</p></li>
-            <li class="feature"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span><h3>Mensajes</h3><p>Tus pacientes te escriben mensajes desde su portal.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg></span><h3>Agenda</h3><p>La agenda, en el mismo sitio que tus pacientes y su historia clínica.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg></span><h3>Pacientes</h3><p>Todos tus pacientes en un solo sitio.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-file"/></svg></span><h3>Historia clínica</h3><p>La historia clínica, junto a la agenda y la ficha del paciente.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span><h3>Tareas entre sesiones</h3><p>Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-portal"/></svg></span><h3>Portal del paciente</h3><p>Tus pacientes ven sus citas y tareas en su propio portal.</p></li>
+            <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span><h3>Mensajes</h3><p>Tus pacientes te escriben mensajes desde su portal.</p></li>
           </ul>
 
-          <div class="shots">
-            <!-- C2 estática · Ficha del paciente con su tarea -->
-            <figure class="shot">
-              <div class="shot__frame" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: ficha de Paciente Demo con una tarea entre sesiones asignada.">
-                <div class="shot__screen" aria-hidden="true">
-                  <div class="pro__head"><span class="avatar">PD</span><b>Paciente Demo</b></div>
-                  <div class="tabs"><span>Resumen</span><span>Citas</span><span class="is-on">Tareas</span></div>
-                  <div class="card">
-                    <div class="task"><span class="task__t">Registro de actividades de la semana</span><span class="badge badge--violet">Asignada</span></div>
-                    <div class="task task--muted"><span class="task__t">Lectura breve</span><span class="badge badge--grey">Revisada</span></div>
-                  </div>
+          <!-- C6 · Mensaje del paciente en el portal -->
+          <figure class="shot reveal">
+            <div class="shot__frame" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: un mensaje corto de Paciente Demo en su portal.">
+              <div class="shot__screen" aria-hidden="true">
+                <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Mensajes</b></div>
+                <div class="msg">
+                  <span class="msg__who">Paciente Demo · martes</span>
+                  <span class="msg__body">Hola, ya he entregado la tarea. Lo comentamos el jueves.</span>
                 </div>
-                <span class="shot__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
-              </div>
-              <figcaption>Ficha del paciente con sus tareas</figcaption>
-            </figure>
-            <!-- C6 · Mensaje del paciente en el portal -->
-            <figure class="shot">
-              <div class="shot__frame" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: un mensaje corto de Paciente Demo en su portal.">
-                <div class="shot__screen" aria-hidden="true">
-                  <div class="portal__head"><span class="avatar avatar--light">PD</span><b>Mensajes</b></div>
-                  <div class="msg">
-                    <span class="msg__who">Paciente Demo · martes</span>
-                    <span class="msg__body">Hola, ya he entregado la tarea. Lo comentamos el jueves.</span>
-                  </div>
-                  <div class="msg msg--reply">
-                    <span class="msg__who">Tú · martes</span>
-                    <span class="msg__body">Perfecto, gracias. Nos vemos el jueves.</span>
-                  </div>
+                <div class="msg msg--reply">
+                  <span class="msg__who">Tú · martes</span>
+                  <span class="msg__body">Perfecto, gracias. Nos vemos el jueves.</span>
                 </div>
-                <span class="shot__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
               </div>
-              <figcaption>Mensajes desde el portal del paciente</figcaption>
-            </figure>
-          </div>
-          <p class="small center">Diseño / prototipo. Las capturas usan datos ficticios.</p>
+              <span class="shot__label" aria-hidden="true">Diseño / prototipo · datos ficticios</span>
+            </div>
+            <figcaption>Mensajes desde el portal del paciente</figcaption>
+          </figure>
         </div>
+        <p class="small center">Diseño / prototipo. Las capturas usan datos ficticios.</p>
       </div>
     </section>
 
     <!-- PARA QUIÉN ES -->
-    <section class="section" aria-labelledby="quien-titulo">
-      <div class="container narrow">
-        <h2 id="quien-titulo">Para quién es</h2>
-        <p class="lead">Para psicólogos y consultas de psicología.</p>
-        <p>Sobre todo, si pides tareas entre sesiones y quieres tenerlas en el mismo sitio que la ficha.</p>
+    <section class="section section--soft grain" aria-labelledby="quien-titulo">
+      <div class="container narrow quien reveal">
+        <h2 id="quien-titulo" class="kicker">Para quién es</h2>
+        <p class="statement">Para psicólogos y consultas de psicología.</p>
+        <p class="lead">Sobre todo, si pides tareas entre sesiones y quieres tenerlas en el mismo sitio que la ficha.</p>
         <p class="small">Si eres paciente: AsePsico es una herramienta para profesionales y la lista de espera es solo para psicólogos.</p>
       </div>
     </section>
 
     <!-- ÚNETE: una sola tarjeta, sin cifras (no se publican precios) -->
-    <section class="section section--tint" id="unete" aria-labelledby="unete-titulo">
+    <section class="section section--paper" id="unete" aria-labelledby="unete-titulo">
       <div class="container">
-        <article class="pilot">
-          <span class="pilot__tag">Únete</span>
-          <h2 id="unete-titulo">Piloto gratuito</h2>
-          <p>El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
+        <article class="pilot reveal">
+          <div class="pilot__col">
+            <span class="pilot__tag">Únete</span>
+            <h2 id="unete-titulo" class="display display--md">Piloto gratuito</h2>
+            <p>El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
 
-          <details class="disclosure">
-            <summary>Qué incluye<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
-            <div class="disclosure__body">
-              <ul class="checks">
-                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Agenda, pacientes e historia clínica en un solo sitio</li>
-                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Tareas entre sesiones</li>
-                <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Portal del paciente con citas, tareas y mensajes</li>
-              </ul>
-            </div>
-          </details>
-          <!-- Interruptor FEATURES.pricingDetails y texto PRICING_TEXT en js/config.js -->
-          <details class="disclosure" data-feature="pricingDetails" hidden>
-            <summary>Precios<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
-            <div class="disclosure__body">
-              <p data-pricing-text></p>
-            </div>
-          </details>
+            <details class="disclosure">
+              <summary>Qué incluye<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+              <div class="disclosure__body">
+                <ul class="checks">
+                  <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Agenda, pacientes e historia clínica en un solo sitio</li>
+                  <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Tareas entre sesiones</li>
+                  <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Portal del paciente con citas, tareas y mensajes</li>
+                </ul>
+              </div>
+            </details>
+            <!-- Interruptor FEATURES.pricingDetails y texto PRICING_TEXT en js/config.js -->
+            <details class="disclosure" data-feature="pricingDetails" hidden>
+              <summary>Precios<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+              <div class="disclosure__body">
+                <p data-pricing-text></p>
+              </div>
+            </details>
+          </div>
 
-          <h3 class="pilot__sub">Qué te pedimos</h3>
-          <p>A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p>
-          <h3 class="pilot__sub">Cómo funciona</h3>
-          <ol class="steps">
-            <li>Te apuntas a la lista de espera.</li>
-            <li>Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</li>
-            <li>Lo usas y nos cuentas.</li>
-          </ol>
-          <a class="btn btn--primary btn--block"
-             data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
-            Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
-          </a>
-          <p class="small center">El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
+          <div class="pilot__col">
+            <h3 class="pilot__sub">Qué te pedimos</h3>
+            <p>A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p>
+            <h3 class="pilot__sub">Cómo funciona</h3>
+            <ol class="steps">
+              <li>Te apuntas a la lista de espera.</li>
+              <li>Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</li>
+              <li>Lo usas y nos cuentas.</li>
+            </ol>
+            <a class="btn btn--primary btn--block"
+               data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+              Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
+            </a>
+            <p class="small center">El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
+          </div>
         </article>
       </div>
     </section>
 
-    <!-- QUIÉNES SOMOS (versión corta; sin foto) -->
-    <section class="section" id="quienes-somos" aria-labelledby="quienes-titulo">
-      <div class="container narrow about">
+    <!-- QUIÉNES SOMOS (versión media de web-landing-textos v3, decisión del Jefe 05/10; sin foto).
+         Fuera hasta que la valide Argos: "Detrás hay datos de salud, y eso pide ir con cuidado."
+         Pendiente de Clio: el "Por eso" inicial de la cuarta frase. -->
+    <section class="section section--soft" id="quienes-somos" aria-labelledby="quienes-titulo">
+      <div class="container narrow about reveal">
         <figure class="about__figure">
-          <img class="about__logo" src="/img/logo-192.png" width="120" height="120" alt="Logotipo de AsePsico">
+          <img class="about__logo" src="/img/logo-192.png" width="120" height="120" alt="Logotipo de AsePsico" loading="lazy">
           <figcaption>César Román · AsePsico</figcaption>
         </figure>
         <div>
-          <h2 id="quienes-titulo">Quiénes somos</h2>
+          <h2 id="quienes-titulo" class="display display--sm">Quiénes somos</h2>
           <p class="lead">Soy César Román. He estudiado psicología y llevo unos meses desarrollando AsePsico.</p>
-          <p>Lo que pasa entre sesiones también es parte del trabajo, y AsePsico está pensado para ese seguimiento entre sesiones.</p>
-          <p>Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
+          <p>Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
+          <p>Lo que pasa entre sesiones también es parte del trabajo.</p>
+          <p>Por eso AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
+          <p>Todavía no está abierto al público: empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
+          <p>Si te interesa, <a data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a>.</p>
         </div>
       </div>
     </section>
 
     <!-- PREGUNTAS FRECUENTES -->
-    <section class="section section--tint" id="preguntas" aria-labelledby="faq-titulo">
-      <div class="container narrow">
-        <h2 id="faq-titulo">Preguntas frecuentes</h2>
+    <section class="section section--paper" id="preguntas" aria-labelledby="faq-titulo">
+      <div class="container split split--faq">
+        <h2 id="faq-titulo" class="display display--md">Preguntas frecuentes</h2>
         <div class="faq" data-faq>
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-1">¿Ya puedo usar AsePsico?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
@@ -517,9 +742,9 @@
     </section>
 
     <!-- LLAMADA FINAL -->
-    <section class="section cta-final" aria-labelledby="final-titulo">
-      <div class="container narrow center">
-        <h2 id="final-titulo">Piloto gratuito para psicólogos</h2>
+    <section class="section cta-final grain" aria-labelledby="final-titulo">
+      <div class="container narrow center reveal">
+        <h2 id="final-titulo" class="display display--lg">Piloto gratuito para psicólogos</h2>
         <p class="lead">Estamos construyendo AsePsico. Apúntate a la lista de espera.</p>
         <a class="btn btn--light btn--lg"
            data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">

@@ -28,6 +28,15 @@
       slot.replaceWith(tpl.content.cloneNode(true));
       initCalculator();
     }
+    // Estimación de tiempo: también vive en un <template> y solo se inserta si está encendida.
+    var svSlot = document.querySelector('[data-slot="ahorro"]');
+    var svTpl = document.getElementById('tpl-ahorro');
+    if (svSlot && svTpl && features.savingsCalculator === true) {
+      svSlot.replaceWith(svTpl.content.cloneNode(true));
+      initSavings();
+    } else if (svSlot) {
+      svSlot.remove();
+    }
   }
 
   /* 2. Enlaces a la lista de espera y contacto -------------------------- */
@@ -66,58 +75,170 @@
     });
   }
 
-  /* 4. Mockup animado del hero ------------------------------------------ */
-  function initMock() {
-    var mock = document.querySelector('[data-mock]');
-    if (!mock) return;
-    var screens = Array.prototype.slice.call(mock.querySelectorAll('[data-screen]'));
-    var steps = Array.prototype.slice.call(mock.querySelectorAll('[data-step]'));
-    var toggle = mock.querySelector('[data-mock-toggle]');
-    var toggleLabel = mock.querySelector('[data-mock-toggle-label]');
-    var appName = mock.querySelector('[data-mock-app]');
-    var motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    var STATIC_INDEX = 1; // C2 (ficha con la tarea) cuando no hay animación
-    var DURATION = 3000;
-    var index = STATIC_INDEX;
-    var timer = null;
-    var userPaused = false;
+  /* 4. Narrativa con scroll ("Seguimiento entre sesiones") --------------- */
+  // Solo en escritorio y sin "reducir movimiento". En el resto de casos (y sin JavaScript) queda la
+  // pila estática: texto y pantalla de cada paso, uno detrás de otro.
+  function initStory() {
+    var root = document.querySelector('[data-story]');
+    if (!root || !('IntersectionObserver' in window)) return;
+    var steps = Array.prototype.slice.call(root.querySelectorAll('[data-step]'));
+    var mq = window.matchMedia('(min-width: 960px) and (prefers-reduced-motion: no-preference)');
+    var io = null;
 
-    function show(i) {
-      index = (i + screens.length) % screens.length;
-      screens.forEach(function (s, n) { s.classList.toggle('is-active', n === index); });
-      steps.forEach(function (s, n) { s.classList.toggle('is-on', n === index); });
-      if (appName) appName.textContent = screens[index].getAttribute('data-app') || 'AsePsico';
+    function setActive(n) {
+      if (root.getAttribute('data-active') === n) return;
+      root.setAttribute('data-active', n);
+      steps.forEach(function (s) { s.classList.toggle('is-current', s.getAttribute('data-step') === n); });
     }
-    function stop() { if (timer) { clearInterval(timer); timer = null; } }
-    function start() {
-      stop();
-      if (motion.matches || userPaused || document.hidden) return;
-      timer = setInterval(function () { show(index + 1); }, DURATION);
+    function enable() {
+      if (io) return;
+      root.classList.add('is-live');
+      setActive('0');
+      // Franja estrecha en el centro de la pantalla: el paso que la cruza es el activo.
+      io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) setActive(e.target.getAttribute('data-step')); });
+      }, { rootMargin: '-48% 0px -48% 0px', threshold: 0 });
+      steps.forEach(function (s) { io.observe(s); });
     }
-    function setPaused(paused) {
-      userPaused = paused;
-      mock.classList.toggle('is-paused', paused);
-      toggle.setAttribute('aria-pressed', String(paused));
-      toggleLabel.textContent = paused ? 'Reanudar la animación' : 'Pausar la animación';
-      if (paused) stop(); else start();
+    function disable() {
+      if (io) { io.disconnect(); io = null; }
+      root.classList.remove('is-live');
+      root.removeAttribute('data-active');
+      steps.forEach(function (s) { s.classList.remove('is-current'); });
     }
-    function applyMotionPreference() {
-      if (motion.matches) {
-        stop();
-        toggle.hidden = true;
-        show(STATIC_INDEX);
+    function apply() { if (mq.matches) enable(); else disable(); }
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+    else if (mq.addListener) mq.addListener(apply);
+    apply();
+  }
+
+  /* 5. Aparición progresiva de las secciones ------------------------------ */
+  // Sin JavaScript, sin IntersectionObserver o con "reducir movimiento", todo se ve desde el principio.
+  function initReveal() {
+    if (!('IntersectionObserver' in window)) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var items = Array.prototype.slice.call(document.querySelectorAll('.reveal'));
+    if (!items.length) return;
+    document.documentElement.classList.add('js-reveal');
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0 });
+    items.forEach(function (el) { io.observe(el); });
+    // Red de seguridad: lo que ya está por encima de la pantalla (p. ej. al entrar por un ancla) se muestra.
+    window.addEventListener('load', function () {
+      items.forEach(function (el) {
+        if (el.getBoundingClientRect().bottom < 0) el.classList.add('is-in');
+      });
+    });
+  }
+
+  /* 6. Estimación de tiempo (solo si está encendida) ---------------------- */
+  // Modelo de Vega: rango prudente–optimista. Todo ocurre en el navegador: no se envía, no se guarda
+  // y no va a ninguna analítica.
+  var SAVINGS = {
+    WEEKS_PER_MONTH: 4.33,
+    low: { prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 },
+    high: { prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 },
+    max: { s: 80, a: 120, t: 200, r: 600, v: 500 }
+  };
+
+  function initSavings() {
+    var box = document.querySelector('[data-savings]');
+    if (!box) return;
+    var reminders = features.savingsReminders === true;
+    var remField = box.querySelector('[data-sv-reminders]');
+    var remRow = box.querySelector('[data-sv-row="rem"]');
+    if (remField) { if (reminders) remField.hidden = false; else remField.remove(); }
+    if (remRow && !reminders) remRow.remove();
+
+    var inputs = {};
+    box.querySelectorAll('[data-sv]').forEach(function (el) { inputs[el.getAttribute('data-sv')] = el; });
+    var out = box.querySelector('[data-sv-out]');
+    var eur = box.querySelector('[data-sv-eur]');
+    var chart = box.querySelector('[data-sv-chart]');
+    var form = box.querySelector('[data-savings-form]');
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); });
+
+    function read(key) {
+      var el = inputs[key];
+      if (!el) return 0;
+      var v = parseFloat(String(el.value).replace(',', '.'));
+      if (!isFinite(v) || v <= 0) return 0;
+      return Math.min(v, SAVINGS.max[key]);
+    }
+    // Minutos a la semana de cada bloque con un juego de supuestos.
+    function blocks(k, d) {
+      return {
+        prep: d.s * d.a * k.prep,
+        tasks: k.portal * d.t * k.perTask,
+        rem: reminders ? k.portal * d.r * k.rem : 0
+      };
+    }
+    function hours(minWeek) { return minWeek * SAVINGS.WEEKS_PER_MONTH / 60; }
+    function floorHalf(h) { return Math.floor(h * 2) / 2; }
+    function fmtH(h) { return String(h).replace('.', ','); }
+    function fmtRange(lo, hi) {
+      var a = floorHalf(lo);
+      var b = floorHalf(hi);
+      if (b < 0.5) return 'Menos de media hora al mes';
+      if (a < 0.5) return 'Hasta ' + fmtH(b) + (b === 1 ? ' hora' : ' horas') + ' al mes';
+      if (a === b) return 'Unas ' + fmtH(a) + (a === 1 ? ' hora' : ' horas') + ' al mes';
+      return 'Entre ' + fmtH(a) + ' y ' + fmtH(b) + ' horas al mes';
+    }
+    function fmtEur(n) {
+      return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' €';
+    }
+    function shortRange(lo, hi) {
+      var a = Math.round(lo * 10) / 10;
+      var b = Math.round(hi * 10) / 10;
+      return String(a).replace('.', ',') + '–' + String(b).replace('.', ',') + ' h';
+    }
+    function setBar(row, lo, hi, scale) {
+      if (!row) return;
+      var x1 = scale > 0 ? (lo / scale) * 100 : 0;
+      var x2 = scale > 0 ? (hi / scale) * 100 : 0;
+      var span = row.querySelector('[data-span]');
+      var low = row.querySelector('[data-low]');
+      span.setAttribute('width', String(Math.max(x2, 0)));
+      low.setAttribute('width', String(Math.max(x1, 0)));
+      row.querySelector('[data-val]').textContent = shortRange(lo, hi);
+    }
+
+    function update() {
+      var d = { s: read('s'), a: read('a'), t: read('t'), r: reminders ? read('r') : 0 };
+      var v = read('v');
+      var lo = blocks(SAVINGS.low, d);
+      var hi = blocks(SAVINGS.high, d);
+      var loTotal = hours(lo.prep + lo.tasks + lo.rem);
+      var hiTotal = hours(hi.prep + hi.tasks + hi.rem);
+
+      if (hiTotal <= 0) {
+        out.textContent = 'Rellena los campos para ver tu estimación.';
+        eur.hidden = true;
+        chart.hidden = true;
+        return;
+      }
+      out.textContent = fmtRange(loTotal, hiTotal);
+      chart.hidden = false;
+      var scale = Math.max(hours(hi.prep), hours(hi.tasks), hours(hi.rem));
+      setBar(box.querySelector('[data-sv-row="prep"]'), hours(lo.prep), hours(hi.prep), scale);
+      setBar(box.querySelector('[data-sv-row="tasks"]'), hours(lo.tasks), hours(hi.tasks), scale);
+      setBar(box.querySelector('[data-sv-row="rem"]'), hours(lo.rem), hours(hi.rem), scale);
+
+      if (v > 0) {
+        var eLo = floorHalf(loTotal) * v;
+        var eHi = floorHalf(hiTotal) * v;
+        eur.textContent = 'Con lo que vale tu hora, ese tiempo equivale a ' +
+          (eLo === eHi ? fmtEur(eHi) : 'entre ' + fmtEur(eLo) + ' y ' + fmtEur(eHi)) + ' al mes.';
+        eur.hidden = false;
       } else {
-        toggle.hidden = false;
-        if (!userPaused) show(0);
-        start();
+        eur.hidden = true;
       }
     }
-
-    toggle.addEventListener('click', function () { setPaused(!userPaused); });
-    document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); else start(); });
-    if (motion.addEventListener) motion.addEventListener('change', applyMotionPreference);
-    else if (motion.addListener) motion.addListener(applyMotionPreference);
-    applyMotionPreference();
+    Object.keys(inputs).forEach(function (k) { inputs[k].addEventListener('input', update); });
+    update();
   }
 
   /* 5. Calculadora (solo si está encendida) ----------------------------- */
@@ -223,12 +344,17 @@
     window.addEventListener('scroll', onScroll, { passive: true });
   }
 
+  // Cada bloque va aislado: si uno falla, los demás siguen funcionando.
+  function safe(fn) {
+    try { fn(); } catch (e) { if (window.console) console.error(e); }
+  }
   function init() {
-    applyFeatures();
-    applyLinks();
-    initFaq();
-    initMock();
-    initLeadPopup();
+    safe(applyFeatures);
+    safe(applyLinks);
+    safe(initFaq);
+    safe(initStory);
+    safe(initReveal);
+    safe(initLeadPopup);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

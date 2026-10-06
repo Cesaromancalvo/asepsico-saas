@@ -15,8 +15,8 @@ apps/landing/
     privacidad/index.html  <- política de privacidad y cookies (versión sin analítica)
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
-    js/main.js             <- acordeón, animación del hero, interruptores, calculadora
-    fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
+    js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, estimación de tiempo
+    fonts/                 <- Poppins y Fraunces (titulares) autoalojadas (woff2, latino) + OFL.txt y OFL-Fraunces.txt
     img/                   <- logo y og-image.png (1200x630)
     favicon.ico, favicon.png, apple-touch-icon.png, robots.txt, sitemap.xml
 ```
@@ -69,6 +69,8 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `FEATURES.faqPacientes` | `true` | Pregunta "Soy paciente, ¿puedo apuntarme?" con el 024 y el 112. Verificar el 024 la víspera de cada publicación |
 | `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio. Al encenderlo, añadir `"sameAs": ["https://www.instagram.com/asepsico/"]` al `Organization` del JSON-LD |
 | `FEATURES.leadPopup` | `true` | Aviso "¿Te avisamos cuando abramos el piloto?" a los 8 s o al 50 % del scroll. Solo enlaza al formulario: no recoge datos ni guarda nada en el navegador (sin cookies ni localStorage), así que puede volver a salir al recargar. Se cierra con la X, "Ahora no", Esc o clic fuera; foco atrapado y devuelto al cerrar |
+| `FEATURES.savingsCalculator` | `true` (rama `feat/landing-v2`) | Estimación de tiempo con el modelo de Vega: rango prudente–optimista de horas al mes, euros solo si se da el valor de la hora, sin ROI ni precios; "Estimación, no garantía" y "Cómo calculamos esto" siempre visibles. Vive en `<template id="tpl-ahorro">` y calcula en el navegador. **Apagar antes de fusionar en `main` si Argos y Pax no la han aprobado** |
+| `FEATURES.savingsReminders` | `false` | Campo de recordatorios de la estimación. Oculto (cuenta 0) hasta que los emails de recordatorio estén en producción |
 
 Bloques que **no deben existir** en `public/` hasta que se aprueben: la calculadora (guardada en
 `borradores/calculadora.html`; `FEATURES.calculadora` no hace nada sin pegar antes ese bloque) y
@@ -85,9 +87,12 @@ python3 -m http.server 8080 --directory apps/landing/public
 # y abrir http://localhost:8080/
 ```
 
-Comprobar: escritorio y móvil (375 px), la animación del hero con su botón de pausa, que con
-"Reducir movimiento" activado en el sistema se ve la ficha del paciente estática, el acordeón con
-teclado (Tab, Enter, Espacio) y que en la pestaña Red no aparece ningún dominio externo.
+Comprobar: escritorio (>= 960 px) y móvil (375 px). En escritorio, la sección "Seguimiento entre
+sesiones" fija la pantalla (sticky), la abre en capas y la recompone paso a paso; en móvil, sin
+JavaScript o con "Reducir movimiento" se ve como una pila estática de texto + pantalla, sin
+animaciones. Revisar también el acordeón con teclado (Tab, Enter, Espacio), la estimación de tiempo
+(`FEATURES.savingsCalculator`: campos vacíos, sin peticiones de red al escribir) y que en la pestaña
+Red no aparece ningún dominio externo.
 
 ## Desplegar en Render (Static Site)
 

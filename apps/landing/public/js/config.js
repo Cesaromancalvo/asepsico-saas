@@ -37,6 +37,17 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
     instagram: false,
 
+    // Estimación de tiempo ("Haz la cuenta con tus propias cifras"): rango de horas al mes con el
+    // modelo de Vega, euros solo si se da el valor de la hora, sin ROI ni precios. Todo en el navegador.
+    // ENCENDIDA en la rama feat/landing-v2 por decisión del Jefe (05/10).
+    // OJO: APAGAR (false) antes de fusionar en main si Argos y Pax no la han aprobado: main se
+    // despliega solo en asepsico.es.
+    savingsCalculator: true,
+
+    // Campo de recordatorios de cita de la estimación. APAGADO: los emails de recordatorio aún no
+    // existen; mientras esté apagado, ese bloque cuenta 0.
+    savingsReminders: false,
+
     // Aviso al entrar (título en POPUP_TITLE), a los 8 s o al 50 % del scroll.
     // Solo enlaza al formulario; no recoge datos ni guarda nada en el navegador.
     leadPopup: true,
