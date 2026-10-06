@@ -341,7 +341,7 @@
       if (v > 0) {
         eur.textContent = fmtRangeShort(a * v, b * v, '€');
         eur.classList.remove('is-hint');
-        summary += ' Con el valor de tu hora, unos ' + fmtRangeShort(a * v, b * v, 'euros') + ' al mes.';
+        summary += ' Con el valor de tu hora, ese tiempo equivale a ' + fmtRangeShort(a * v, b * v, 'euros') + ' al mes.';
       } else {
         eur.textContent = 'Escribe el valor de tu hora para verlo en euros.';
         eur.classList.add('is-hint');
