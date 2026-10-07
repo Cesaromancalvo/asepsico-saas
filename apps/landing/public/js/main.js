@@ -219,7 +219,7 @@
         described.push(help.id);
       }
       var input = el('input');
-      input.id = id; input.name = t.id; input.type = 'number'; input.inputMode = 'decimal';
+      input.id = id; input.type = 'number'; input.inputMode = 'decimal';
       input.min = '0'; input.max = String(MAX_H); input.step = '0.5'; input.autocomplete = 'off';
       // Placeholder en gris: es solo un ejemplo y no cuenta (el campo empieza vacío).
       if (t.placeholder) input.placeholder = 'p. ej. ' + t.placeholder;
