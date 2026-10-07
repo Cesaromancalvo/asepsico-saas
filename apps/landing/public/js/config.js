@@ -23,25 +23,47 @@ window.ASEPSICO_CONFIG = Object.freeze({
   // Solo se muestra si FEATURES.pricingDetails es true y este texto no está vacío.
   PRICING_TEXT: '',
 
-  // Estimación de tiempo (FEATURES.savingsCalculator). Modelo de Vega (01/10).
-  // [REVISAR] Todas las cifras de este bloque son SUPUESTOS del equipo, sin medir: las tienen que
-  // validar Pax (metodología) y Lex Psi (publicidad: LCD arts. 5 y 7) antes de publicar.
-  // Si cambian low/high, actualiza también la tabla "Cómo calculamos esto" de index.html.
+  // Cuenta "Lo que te cuesta hoy" (FEATURES.savingsCalculator). Decisión del Jefe (07/10): la web
+  // NO dice cuánto ahorra AsePsico. Solo suma las horas que la persona escribe, las pasa al mes y,
+  // si escribe el valor de su hora, a euros. Sin supuestos de ahorro, sin precios ni coste de la
+  // herramienta (restarlo daría a entender que AsePsico elimina todo ese tiempo).
   SAVINGS: Object.freeze({
-    WEEKS_PER_MONTH: 4.33,
-    // [REVISAR] Escenario prudente: parte de la preparación que deja de hacerse, minutos ahorrados
-    // por tarea, parte de pacientes que usa el portal y minutos por recordatorio.
-    low: Object.freeze({ prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 }),
-    // [REVISAR] Escenario optimista.
-    high: Object.freeze({ prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 }),
-    // Límites de cada campo (también en los atributos min/max del HTML).
-    max: Object.freeze({ s: 80, a: 120, t: 200, r: 600, v: 500 }),
-    // [REVISAR] Valores de EJEMPLO con los que se rellenan los campos al cargar (v4, petición del
-    // Jefe: la tarjeta no debe salir vacía). No son datos de nadie.
-    // Sin valor de la hora por defecto (decisión del Jefe, v4): los euros solo aparecen cuando la
-    // persona lo escribe. El "p. ej. 50" del campo es un placeholder y no cuenta para el cálculo.
-    defaults: Object.freeze({ s: 20, a: 10, t: 10, r: 0 }),
-  }),
+    // Mes medio: 46 semanas de trabajo al año (6 de vacaciones y festivos) entre 12 meses = 3,83.
+    WEEKS_PER_YEAR: 46,
+    // Límites: horas a la semana por tarea y valor de la hora en euros. Los campos empiezan vacíos:
+    // el resultado inicial es 0 (Lex Psi, cambio 3, sin cifras de ejemplo como valor).
+    MAX_HOURS: 40,
+    MAX_VALUE: 500,
+    // Tareas, en este orden (lista de Vega, calculadora-tareas-v3, 07/10; versión por defecto, el Jefe
+    // aún puede ajustarla). Textos [CLIO]. Para cambiar una tarea basta con editar esta lista:
+    // id (único, sin espacios), label (etiqueta), help (una línea bajo la etiqueta) y placeholder
+    // (ejemplo en gris dentro del campo: NO cuenta en el cálculo; [SUPUESTO] del equipo).
+    // Los campos, el gráfico y la leyenda se generan solos.
+    TASKS: Object.freeze([
+      Object.freeze({ id: 'agenda', label: 'Agenda, citas y recordatorios', placeholder: '1,5',
+        help: 'Dar y cambiar citas, cancelaciones, huecos, recordar citas por WhatsApp o llamada.' }),
+      Object.freeze({ id: 'altas', label: 'Altas, consentimientos y papeleo legal', placeholder: '0,5',
+        help: 'Datos del paciente nuevo, consentimientos, protección de datos, archivo, peticiones de copias.' }),
+      Object.freeze({ id: 'preparar', label: 'Preparar las sesiones', placeholder: '2',
+        help: 'Antes de la sesión: releer notas, decidir qué trabajar, buscar técnicas. No cuentes escribir notas.' }),
+      Object.freeze({ id: 'notas', label: 'Notas de sesión e historia clínica', placeholder: '3',
+        help: 'Después de la sesión: escribir o pasar a limpio notas, actualizar la historia, pasar papel a ordenador.' }),
+      Object.freeze({ id: 'material', label: 'Crear material para pacientes', placeholder: '1,5',
+        help: 'Hacer o adaptar fichas, autorregistros, tareas, psicoeducación. No cuentes enviarlos.' }),
+      Object.freeze({ id: 'seguimiento', label: 'Seguimiento entre sesiones', placeholder: '1,5',
+        help: 'Enviar y recoger tareas y cuestionarios, corregir escalas, responder mensajes por WhatsApp o email.' }),
+      Object.freeze({ id: 'informes', label: 'Informes', placeholder: '1',
+        help: 'Informes para el paciente, colegio, médico, juzgado o mutua; buscar los datos para hacerlos.' }),
+      Object.freeze({ id: 'coordinacion', label: 'Coordinación con otros profesionales', placeholder: '0,5',
+        help: 'Psiquiatra, médico, colegio, derivaciones; en un centro, también compañeros y reuniones de casos.' }),
+      Object.freeze({ id: 'facturas', label: 'Facturas, cobros y gestoría', placeholder: '1,5',
+        help: 'Hacer facturas, perseguir pagos, cuadrar ingresos, papeles para la gestoría, volantes de mutuas.' }),
+    ]),
+    // Filas opcionales "Otra tarea" (nombre de la actividad + horas), hasta este número, con el botón
+    // "+ Añadir otra tarea". 0 las quita. Suman en el cálculo y no salen del navegador.
+    OTHER_TASKS: 3,
+    OTHER_NAME_MAX: 40,
+    }),
 
   // El NIF y el domicilio del titular están escritos en HTML estático en aviso-legal/index.html.
 
@@ -57,20 +79,14 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
     instagram: false,
 
-    // Estimación de tiempo ("¿Cuánto tiempo podrías recuperar cada mes?"): rango de horas al mes y al
-    // año con el modelo de Vega y su valor en euros con el valor de la hora (ejemplo en SAVINGS.defaults),
-    // sin ROI ni precios. Todo en el navegador.
-    // ENCENDIDA en la rama feat/landing-v2 por decisión del Jefe (05/10).
-    // OJO: APAGAR (false) antes de fusionar en main si Argos y Pax no la han aprobado: main se
-    // despliega solo en asepsico.es.
-    savingsCalculator: true,
+    // Cuenta "Lo que te cuesta hoy": horas a la semana y al mes de tareas administrativas, su valor en
+    // euros si se escribe el valor de la hora y el reparto en %. Sin ahorro ni precios. Todo en el navegador.
+    // APAGADA: la enciende el Jefe cuando la vea (y tras Lex Psi y Clio). main se despliega en asepsico.es.
+    savingsCalculator: false,
 
-    // Campo de recordatorios de cita de la estimación. APAGADO: los emails de recordatorio aún no
-    // existen; mientras esté apagado, ese bloque cuenta 0.
-    savingsReminders: false,
-
-    // Aviso al entrar (título en POPUP_TITLE), a los 8 s o al 50 % del scroll.
-    // Solo enlaza al formulario; no recoge datos ni guarda nada en el navegador.
+    // Aviso de la lista de espera (título en POPUP_TITLE). Sale solo al pasar el 50 % del scroll (sin
+    // temporizador, para no tapar el contenido al entrar: criterio de intersticial intrusivo de Google);
+    // en móvil es una barra pequeña abajo. Solo enlaza al formulario; no recoge ni guarda nada.
     leadPopup: true,
 
     // Desplegable "Precios" en la tarjeta del piloto. APAGADO por decisión del Jefe: sin precios en la web.

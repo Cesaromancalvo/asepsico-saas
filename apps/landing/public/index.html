@@ -451,98 +451,93 @@
       </div>
     </section>
 
-    <!-- ESTIMACIÓN DE TIEMPO (interruptor FEATURES.savingsCalculator en js/config.js).
-         Modelo de Vega (01/10): rango prudente–optimista, horas al mes y al año, euros con el valor de la
-         hora solo si la persona lo escribe, sin ROI y sin precios. Composición v4 (campos + tarjeta). Todo se calcula en el navegador: no se envía ni se guarda nada.
-         PENDIENTE ANTES DE PUBLICAR: revisión de Argos y Pax (publicidad engañosa, LCD arts. 5 y 7) y
-         textos: revisados por Clio (v4, 06/10); siguen pendientes las marcas [ARGOS] y [LEX] de este bloque.
+    <!-- LO QUE TE CUESTA HOY (interruptor FEATURES.savingsCalculator en js/config.js, APAGADO).
+         Decisión del Jefe (07/10): la web no dice cuánto ahorra AsePsico. Suma las horas a la semana que
+         escribe la persona en cada tarea (lista SAVINGS.TASKS de config.js), las pasa al mes (46/12
+         semanas) y, solo si escribe el valor de su hora, a euros. Sin supuestos de ahorro, sin precios y
+         sin restar el coste de la herramienta. Todo en el navegador: no se envía ni se guarda nada.
+         Textos nuevos marcados [CLIO]; pendiente de Lex Psi antes de encenderlo.
          Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
     <div data-slot="ahorro"></div>
     <template id="tpl-ahorro">
       <section class="section section--soft grain" id="estimacion" aria-labelledby="ahorro-titulo">
         <div class="container">
           <header class="savings__head">
-            <h2 id="ahorro-titulo" class="display display--md">¿Cuánto tiempo podrías recuperar cada mes?</h2>
-            <p class="lead">Haz la cuenta con tus propias cifras: es una estimación con tus datos y nuestros supuestos.</p>
+            <!-- [CLIO] -->
+            <h2 id="ahorro-titulo" class="display display--md">¿Cuánto tiempo te llevan hoy las tareas que no salen en la agenda?</h2>
+            <p class="lead">Haz la cuenta con tus propias cifras. Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
           </header>
 
           <div class="savings" data-savings>
             <form class="savings__form" novalidate data-savings-form>
               <fieldset class="savings__fields">
-                <legend class="visually-hidden">Tus datos</legend>
-                <!-- Los valores iniciales salen de SAVINGS.defaults en js/config.js ([REVISAR]). -->
-                <div class="sfield">
-                  <label for="sv-s">¿Cuántas sesiones haces a la semana?</label>
-                  <input id="sv-s" name="s" type="number" inputmode="numeric" min="0" max="80" step="1" autocomplete="off" aria-describedby="sv-s-err" data-sv="s">
-                  <p class="sfield__err" id="sv-s-err" data-sv-err hidden></p>
-                </div>
-                <div class="sfield">
-                  <label for="sv-a">¿Cuántos minutos dedicas a preparar cada sesión buscando qué ha pasado desde la última?</label>
-                  <p class="sfield__help" id="sv-a-help">Releer notas, mirar WhatsApp, correo o papeles. Solo la parte de buscar y reconstruir, no la de pensar la sesión.</p>
-                  <input id="sv-a" name="a" type="number" inputmode="numeric" min="0" max="120" step="1" autocomplete="off" aria-describedby="sv-a-help sv-a-err" data-sv="a">
-                  <p class="sfield__err" id="sv-a-err" data-sv-err hidden></p>
-                </div>
-                <div class="sfield">
-                  <label for="sv-t">¿Cuántas tareas entre sesiones mandas y recoges a la semana por WhatsApp, email o papel?</label>
-                  <p class="sfield__help" id="sv-t-help">Si ya usas otra herramienta con portal para las tareas, pon 0.</p>
-                  <input id="sv-t" name="t" type="number" inputmode="numeric" min="0" max="200" step="1" autocomplete="off" aria-describedby="sv-t-help sv-t-err" data-sv="t">
-                  <p class="sfield__err" id="sv-t-err" data-sv-err hidden></p>
-                </div>
-                <!-- Recordatorios: OCULTO hasta que los emails de recordatorio estén en producción
-                     (FEATURES.savingsReminders en js/config.js). Mientras esté oculto, cuenta 0. -->
-                <div class="sfield" data-sv-reminders hidden>
-                  <label for="sv-r">¿Cuántos minutos a la semana dedicas a recordar citas a mano?</label>
-                  <input id="sv-r" name="r" type="number" inputmode="numeric" min="0" max="600" step="1" autocomplete="off" aria-describedby="sv-r-err" data-sv="r">
-                  <p class="sfield__err" id="sv-r-err" data-sv-err hidden></p>
-                </div>
-                <div class="sfield">
-                  <label for="sv-v">Valor de tu hora, en euros (opcional)</label>
-                  <p class="sfield__help" id="sv-v-help">Por ejemplo, lo que cobras por sesión. No es lo mismo que ganar ese dinero: solo si usas ese tiempo para trabajar.</p>
-                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="p. ej. 50" aria-describedby="sv-v-help sv-v-err" data-sv="v">
+                <!-- [CLIO] -->
+                <legend class="savings__legend">Escribe las horas a la semana que dedicas a cada tarea. Puedes usar decimales (0,5 es media hora) y dejar en blanco lo que no hagas. Los números en gris son solo ejemplos y no cuentan.</legend>
+                <!-- Los campos de las tareas los crea main.js a partir de SAVINGS.TASKS (config.js). -->
+                <div class="savings__tasks" data-sv-tasks></div>
+                <div class="sfield sfield--value">
+                  <label for="sv-v">Valor de tu hora (€)</label>
+                  <p class="sfield__help" id="sv-v-help">Lo que cobras por sesión dividido por las horas que te ocupa, o lo que tú decidas.</p>
+                  <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="40" aria-describedby="sv-v-help sv-v-err" data-sv-value>
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
+                </div>
+                <!-- Filas opcionales "Otra tarea" (SAVINGS.OTHER_TASKS, hasta 3). Las crea main.js: nombre de la
+                     actividad (máx. 40 caracteres, solo para la leyenda, con textContent) + horas. Si se rellena
+                     uno de los dos, el otro es obligatorio; mientras falte, la fila no suma. No se envía ni se
+                     guarda. [ARGOS] confirmar que ningún script captura estos campos. -->
+                <div class="savings__others" data-sv-others>
+                  <!-- [CLIO] -->
+                  <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. No escribas datos de pacientes.</p>
+                  <div class="savings__others-list" data-sv-others-list></div>
+                  <button type="button" class="btn btn--ghost btn--sm savings__add" data-sv-add>+ Añadir otra tarea</button>
                 </div>
               </fieldset>
             </form>
 
             <div class="savings__result">
-              <h3 class="savings__title">Según esta estimación, podrías recuperar</h3>
+              <!-- [CLIO] -->
+              <h3 class="savings__title">Hoy dedicas a tareas administrativas</h3>
               <dl class="savings__stats">
-                <div class="savings__stat">
-                  <dt>Horas al mes</dt>
-                  <dd><span class="savings__big" data-sv-month>–</span></dd>
+                <div class="savings__stat savings__stat--main">
+                  <dt>A la semana</dt>
+                  <dd><span class="savings__big" data-sv-week>0 h</span></dd>
                 </div>
                 <div class="savings__stat">
-                  <dt>Horas al año</dt>
-                  <dd><span class="savings__big" data-sv-year>–</span></dd>
+                  <dt>Al mes</dt>
+                  <dd><span class="savings__mid" data-sv-month>0 h</span></dd>
                 </div>
               </dl>
+              <!-- [CLIO] [LEX] Aviso justo debajo de las horas, con letra normal (cambio 2, adaptado). -->
+              <p class="savings__disclaimer">Es una cuenta con las horas que tú escribes, no una medición. Preguntamos por estas tareas porque ocupan tiempo, no porque AsePsico las resuelva todas hoy.</p>
 
-              <div class="savings__money">
-                <div class="savings__breakdown">
-                  <p class="savings__k">Valor de ese tiempo al mes</p>
-                  <p class="savings__eurbig" data-sv-eur>–</p>
-                  <!-- Lo que dice el gráfico, en texto (no depende del color). -->
-                  <ul class="donut__legend" data-sv-legend hidden>
-                    <li data-leg="prep"><span class="donut__key donut__key--prep" aria-hidden="true"></span><span class="donut__name">Preparar las sesiones <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
-                    <li data-leg="tasks"><span class="donut__key donut__key--tasks" aria-hidden="true"></span><span class="donut__name">Tareas por WhatsApp, email o papel <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
-                    <li data-leg="rem"><span class="donut__key donut__key--rem" aria-hidden="true"></span><span class="donut__name">Recordatorios de cita <span class="donut__pct" data-pct></span></span><span class="donut__val" data-val></span></li>
-                  </ul>
-                </div>
-                <div class="donut__chart">
-                  <svg class="donut__svg" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
-                    <g transform="rotate(-90 60 60)">
-                      <circle class="donut__track" cx="60" cy="60" r="44" pathLength="100"/>
-                      <circle class="donut__seg donut__seg--prep" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="prep"/>
-                      <circle class="donut__seg donut__seg--tasks" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="tasks"/>
-                      <circle class="donut__seg donut__seg--rem" cx="60" cy="60" r="44" pathLength="100" stroke-dasharray="0 100" data-seg="rem"/>
-                    </g>
-                  </svg>
+              <!-- Euros: solo si se escribe el valor de la hora; nunca más grandes que las horas (cambio 5). -->
+              <div class="savings__eur" data-sv-eur hidden>
+                <p class="savings__eurline"><span data-sv-eur-week></span><span data-sv-eur-month></span></p>
+                <!-- [CLIO] [LEX] Salvedad pegada a la cifra (cambio 5). -->
+                <p class="savings__caveat">Es el valor de tu tiempo según tu hora, no dinero que vayas a ganar ni a ahorrar.</p>
+              </div>
+              <p class="savings__hint" data-sv-eur-hint>Escribe el valor de tu hora para verlo en euros.</p>
+
+              <div class="savings__chart" data-sv-chart hidden>
+                <p class="savings__k">En qué se va ese tiempo</p>
+                <div class="savings__money">
+                  <!-- Lo que dice el gráfico, en texto (no depende del color). Lo rellena main.js. -->
+                  <ul class="donut__legend" data-sv-legend></ul>
+                  <div class="donut__chart">
+                    <svg class="donut__svg" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+                      <g transform="rotate(-90 60 60)" data-sv-donut>
+                        <circle class="donut__track" cx="60" cy="60" r="44" pathLength="100"/>
+                      </g>
+                    </svg>
+                  </div>
                 </div>
               </div>
 
               <!-- Resumen para lectores de pantalla: se anuncia al cambiar los datos. -->
-              <p class="visually-hidden" aria-live="polite" aria-atomic="true" data-sv-out>Rellena los campos para ver tu estimación.</p>
+              <p class="visually-hidden" aria-live="polite" aria-atomic="true" data-sv-out>Escribe tus horas para ver el resultado.</p>
 
+              <!-- [CLIO] Cierre suave (sin "con AsePsico recuperarías"). -->
+              <p class="savings__close">AsePsico se está construyendo para reducir ese tiempo. Apúntate y ayúdanos a medirlo en el piloto.</p>
               <div class="savings__actions">
                 <a class="btn btn--primary"
                    data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
@@ -551,39 +546,23 @@
                 </a>
                 <a class="btn btn--outline" href="#como-funciona">Ver cómo funciona</a>
               </div>
-
-              <!-- [LEX] Aviso pedido por el Jefe (v4); texto revisado por Clio. -->
-              <p class="savings__disclaimer">Es una estimación orientativa basada en supuestos, no una promesa de resultados. Depende sobre todo de cuántos de tus pacientes usen su portal.</p>
             </div>
           </div>
 
           <details class="disclosure savings__how">
+            <!-- [LEX] cambio 6 -->
             <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
-              <!-- Texto público de supuestos redactado por Fina a partir de Vega §4–5.6 (revisado por Clio).
-                   [REVISAR] Las cifras de la tabla deben coincidir con SAVINGS.low/high de js/config.js. -->
-              <p>Sumamos dos bloques de tiempo y lo pasamos a horas al mes (4,33 semanas por mes):</p>
+              <!-- [CLIO] -->
               <ul class="legal-list">
-                <li><strong>Preparar las sesiones:</strong> sesiones a la semana × minutos que dedicas a buscar qué ha pasado × la parte de esa búsqueda que deja de hacerse.</li>
-                <li><strong>Tareas entre sesiones:</strong> tareas a la semana × minutos que se ahorran por tarea × la parte de tus pacientes que usa el portal.</li>
+                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada tarea (y en "Otra tarea", si la usas). Los números en gris de los campos son ejemplos orientativos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
+                <li><strong>Al mes:</strong> multiplicamos las horas a la semana por 46 semanas de trabajo al año (dejamos 6 para vacaciones y festivos) y dividimos entre 12 meses, unas 3,83 semanas por mes. Redondeamos hacia abajo a la media hora.</li>
+                <li><strong>En euros:</strong> solo si escribes el valor de tu hora, multiplicamos las horas a la semana y al mes por ese valor. Es el valor de tu tiempo, no dinero que vayas a ganar ni a ahorrar.</li>
+                <li><strong>El gráfico:</strong> qué parte de tus horas a la semana va a cada tarea, en porcentaje.</li>
               </ul>
-              <p>Lo calculamos dos veces, con todos los supuestos en su valor prudente y en su valor optimista, y redondeamos hacia abajo a la media hora. Las horas al año son las del mes multiplicadas por 12.</p>
-              <p>El gráfico muestra qué parte de ese tiempo viene de cada bloque, en porcentaje y sobre el punto medio entre los dos escenarios.</p>
-              <div class="table-wrap">
-                <table class="assume">
-                  <caption>Supuestos del equipo de AsePsico (todavía sin medir)</caption>
-                  <thead><tr><th scope="col">Supuesto</th><th scope="col">Prudente</th><th scope="col">Optimista</th><th scope="col">De dónde sale</th></tr></thead>
-                  <tbody>
-                    <tr><th scope="row">Parte de la preparación que deja de hacerse</th><td>15 %</td><td>35 %</td><td>Estimación del equipo. La ficha, la entrega de la tarea, los mensajes y la última nota están en un mismo sitio, así que desaparece buscar en varios canales. Leer y pensar la sesión no cambia. Certeza baja.</td></tr>
-                    <tr><th scope="row">Minutos que se ahorran por tarea</th><td>3 min</td><td>7 min</td><td>Estimación del equipo, sin cronometrar. Sin AsePsico: buscar el documento, enviarlo, recordarlo, recibir la respuesta y guardarla en la ficha. Con AsePsico: asignarla y ver la entrega. Revisar el contenido lleva lo mismo y no se cuenta. Certeza baja.</td></tr>
-                    <tr><th scope="row">Pacientes que usan el portal</th><td>50 %</td><td>80 %</td><td>Estimación del equipo. Es el dato más incierto: si un paciente no usa el portal, su tarea sigue yendo por otra vía. Certeza muy baja.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-              <p><strong>Qué no cuenta:</strong> revisar las tareas, responder mensajes, escribir notas y facturar. Eso lleva el mismo tiempo.</p>
+              <p>No calculamos cuánto tiempo te ahorraría AsePsico: todavía no lo hemos medido. Queremos medirlo en el piloto con los psicólogos que lo usen.</p>
               <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
-              <p>Los campos vienen rellenos con un ejemplo: cámbialos por tus cifras. El valor de tu hora está vacío; solo si lo escribes, multiplicamos las horas por ese valor para mostrarlas en euros. No es dinero que vayas a ganar: solo lo sería si usas ese tiempo para trabajar.</p>
-              <!-- [ARGOS] Del borrador de calculadora de Iris; cierto en esta implementación (sin envío ni almacenamiento). Texto revisado por Clio. -->
+              <!-- [ARGOS] Cierto en esta implementación (sin envío ni almacenamiento). -->
               <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
             </div>
           </details>
@@ -773,24 +752,26 @@
     </section>
   </main>
 
-  <!-- AVISO AL ENTRAR (interruptor FEATURES.leadPopup en js/config.js).
-       No recoge datos: el botón abre el formulario de la lista de espera, que tiene su propia
-       información de privacidad. No guarda nada en el navegador: se muestra una vez por visita. -->
+  <!-- AVISO DE LA LISTA DE ESPERA (interruptor FEATURES.leadPopup en js/config.js).
+       Sale solo al pasar el 50 % del scroll, sin temporizador y sin ser modal (no tapa el contenido al
+       entrar: criterio de intersticial intrusivo de Google). En móvil es una barra pequeña abajo.
+       No recoge datos: el botón abre el formulario, que tiene su propia información de privacidad.
+       No guarda nada en el navegador: se muestra una vez por visita. -->
   <div class="leadpop" data-lead hidden>
-    <div class="leadpop__card" role="dialog" aria-modal="true" aria-labelledby="lead-titulo" aria-describedby="lead-texto" tabindex="-1" data-lead-card>
+    <aside class="leadpop__card" aria-labelledby="lead-titulo" data-lead-card>
       <button type="button" class="leadpop__x" data-lead-close>
         <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
         <span class="visually-hidden">Cerrar el aviso</span>
       </button>
       <h2 id="lead-titulo" class="leadpop__title" data-lead-title></h2>
-      <p id="lead-texto" class="leadpop__text">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
+      <p class="leadpop__text">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
       <div class="leadpop__actions">
         <a class="btn btn--primary" data-cta data-lead-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
           Apuntarme<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
         </a>
-        <button type="button" class="btn btn--ghost" data-lead-close>Ahora no</button>
+        <button type="button" class="btn btn--ghost leadpop__later" data-lead-close>Ahora no</button>
       </div>
-    </div>
+    </aside>
   </div>
 
   <footer class="footer">
@@ -801,11 +782,13 @@
           <li><a href="/aviso-legal/">Aviso legal</a></li>
           <li><a href="/privacidad/">Política de privacidad</a></li>
           <li><a href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
-          <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com">Contacto</a></li>
+          <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com" aria-describedby="contacto-aviso">Contacto</a></li>
           <!-- Interruptor FEATURES.instagram en js/config.js (apagado hasta corregir la bio) -->
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
         </ul>
       </nav>
+      <!-- [CLIO] Aviso junto al mailto de Contacto (auditoría SEO de Mou, 07/10). -->
+      <p class="footer__note" id="contacto-aviso">No envíes por aquí datos de pacientes ni información de salud.</p>
     </div>
   </footer>
 </body>

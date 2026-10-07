@@ -179,94 +179,204 @@
     });
   }
 
-  /* 6. Estimación de tiempo (solo si está encendida) ---------------------- */
-  // Modelo de Vega: rango prudente–optimista. Todo ocurre en el navegador: no se envía, no se guarda
-  // y no va a ninguna analítica. [REVISAR] Los supuestos viven en SAVINGS de js/config.js; estos de
-  // aquí son solo el respaldo si faltara config.js y deben ser idénticos.
-  var SAVINGS = cfg.SAVINGS || {
-    WEEKS_PER_MONTH: 4.33,
-    low: { prep: 0.15, perTask: 3, portal: 0.5, rem: 0.3 },
-    high: { prep: 0.35, perTask: 7, portal: 0.8, rem: 0.6 },
-    max: { s: 80, a: 120, t: 200, r: 600, v: 500 },
-    defaults: { s: 20, a: 10, t: 10, r: 0 }
-  };
+  /* 6. Lo que te cuesta hoy (solo si está encendida) ---------------------- */
+  // Decisión del Jefe (07/10): sin ahorro de AsePsico. Suma las horas a la semana que escribe la
+  // persona, las pasa al mes y, si escribe el valor de su hora, a euros. Todo ocurre en el navegador:
+  // no se envía, no se guarda y no va a ninguna analítica. Las tareas viven en SAVINGS.TASKS (config.js).
+  var SAVINGS = cfg.SAVINGS || {};
 
   function initSavings() {
     var box = document.querySelector('[data-savings]');
-    if (!box) return;
-    var reminders = features.savingsReminders === true;
-    var remField = box.querySelector('[data-sv-reminders]');
-    if (remField) { if (reminders) remField.hidden = false; else remField.remove(); }
-    var KEYS = reminders ? ['prep', 'tasks', 'rem'] : ['prep', 'tasks'];
-    if (!reminders) {
-      var remLeg = box.querySelector('[data-leg="rem"]');
-      var remSeg = box.querySelector('[data-seg="rem"]');
-      if (remLeg) remLeg.remove();
-      if (remSeg) remSeg.remove();
-    }
+    var tasks = Array.isArray(SAVINGS.TASKS) ? SAVINGS.TASKS : [];
+    if (!box || !tasks.length) return;
+    var WEEKS_PER_MONTH = (SAVINGS.WEEKS_PER_YEAR || 46) / 12;
+    var MAX_H = SAVINGS.MAX_HOURS || 40;
+    var MAX_V = SAVINGS.MAX_VALUE || 500;
 
-    var inputs = {};
-    var defaults = SAVINGS.defaults || {};
-    box.querySelectorAll('[data-sv]').forEach(function (el) {
-      var k = el.getAttribute('data-sv');
-      inputs[k] = el;
-      // El valor de la hora nunca se rellena: los euros solo salen si la persona lo escribe.
-      if (k !== 'v' && el.value === '' && typeof defaults[k] === 'number' && defaults[k] > 0) el.value = String(defaults[k]);
-    });
-    var out = box.querySelector('[data-sv-out]');
-    var month = box.querySelector('[data-sv-month]');
-    var year = box.querySelector('[data-sv-year]');
-    var eur = box.querySelector('[data-sv-eur]');
+    var list = box.querySelector('[data-sv-tasks]');
     var legend = box.querySelector('[data-sv-legend]');
+    var donut = box.querySelector('[data-sv-donut]');
+    var inputs = [];
+
+    function el(tag, cls, text) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text) n.textContent = text;
+      return n;
+    }
+    // Un campo, un trozo del gráfico y una línea de la leyenda por tarea.
+    tasks.forEach(function (t, i) {
+      var id = 'sv-' + t.id;
+      var field = el('div', 'sfield');
+      var label = el('label', '', t.label);
+      label.htmlFor = id;
+      field.appendChild(label);
+      var described = [];
+      if (t.help) {
+        var help = el('p', 'sfield__help', t.help);
+        help.id = id + '-help';
+        field.appendChild(help);
+        described.push(help.id);
+      }
+      var input = el('input');
+      input.id = id; input.name = t.id; input.type = 'number'; input.inputMode = 'decimal';
+      input.min = '0'; input.max = String(MAX_H); input.step = '0.5'; input.autocomplete = 'off';
+      // Placeholder en gris: es solo un ejemplo y no cuenta (el campo empieza vacío).
+      if (t.placeholder) input.placeholder = 'p. ej. ' + t.placeholder;
+      var err = el('p', 'sfield__err');
+      err.id = id + '-err'; err.hidden = true; err.setAttribute('data-sv-err', '');
+      described.push(err.id);
+      input.setAttribute('aria-describedby', described.join(' '));
+      field.appendChild(input);
+      field.appendChild(err);
+      list.appendChild(field);
+
+      var seg = document.createElementNS(donut.namespaceURI, 'circle');
+      seg.setAttribute('class', 'donut__seg donut__seg--' + (i % 9));
+      seg.setAttribute('cx', '60'); seg.setAttribute('cy', '60'); seg.setAttribute('r', '44');
+      seg.setAttribute('pathLength', '100'); seg.setAttribute('stroke-dasharray', '0 100');
+      donut.appendChild(seg);
+
+      var li = el('li');
+      li.appendChild(el('span', 'donut__key donut__key--' + (i % 9)));
+      li.firstChild.setAttribute('aria-hidden', 'true');
+      li.appendChild(el('span', 'donut__name', t.label));
+      var pct = el('span', 'donut__val');
+      li.appendChild(pct);
+      legend.appendChild(li);
+
+      inputs.push({ input: input, err: err, seg: seg, li: li, pct: pct, nameEl: li.childNodes[1], name: t.label, max: MAX_H });
+    });
+
+    // Filas opcionales "Otra tarea" (hasta SAVINGS.OTHER_TASKS): nombre de la actividad + horas.
+    // El nombre solo se pinta en la leyenda, con textContent y como mucho OTHER_NAME_MAX caracteres.
+    var othersBox = box.querySelector('[data-sv-others]');
+    var othersList = box.querySelector('[data-sv-others-list]');
+    var addBtn = box.querySelector('[data-sv-add]');
+    var MAX_OTHERS = typeof SAVINGS.OTHER_TASKS === 'number' ? SAVINGS.OTHER_TASKS : 3;
+    var NAME_MAX = SAVINGS.OTHER_NAME_MAX || 40;
+    var others = [];
+    function addOther() {
+      if (others.length >= MAX_OTHERS) return null;
+      var n = others.length + 1;
+      var id = 'sv-o' + n;
+      var row = el('div', 'sfield sfield--other');
+      row.setAttribute('role', 'group');
+      var title = el('p', 'sfield__title', 'Otra tarea' + (MAX_OTHERS > 1 ? ' ' + n : '') + ' (opcional)');
+      title.id = id + '-title';
+      row.setAttribute('aria-labelledby', title.id);
+      row.appendChild(title);
+      var pair = el('div', 'sfield__pair');
+      function sub(labelText, input, errId) {
+        var wrap = el('div', 'sfield__sub');
+        var lab = el('label', '', labelText);
+        lab.htmlFor = input.id;
+        wrap.appendChild(lab);
+        wrap.appendChild(input);
+        var err = el('p', 'sfield__err');
+        err.id = errId; err.hidden = true;
+        wrap.appendChild(err);
+        input.setAttribute('aria-describedby', 'sv-o-help ' + errId);
+        pair.appendChild(wrap);
+        return err;
+      }
+      var name = el('input');
+      name.id = id + '-name'; name.type = 'text'; name.maxLength = NAME_MAX; name.autocomplete = 'off';
+      name.spellcheck = false; name.placeholder = 'p. ej. redes sociales';
+      var hours = el('input');
+      hours.id = id + '-h'; hours.type = 'number'; hours.inputMode = 'decimal'; hours.min = '0';
+      hours.max = String(MAX_H); hours.step = '0.5'; hours.autocomplete = 'off';
+      var nameErr = sub('Actividad', name, id + '-name-err');
+      var hoursErr = sub('Horas a la semana', hours, id + '-h-err');
+      row.appendChild(pair);
+      othersList.appendChild(row);
+
+      var seg = document.createElementNS(donut.namespaceURI, 'circle');
+      seg.setAttribute('class', 'donut__seg donut__seg--other' + n);
+      seg.setAttribute('cx', '60'); seg.setAttribute('cy', '60'); seg.setAttribute('r', '44');
+      seg.setAttribute('pathLength', '100'); seg.setAttribute('stroke-dasharray', '0 100');
+      donut.appendChild(seg);
+      var li = el('li');
+      li.hidden = true;
+      li.appendChild(el('span', 'donut__key donut__key--other' + n));
+      li.firstChild.setAttribute('aria-hidden', 'true');
+      var nameEl = el('span', 'donut__name');
+      li.appendChild(nameEl);
+      var pct = el('span', 'donut__val');
+      li.appendChild(pct);
+      legend.appendChild(li);
+
+      var f = { input: hours, err: hoursErr, nameInput: name, nameErr: nameErr, seg: seg, li: li, pct: pct,
+        nameEl: nameEl, name: '', max: MAX_H, other: true };
+      inputs.push(f);
+      others.push(f);
+      name.addEventListener('input', update);
+      hours.addEventListener('input', update);
+      if (addBtn) addBtn.hidden = others.length >= MAX_OTHERS;
+      return f;
+    }
+    if (othersBox && MAX_OTHERS > 0 && othersList) {
+      addOther();
+      if (addBtn) addBtn.addEventListener('click', function () {
+        var f = addOther();
+        if (f) { f.nameInput.focus(); update(); }
+      });
+    } else if (othersBox) {
+      othersBox.remove();
+    }
+    var value = { input: box.querySelector('[data-sv-value]'), max: MAX_V };
+    value.err = value.input ? value.input.parentNode.querySelector('[data-sv-err]') : null;
+
+    var out = box.querySelector('[data-sv-out]');
+    var week = box.querySelector('[data-sv-week]');
+    var month = box.querySelector('[data-sv-month]');
+    var eurBox = box.querySelector('[data-sv-eur]');
+    var eurWeek = box.querySelector('[data-sv-eur-week]');
+    var eurMonth = box.querySelector('[data-sv-eur-month]');
+    var eurHint = box.querySelector('[data-sv-eur-hint]');
+    var chart = box.querySelector('[data-sv-chart]');
     var form = box.querySelector('[data-savings-form]');
     if (form) form.addEventListener('submit', function (e) { e.preventDefault(); });
 
-    // Valida un campo: vacío cuenta 0 sin error; texto no numérico, negativo o por encima del máximo
-    // se marca (aria-invalid + mensaje) y el cálculo usa el valor acotado. Nunca NaN ni negativos.
-    function read(key) {
-      var el = inputs[key];
-      if (!el) return 0;
-      var max = SAVINGS.max[key];
-      var raw = String(el.value).trim();
-      var v = raw === '' ? 0 : parseFloat(raw.replace(',', '.'));
-      // Un type=number con texto inválido devuelve '' pero marca badInput.
-      var bad = (el.validity && el.validity.badInput) || !isFinite(v) || v < 0 || v > max;
-      var err = el.parentNode.querySelector('[data-sv-err]');
-      if (bad) {
-        el.setAttribute('aria-invalid', 'true');
-        if (err) { err.textContent = 'Escribe un número entre 0 y ' + max + '.'; err.hidden = false; }
+    // Vacío cuenta 0 sin error; texto no numérico, negativo o por encima del máximo se marca
+    // (aria-invalid + mensaje) y el cálculo usa el valor acotado. Nunca NaN ni negativos.
+    function setErr(input, err, msg) {
+      if (msg) {
+        input.setAttribute('aria-invalid', 'true');
+        if (err) { err.textContent = msg; err.hidden = false; }
       } else {
-        el.removeAttribute('aria-invalid');
+        input.removeAttribute('aria-invalid');
         if (err) { err.textContent = ''; err.hidden = true; }
       }
+    }
+    function read(f) {
+      if (!f.input) return 0;
+      var raw = String(f.input.value).trim();
+      var badInput = f.input.validity && f.input.validity.badInput;
+      var v = raw === '' ? 0 : parseFloat(raw.replace(',', '.'));
+      var bad = badInput || !isFinite(v) || v < 0 || v > f.max;
+      if (f.other) {
+        // Si se rellena uno de los dos campos, el otro es obligatorio; mientras falte, la fila no suma.
+        var nm = f.nameInput.value.trim().slice(0, NAME_MAX);
+        var hasHours = raw !== '' || badInput;
+        f.name = nm;
+        setErr(f.nameInput, f.nameErr, hasHours && !nm ? 'Escribe qué actividad es.' : '');
+        if (!hasHours) { setErr(f.input, f.err, nm ? 'Escribe las horas a la semana.' : ''); return 0; }
+        setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
+        if (!nm || !isFinite(v) || v <= 0) return 0;
+        return Math.min(v, f.max);
+      }
+      setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
       if (!isFinite(v) || v <= 0) return 0;
-      return Math.min(v, max);
+      return Math.min(v, f.max);
     }
-    // Minutos a la semana de cada bloque con un juego de supuestos.
-    function blocks(k, d) {
-      return {
-        prep: d.s * d.a * k.prep,
-        tasks: k.portal * d.t * k.perTask,
-        rem: reminders ? k.portal * d.r * k.rem : 0
-      };
-    }
-    function hours(minWeek) { return minWeek * SAVINGS.WEEKS_PER_MONTH / 60; }
-    function floorHalf(h) { return Math.floor(h * 2) / 2; }
+    function floorHalf(h) { return Math.floor(h * 2 + 1e-9) / 2; }
+    function oneDecimal(h) { return Math.round(h * 10) / 10; }
     function fmtN(n) {
       var parts = String(n).split('.');
       return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (parts[1] ? ',' + parts[1] : '');
     }
-    function fmtRangeShort(a, b, unit) {
-      return (a === b ? fmtN(a) : fmtN(a) + '–' + fmtN(b)) + ' ' + unit;
-    }
-    function fmtRangeText(lo, hi) {
-      var a = floorHalf(lo);
-      var b = floorHalf(hi);
-      if (b < 0.5) return 'Menos de media hora al mes';
-      if (a < 0.5) return 'Hasta ' + fmtN(b) + (b === 1 ? ' hora' : ' horas') + ' al mes';
-      if (a === b) return 'Unas ' + fmtN(a) + (a === 1 ? ' hora' : ' horas') + ' al mes';
-      return 'Entre ' + fmtN(a) + ' y ' + fmtN(b) + ' horas al mes';
-    }
+    function hoursText(h) { return fmtN(h) + (h === 1 ? ' hora' : ' horas'); }
     // Porcentajes enteros que suman 100 (método del mayor resto).
     function percents(values) {
       var sum = values.reduce(function (s, v) { return s + v; }, 0);
@@ -279,77 +389,58 @@
         .slice(0, left).forEach(function (o) { base[o.i] += 1; });
       return base;
     }
-    function drawDonut(shares) {
-      // Cada parte es un arco del círculo (pathLength = 100); un pequeño hueco las separa.
-      var start = 0;
-      var visible = shares.filter(function (p) { return p > 0; }).length;
-      var gap = visible > 1 ? 1 : 0;
-      KEYS.forEach(function (k, i) {
-        var seg = box.querySelector('[data-seg="' + k + '"]');
-        if (!seg) return;
-        var len = Math.max(shares[i] - gap, 0);
-        seg.setAttribute('stroke-dasharray', len + ' ' + (100 - len));
-        seg.setAttribute('stroke-dashoffset', String(-start));
-        start += shares[i];
-      });
-    }
 
     function update() {
-      var d = { s: read('s'), a: read('a'), t: read('t'), r: reminders ? read('r') : 0 };
-      var v = Math.round(read('v'));
-      var lo = blocks(SAVINGS.low, d);
-      var hi = blocks(SAVINGS.high, d);
-      var loTotal = hours(lo.prep + lo.tasks + lo.rem);
-      var hiTotal = hours(hi.prep + hi.tasks + hi.rem);
-      var a = floorHalf(loTotal);
-      var b = floorHalf(hiTotal);
+      var hrs = inputs.map(read);
+      var v = Math.floor(read(value));
+      var w = oneDecimal(hrs.reduce(function (s, h) { return s + h; }, 0));
+      var m = floorHalf(w * WEEKS_PER_MONTH);
 
-      if (b < 0.5) {
-        out.textContent = hiTotal > 0 ? 'Menos de media hora al mes.' : 'Rellena los campos para ver tu estimación.';
-        month.textContent = hiTotal > 0 ? '< 0,5 h' : '–';
-        year.textContent = '–';
-        eur.textContent = '–';
-        eur.classList.remove('is-hint');
-        legend.hidden = true;
-        drawDonut(KEYS.map(function () { return 0; }));
+      if (w <= 0) {
+        week.textContent = '0 h';
+        month.textContent = '0 h';
+        eurBox.hidden = true;
+        eurHint.hidden = false;
+        chart.hidden = true;
+        out.textContent = 'Escribe tus horas para ver el resultado.';
         return;
       }
-      month.textContent = fmtRangeShort(a, b, 'h');
-      year.textContent = fmtRangeShort(a * 12, b * 12, 'h');
+      week.textContent = fmtN(w) + ' h';
+      month.textContent = fmtN(m) + ' h';
+      var summary = 'A la semana, ' + hoursText(w) + '; al mes, ' + hoursText(m) + '.';
 
-      // Reparto del punto medio entre el escenario prudente y el optimista.
-      var mids = KEYS.map(function (k) { return (lo[k] + hi[k]) / 2; });
-      var shares = percents(mids);
-      drawDonut(shares);
-      KEYS.forEach(function (k, i) {
-        var li = legend.querySelector('[data-leg="' + k + '"]');
-        if (!li) return;
-        var pct = shares[i] + '\u00a0%';
-        // Sin valor de la hora, la leyenda muestra solo el %; con él, el % junto al nombre y los €.
-        // Cada parte se redondea hacia abajo a la media hora, igual que el total.
-        var hLo = floorHalf(hours(lo[k]));
-        var hHi = floorHalf(hours(hi[k]));
-        li.querySelector('[data-pct]').textContent = v > 0 ? '· ' + pct : '';
-        li.querySelector('[data-val]').textContent = v > 0 ? fmtRangeShort(hLo * v, hHi * v, '€') : pct;
-      });
-      legend.hidden = false;
-
-      var summary = fmtRangeText(loTotal, hiTotal) + ' (' + fmtRangeShort(a * 12, b * 12, 'horas') + ' al año).';
-      summary += ' Reparto: ' + KEYS.map(function (k, i) {
-        return legend.querySelector('[data-leg="' + k + '"] .donut__name').firstChild.textContent.trim() + ', ' + shares[i] + ' %';
-      }).join('; ') + '.';
       if (v > 0) {
-        eur.textContent = fmtRangeShort(a * v, b * v, '€');
-        eur.classList.remove('is-hint');
-        summary += ' Con el valor de tu hora, ese tiempo equivale a ' + fmtRangeShort(a * v, b * v, 'euros') + ' al mes.';
+        eurWeek.textContent = 'Equivale a ' + fmtN(Math.floor(w * v)) + ' € a la semana';
+        eurMonth.textContent = 'y ' + fmtN(Math.floor(m * v)) + ' € al mes.';
+        eurBox.hidden = false;
+        eurHint.hidden = true;
+        summary += ' Equivale a ' + fmtN(Math.floor(w * v)) + ' euros a la semana y ' + fmtN(Math.floor(m * v)) + ' euros al mes.';
       } else {
-        eur.textContent = 'Escribe el valor de tu hora para verlo en euros.';
-        eur.classList.add('is-hint');
-        summary += ' Escribe el valor de tu hora para verlo en euros.';
+        eurBox.hidden = true;
+        eurHint.hidden = false;
       }
-      out.textContent = summary;
+
+      // Gráfico: cada parte es un arco del círculo (pathLength = 100); un pequeño hueco las separa.
+      var shares = percents(hrs);
+      var visible = shares.filter(function (p) { return p > 0; }).length;
+      var gap = visible > 1 ? 1 : 0;
+      var start = 0;
+      var parts = [];
+      inputs.forEach(function (f, i) {
+        if (f.other) f.nameEl.textContent = f.name;
+        var len = Math.max(shares[i] - gap, 0);
+        f.seg.setAttribute('stroke-dasharray', len + ' ' + (100 - len));
+        f.seg.setAttribute('stroke-dashoffset', String(-start));
+        start += shares[i];
+        f.pct.textContent = shares[i] + ' %';
+        f.li.hidden = hrs[i] <= 0;
+        if (hrs[i] > 0) parts.push(f.name + ', ' + shares[i] + ' %');
+      });
+      chart.hidden = false;
+      out.textContent = summary + ' Reparto: ' + parts.join('; ') + '.';
     }
-    Object.keys(inputs).forEach(function (k) { inputs[k].addEventListener('input', update); });
+    inputs.forEach(function (f) { if (f.input && !f.other) f.input.addEventListener('input', update); });
+    if (value.input) value.input.addEventListener('input', update);
     update();
   }
 
@@ -373,8 +464,10 @@
     inputs.forEach(function (input) { input.addEventListener('input', update); });
   }
 
-  /* 6. Aviso al entrar ---------------------------------------------------- */
-  // Aparece una vez por visita a los 8 s o al 50 % del scroll (lo que ocurra antes).
+  /* 7. Aviso de la lista de espera ------------------------------------------ */
+  // Sale una vez por visita, solo al pasar el 50 % del scroll (sin temporizador: nunca tapa el
+  // contenido al entrar, criterio de intersticial intrusivo de Google). No es modal: no roba el foco
+  // ni bloquea la página; en móvil es una barra pequeña abajo. Se cierra con la X, "Ahora no" o Esc.
   // Sin cookies ni almacenamiento: si se recarga la página, puede volver a salir.
   function initLeadPopup() {
     var root = document.querySelector('[data-lead]');
@@ -383,59 +476,27 @@
     if (features.leadPopup !== true || !title) { root.remove(); return; }
     root.querySelector('[data-lead-title]').textContent = title;
     var card = root.querySelector('[data-lead-card]');
-    var DELAY = 8000;
     var shown = false;
-    var lastFocus = null;
-    var timer = null;
 
-    function focusables() {
-      return Array.prototype.filter.call(
-        card.querySelectorAll('a[href], button:not([disabled])'),
-        function (el) { return el.offsetParent !== null; }
-      );
-    }
     function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
-      if (e.key !== 'Tab') return;
-      var items = focusables();
-      if (!items.length) return;
-      var first = items[0];
-      var last = items[items.length - 1];
-      if (e.shiftKey && (document.activeElement === first || document.activeElement === card)) {
-        e.preventDefault(); last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault(); first.focus();
-      }
-    }
-    function onPointer(e) {
-      if (!card.contains(e.target)) close();
-    }
-    function onFocusIn(e) {
-      if (!card.contains(e.target)) card.focus();
-    }
-    function cleanupTriggers() {
-      if (timer) { clearTimeout(timer); timer = null; }
-      window.removeEventListener('scroll', onScroll);
+      if (e.key === 'Escape' && card.contains(document.activeElement)) { e.preventDefault(); close(true); }
     }
     function open() {
       if (shown) return;
       shown = true;
-      cleanupTriggers();
-      lastFocus = document.activeElement;
+      window.removeEventListener('scroll', onScroll);
       root.hidden = false;
-      card.focus();
       document.addEventListener('keydown', onKey);
-      document.addEventListener('pointerdown', onPointer);
-      document.addEventListener('focusin', onFocusIn);
     }
-    function close() {
+    function close(fromKeyboard) {
       if (root.hidden) return;
+      var hadFocus = card.contains(document.activeElement);
       root.hidden = true;
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('focusin', onFocusIn);
-      if (lastFocus && typeof lastFocus.focus === 'function' && lastFocus !== document.body) {
-        lastFocus.focus();
+      // Si el foco estaba en el aviso, se lleva al contenido principal para no perderlo.
+      if (hadFocus || fromKeyboard) {
+        var main = document.getElementById('contenido');
+        if (main) { main.setAttribute('tabindex', '-1'); main.focus({ preventScroll: true }); }
       }
     }
     function onScroll() {
@@ -443,16 +504,15 @@
       if (max > 0 && window.scrollY / max >= 0.5) open();
     }
 
-    root.querySelectorAll('[data-lead-close]').forEach(function (b) { b.addEventListener('click', close); });
+    root.querySelectorAll('[data-lead-close]').forEach(function (b) { b.addEventListener('click', function () { close(false); }); });
     // Al pulsar "Apuntarme" se abre el formulario en otra pestaña y el aviso se cierra.
     var cta = root.querySelector('[data-lead-cta]');
-    if (cta) cta.addEventListener('click', function () { setTimeout(close, 0); });
+    if (cta) cta.addEventListener('click', function () { setTimeout(function () { close(false); }, 0); });
     // Si la persona ya ha ido al formulario desde otro botón, no se le vuelve a ofrecer.
     document.querySelectorAll('a[data-cta]').forEach(function (a) {
-      if (a !== cta) a.addEventListener('click', function () { shown = true; cleanupTriggers(); });
+      if (a !== cta) a.addEventListener('click', function () { shown = true; window.removeEventListener('scroll', onScroll); });
     });
 
-    timer = setTimeout(open, DELAY);
     window.addEventListener('scroll', onScroll, { passive: true });
   }
 

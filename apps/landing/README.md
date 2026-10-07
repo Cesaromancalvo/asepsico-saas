@@ -15,7 +15,8 @@ apps/landing/
     privacidad/index.html  <- política de privacidad y cookies (versión sin analítica)
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
-    js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, estimación de tiempo
+    js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, "lo que te cuesta hoy"
+    404.html               <- página de error propia (noindex, fuera del sitemap)
     fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
     img/                   <- logo y og-image.png (1200x630)
     favicon.ico, favicon.png, apple-touch-icon.png, robots.txt, sitemap.xml
@@ -68,9 +69,9 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `FEATURES.calculadora` | `false` | Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?". Pendiente de decisión del Jefe. Vive en un `<template>` y no se pinta si está apagada. Calcula en el navegador: no envía ni guarda nada |
 | `FEATURES.faqPacientes` | `true` | Pregunta "Soy paciente, ¿puedo apuntarme?" con el 024 y el 112. Verificar el 024 la víspera de cada publicación |
 | `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio. Al encenderlo, añadir `"sameAs": ["https://www.instagram.com/asepsico/"]` al `Organization` del JSON-LD |
-| `FEATURES.leadPopup` | `true` | Aviso "¿Te avisamos cuando abramos el piloto?" a los 8 s o al 50 % del scroll. Solo enlaza al formulario: no recoge datos ni guarda nada en el navegador (sin cookies ni localStorage), así que puede volver a salir al recargar. Se cierra con la X, "Ahora no", Esc o clic fuera; foco atrapado y devuelto al cerrar |
-| `FEATURES.savingsCalculator` | `true` (rama `feat/landing-v2`) | Estimación de tiempo con el modelo de Vega: rango prudente–optimista de horas al mes, euros solo si se da el valor de la hora, sin ROI ni precios; "Estimación, no garantía" y "Cómo calculamos esto" siempre visibles. Vive en `<template id="tpl-ahorro">` y calcula en el navegador. **Apagar antes de fusionar en `main` si Argos y Pax no la han aprobado** |
-| `FEATURES.savingsReminders` | `false` | Campo de recordatorios de la estimación. Oculto (cuenta 0) hasta que los emails de recordatorio estén en producción |
+| `FEATURES.leadPopup` | `true` | Aviso "Sé de los primeros en probar AsePsico". Sale una vez por visita **solo al pasar el 50 % del scroll** (sin temporizador, para no contar como intersticial intrusivo en móvil). No es modal: no roba el foco ni bloquea la página. En escritorio es una tarjeta abajo a la derecha; en móvil, una barra pequeña pegada abajo (título, "Apuntarme" y cerrar). Se cierra con la X, "Ahora no" o Esc. No recoge datos ni guarda nada en el navegador |
+| `FEATURES.savingsCalculator` | `false` | "Lo que te cuesta hoy" (decisión del Jefe, 07/10): horas a la semana por tarea (lista `SAVINGS.TASKS`), total a la semana y al mes (× 46/12, hacia abajo a la media hora), euros a la semana y al mes solo si se escribe el valor de la hora, y reparto en %. **No dice cuánto ahorra AsePsico**, no publica precios ni resta el coste de la herramienta. Vive en `<template id="tpl-ahorro">` y calcula en el navegador. La enciende el Jefe tras Lex Psi y Clio |
+| `SAVINGS.TASKS` | 9 tareas (lista de Vega, v3) | Lista ordenada de tareas de "Lo que te cuesta hoy" (`id`, `label`, `help`, `placeholder`). Cambiar una tarea es editar esta lista; los campos, el gráfico (9 colores) y la leyenda se generan solos. Los campos empiezan vacíos: el placeholder es un ejemplo en gris que **no cuenta** y el resultado inicial es 0 h. `SAVINGS.OTHER_TASK` (`true`): fila opcional "Otra tarea" (nombre + horas) que suma y no sale del navegador |
 
 Bloques que **no deben existir** en `public/` hasta que se aprueben: la calculadora (guardada en
 `borradores/calculadora.html`; `FEATURES.calculadora` no hace nada sin pegar antes ese bloque) y
@@ -91,7 +92,7 @@ Comprobar: escritorio (>= 960 px) y móvil (375 px). En escritorio, la sección 
 sesiones" fija la pantalla (sticky), la abre en capas y la recompone paso a paso; en móvil, sin
 JavaScript o con "Reducir movimiento" se ve como una pila estática de texto + pantalla, sin
 animaciones. Revisar también el acordeón con teclado (Tab, Enter, Espacio), la estimación de tiempo
-(`FEATURES.savingsCalculator`: campos vacíos, sin peticiones de red al escribir) y que en la pestaña
+(`FEATURES.savingsCalculator`: campos vacíos, decimales con coma, sin peticiones de red al escribir) y que en la pestaña
 Red no aparece ningún dominio externo.
 
 ## Desplegar en Render (Static Site)
@@ -124,15 +125,19 @@ Comprobaciones para Dora tras el primer despliegue (auditoría SEO de Mou, C4 y 
 
 - `http://asepsico.es/` y `https://www.asepsico.es/` redirigen (301/308) a `https://asepsico.es/`.
 - `/aviso-legal` sin barra: 301 a `/aviso-legal/` o 200 con el mismo contenido.
-- `/no-existe/` devuelve **404 real** (sin reglas de *rewrite* `/*` → `/index.html`). Valorar una
-  `404.html` con `noindex` si Render la sirve.
+- `/no-existe/` devuelve **404 real** con la página propia `public/404.html` (`noindex`). Render
+  Static Site sirve `/404.html` sola para las rutas que no existen y no casan con ninguna regla de
+  *redirect/rewrite*: **no hay que añadir ninguna regla**, pero tampoco debe existir un *rewrite*
+  `/*` → `/index.html` (taparía la 404). Comprobar: `curl -sI https://asepsico.es/no-existe/` da 404
+  y el cuerpo es la página "No encontramos esta página".
 - `Cache-Control`: `/fonts/*` un año `immutable`, `/img/*` 30 días, `/css/*` y `/js/*` una hora.
 - Ninguna respuesta con `Set-Cookie`.
 
 ## Sitemap
 
-Solo la home, con `lastmod` (cambiarlo solo cuando cambie el contenido). Las páginas legales entran
-cuando se quite su `noindex`; nunca una URL con `noindex`, oculta o que redirija.
+La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`), con `lastmod`
+(cambiarlo solo cuando cambie el contenido). Nunca una URL con `noindex` (p. ej. `404.html`), oculta o
+que redirija. `/aviso-legal/` queda fuera hasta que Lex Psi decida si lleva `noindex` (domicilio).
 
 ## Pendiente antes de publicar
 
