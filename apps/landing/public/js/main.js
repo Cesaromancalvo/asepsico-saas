@@ -486,12 +486,14 @@
       shown = true;
       window.removeEventListener('scroll', onScroll);
       root.hidden = false;
+      document.body.classList.add('has-leadbar');
       document.addEventListener('keydown', onKey);
     }
     function close(fromKeyboard) {
       if (root.hidden) return;
       var hadFocus = card.contains(document.activeElement);
       root.hidden = true;
+      document.body.classList.remove('has-leadbar');
       document.removeEventListener('keydown', onKey);
       // Si el foco estaba en el aviso, se lleva al contenido principal para no perderlo.
       if (hadFocus || fromKeyboard) {
@@ -512,6 +514,15 @@
     document.querySelectorAll('a[data-cta]').forEach(function (a) {
       if (a !== cta) a.addEventListener('click', function () { shown = true; window.removeEventListener('scroll', onScroll); });
     });
+
+    // Mientras la calculadora está en pantalla, el aviso se aparta (sin cerrarse) para no tapar las
+    // cifras ni la salvedad de los euros. Al salir de ella, vuelve si no se había cerrado.
+    var calc = document.getElementById('estimacion');
+    if (calc && 'IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { root.classList.toggle('is-away', e.isIntersecting); });
+      }, { threshold: 0 }).observe(calc);
+    }
 
     window.addEventListener('scroll', onScroll, { passive: true });
   }
