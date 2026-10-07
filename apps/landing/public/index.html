@@ -456,28 +456,26 @@
          escribe la persona en cada tarea (lista SAVINGS.TASKS de config.js), las pasa al mes (46/12
          semanas) y, solo si escribe el valor de su hora, a euros. Sin supuestos de ahorro, sin precios y
          sin restar el coste de la herramienta. Todo en el navegador: no se envía ni se guarda nada.
-         Textos nuevos marcados [CLIO]; pendiente de Lex Psi antes de encenderlo.
+         Textos revisados por Clio (07/10); pendiente de Lex Psi antes de encenderlo.
          Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
     <div data-slot="ahorro"></div>
     <template id="tpl-ahorro">
       <section class="section section--soft grain" id="estimacion" aria-labelledby="ahorro-titulo">
         <div class="container">
           <header class="savings__head">
-            <!-- [CLIO] -->
-            <h2 id="ahorro-titulo" class="display display--md">¿Cuánto tiempo te llevan hoy las tareas que no salen en la agenda?</h2>
+            <h2 id="ahorro-titulo" class="display display--md">¿Cuánto tiempo te lleva hoy el trabajo fuera de sesión?</h2>
             <p class="lead">Haz la cuenta con tus propias cifras. Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
           </header>
 
           <div class="savings" data-savings>
             <form class="savings__form" novalidate data-savings-form>
               <fieldset class="savings__fields">
-                <!-- [CLIO] -->
-                <legend class="savings__legend">Escribe las horas a la semana que dedicas a cada tarea. Puedes usar decimales (0,5 es media hora) y dejar en blanco lo que no hagas. Los números en gris son solo ejemplos y no cuentan.</legend>
+                <legend class="savings__legend">Escribe cuántas horas a la semana dedicas a cada tarea. Puedes usar decimales (0,5 es media hora) y dejar en blanco lo que no hagas. Los números en gris son solo ejemplos: no cuentan.</legend>
                 <!-- Los campos de las tareas los crea main.js a partir de SAVINGS.TASKS (config.js). -->
                 <div class="savings__tasks" data-sv-tasks></div>
                 <div class="sfield sfield--value">
                   <label for="sv-v">Valor de tu hora (€)</label>
-                  <p class="sfield__help" id="sv-v-help">Lo que cobras por sesión dividido por las horas que te ocupa, o lo que tú decidas.</p>
+                  <p class="sfield__help" id="sv-v-help">Opcional. Por ejemplo, lo que cobras por sesión dividido entre las horas que te ocupa, o la cifra que tú decidas.</p>
                   <input id="sv-v" name="v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="40" aria-describedby="sv-v-help sv-v-err" data-sv-value>
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
                 </div>
@@ -486,8 +484,7 @@
                      uno de los dos, el otro es obligatorio; mientras falte, la fila no suma. No se envía ni se
                      guarda. [ARGOS] confirmar que ningún script captura estos campos. -->
                 <div class="savings__others" data-sv-others>
-                  <!-- [CLIO] -->
-                  <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. No escribas datos de pacientes.</p>
+                  <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. Escribe solo el tipo de tarea, nunca datos de pacientes.</p>
                   <div class="savings__others-list" data-sv-others-list></div>
                   <button type="button" class="btn btn--ghost btn--sm savings__add" data-sv-add>+ Añadir otra tarea</button>
                 </div>
@@ -495,8 +492,7 @@
             </form>
 
             <div class="savings__result">
-              <!-- [CLIO] -->
-              <h3 class="savings__title">Hoy dedicas a tareas administrativas</h3>
+              <h3 class="savings__title">Hoy dedicas a estas tareas</h3>
               <dl class="savings__stats">
                 <div class="savings__stat savings__stat--main">
                   <dt>A la semana</dt>
@@ -507,14 +503,14 @@
                   <dd><span class="savings__mid" data-sv-month>0 h</span></dd>
                 </div>
               </dl>
-              <!-- [CLIO] [LEX] Aviso justo debajo de las horas, con letra normal (cambio 2, adaptado). -->
-              <p class="savings__disclaimer">Es una cuenta con las horas que tú escribes, no una medición. Preguntamos por estas tareas porque ocupan tiempo, no porque AsePsico las resuelva todas hoy.</p>
+              <!-- [LEX] Aviso justo debajo de las horas, con letra normal (cambio 2, adaptado; redacción de Clio 07/10). -->
+              <p class="savings__disclaimer">Es una cuenta con las horas que tú escribes, no una medición. Que una tarea esté en la lista no significa que AsePsico la haga por ti.</p>
 
               <!-- Euros: solo si se escribe el valor de la hora; nunca más grandes que las horas (cambio 5). -->
               <div class="savings__eur" data-sv-eur hidden>
                 <p class="savings__eurline"><span data-sv-eur-week></span><span data-sv-eur-month></span></p>
-                <!-- [CLIO] [LEX] Salvedad pegada a la cifra (cambio 5). -->
-                <p class="savings__caveat">Es el valor de tu tiempo según tu hora, no dinero que vayas a ganar ni a ahorrar.</p>
+                <!-- [LEX] Salvedad pegada a la cifra (cambio 5; redacción de Clio 07/10). -->
+                <p class="savings__caveat">Es lo que vale ese tiempo según el valor de tu hora, no dinero que vayas a ganar ni a ahorrar.</p>
               </div>
               <p class="savings__hint" data-sv-eur-hint>Escribe el valor de tu hora para verlo en euros.</p>
 
@@ -536,8 +532,8 @@
               <!-- Resumen para lectores de pantalla: se anuncia al cambiar los datos. -->
               <p class="visually-hidden" aria-live="polite" aria-atomic="true" data-sv-out>Escribe tus horas para ver el resultado.</p>
 
-              <!-- [CLIO] Cierre suave (sin "con AsePsico recuperarías"). -->
-              <p class="savings__close">AsePsico se está construyendo para reducir ese tiempo. Apúntate y ayúdanos a medirlo en el piloto.</p>
+              <!-- Cierre sin promesa: no dice que AsePsico reduzca este tiempo (Clio, 07/10). -->
+              <p class="savings__close">Estamos construyendo AsePsico. En el piloto, que es gratuito, queremos medir con quienes lo usen si este tiempo cambia y cuánto. Apúntate a la lista de espera.</p>
               <div class="savings__actions">
                 <a class="btn btn--primary"
                    data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
@@ -553,15 +549,15 @@
             <!-- [LEX] cambio 6 -->
             <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
-              <!-- [CLIO] -->
               <ul class="legal-list">
-                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada tarea (y en "Otra tarea", si la usas). Los números en gris de los campos son ejemplos orientativos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
+                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada tarea (y en "Otra tarea", si la usas). Los números en gris de los campos son ejemplos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
                 <li><strong>Al mes:</strong> multiplicamos las horas a la semana por 46 semanas de trabajo al año (dejamos 6 para vacaciones y festivos) y dividimos entre 12 meses, unas 3,83 semanas por mes. Redondeamos hacia abajo a la media hora.</li>
-                <li><strong>En euros:</strong> solo si escribes el valor de tu hora, multiplicamos las horas a la semana y al mes por ese valor. Es el valor de tu tiempo, no dinero que vayas a ganar ni a ahorrar.</li>
+                <li><strong>En euros:</strong> solo si escribes el valor de tu hora, multiplicamos las horas a la semana y al mes por ese valor y redondeamos hacia abajo al euro. Es lo que vale ese tiempo, no dinero que vayas a ganar ni a ahorrar.</li>
                 <li><strong>El gráfico:</strong> qué parte de tus horas a la semana va a cada tarea, en porcentaje.</li>
               </ul>
-              <p>No calculamos cuánto tiempo te ahorraría AsePsico: todavía no lo hemos medido. Queremos medirlo en el piloto con los psicólogos que lo usen.</p>
-              <p>AsePsico no emite facturas con VeriFactu, no tiene videollamada ni envía SMS o WhatsApp: si usas una herramienta para eso, seguirás necesitándola.</p>
+              <p>No calculamos si AsePsico cambiaría este tiempo ni cuánto: todavía no lo hemos medido. Queremos medirlo en el piloto con los psicólogos que lo usen.</p>
+              <!-- [LEX] Confirmar si se puede mencionar la facturación en público (el control de cobros aún no se menciona). -->
+              <p>Hoy AsePsico no emite facturas VeriFactu, no tiene videollamada integrada y no envía SMS, WhatsApp ni recordatorios a los pacientes: si usas otra herramienta para eso, la seguirás necesitando.</p>
               <!-- [ARGOS] Cierto en esta implementación (sin envío ni almacenamiento). -->
               <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
             </div>
@@ -787,7 +783,7 @@
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
         </ul>
       </nav>
-      <!-- [CLIO] Aviso junto al mailto de Contacto (auditoría SEO de Mou, 07/10). -->
+      <!-- Aviso junto al mailto de Contacto (auditoría SEO de Mou, 07/10; revisado por Clio). -->
       <p class="footer__note" id="contacto-aviso">No envíes por aquí datos de pacientes ni información de salud.</p>
     </div>
   </footer>

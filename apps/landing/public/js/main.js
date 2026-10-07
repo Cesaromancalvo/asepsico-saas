@@ -286,7 +286,7 @@
       var hours = el('input');
       hours.id = id + '-h'; hours.type = 'number'; hours.inputMode = 'decimal'; hours.min = '0';
       hours.max = String(MAX_H); hours.step = '0.5'; hours.autocomplete = 'off';
-      var nameErr = sub('Actividad', name, id + '-name-err');
+      var nameErr = sub('Qué tarea es', name, id + '-name-err');
       var hoursErr = sub('Horas a la semana', hours, id + '-h-err');
       row.appendChild(pair);
       othersList.appendChild(row);
@@ -360,7 +360,7 @@
         var nm = f.nameInput.value.trim().slice(0, NAME_MAX);
         var hasHours = raw !== '' || badInput;
         f.name = nm;
-        setErr(f.nameInput, f.nameErr, hasHours && !nm ? 'Escribe qué actividad es.' : '');
+        setErr(f.nameInput, f.nameErr, hasHours && !nm ? 'Escribe qué tarea es.' : '');
         if (!hasHours) { setErr(f.input, f.err, nm ? 'Escribe las horas a la semana.' : ''); return 0; }
         setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
         if (!nm || !isFinite(v) || v <= 0) return 0;

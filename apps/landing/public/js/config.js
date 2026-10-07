@@ -35,29 +35,29 @@ window.ASEPSICO_CONFIG = Object.freeze({
     MAX_HOURS: 40,
     MAX_VALUE: 500,
     // Tareas, en este orden (lista de Vega, calculadora-tareas-v3, 07/10; versión por defecto, el Jefe
-    // aún puede ajustarla). Textos [CLIO]. Para cambiar una tarea basta con editar esta lista:
+    // aún puede ajustarla). Textos revisados por Clio (07/10). Para cambiar una tarea basta con editar esta lista:
     // id (único, sin espacios), label (etiqueta), help (una línea bajo la etiqueta) y placeholder
     // (ejemplo en gris dentro del campo: NO cuenta en el cálculo; [SUPUESTO] del equipo).
     // Los campos, el gráfico y la leyenda se generan solos.
     TASKS: Object.freeze([
       Object.freeze({ id: 'agenda', label: 'Agenda, citas y recordatorios', placeholder: '1,5',
-        help: 'Dar y cambiar citas, cancelaciones, huecos, recordar citas por WhatsApp o llamada.' }),
+        help: 'Dar y cambiar citas, gestionar cancelaciones y huecos, recordar citas por WhatsApp o por teléfono.' }),
       Object.freeze({ id: 'altas', label: 'Altas, consentimientos y papeleo legal', placeholder: '0,5',
-        help: 'Datos del paciente nuevo, consentimientos, protección de datos, archivo, peticiones de copias.' }),
+        help: 'Recoger los datos de pacientes nuevos, consentimientos, protección de datos, archivo y peticiones de copia.' }),
       Object.freeze({ id: 'preparar', label: 'Preparar las sesiones', placeholder: '2',
-        help: 'Antes de la sesión: releer notas, decidir qué trabajar, buscar técnicas. No cuentes escribir notas.' }),
+        help: 'Antes de la sesión: releer notas, decidir qué trabajar, buscar técnicas. Las notas van en la tarea siguiente.' }),
       Object.freeze({ id: 'notas', label: 'Notas de sesión e historia clínica', placeholder: '3',
-        help: 'Después de la sesión: escribir o pasar a limpio notas, actualizar la historia, pasar papel a ordenador.' }),
+        help: 'Después de la sesión: escribir o pasar a limpio las notas, actualizar la historia clínica, pasar del papel al ordenador.' }),
       Object.freeze({ id: 'material', label: 'Crear material para pacientes', placeholder: '1,5',
-        help: 'Hacer o adaptar fichas, autorregistros, tareas, psicoeducación. No cuentes enviarlos.' }),
+        help: 'Hacer o adaptar fichas, autorregistros, tareas o psicoeducación. Enviarlos va en el seguimiento.' }),
       Object.freeze({ id: 'seguimiento', label: 'Seguimiento entre sesiones', placeholder: '1,5',
-        help: 'Enviar y recoger tareas y cuestionarios, corregir escalas, responder mensajes por WhatsApp o email.' }),
+        help: 'Enviar y recoger tareas y cuestionarios, corregir escalas, contestar mensajes por WhatsApp o email.' }),
       Object.freeze({ id: 'informes', label: 'Informes', placeholder: '1',
-        help: 'Informes para el paciente, colegio, médico, juzgado o mutua; buscar los datos para hacerlos.' }),
+        help: 'Informes para el paciente, el centro escolar, el médico, el juzgado o la mutua; buscar los datos para hacerlos.' }),
       Object.freeze({ id: 'coordinacion', label: 'Coordinación con otros profesionales', placeholder: '0,5',
-        help: 'Psiquiatra, médico, colegio, derivaciones; en un centro, también compañeros y reuniones de casos.' }),
+        help: 'Hablar con psiquiatría, el médico o el centro escolar, derivaciones; si trabajas en un centro, también reuniones de casos.' }),
       Object.freeze({ id: 'facturas', label: 'Facturas, cobros y gestoría', placeholder: '1,5',
-        help: 'Hacer facturas, perseguir pagos, cuadrar ingresos, papeles para la gestoría, volantes de mutuas.' }),
+        help: 'Hacer facturas, reclamar pagos, cuadrar ingresos, papeles para la gestoría, volantes de mutuas.' }),
     ]),
     // Filas opcionales "Otra tarea" (nombre de la actividad + horas), hasta este número, con el botón
     // "+ Añadir otra tarea". 0 las quita. Suman en el cálculo y no salen del navegador.
