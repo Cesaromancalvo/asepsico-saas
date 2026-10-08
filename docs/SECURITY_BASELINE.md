@@ -101,8 +101,8 @@ la ruta, nunca el valor).
   solo uso (`npm run invites:create -- --email x`; solo el hash SHA-256 en la BD, caduca a los 14 días,
   ligada al correo). Cualquier fallo responde 400 neutro `REGISTRATION_NOT_ALLOWED`.
 - **Condiciones versionadas** (`apps/api/src/legal/`): en el piloto demo están vigentes las
-  condiciones de uso del piloto demo (`PILOT_TERMS`, `demo-1.0`) y la política de privacidad para
-  profesionales (`PRIVACY_PRODUCT`, `demo-1.0`). El contrato art. 28 (`DPA_ART28`) **no** está
+  condiciones de uso del piloto demo (`PILOT_TERMS`, `demo-1.1`) y la política de privacidad para
+  profesionales (`PRIVACY_PRODUCT`, `demo-1.1`). El contrato art. 28 (`DPA_ART28`) **no** está
   vigente durante el demo (sigue en borrador y no debe haber datos de pacientes); vuelve con el
   piloto real. Cada profesional acepta por sí mismo: el titular al registrarse (`POST /auth/register`)
   y cada miembro invitado al darse de alta (`POST /auth/register/member`). Cada aceptación guarda

@@ -1,4 +1,4 @@
-// Texto de Lex Psi (condiciones-demo-v1.md, demo-1.0): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
+// Texto de Lex Psi (condiciones-demo-v1.md, demo-1.1): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -6,7 +6,7 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PILOT_TERMS_TEXT = `# Condiciones de uso del piloto demo de AsePsico
 
-Versión demo-1.0 · En vigor desde el 17/10/2026
+Versión demo-1.1 · En vigor desde el 17/10/2026
 
 **En resumen** (lo que manda es el texto completo):
 
@@ -29,9 +29,16 @@ Versión demo-1.0 · En vigor desde el 17/10/2026
 psicología, en un espacio propio y **solo con pacientes y datos inventados**. Tu espacio se crea con
 algunos pacientes inventados de ejemplo.
 
-2.2. Se accede solo por invitación personal. La persona que se registra con la invitación es la
-**titular** del espacio y acepta estas condiciones. Si lo haces en nombre de una consulta o
-empresa, declaras que puedes aceptarlas en su nombre.
+2.2. Se accede solo por invitación personal y todas las personas que acceden aceptan estas
+condiciones:
+
+- la persona que se registra con una invitación para crear un espacio es su **titular**;
+- las personas que el titular invita a su espacio son **miembros** de su equipo y las aceptan al
+  unirse.
+
+Si las aceptas en nombre de una consulta o empresa, declaras que puedes hacerlo en su nombre. Cada
+persona responde de su propio uso del servicio; el titular, además, de lo indicado en el
+apartado 4.3.
 
 2.3. El piloto demo está dirigido a profesionales de la psicología y a su equipo, mayores de edad,
 que lo usan **en el ámbito de su actividad profesional**, no como consumidores.
@@ -61,8 +68,8 @@ sus propias condiciones y su propio contrato, que tendrás que aceptar aparte.
 de salud, y en el piloto demo AsePsico no trata datos de pacientes por cuenta de nadie. Si
 introduces datos reales, lo haces sin contrato ni garantías.
 
-4.3. Si invitas a otras personas de tu equipo a tu espacio, debes informarles de esta regla y
-asegurarte de que la cumplen. Respondes del uso que hagan de tu espacio.
+4.3. Si eres titular e invitas a otras personas de tu equipo a tu espacio, invita solo a quien
+conozca esta regla y vela por que la cumpla. Cada miembro la acepta y responde de ella al unirse.
 
 4.4. No nos envíes nunca datos de pacientes reales, ni por email ni en capturas de pantalla, tampoco
 cuando nos pidas ayuda.
@@ -115,8 +122,9 @@ de seguridad o por causas técnicas que no dependan de AsePsico.
 
 7.4. Al terminar (por fin del plazo, por tu baja o por decisión de AsePsico) se cierra el acceso y
 **todo el contenido de tu espacio se borra** en un plazo máximo de 30 días. Ese contenido no se
-traslada a ningún otro servicio ni a un piloto posterior, y no se devuelve. Qué pasa con los datos
-de tu cuenta se explica en la política de privacidad.
+traslada a ningún otro servicio ni a un piloto posterior, y no se devuelve. Si quien se da de baja
+es un miembro, se cierra solo su acceso: el espacio y su contenido siguen hasta que termine el piloto
+demo del titular. Qué pasa con los datos de tu cuenta se explica en la política de privacidad.
 
 7.5. AsePsico puede cambiar la infraestructura o el alojamiento del servicio durante la prueba. Si
 eso obliga a crear espacios nuevos, te avisaremos con antelación.
@@ -198,7 +206,13 @@ servicios de la sociedad de la información).
 Estas condiciones se rigen por la ley española. Para cualquier controversia, las partes se someten
 a los juzgados y tribunales de Palencia, salvo que la ley disponga otra cosa.
 
-## 16. Contacto
+## 16. Contacto y soporte
 
-Para cualquier duda sobre estas condiciones: asepsico1@gmail.com.
+16.1. Si necesitas ayuda, escríbenos por email a asepsico1@gmail.com: te respondemos en 1 día
+laborable, de lunes a viernes.
+
+16.2. Es un plazo de primera respuesta, no de solución del problema; lo dicho en el apartado 8
+sigue aplicándose. Recuerda no enviarnos datos reales de pacientes (apartado 4.4).
+
+16.3. Para cualquier duda sobre estas condiciones, escribe al mismo email.
 `;

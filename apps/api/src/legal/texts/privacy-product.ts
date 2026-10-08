@@ -1,4 +1,4 @@
-// Texto de Lex Psi (privacidad-profesionales-demo-v1.md, demo-1.0): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
+// Texto de Lex Psi (privacidad-profesionales-demo-v1.md, demo-1.1): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -6,7 +6,7 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.0 · En vigor desde el 17/10/2026
+Versión demo-1.1 · En vigor desde el 17/10/2026
 
 Esta política explica cómo tratamos los datos de las **personas profesionales** (titulares de un
 espacio y miembros de su equipo) que participan en el **piloto demo** de AsePsico. En el piloto demo
@@ -47,7 +47,8 @@ necesarios para crear la cuenta; sin ellos no puedes participar.
 
 | Para qué | Base jurídica |
 |---|---|
-| Crear y gestionar tu cuenta y tu espacio, prestarte el piloto demo, darte soporte y enviarte avisos del servicio (cambios, incidencias, fin de la prueba) | Ejecución de las condiciones de uso que aceptas (art. 6.1.b RGPD). Si eres miembro invitado, nuestro interés legítimo y el de tu consulta en darte acceso a su espacio (art. 6.1.f) |
+| Si eres miembro invitado: enviarte la invitación de tu consulta para unirte a su espacio | Interés legítimo nuestro y de tu consulta en que puedas unirte a su espacio (art. 6.1.f RGPD) |
+| Crear y gestionar tu cuenta y tu espacio, prestarte el piloto demo, darte soporte y enviarte avisos del servicio (cambios, incidencias, fin de la prueba) | Ejecución de las condiciones de uso que aceptas, como titular o como miembro invitado (art. 6.1.b RGPD) |
 | Proteger el servicio: verificación en dos pasos, registro de actividad, prevención de abusos e investigación de incidentes | Interés legítimo en mantener seguro el servicio y a quienes lo usan (art. 6.1.f) |
 | Conservar la prueba de que aceptaste las condiciones y defendernos ante reclamaciones | Interés legítimo (art. 6.1.f) |
 | Analizar tus comentarios para mejorar AsePsico | Interés legítimo en mejorar el producto (art. 6.1.f) |

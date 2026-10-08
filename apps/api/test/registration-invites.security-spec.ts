@@ -356,15 +356,15 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
 
 });
 
-describe('Textos del piloto demo (demo-1.0) y datos del titular fuera de git', () => {
+describe('Textos del piloto demo (demo-1.1) y datos del titular fuera de git', () => {
   // Datos 100 % ficticios: DNI de ejemplo con letra de control válida y un domicilio inventado.
   const FAKE_NIF = '12345678Z';
   const FAKE_ADDRESS = 'Calle Ficticia 1, 00000 Ciudad Inventada';
   const filledEnv = { LEGAL_TITULAR_NIF: FAKE_NIF, LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any;
 
-  it('vigentes: PILOT_TERMS y PRIVACY_PRODUCT demo-1.0; DPA_ART28 fuera durante el demo', () => {
+  it('vigentes: PILOT_TERMS y PRIVACY_PRODUCT demo-1.1; DPA_ART28 fuera durante el demo', () => {
     const docs = legalDocs.buildLegalDocuments({});
-    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.0'], ['PRIVACY_PRODUCT', 'demo-1.0']]);
+    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.1']]);
     expect(docs.map((d) => d.type)).not.toContain('DPA_ART28');
   });
 
