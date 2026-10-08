@@ -21,7 +21,7 @@ async function main() {
   // Idempotente: solo registra lo pendiente (también tras publicar una versión nueva).
   const workspaceId = membership.workspaceId;
   await prisma.$transaction(async (tx) => {
-    const pending = await pendingLegalDocuments(tx, workspaceId);
+    const pending = await pendingLegalDocuments(tx, workspaceId, user.id);
     if (pending.length > 0) await recordTermsAcceptances(tx, { workspaceId, userId: user.id, docs: pending, meta: { userAgent: 'seed' } });
   });
   // Invitación de registro de ejemplo (correo ficticio). Token aleatorio en cada ejecución:

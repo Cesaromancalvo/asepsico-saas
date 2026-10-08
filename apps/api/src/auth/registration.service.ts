@@ -81,8 +81,14 @@ export class RegistrationService {
     return { mfaRequired: false as const, ...session };
   }
 
-  /** Alta de un miembro invitado por el OWNER: rol e isClinician salen de la invitación. */
+  /**
+   * Alta de un miembro invitado por el OWNER: rol e isClinician salen de la invitación. El miembro
+   * acepta las condiciones vigentes igual que el titular (evidencia propia en TermsAcceptance).
+   */
   async registerMember(dto: RegisterMemberDto, meta: Meta) {
+    const docs = getCurrentLegalDocuments();
+    assertLegalDocumentsPublishable(docs);
+    assertAcceptsCurrentTerms(dto.acceptedTerms, docs);
     const email = normalizeEmail(dto.email);
     const now = new Date();
 
@@ -100,9 +106,9 @@ export class RegistrationService {
 
     // Coherencia rol/isClinician recalculada (además de los CHECK de la BD).
     const isClinician = clinicianFlagForRole(invite.role, invite.isClinician);
-    // Art. 13 RGPD: al miembro se le INFORMA de la política de privacidad vigente (no la acepta:
-    // el contrato lo firma el titular). Queda en la auditoría qué versión se le mostró.
-    const privacyNotice = privacyNoticeFor(getCurrentLegalDocuments());
+    // Art. 13 RGPD: la política de privacidad vigente se devuelve también en la respuesta para que
+    // la web la muestre, y queda en la auditoría qué versión se le mostró.
+    const privacyNotice = privacyNoticeFor(docs);
     const passwordHash = await hash(dto.password, 12);
     const result = await this.runOrNeutral('miembro', invite.id, () => this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({ data: { email, passwordHash, firstName: dto.firstName, lastName: dto.lastName } });
@@ -114,6 +120,7 @@ export class RegistrationService {
       const membership = await tx.workspaceMember.create({
         data: { workspaceId: invite.workspaceId, userId: user.id, role: invite.role, isClinician },
       });
+      await recordTermsAcceptances(tx, { workspaceId: invite.workspaceId, userId: user.id, docs, meta });
       await tx.auditLog.create({
         data: {
           workspaceId: invite.workspaceId,

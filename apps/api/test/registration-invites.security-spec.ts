@@ -5,10 +5,11 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { RegistrationService, REGISTRATION_NOT_ALLOWED } from '../src/auth/registration.service';
 import { AuthController } from '../src/auth/auth.controller';
-import { RegisterDto } from '../src/auth/dto/register.dto';
+import { RegisterDto, RegisterMemberDto } from '../src/auth/dto/register.dto';
 import { hashInviteToken, INVITE_TTL_MS } from '../src/auth/invite-token.util';
 import * as legalDocs from '../src/legal/legal-documents';
-import { assertOwnerTermsAccepted, LEGAL_TERMS_DRAFT, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { assertTermsAccepted, LEGAL_TERMS_DRAFT, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { EnvironmentController, isDemoEnvironment } from '../src/health/environment.controller';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from '../src/auth/auth.service';
 import { LegalService } from '../src/legal/legal.service';
@@ -159,7 +160,7 @@ describe('POST /auth/register: registro solo por invitación', () => {
       }));
     }
     const actions = prisma.__store.auditLog.map((a: any) => a.action).sort();
-    expect(actions).toEqual(['TERMS_ACCEPTED', 'TERMS_ACCEPTED', 'TERMS_ACCEPTED', 'WORKSPACE_REGISTERED']);
+    expect(actions).toEqual([...docs.map(() => 'TERMS_ACCEPTED'), 'WORKSPACE_REGISTERED']);
     expect(prisma.__store.auditLog.every((a: any) => a.workspaceId === workspace.id && a.actorId === user.id)).toBe(true);
     expect(JSON.stringify(prisma.__store.auditLog)).not.toContain(TOKEN);
     expect(auth.issueSession).toHaveBeenCalledWith(expect.objectContaining({ id: user.id }), workspace.id, 'OWNER', META);
@@ -234,13 +235,13 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
 
   it('con todo aceptado, el OWNER pasa', async () => {
     const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
-    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
+    await expect(assertTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
   });
 
   it('versión nueva publicada → 428 TERMS_ACCEPTANCE_REQUIRED con lo pendiente (sin texto)', async () => {
     const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
     publishNewPilotVersion();
-    const error = await assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients').catch((e) => e);
+    const error = await assertTermsAccepted(prisma, owner, '/api/v1/patients').catch((e) => e);
     expect(error).toBeInstanceOf(HttpException);
     expect(error.getStatus()).toBe(428);
     expect(error.getResponse()).toMatchObject({ code: TERMS_ACCEPTANCE_REQUIRED, pending: [expect.objectContaining({ documentType: 'PILOT_TERMS', version: '0.2-borrador' })] });
@@ -251,23 +252,37 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
     const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
     const current = legalDocs.getCurrentLegalDocuments();
     jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(current.map((d, i) => (i === 0 ? { ...d, textHash: 'b'.repeat(64) } : d)));
-    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
+    await expect(assertTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
   });
 
   it.each(['/api/v1/legal/terms', '/api/v1/legal/terms/status', '/api/v1/legal/terms/accept', '/api/v1/auth/logout', '/api/v1/auth/mfa/setup'])(
     'con condiciones pendientes el OWNER aún alcanza %s', async (path) => {
       const prisma = fakeRegistrationDb({ termsAcceptance: [] });
-      await expect(assertOwnerTermsAccepted(prisma, owner, path)).resolves.toBeUndefined();
+      await expect(assertTermsAccepted(prisma, owner, path)).resolves.toBeUndefined();
     });
 
-  it.each(['ADMIN', 'THERAPIST', 'ASSISTANT'])('%s no queda bloqueado (acepta el titular)', async (role) => {
+  it.each(['ADMIN', 'THERAPIST', 'ASSISTANT'])('%s también queda bloqueado si no ha aceptado (cada profesional acepta por sí mismo)', async (role) => {
+    const member = { ...owner, sub: `${role.toLowerCase()}-1`, role };
+    // El titular ya aceptó: su aceptación NO cubre al miembro.
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows() });
+    const error = await assertTermsAccepted(prisma, member, '/api/v1/patients').catch((e) => e);
+    expect(error?.getStatus?.()).toBe(428);
+    expect(error.getResponse()).toMatchObject({ code: TERMS_ACCEPTANCE_REQUIRED });
+    const own = fakeRegistrationDb({ termsAcceptance: acceptedRows(undefined, member.sub) });
+    await expect(assertTermsAccepted(own, member, '/api/v1/patients')).resolves.toBeUndefined();
+  });
+
+  it('los tokens sin rol de personal (portal) no pasan por este bloqueo; un token de personal sin sub → 401', async () => {
     const prisma = fakeRegistrationDb({ termsAcceptance: [] });
-    await expect(assertOwnerTermsAccepted(prisma, { ...owner, role }, '/api/v1/patients')).resolves.toBeUndefined();
+    await expect(assertTermsAccepted(prisma, { ...owner, role: 'PATIENT' }, '/api/v1/portal/dashboard')).resolves.toBeUndefined();
+    await expect(assertTermsAccepted(prisma, undefined, '/api/v1/patients')).resolves.toBeUndefined();
+    await expect(assertTermsAccepted(prisma, { ...owner, sub: undefined }, '/api/v1/patients')).rejects.toMatchObject({ status: 401 });
+    expect(prisma.termsAcceptance.findMany).not.toHaveBeenCalled();
   });
 
   it('la aceptación de OTRO workspace no cuenta (multi-tenant)', async () => {
     const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows().map((r) => ({ ...r, workspaceId: 'ws-2' })) });
-    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
+    await expect(assertTermsAccepted(prisma, owner, '/api/v1/patients')).rejects.toBeInstanceOf(HttpException);
   });
 
   it('JwtAuthGuard aplica el bloqueo tras autenticar (y falla cerrado sin BD)', async () => {
@@ -293,7 +308,7 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
       workspaceId: WS, actorId: 'owner-1', action: 'TERMS_ACCEPTED', entityType: 'TermsAcceptance', entityId: added[0].id,
       metadata: { documentType: 'PILOT_TERMS', version: '0.2-borrador', textHash: added[0].textHash },
     })]);
-    await expect(assertOwnerTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
+    await expect(assertTermsAccepted(prisma, owner, '/api/v1/patients')).resolves.toBeUndefined();
   });
 
   it('aceptar con la versión anterior → 400 TERMS_NOT_ACCEPTED sin escribir', async () => {
@@ -305,10 +320,24 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
     expect(prisma.__store.auditLog).toEqual([]);
   });
 
-  it('solo el OWNER según la BD acepta: ADMIN (o token OWNER desactualizado) → 403', async () => {
+  it('un miembro (ADMIN) acepta para sí mismo: evidencia con SU userId, auditada, y deja de recibir 428', async () => {
+    const prisma = fakeRegistrationDb({ termsAcceptance: acceptedRows(), workspaceMember: members });
+    const admin = { ...owner, sub: 'admin-1', role: 'ADMIN' };
+    const before = await new LegalService(prisma).status(admin);
+    expect(before).toMatchObject({ acceptanceRequired: true, canAccept: true });
+    const status = await new LegalService(prisma).accept(admin, { acceptedTerms: currentTerms() } as any, META);
+    expect(status).toMatchObject({ acceptanceRequired: false, pending: [] });
+    const added = prisma.__store.termsAcceptance.filter((r: any) => r.userId === 'admin-1');
+    expect(added).toHaveLength(legalDocs.getCurrentLegalDocuments().length);
+    expect(added.every((r: any) => r.workspaceId === WS)).toBe(true);
+    expect(prisma.__store.auditLog.every((a: any) => a.actorId === 'admin-1' && a.action === 'TERMS_ACCEPTED')).toBe(true);
+    await expect(assertTermsAccepted(prisma, admin, '/api/v1/patients')).resolves.toBeUndefined();
+  });
+
+  it('quien no es miembro del workspace según la BD no acepta nada → 403 sin escribir', async () => {
     const prisma = fakeRegistrationDb({ workspaceMember: members });
-    await expect(new LegalService(prisma).accept({ ...owner, sub: 'admin-1', role: 'ADMIN' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(new LegalService(prisma).accept({ ...owner, sub: 'admin-1' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(new LegalService(prisma).accept({ ...owner, sub: 'intruso-1', role: 'ADMIN' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(new LegalService(prisma).accept({ ...owner, workspaceId: 'ws-2' }, { acceptedTerms: currentTerms() } as any, META)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.__store.termsAcceptance).toEqual([]);
   });
 
@@ -325,14 +354,101 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
     expect(guards).toEqual(['JwtAuthGuard', 'CsrfGuard']);
   });
 
-  it('los textos son borradores con marcadores del despacho: ninguno se presenta como definitivo', () => {
-    const docs = legalDocs.getCurrentLegalDocuments();
-    expect(docs.map((d) => d.type).sort()).toEqual(['DPA_ART28', 'PILOT_TERMS', 'PRIVACY_PRODUCT']);
-    for (const doc of docs) {
-      expect(doc.text).toContain(legalDocs.PENDING_LEGAL_MARKER);
-      expect(doc.draft).toBe(true);
+});
+
+describe('Textos del piloto demo (demo-1.0) y datos del titular fuera de git', () => {
+  // Datos 100 % ficticios: DNI de ejemplo con letra de control válida y un domicilio inventado.
+  const FAKE_NIF = '12345678Z';
+  const FAKE_ADDRESS = 'Calle Ficticia 1, 00000 Ciudad Inventada';
+  const filledEnv = { LEGAL_TITULAR_NIF: FAKE_NIF, LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any;
+
+  it('vigentes: PILOT_TERMS y PRIVACY_PRODUCT demo-1.0; DPA_ART28 fuera durante el demo', () => {
+    const docs = legalDocs.buildLegalDocuments({});
+    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.0'], ['PRIVACY_PRODUCT', 'demo-1.0']]);
+    expect(docs.map((d) => d.type)).not.toContain('DPA_ART28');
+  });
+
+  it('en git solo quedan sin rellenar [NIF] y [DOMICILIO]; el resto de datos decididos ya está', () => {
+    for (const doc of legalDocs.buildLegalDocuments({})) {
+      const markers = [...new Set(doc.text.match(/\[[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ_ ]*\]/g) ?? [])].sort();
+      expect(markers).toEqual(['[DOMICILIO]', '[NIF]']);
+      expect(doc.text).not.toContain(legalDocs.PENDING_LEGAL_MARKER);
+      expect(doc.text).toContain('asepsico1@gmail.com');
+      expect(doc.text).toContain('En vigor desde el 17/10/2026');
+      expect(doc.text).not.toMatch(/INICIO TEXTO CARGABLE|FIN TEXTO CARGABLE|Notas de carga|Lo que debe confirmar Argos/);
+    }
+    const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
+    expect(terms.text).toContain('juzgados y tribunales de Palencia');
+    expect(terms.text).toContain('31/12/2026');
+  });
+
+  it('sin LEGAL_TITULAR_NIF / LEGAL_TITULAR_DOMICILIO los textos son borrador (marcadores = borrador)', () => {
+    expect(legalDocs.buildLegalDocuments({}).every((d) => d.draft)).toBe(true);
+    expect(legalDocs.buildLegalDocuments({ LEGAL_TITULAR_NIF: FAKE_NIF } as any).every((d) => d.draft)).toBe(true);
+    expect(legalDocs.buildLegalDocuments({ LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any).every((d) => d.draft)).toBe(true);
+  });
+
+  it('con ambos datos válidos: sin marcadores, no borrador y el hash es el del texto servido', () => {
+    for (const doc of legalDocs.buildLegalDocuments(filledEnv)) {
+      expect(doc.draft).toBe(false);
+      expect(doc.text).not.toMatch(legalDocs.UNFILLED_MARKER_RE);
+      expect(doc.text).toContain(`**NIF:** ${FAKE_NIF}`);
+      expect(doc.text).toContain(FAKE_ADDRESS);
       expect(doc.textHash).toBe(legalDocs.hashLegalText(doc.text));
     }
+  });
+
+  it('cambiar el NIF o el domicilio cambia el hash (obliga a aceptar de nuevo)', () => {
+    const a = legalDocs.buildLegalDocuments(filledEnv);
+    const b = legalDocs.buildLegalDocuments({ ...filledEnv, LEGAL_TITULAR_DOMICILIO: 'Calle Inventada 2, 00000 Otra Ciudad' });
+    expect(a.map((d) => d.textHash)).not.toEqual(b.map((d) => d.textHash));
+  });
+
+  it.each([
+    ['NIF con letra de control incorrecta', { LEGAL_TITULAR_NIF: '12345678A' }],
+    ['NIF con formato raro', { LEGAL_TITULAR_NIF: '[NIF]' }],
+    ['domicilio con corchetes (inyección de marcador)', { LEGAL_TITULAR_DOMICILIO: 'Calle [DOMICILIO] 1, Ciudad' }],
+    ['domicilio con Markdown o HTML', { LEGAL_TITULAR_DOMICILIO: 'Calle <b>Ficticia</b> 1, Ciudad' }],
+    ['domicilio multilínea', { LEGAL_TITULAR_DOMICILIO: 'Calle Ficticia 1\n# Título inyectado' }],
+    ['domicilio demasiado corto', { LEGAL_TITULAR_DOMICILIO: 'C/ 1' }],
+  ])('valor no válido (%s) → no se sustituye y el documento sigue en borrador', (_label, extra) => {
+    const docs = legalDocs.buildLegalDocuments({ ...filledEnv, ...extra });
+    expect(docs.every((d) => d.draft)).toBe(true);
+  });
+
+  it('normalizeNif acepta DNI y NIE válidos (ficticios) y normaliza espacios y guiones', () => {
+    expect(legalDocs.normalizeNif(' 12345678-z ')).toBe('12345678Z');
+    expect(legalDocs.normalizeNif('X1234567L')).toBe('X1234567L');
+    expect(legalDocs.normalizeNif('X1234567A')).toBeNull();
+  });
+
+  it('cualquier marcador [EN MAYÚSCULAS] cuenta como borrador; los enlaces normales no', () => {
+    expect(legalDocs.isDraftLegalText('Hola [FECHA_VIGENCIA]')).toBe(true);
+    expect(legalDocs.isDraftLegalText('Hola [PENDIENTE DEL DESPACHO]')).toBe(true);
+    expect(legalDocs.isDraftLegalText('Hola [Más información] y (BETA)')).toBe(false);
+  });
+
+  it('el repositorio no contiene NIF ni domicilio: el texto en git deja los marcadores', () => {
+    const dir = join(__dirname, '..', 'src', 'legal', 'texts');
+    for (const file of ['pilot-terms.ts', 'privacy-product.ts']) {
+      const src = readFileSync(join(dir, file), 'utf8');
+      expect(src).toContain('**NIF:** [NIF]');
+      expect(src).toMatch(/\*\*Domicilio:\*\* \[DOMICILIO\]/);
+      expect(src).not.toMatch(/\b[0-9XYZ][0-9]{7}[A-Z]\b/);
+    }
+  });
+});
+
+describe('GET /environment (aviso fijo de entorno de prueba)', () => {
+  it.each([[undefined, true], ['', true], ['true', true], ['TRUE', true], ['0', true], ['False', true], ['false', false]])(
+    'DEMO_ENVIRONMENT=%j → demo=%s (solo "false" exacto lo quita)', (value, expected) => {
+      expect(isDemoEnvironment(value === undefined ? {} : { DEMO_ENVIRONMENT: value } as any)).toBe(expected);
+    });
+
+  it('es público, sin guards, y solo devuelve { demo }', () => {
+    expect(Reflect.getMetadata('__guards__', EnvironmentController)).toBeUndefined();
+    expect(Reflect.getMetadata('__guards__', EnvironmentController.prototype.get)).toBeUndefined();
+    expect(Object.keys(new EnvironmentController().get())).toEqual(['demo']);
   });
 });
 
@@ -446,7 +562,7 @@ describe('Invitar miembros a un workspace existente', () => {
       id: 'wi-1', workspaceId: WS, tokenHash: hashInviteToken(MEMBER_TOKEN), email: 'nuevo@example.com', role: 'THERAPIST', isClinician: true,
       invitedById: 'owner-1', expiresAt: new Date(Date.now() + 14 * DAY), acceptedAt: null, revokedAt: null, ...extra,
     });
-    const memberDto = (extra: Record<string, unknown> = {}) => ({ firstName: 'Nuevo', lastName: 'Ficticio', email: 'nuevo@example.com', password: 'contrasena-ficticia-larga', inviteToken: MEMBER_TOKEN, ...extra }) as any;
+    const memberDto = (extra: Record<string, unknown> = {}) => ({ firstName: 'Nuevo', lastName: 'Ficticio', email: 'nuevo@example.com', password: 'contrasena-ficticia-larga', inviteToken: MEMBER_TOKEN, acceptedTerms: currentTerms(), ...extra }) as any;
 
     it.each([['THERAPIST', true], ['ASSISTANT', false], ['ADMIN', true], ['ADMIN', false]])(
       'alta como %s (isClinician=%s): membresía coherente en el workspace de la invitación, auditada', async (role, isClinician) => {
@@ -456,7 +572,15 @@ describe('Invitar miembros a un workspace existente', () => {
         const user = prisma.__store.user.find((u: any) => u.email === 'nuevo@example.com');
         expect(prisma.__store.workspaceMember).toContainEqual(expect.objectContaining({ workspaceId: WS, userId: user.id, role, isClinician }));
         expect(prisma.__store.workspaceInvite[0]).toMatchObject({ acceptedUserId: user.id });
-        expect(prisma.__store.auditLog).toEqual([expect.objectContaining({ workspaceId: WS, actorId: user.id, action: 'MEMBER_JOINED', metadata: expect.objectContaining({ workspaceInviteId: 'wi-1', role, isClinician }) })]);
+        expect(prisma.__store.auditLog.filter((a: any) => a.action === 'MEMBER_JOINED')).toEqual([expect.objectContaining({ workspaceId: WS, actorId: user.id, metadata: expect.objectContaining({ workspaceInviteId: 'wi-1', role, isClinician }) })]);
+        // El miembro acepta las condiciones vigentes: evidencia propia, en el workspace de la invitación, auditada.
+        const docs = legalDocs.getCurrentLegalDocuments();
+        expect(prisma.__store.termsAcceptance).toHaveLength(docs.length);
+        for (const doc of docs) {
+          expect(prisma.__store.termsAcceptance).toContainEqual(expect.objectContaining({ workspaceId: WS, userId: user.id, documentType: doc.type, version: doc.version, textHash: doc.textHash, ipAddress: META.ip }));
+        }
+        expect(prisma.__store.auditLog.filter((a: any) => a.action === 'TERMS_ACCEPTED')).toHaveLength(docs.length);
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
         expect(prisma.__store.workspace).toEqual([]);
         expect(auth.issueSession).toHaveBeenCalledWith(expect.anything(), WS, role, META);
       });
@@ -473,6 +597,38 @@ describe('Invitar miembros a un workspace existente', () => {
       expect(prisma.__store.user).toEqual(users);
       expect(prisma.__store.workspaceMember).toEqual(members);
       expect(prisma.__store.auditLog).toEqual([]);
+    });
+
+    it.each([
+      ['sin acceptedTerms', undefined],
+      ['lista vacía', []],
+      ['falta un documento', () => currentTerms().slice(1)],
+      ['hash de otro texto', () => currentTerms().map((t, i) => (i === 0 ? { ...t, textHash: 'c'.repeat(64) } : t))],
+    ])('sin aceptar las condiciones vigentes (%s) → 400 TERMS_NOT_ACCEPTED, sin crear nada ni consumir la invitación', async (_label, terms) => {
+      const prisma = db({ workspaceInvite: [memberInvite()] });
+      const acceptedTerms = typeof terms === 'function' ? terms() : terms;
+      const error = await registration(prisma).service.registerMember(memberDto({ acceptedTerms }), META).catch((e) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.getResponse()).toMatchObject({ code: TERMS_NOT_ACCEPTED });
+      expect(prisma.__store.user).toEqual(users);
+      expect(prisma.__store.termsAcceptance).toEqual([]);
+      expect(prisma.__store.workspaceInvite[0].acceptedAt).toBeNull();
+    });
+
+    it('si falla la evidencia de aceptación, rollback completo y la invitación sigue disponible', async () => {
+      const prisma = db({ workspaceInvite: [memberInvite()] });
+      prisma.termsAcceptance.create.mockRejectedValueOnce(new Error('fallo de BD simulado'));
+      await expect(registration(prisma).service.registerMember(memberDto(), META)).rejects.toThrow('fallo de BD simulado');
+      expect(prisma.__store.user).toEqual(users);
+      expect(prisma.__store.workspaceMember).toEqual(members);
+      expect(prisma.__store.workspaceInvite[0].acceptedAt).toBeNull();
+    });
+
+    it('DTO de miembro con whitelist: valida acceptedTerms y rechaza campos extra (role)', async () => {
+      const opts = { whitelist: true, forbidNonWhitelisted: true };
+      expect(await validate(plainToInstance(RegisterMemberDto, memberDto()), opts)).toEqual([]);
+      expect((await validate(plainToInstance(RegisterMemberDto, memberDto({ role: 'OWNER' })), opts)).map((e) => e.property)).toEqual(['role']);
+      expect((await validate(plainToInstance(RegisterMemberDto, memberDto({ acceptedTerms: [{ documentType: 'OTRO', version: '1', textHash: 'x' }] })), opts)).map((e) => e.property)).toEqual(['acceptedTerms']);
     });
 
     it('una cuenta que ya existe (en cualquier workspace) → neutro', async () => {
@@ -498,12 +654,11 @@ describe('Condiciones en borrador con NODE_ENV=production (condición de Argos)'
   async function expect503(promise: Promise<unknown>) {
     const error = await promise.then(() => null, (e) => e);
     expect(error?.getStatus?.()).toBe(503);
-    expect(error.getResponse()).toMatchObject({ statusCode: 503, code: LEGAL_TERMS_DRAFT, drafts: ['PILOT_TERMS', 'DPA_ART28', 'PRIVACY_PRODUCT'] });
+    expect(error.getResponse()).toMatchObject({ statusCode: 503, code: LEGAL_TERMS_DRAFT, drafts: ['PILOT_TERMS', 'PRIVACY_PRODUCT'] });
   }
 
   it('registro → 503 LEGAL_TERMS_DRAFT sin crear nada ni consumir la invitación', async () => {
     process.env.NODE_ENV = 'production';
-    delete process.env.LEGAL_ALLOW_DRAFT;
     const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
     await expect503(registration(prisma).service.register(validDto(), META));
     expectNothingCreated(prisma);
@@ -512,48 +667,57 @@ describe('Condiciones en borrador con NODE_ENV=production (condición de Argos)'
 
   it('aceptar condiciones → 503 LEGAL_TERMS_DRAFT sin escribir', async () => {
     process.env.NODE_ENV = 'production';
-    delete process.env.LEGAL_ALLOW_DRAFT;
     const prisma = ownerDb();
     await expect503(new LegalService(prisma).accept(owner, { acceptedTerms: currentTerms() } as any, META));
     expect(prisma.__store.termsAcceptance).toEqual([]);
     expect(prisma.__store.auditLog).toEqual([]);
   });
 
-  it.each(['1', 'TRUE', 'yes', ''])('LEGAL_ALLOW_DRAFT=%j no desbloquea (solo "true" exacto)', async (value) => {
+  it.each(['true', '1', 'TRUE', 'yes', ''])('LEGAL_ALLOW_DRAFT=%j ya no existe: no desbloquea nada (ni con "true")', async (value) => {
     process.env.NODE_ENV = 'production';
     process.env.LEGAL_ALLOW_DRAFT = value;
     await expect503(registration(fakeRegistrationDb({ registrationInvite: [invite()] })).service.register(validDto(), META));
+    await expect503(new LegalService(ownerDb()).accept(owner, { acceptedTerms: currentTerms() } as any, META));
   });
 
-  it('LEGAL_ALLOW_DRAFT=true explícito (demo) sí permite registrar y aceptar', async () => {
+  it('alta de miembro con borradores → 503 sin crear nada ni consumir la invitación', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.LEGAL_ALLOW_DRAFT = 'true';
+    const MT = 'token-ficticio-de-miembro-en-produccion-0123456789ab';
+    const prisma = fakeRegistrationDb({ workspaceInvite: [{ id: 'wi-1', workspaceId: 'ws-1', tokenHash: hashInviteToken(MT), email: 'm@example.com', role: 'ASSISTANT', isClinician: false, invitedById: 'owner-1', expiresAt: new Date(Date.now() + DAY), acceptedAt: null, revokedAt: null }] });
+    await expect503(registration(prisma).service.registerMember({ firstName: 'Miem', lastName: 'Bro', email: 'm@example.com', password: 'contrasena-ficticia-larga', inviteToken: MT, acceptedTerms: currentTerms() } as any, META));
+    expect(prisma.__store.user).toEqual([]);
+    expect(prisma.__store.workspaceInvite[0].acceptedAt).toBeNull();
+  });
+
+  it('en producción, con [NIF] sin rellenar (sin LEGAL_TITULAR_NIF) → 503 aunque el domicilio esté', async () => {
+    process.env.NODE_ENV = 'production';
+    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(legalDocs.buildLegalDocuments({ LEGAL_TITULAR_DOMICILIO: 'Calle Ficticia 1, 00000 Ciudad Inventada' } as any));
     const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
-    await registration(prisma).service.register(validDto(), META);
-    expect(prisma.__store.user).toHaveLength(1);
-    await expect(new LegalService(ownerDb()).accept(owner, { acceptedTerms: currentTerms() } as any, META)).resolves.toBeDefined();
+    await expect503(registration(prisma).service.register(validDto(), META));
+    expectNothingCreated(prisma);
   });
 
   it('fuera de producción (local, CI) los borradores no bloquean', async () => {
     process.env.NODE_ENV = 'test';
-    delete process.env.LEGAL_ALLOW_DRAFT;
     const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
     await registration(prisma).service.register(validDto(), META);
     expect(prisma.__store.user).toHaveLength(1);
   });
 
-  it('en producción con textos definitivos (sin marcadores) no hay 503', async () => {
+  it('en producción con NIF y domicilio rellenados por el entorno (sin marcadores) no hay 503', async () => {
     process.env.NODE_ENV = 'production';
-    delete process.env.LEGAL_ALLOW_DRAFT;
-    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(legalDocs.getCurrentLegalDocuments().map((d) => ({ ...d, draft: false })));
+    jest.spyOn(legalDocs, 'getCurrentLegalDocuments').mockReturnValue(legalDocs.buildLegalDocuments({ LEGAL_TITULAR_NIF: '12345678Z', LEGAL_TITULAR_DOMICILIO: 'Calle Ficticia 1, 00000 Ciudad Inventada' } as any));
     const prisma = fakeRegistrationDb({ registrationInvite: [invite()] });
     await registration(prisma).service.register(validDto(), META);
     expect(prisma.__store.user).toHaveLength(1);
   });
 
-  it('.env.example documenta LEGAL_ALLOW_DRAFT vacío (bloqueado por defecto)', () => {
+  it('.env.example: NIF y domicilio vacíos (nunca valores en el repo), sin LEGAL_ALLOW_DRAFT y con DEMO_ENVIRONMENT', () => {
     const example = readFileSync(join(__dirname, '..', '..', '..', '.env.example'), 'utf8');
-    expect(example).toMatch(/^LEGAL_ALLOW_DRAFT=$/m);
+    expect(example).toMatch(/^LEGAL_TITULAR_NIF=$/m);
+    expect(example).toMatch(/^LEGAL_TITULAR_DOMICILIO=$/m);
+    expect(example).not.toMatch(/^LEGAL_ALLOW_DRAFT=/m);
+    expect(example).toMatch(/^DEMO_ENVIRONMENT=true$/m);
     expect(example).toContain('LEGAL_TERMS_DRAFT');
   });
 });
@@ -565,13 +729,13 @@ describe('Miembro que entra por invitación (condiciones de Argos)', () => {
     workspaceMember: [{ id: 'm-owner', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false }],
     workspaceInvite: [{ id: 'wi-1', workspaceId: WS, tokenHash: hashInviteToken(TOKEN_M), email: 'tera@example.com', role: 'THERAPIST', isClinician: true, invitedById: 'owner-1', expiresAt: new Date(Date.now() + DAY), acceptedAt: null, revokedAt: null }],
   });
-  const dto = { firstName: 'Tera', lastName: 'Ficticia', email: 'tera@example.com', password: 'contrasena-ficticia-larga', inviteToken: TOKEN_M } as any;
+  const dto = () => ({ firstName: 'Tera', lastName: 'Ficticia', email: 'tera@example.com', password: 'contrasena-ficticia-larga', inviteToken: TOKEN_M, acceptedTerms: currentTerms() }) as any;
 
   it('un THERAPIST recién invitado recibe 403 de MFA antes de tocar datos clínicos', async () => {
     const prisma = db();
     const jwt = new JwtService({ secret: 'secreto-solo-para-tests', signOptions: { expiresIn: '15m' } });
     const service = new RegistrationService(prisma, new AuthService(prisma, jwt, {} as any));
-    const session: any = await service.registerMember(dto, META);
+    const session: any = await service.registerMember(dto(), META);
     const payload = await jwt.verifyAsync(session.accessToken);
     expect(payload).toMatchObject({ role: 'THERAPIST', workspaceId: WS, mfaEnabled: false });
     const guard = new JwtAuthGuard();
@@ -583,20 +747,21 @@ describe('Miembro que entra por invitación (condiciones de Argos)', () => {
     expect(guard.handleRequest(null, payload, null, setupCtx)).toBeTruthy();
   });
 
-  it('recibe la política de privacidad vigente (art. 13) y queda auditada la versión informada', async () => {
+  it('recibe la política de privacidad vigente (art. 13), la acepta y queda auditada la versión informada', async () => {
     const prisma = db();
-    const session: any = await registration(prisma).service.registerMember(dto, META);
+    const session: any = await registration(prisma).service.registerMember(dto(), META);
     const privacy = legalDocs.getCurrentLegalDocuments().find((d) => d.type === 'PRIVACY_PRODUCT')!;
     expect(session.privacyNotice).toEqual(expect.objectContaining({ documentType: 'PRIVACY_PRODUCT', version: privacy.version, textHash: privacy.textHash, text: privacy.text }));
-    expect(prisma.__store.termsAcceptance).toEqual([]); // se informa, no se acepta
-    expect(prisma.__store.auditLog[0].metadata).toMatchObject({ privacyNoticeVersion: privacy.version, privacyNoticeHash: privacy.textHash });
+    expect(prisma.__store.termsAcceptance).toContainEqual(expect.objectContaining({ documentType: 'PRIVACY_PRODUCT', version: privacy.version, textHash: privacy.textHash }));
+    const joined = prisma.__store.auditLog.find((a: any) => a.action === 'MEMBER_JOINED');
+    expect(joined.metadata).toMatchObject({ privacyNoticeVersion: privacy.version, privacyNoticeHash: privacy.textHash });
   });
 
   it('el controlador devuelve privacyNotice en POST /auth/register/member', async () => {
     const registrationMock: any = { registerMember: jest.fn(async () => ({ accessToken: 'a', refreshToken: 'r', refreshTokenExpiresAt: new Date(), user: { id: 'u' }, workspaceId: WS, role: 'THERAPIST', privacyNotice: { documentType: 'PRIVACY_PRODUCT' } })) };
     const controller = new AuthController({} as any, {} as any, registrationMock);
     const res: any = { cookie: jest.fn() };
-    const body: any = await controller.registerMember(dto, { ip: '1', get: () => 'jest' } as any, res);
+    const body: any = await controller.registerMember(dto(), { ip: '1', get: () => 'jest' } as any, res);
     expect(body.privacyNotice).toEqual({ documentType: 'PRIVACY_PRODUCT' });
     expect(body.accessToken).toBeUndefined();
   });

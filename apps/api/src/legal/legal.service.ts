@@ -16,31 +16,37 @@ export class LegalService {
     return getCurrentLegalDocuments().map((doc) => ({ ...legalDocumentRef(doc), text: doc.text }));
   }
 
-  /** Estado para la sesión actual. Solo el OWNER puede (y debe) aceptar. */
+  /**
+   * Estado para la sesión actual. Cada profesional (titular o miembro) acepta por sí mismo.
+   * `canAccept` se mantiene por compatibilidad del contrato: es true para cualquier miembro.
+   */
   async status(actor: AuthUser) {
     assertStaffRole(actor);
     const [role, pending] = await Promise.all([
       this.actorRole(actor),
-      pendingLegalDocuments(this.prisma, actor.workspaceId),
+      pendingLegalDocuments(this.prisma, actor.workspaceId, actor.sub),
     ]);
     return {
       acceptanceRequired: pending.length > 0,
-      canAccept: role === 'OWNER',
+      canAccept: role !== null,
       pending: pending.map(legalDocumentRef),
     };
   }
 
-  /** El OWNER (según la BD) acepta las versiones vigentes. Evidencia y auditoría en la misma transacción. */
+  /**
+   * El profesional acepta las versiones vigentes para sí mismo, si pertenece al workspace según la
+   * BD (no basta el token). Evidencia y auditoría en la misma transacción.
+   */
   async accept(actor: AuthUser, dto: AcceptTermsDto, meta: { ip?: string; userAgent?: string }) {
     assertStaffRole(actor);
     assertLegalDocumentsPublishable();
-    if ((await this.actorRole(actor)) !== 'OWNER') {
-      throw new ForbiddenException('Solo el titular de la consulta puede aceptar las condiciones');
+    if ((await this.actorRole(actor)) === null) {
+      throw new ForbiddenException('No perteneces a esta consulta');
     }
     assertAcceptsCurrentTerms(dto.acceptedTerms);
     try {
       await this.prisma.$transaction(async (tx) => {
-        const pending = await pendingLegalDocuments(tx, actor.workspaceId);
+        const pending = await pendingLegalDocuments(tx, actor.workspaceId, actor.sub);
         if (pending.length > 0) {
           await recordTermsAcceptances(tx, { workspaceId: actor.workspaceId, userId: actor.sub, docs: pending, meta });
         }

@@ -1,8 +1,9 @@
-import { BadRequestException, HttpException, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { STAFF_ROLES } from '../common/auth/assert-staff-role';
 import type { LegalDocumentType, Prisma, PrismaClient } from '@prisma/client';
 import { getCurrentLegalDocuments, LegalDocument } from './legal-documents';
 
-/** Código de la respuesta 428 cuando el OWNER tiene condiciones nuevas sin aceptar. */
+/** Código de la respuesta 428 cuando un profesional tiene condiciones nuevas sin aceptar. */
 export const TERMS_ACCEPTANCE_REQUIRED = 'TERMS_ACCEPTANCE_REQUIRED';
 /** Código del 400 cuando el registro o la aceptación no cubre las versiones vigentes. */
 export const TERMS_NOT_ACCEPTED = 'TERMS_NOT_ACCEPTED';
@@ -11,12 +12,13 @@ export const TERMS_NOT_ACCEPTED = 'TERMS_NOT_ACCEPTED';
 export const LEGAL_TERMS_DRAFT = 'LEGAL_TERMS_DRAFT';
 
 /**
- * En producción no se puede aceptar un borrador: registro y aceptación responden 503
- * LEGAL_TERMS_DRAFT mientras algún documento vigente tenga marcadores [PENDIENTE DEL DESPACHO].
- * Válvula explícita para un entorno de demostración: LEGAL_ALLOW_DRAFT=true (nunca en el piloto).
+ * En producción no se puede aceptar un borrador: registro, alta de miembro y aceptación responden
+ * 503 LEGAL_TERMS_DRAFT mientras algún documento vigente conserve un marcador sin rellenar
+ * ([PENDIENTE DEL DESPACHO], [NIF], [DOMICILIO]...). Sin válvula de escape: la antigua
+ * LEGAL_ALLOW_DRAFT ya no existe y se ignora si alguien la define.
  */
 export function assertLegalDocumentsPublishable(docs = getCurrentLegalDocuments(), env: NodeJS.ProcessEnv = process.env) {
-  if (env.NODE_ENV !== 'production' || env.LEGAL_ALLOW_DRAFT === 'true') return;
+  if (env.NODE_ENV !== 'production') return;
   const drafts = docs.filter((d) => d.draft);
   if (drafts.length > 0) {
     throw new ServiceUnavailableException({
@@ -53,11 +55,14 @@ export function assertAcceptsCurrentTerms(accepted: AcceptedTermInput[] | undefi
   }
 }
 
-/** Documentos vigentes que el workspace aún no ha aceptado (en esa versión y con ese texto). */
-export async function pendingLegalDocuments(db: Db, workspaceId: string, docs = getCurrentLegalDocuments()): Promise<LegalDocument[]> {
+/**
+ * Documentos vigentes que ESTE profesional aún no ha aceptado en ESTE workspace (en esa versión y
+ * con ese texto). La aceptación es personal: la de otro miembro o de otro workspace no cuenta.
+ */
+export async function pendingLegalDocuments(db: Db, workspaceId: string, userId: string, docs = getCurrentLegalDocuments()): Promise<LegalDocument[]> {
   if (docs.length === 0) return [];
   const rows = await db.termsAcceptance.findMany({
-    where: { workspaceId, OR: docs.map((d) => ({ documentType: d.type, version: d.version, textHash: d.textHash })) },
+    where: { workspaceId, userId, OR: docs.map((d) => ({ documentType: d.type, version: d.version, textHash: d.textHash })) },
     select: { documentType: true, version: true, textHash: true },
   });
   return docs.filter((d) => !rows.some((r) => r.documentType === d.type && r.version === d.version && r.textHash === d.textHash));
@@ -98,23 +103,27 @@ export async function recordTermsAcceptances(
   }
 }
 
-// Rutas que el OWNER puede usar con condiciones pendientes: leerlas, aceptarlas, cerrar sesión
-// y configurar el MFA (que JwtAuthGuard exige antes que nada).
+// Rutas que se pueden usar con condiciones pendientes: leerlas, aceptarlas, cerrar sesión y
+// configurar el MFA (que JwtAuthGuard exige antes que nada).
 const TERMS_PENDING_ALLOWED_SUFFIXES = ['/legal/terms', '/legal/terms/status', '/legal/terms/accept', '/auth/logout', '/auth/mfa/setup', '/auth/mfa/confirm'];
 
 /**
- * Bloqueo por condiciones nuevas: solo afecta al OWNER (quien firma por la consulta). 428 con un
- * código estable para que la web muestre la pantalla de "nuevas condiciones".
+ * Bloqueo por condiciones nuevas: afecta a TODO el personal del workspace (titular y miembros
+ * invitados), porque cada uno acepta las condiciones por sí mismo. 428 con un código estable para
+ * que la web muestre la pantalla de "nuevas condiciones". Los tokens sin rol de personal (portal
+ * del paciente) no pasan por aquí: usan PortalGuard.
  */
-export async function assertOwnerTermsAccepted(
+export async function assertTermsAccepted(
   db: Db,
-  user: { role?: string; workspaceId?: string } | undefined,
+  user: { sub?: string; role?: string; workspaceId?: string } | undefined,
   path: string,
   docs = getCurrentLegalDocuments(),
 ) {
-  if (user?.role !== 'OWNER' || typeof user.workspaceId !== 'string') return;
+  if (!user || !(STAFF_ROLES as readonly string[]).includes(user.role ?? '')) return;
+  // Falla cerrado: un token de personal sin usuario o workspace no es válido.
+  if (typeof user.workspaceId !== 'string' || typeof user.sub !== 'string') throw new UnauthorizedException();
   if (TERMS_PENDING_ALLOWED_SUFFIXES.some((suffix) => path.endsWith(suffix))) return;
-  const pending = await pendingLegalDocuments(db, user.workspaceId, docs);
+  const pending = await pendingLegalDocuments(db, user.workspaceId, user.sub, docs);
   if (pending.length > 0) {
     throw new HttpException(
       {

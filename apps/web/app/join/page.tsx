@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { RegisterMemberRequestContract } from '@asepsico/contracts';
+import type { LegalDocumentType, RegisterMemberRequestContract } from '@asepsico/contracts';
 import InviteOnlyCard from '@/components/InviteOnlyCard';
-import { api } from '@/lib/api';
+import TermsChecklist from '@/components/TermsChecklist';
+import { api, ApiError } from '@/lib/api';
 import { invalidateViewer, ROLE_LABEL, StaffRole } from '@/lib/clinical';
-import { invalidateTermsStatus, registrationErrorMessage, useInviteToken } from '@/lib/legal';
+import { fetchLegalTerms, invalidateTermsStatus, LegalDocument, registrationErrorMessage, toAcceptedTerm, useInviteToken } from '@/lib/legal';
 
 type PrivacyNotice = { documentType: string; version: string; title: string; textHash: string; draft: boolean; text: string };
 type JoinResponse = { role: StaffRole; privacyNotice: PrivacyNotice | null };
@@ -16,15 +17,38 @@ type JoinResponse = { role: StaffRole; privacyNotice: PrivacyNotice | null };
 export default function JoinPage() {
   const router = useRouter();
   const invite = useInviteToken();
+  // Los miembros invitados también aceptan las condiciones vigentes (no solo la persona titular).
+  const [docs, setDocs] = useState<LegalDocument[]>([]);
+  const [termsState, setTermsState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState<JoinResponse | null>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const doneRef = useRef<HTMLHeadingElement>(null);
 
+  const loadTerms = useCallback(async () => {
+    setTermsState('loading');
+    try {
+      setDocs(await fetchLegalTerms());
+      setChecked({});
+      setTermsState('ready');
+    } catch {
+      setTermsState('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (invite.ready && invite.token) loadTerms();
+  }, [invite.ready, invite.token, loadTerms]);
+
   useEffect(() => {
     if (error) errorRef.current?.focus();
   }, [error]);
+
+  function setDocChecked(documentType: LegalDocumentType, value: boolean) {
+    setChecked((current) => ({ ...current, [documentType]: value }));
+  }
 
   useEffect(() => {
     if (joined) doneRef.current?.focus();
@@ -42,12 +66,18 @@ export default function JoinPage() {
       setError('La contraseña debe tener al menos 12 caracteres.');
       return;
     }
+    if (docs.length === 0 || docs.some((doc) => checked[doc.documentType] !== true)) {
+      setError('Para crear la cuenta tienes que aceptar todas las condiciones.');
+      return;
+    }
     const body: RegisterMemberRequestContract = {
       firstName: String(data.get('firstName') ?? '').trim(),
       lastName: String(data.get('lastName') ?? '').trim(),
       email: String(data.get('email') ?? '').trim(),
       password,
       inviteToken: invite.token,
+      // Tal cual llegaron de GET /legal/terms: la API comprueba versión y hash.
+      acceptedTerms: docs.map(toAcceptedTerm),
     };
     setBusy(true);
     try {
@@ -57,7 +87,12 @@ export default function JoinPage() {
       invalidateTermsStatus();
       setJoined({ role: result.role, privacyNotice: result.privacyNotice ?? null });
     } catch (err) {
-      setError(registrationErrorMessage(err));
+      if (err instanceof ApiError && err.status === 400 && err.code === 'TERMS_NOT_ACCEPTED') {
+        await loadTerms();
+        setError('Las condiciones se han actualizado mientras rellenabas el formulario. Revísalas y vuelve a aceptarlas.');
+      } else {
+        setError(registrationErrorMessage(err));
+      }
     } finally {
       setBusy(false);
     }
@@ -92,8 +127,8 @@ export default function JoinPage() {
               <div>
                 <h2 id="privacy-notice-title" style={{ marginBottom: 4 }}>{notice.title}</h2>
                 <small className="muted">
-                  Versión {notice.version}. Es información sobre cómo se tratan tus datos como profesional: no tienes
-                  que aceptar nada.
+                  Versión {notice.version}. Es la política que has aceptado al crear tu cuenta; puedes volver a
+                  leerla cuando quieras en la página de condiciones.
                 </small>
               </div>
               {notice.draft && (
@@ -133,8 +168,23 @@ export default function JoinPage() {
             <input name="password" type="password" autoComplete="new-password" required minLength={12} maxLength={200} aria-describedby="join-password-hint" />
             <small id="join-password-hint" className="muted">Mínimo 12 caracteres.</small>
           </label>
+          {termsState === 'loading' && <p className="muted" role="status">Cargando las condiciones…</p>}
+          {termsState === 'error' && (
+            <div className="e1-notice danger" role="alert">
+              <div>
+                <strong>No se han podido cargar las condiciones</strong>
+                <p>Sin ellas no se puede completar el alta.</p>
+              </div>
+              <div className="e1-notice-actions">
+                <button type="button" className="button secondary" onClick={loadTerms}>Reintentar</button>
+              </div>
+            </div>
+          )}
+          {termsState === 'ready' && (
+            <TermsChecklist docs={docs} checked={checked} onChange={setDocChecked} disabled={busy} idPrefix="join-terms" />
+          )}
           {error && <p className="error" role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}
-          <button className="button" type="submit" disabled={busy}>{busy ? 'Creando cuenta…' : 'Crear mi cuenta'}</button>
+          <button className="button" type="submit" disabled={busy || termsState !== 'ready'}>{busy ? 'Creando cuenta…' : 'Crear mi cuenta'}</button>
         </form>
         <p className="muted" style={{ marginTop: 16 }}>¿Ya tienes cuenta? <Link href="/login">Inicia sesión</Link></p>
       </div>

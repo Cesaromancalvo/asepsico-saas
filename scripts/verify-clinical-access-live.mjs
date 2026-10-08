@@ -112,7 +112,7 @@ async function main() {
   console.log('1. Preparar workspace ficticio y actores');
   const hash = await bcrypt.hash(password, 10);
   const workspace = await prisma.workspace.create({ data: { name: `Consulta QA E1 ${stamp}` } });
-  // Condiciones vigentes (registro por invitación): el OWNER las acepta o la API le responde 428.
+  // Condiciones vigentes: cada profesional (titular y miembros) las acepta o la API le responde 428.
   const termsRes = await fetch(`${API}/legal/terms`);
   must(termsRes.ok, `GET /legal/terms → ${termsRes.status}`);
   const acceptedTerms = (await termsRes.json()).map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
@@ -129,9 +129,7 @@ async function main() {
     const email = `qa-e1-${key}-${stamp}@example.test`;
     const user = await prisma.user.create({ data: { email, passwordHash: hash, firstName: `QA ${key}`, lastName: 'Ficticio' } });
     await prisma.workspaceMember.create({ data: { workspaceId: workspace.id, userId: user.id, role: def.role, isClinician: def.isClinician } });
-    if (def.role === 'OWNER') {
-      await prisma.termsAcceptance.createMany({ data: acceptedTerms.map((t) => ({ workspaceId: workspace.id, userId: user.id, ...t, userAgent: 'verify-clinical-access-live' })) });
-    }
+    await prisma.termsAcceptance.createMany({ data: acceptedTerms.map((t) => ({ workspaceId: workspace.id, userId: user.id, ...t, userAgent: 'verify-clinical-access-live' })) });
     A[key] = client(key);
     await login(A[key], email, def.mfa);
     must(A[key].userId === user.id, `login de ${key} no devolvió su id`);

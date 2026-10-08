@@ -8,6 +8,7 @@
 //     400 REGISTRATION_NOT_ALLOWED, y ningún usuario ni workspace huérfano (rollback completo).
 //  2. Lo mismo con un token de invitación de miembro.
 //  3. El THERAPIST que entra por invitación recibe 403 de MFA antes de tocar datos clínicos.
+//  4. El miembro invitado deja su propia evidencia de aceptación de las condiciones vigentes.
 //
 // Requisitos: API local con TRUST_PROXY=loopback (cada petición usa su propia IP vía
 // X-Forwarded-For para no chocar con el límite de 5/min de /auth/register) y DATABASE_URL de la
@@ -85,7 +86,7 @@ async function main() {
   } });
   const memberClients = Array.from({ length: BURST }, () => client());
   const memberResults = await Promise.all(memberClients.map((call) => call('/auth/register/member', {
-    method: 'POST', body: { firstName: 'Terapeuta', lastName: 'Ficticia', email: memberEmail, password, inviteToken: memberToken },
+    method: 'POST', body: { firstName: 'Terapeuta', lastName: 'Ficticia', email: memberEmail, password, inviteToken: memberToken, acceptedTerms },
   })));
   const joinedIdx = memberResults.findIndex((r) => r.status === 201);
   check(memberResults.filter((r) => r.status === 201).length === 1, `exactamente un 201 (estados ${memberResults.map((r) => r.status).join(',')})`);
@@ -95,6 +96,9 @@ async function main() {
   check(member?.role === 'THERAPIST' && member.isClinician === true, 'membresía THERAPIST clínica');
   check((await prisma.workspaceInvite.findUnique({ where: { id: memberInvite.id } })).acceptedUserId === member?.userId, 'la invitación apunta al miembro creado');
   check(memberResults[joinedIdx]?.data?.privacyNotice?.documentType === 'PRIVACY_PRODUCT', 'la respuesta informa de la política de privacidad vigente');
+  const memberAcceptances = await prisma.termsAcceptance.findMany({ where: { workspaceId, userId: member?.userId }, select: { documentType: true, version: true, textHash: true } });
+  check(memberAcceptances.length === acceptedTerms.length && acceptedTerms.every((t) => memberAcceptances.some((a) => a.documentType === t.documentType && a.version === t.version && a.textHash === t.textHash)),
+    `el miembro deja su propia evidencia de aceptación (${memberAcceptances.length}/${acceptedTerms.length})`);
 
   console.log('3. El THERAPIST invitado no toca nada clínico sin MFA');
   const therapist = memberClients[joinedIdx];

@@ -19,7 +19,7 @@ export class LegalController {
     return this.legal.currentDocuments();
   }
 
-  // Cualquier miembro: ¿hay condiciones pendientes? (solo el OWNER puede aceptarlas).
+  // Cualquier miembro: ¿tengo condiciones pendientes? (cada profesional acepta por sí mismo).
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Header('Cache-Control', 'no-store')
@@ -28,7 +28,7 @@ export class LegalController {
     return this.legal.status(user);
   }
 
-  // Solo OWNER (según la BD). Auditado en la misma transacción.
+  // Cualquier miembro del workspace (según la BD), para sí mismo. Auditado en la misma transacción.
   @ApiBearerAuth()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @UseGuards(JwtAuthGuard, CsrfGuard)

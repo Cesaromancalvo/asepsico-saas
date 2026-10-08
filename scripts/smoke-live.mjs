@@ -208,7 +208,11 @@ async function checkReasonExposure(patient) {
 // Usa un tarro de cookies aparte para no mezclarse con la sesión del smoke.
 async function checkClosedRegistration() {
   const docs = await req('/legal/terms', { jar: new Map() });
-  assert(Array.isArray(docs) && docs.length === 3 && docs.every((d) => /^[a-f0-9]{64}$/.test(d.textHash)), 'GET /legal/terms no devolvió los 3 documentos con su hash');
+  // Piloto demo: condiciones del demo y privacidad para profesionales (sin el contrato art. 28).
+  const types = Array.isArray(docs) ? docs.map((d) => d.documentType).sort().join(',') : '';
+  assert(types === 'PILOT_TERMS,PRIVACY_PRODUCT' && docs.every((d) => /^[a-f0-9]{64}$/.test(d.textHash)), `GET /legal/terms no devolvió PILOT_TERMS y PRIVACY_PRODUCT con su hash (llegó ${types})`);
+  const environment = await req('/environment', { jar: new Map() });
+  assert(typeof environment?.demo === 'boolean', 'GET /environment no devolvió { demo: boolean }');
   const acceptedTerms = docs.map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
   const base = { firstName: 'Intruso', lastName: 'Ficticio', email: `smoke-registro-${Date.now()}@example.test`, password: 'contrasena-ficticia-larga', workspaceName: 'Consulta no invitada', acceptedTerms };
   for (const [label, extra] of [['sin invitación', {}], ['con token inventado', { inviteToken: randomBytes(32).toString('base64url') }]]) {
