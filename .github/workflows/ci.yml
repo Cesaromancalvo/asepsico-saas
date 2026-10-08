@@ -36,6 +36,9 @@ jobs:
       - name: Verify CI configuration
         run: npm run test:ci-config
 
+      - name: Check static landing (no third-party requests, no inline code)
+        run: npm run test:landing
+
       - name: Generate Prisma Client
         run: npm run db:generate
         env:
