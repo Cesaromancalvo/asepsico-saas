@@ -23,6 +23,9 @@ const checks = [
   // La API de CI solo confía en loopback; nunca "true" (permitiría falsear la IP del throttle).
   ['TRUST_PROXY de CI acotado a loopback', /TRUST_PROXY:\s*loopback/],
   ['verificación de concurrencia MFA (condicionada a que exista el script)', /node scripts\/verify-mfa-concurrency\.mjs/],
+  ['test de carrera session-close-race en postgres-integration', /--testPathPattern session-close-race/],
+  ['RACE_DATABASE_URL hacia el Postgres del servicio', /RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/],
+  ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
 ];
 
 const failures = checks.filter(([, pattern]) => !pattern.test(workflow));
@@ -47,6 +50,16 @@ const smokeIndex = workflow.indexOf('npm run test:smoke');
 const mfaIndex = workflow.indexOf('node scripts/verify-mfa-concurrency.mjs');
 if (mfaIndex < smokeIndex) {
   throw new Error('verify-mfa-concurrency debe ejecutarse después del smoke HTTP real');
+}
+// El test de carrera necesita la BD migrada y debe vivir en postgres-integration (no en quality).
+const postgresJobIndex = workflow.indexOf('postgres-integration:');
+const raceIndex = workflow.indexOf('--testPathPattern session-close-race');
+if (raceIndex < postgresJobIndex || raceIndex < migrateIndex) {
+  throw new Error('session-close-race debe ejecutarse en el job postgres-integration, después de db:migrate:ci');
+}
+const raceSpec = readFileSync('apps/api/test/session-close-race.security-spec.ts', 'utf8');
+if (!/RACE_DATABASE_REQUIRED === '1' && !url\) \{\s*\n\s*throw/.test(raceSpec)) {
+  throw new Error('session-close-race debe fallar (no omitirse) cuando RACE_DATABASE_REQUIRED=1 y falta RACE_DATABASE_URL');
 }
 if (/TRUST_PROXY:\s*['"]?true/i.test(workflow)) {
   throw new Error('La CI no debe usar TRUST_PROXY=true');

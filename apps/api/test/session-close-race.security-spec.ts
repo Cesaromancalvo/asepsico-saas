@@ -9,10 +9,19 @@ import { ClinicalProcessesService } from '../src/clinical-processes/clinical-pro
  * contenedor postgres:16 temporal con `prisma migrate deploy`); si no, se omite. Escribe datos
  * ficticios y no los borra: nunca la apuntes a una base de datos con datos que importen.
  *
+ * En el job `postgres-integration` del CI se ejecuta con RACE_DATABASE_REQUIRED=1: ahí la falta de
+ * RACE_DATABASE_URL hace FALLAR la suite en lugar de omitirla en silencio. En el job `quality` (sin
+ * PostgreSQL) y en local sin la variable se sigue omitiendo.
+ *
  * Invariante: un proceso CLOSED o DISCHARGED nunca termina con citas SCHEDULED futuras, se cierre
  * cancelando (cancelFutureSessions) o sin cancelar (409).
  */
 const url = process.env.RACE_DATABASE_URL;
+if (process.env.RACE_DATABASE_REQUIRED === '1' && !url) {
+  throw new Error(
+    'RACE_DATABASE_REQUIRED=1 pero RACE_DATABASE_URL no está definida: el test de carrera crear cita / cerrar proceso no puede omitirse aquí.',
+  );
+}
 const describeDb = url ? describe : describe.skip;
 jest.setTimeout(120_000);
 

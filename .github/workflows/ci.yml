@@ -205,6 +205,15 @@ jobs:
           fi
           node scripts/verify-mfa-concurrency.mjs
 
+      # Carrera crear cita vs. cerrar proceso con bloqueos de fila reales (no la API: instancia los
+      # servicios contra la BD del servicio postgres). Crea su propio workspace ficticio y no toca
+      # la cuenta demo. RACE_DATABASE_REQUIRED=1 hace que falle, en vez de omitirse, si falta la URL.
+      - name: Session close race test (real PostgreSQL)
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern session-close-race
+        env:
+          RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
+          RACE_DATABASE_REQUIRED: '1'
+
       - name: Stop API
         if: always()
         shell: bash
