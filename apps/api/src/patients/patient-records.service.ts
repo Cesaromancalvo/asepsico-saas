@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
@@ -18,9 +18,10 @@ export class PatientRecordsService {
   constructor(private readonly prisma: PrismaService, private readonly access: PatientAccessService) {}
 
   async getPatientDocuments(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'patient-documents');
     const documents = await this.prisma.patientDocument.findMany({
-      where: { workspaceId, patientId }, orderBy: { createdAt: 'desc' },
+      // Autor de un proceso cerrado: solo los documentos que subió él.
+      where: { workspaceId, patientId, ...(scope.level === 'TREATING' ? {} : { createdById: actor.sub }) }, orderBy: { createdAt: 'desc' },
       select: { id:true,title:true,type:true,description:true,fileName:true,mimeType:true,storageKey:true,createdAt:true,updatedAt:true,createdBy:{select:{id:true,firstName:true,lastName:true}} },
     });
     return documents.map(decryptDocument);
@@ -55,13 +56,13 @@ export class PatientRecordsService {
   }
 
   async getConsentRecords(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { full } = await this.consentAccess(workspaceId, actor, patientId, {});
     const consents = await this.prisma.consentRecord.findMany({ where: { workspaceId, patientId }, orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }] });
-    return consents.map(decryptConsent);
+    return consents.map((consent) => consentView(consent, full));
   }
 
   async createConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateConsentRecordDto) {
-    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { patient, full } = await this.consentAccess(workspaceId, actor, patientId, dto);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
     if (dto.status === 'SIGNED' && !dto.signedAt) throw new BadRequestException('Indica la fecha de firma del consentimiento');
     const title = dto.title?.trim() || dto.type.replaceAll('_', ' ');
@@ -72,12 +73,12 @@ export class PatientRecordsService {
         signedBy: dto.signedBy?.trim() || null, notes: encryptField(dto.notes?.trim() || null),
       }});
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_CREATED', entityType: 'ConsentRecord', entityId: consent.id, metadata: { patientId, type: dto.type, status: dto.status } } });
-      return decryptConsent(consent);
+      return consentView(consent, full);
     });
   }
 
   async updateConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, consentId: string, dto: UpdateConsentRecordDto) {
-    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { patient, full } = await this.consentAccess(workspaceId, actor, patientId, dto);
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
     const scope = { id: consentId, patientId, workspaceId };
     const existing = await this.prisma.consentRecord.findFirst({ where: scope });
@@ -98,12 +99,12 @@ export class PatientRecordsService {
       await assertScopedWrite(count, 'Consentimiento no encontrado', () => tx.consentRecord.findFirst({ where: scope, select: { id: true } }));
       const consent = (await tx.consentRecord.findFirst({ where: scope }))!;
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CONSENT_RECORD_UPDATED', entityType: 'ConsentRecord', entityId: consentId, metadata: { patientId, updatedFields: Object.keys(dto), previousStatus: existing.status, newStatus: consent.status } } });
-      return decryptConsent(consent);
+      return consentView(consent, full);
     });
   }
 
   async deleteConsentRecord(workspaceId: string, actor: AuthUser, patientId: string, consentId: string) {
-    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { patient } = await this.consentAccess(workspaceId, actor, patientId, {});
     if (patient.status === 'ARCHIVED') throw new BadRequestException('El paciente está archivado');
     const scope = { id: consentId, patientId, workspaceId };
     const existing = await this.prisma.consentRecord.findFirst({ where: scope });
@@ -118,8 +119,9 @@ export class PatientRecordsService {
   }
 
   async getClinicalReports(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    const reports = await this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId }, orderBy: { updatedAt: 'desc' } });
+    const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'clinical-reports');
+    // Autor de un proceso cerrado: solo sus propios informes.
+    const reports = await this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId, ...(scope.level === 'TREATING' ? {} : { createdById: actor.sub }) }, orderBy: { updatedAt: 'desc' } });
     return reports.map(decryptReport);
   }
 
@@ -143,6 +145,7 @@ export class PatientRecordsService {
     const scope = { id: reportId, patientId, workspaceId };
     const existing = await this.prisma.clinicalReport.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Informe no encontrado');
+    await this.assertReportAuthor(workspaceId, actor, patientId, existing.createdById);
     if (existing.status === 'FINAL' && dto.status !== 'VOID') throw new BadRequestException('Un informe final solo puede anularse; crea una nueva versión para modificar su contenido');
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title.trim();
@@ -165,6 +168,7 @@ export class PatientRecordsService {
     const scope = { id: reportId, patientId, workspaceId };
     const existing = await this.prisma.clinicalReport.findFirst({ where: scope });
     if (!existing) throw new NotFoundException('Informe no encontrado');
+    await this.assertReportAuthor(workspaceId, actor, patientId, existing.createdById);
     if (existing.status === 'FINAL') throw new BadRequestException('Los informes finales no se eliminan: deben anularse para conservar la trazabilidad');
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.clinicalReport.deleteMany({ where: { ...scope, status: { not: 'FINAL' } } });
@@ -173,4 +177,49 @@ export class PatientRecordsService {
     });
     return { success: true };
   }
+
+  /**
+   * Consentimientos: dato ADMINISTRATIVO (estado y fechas). Quien trata al paciente los ve
+   * completos; OWNER/ADMIN que no le tratan los gestionan sin las notas (texto libre que puede
+   * ser clínico) y no pueden escribirlas. Cualquier otro caso → 403 (ASSISTANT incluido, como antes).
+   */
+  private async consentAccess(workspaceId: string, actor: AuthUser, patientId: string, dto: { notes?: unknown }) {
+    // Rol no clínico en el token (ASSISTANT): denegado por la vía central, sin mirar el paciente.
+    if (actor?.role === 'ASSISTANT') {
+      await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId, 'consents');
+    }
+    const scope = await this.access.resolveScope(workspaceId, actor, patientId);
+    if (scope?.level === 'TREATING') {
+      const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId, 'consents');
+      return { patient, full: true };
+    }
+    const patient = await this.prisma.patient.findFirst({ where: { id: patientId, workspaceId } });
+    if (!patient) throw new NotFoundException('Paciente no encontrado');
+    const profile = await this.access.getMemberProfile(workspaceId, actor);
+    if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) {
+      await this.access.auditDenied(workspaceId, actor, 'consents', scope ? 'READ_ONLY' : 'NO_PROCESS', patientId);
+      throw new ForbiddenException('No tienes acceso a los consentimientos de este paciente');
+    }
+    if (dto.notes !== undefined) {
+      await this.access.auditDenied(workspaceId, actor, 'consent-notes', 'NO_PROCESS', patientId);
+      throw new ForbiddenException('Las notas del consentimiento solo las registra quien trata al paciente');
+    }
+    return { patient, full: false };
+  }
+
+  /** Un informe clínico solo lo modifica o elimina su autor (que además debe tratar al paciente). */
+  private async assertReportAuthor(workspaceId: string, actor: AuthUser, patientId: string, createdById: string) {
+    if (createdById !== actor.sub) {
+      await this.access.auditDenied(workspaceId, actor, 'clinical-report-write', 'NOT_AUTHOR', patientId);
+      throw new ForbiddenException('Solo el autor puede modificar o eliminar este informe');
+    }
+  }
+}
+
+/** Vista de un consentimiento: completa (descifrada) o administrativa (sin notas). */
+function consentView<T extends Record<string, any>>(consent: T, full: boolean) {
+  const decrypted = decryptConsent(consent);
+  if (full) return decrypted;
+  const { notes: _notes, ...administrative } = decrypted as Record<string, any>;
+  return administrative;
 }

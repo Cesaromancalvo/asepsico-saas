@@ -1,364 +1,200 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { useIsClinicalRole } from "@/lib/clinical";
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Sidebar from "@/components/Sidebar";
+import { api } from "@/lib/api";
+import { isForbidden, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
 
 type Session = {
   id: string;
+  therapistId?: string | null;
   startsAt: string;
   endsAt: string;
+  status?: string | null;
   type?: string | null;
   location?: string | null;
   videoCallUrl?: string | null;
+  // Solo llegan si la API concede acceso clínico (ver sessionClinicalAccess).
   notes?: string | null;
   internalSummary?: string | null;
-  patient?: {
-    id: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    email?: string | null;
-  } | null;
-  therapist?: {
-    id: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    email?: string | null;
-  } | null;
-  clinicalProcess?: {
-    id: string;
-    status?: string | null;
-    modality?: string | null;
-  } | null;
+  patient?: { id: string; firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  therapist?: { id: string; firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  clinicalProcess?: { id: string; title?: string | null; status?: string | null; modality?: string | null } | null;
 };
 
+const SESSION_STATUS: Record<string, string> = { SCHEDULED: "Programada", COMPLETED: "Completada", CANCELLED: "Cancelada", NO_SHOW: "No asistió" };
+const SESSION_TYPE: Record<string, string> = { INDIVIDUAL: "Individual", COUPLE: "Pareja", FAMILY: "Familiar", GROUP: "Grupal", FOLLOW_UP: "Seguimiento", ASSESSMENT: "Evaluación" };
+
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("es-ES", { dateStyle: "full", timeStyle: "short" }).format(new Date(value));
 }
 
-function getFullName(
-  person:
-    | {
-        firstName?: string | null;
-        lastName?: string | null;
-        email?: string | null;
-      }
-    | null
-    | undefined,
-) {
+function fullName(person?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null) {
   if (!person) return "No disponible";
-
-  const fullName = [person.firstName, person.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-
-  return fullName || person.email || "No disponible";
+  return [person.firstName, person.lastName].filter(Boolean).join(" ").trim() || person.email || "No disponible";
 }
 
 export default function SessionDetailPage() {
   const params = useParams<{ sessionId: string }>();
-  const router = useRouter();
-
+  const sessionId = params?.sessionId;
+  const viewer = useViewer();
   const [session, setSession] = useState<Session | null>(null);
-  // Notas y resumen interno son contenido clínico: la API los omite y rechaza (403) para
-  // roles no clínicos (ASSISTANT), así que la pantalla ni los muestra ni los envía.
-  const isClinical = useIsClinicalRole();
-  const [notes, setNotes] = useState("");
-  const [internalSummary, setInternalSummary] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [forbidden, setForbidden] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const sessionId = params?.sessionId;
+  async function loadSession() {
+    if (!sessionId) return;
+    try {
+      setLoading(true);
+      setError("");
+      setForbidden(false);
+      setSession(await api<Session>(`/sessions/${sessionId}`));
+    } catch (err) {
+      if (isForbidden(err)) setForbidden(true);
+      else setError(err instanceof Error ? err.message : "No se pudo cargar la sesión.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (!sessionId) return;
-
-    async function loadSession() {
-      try {
-        setLoading(true);
-        setError("");
-
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/sessions/${sessionId}`,
-          {
-            credentials: "include",
-          },
-        );
-
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-
-          throw new Error(
-            body?.message ?? "No se pudo cargar la sesión.",
-          );
-        }
-
-        const data: Session = await response.json();
-
-        setSession(data);
-        setNotes(data.notes ?? "");
-        setInternalSummary(data.internalSummary ?? "");
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Se ha producido un error inesperado.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void loadSession();
+    loadSession();
   }, [sessionId]);
 
-  async function saveSession() {
-    if (!sessionId || isClinical !== true) return;
+  const access = session ? sessionClinicalAccess(session, viewer) : null;
 
+  async function saveSession(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sessionId || !access || access.readOnly) return;
+    const data = new FormData(event.currentTarget);
     try {
       setSaving(true);
       setError("");
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/sessions/${sessionId}/notes`,
-        {
-          method: "PATCH",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            notes,
-            internalSummary,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-
-        throw new Error(
-          body?.message ?? "No se pudieron guardar los cambios.",
-        );
-      }
-
-      const updatedSession: Session = await response.json();
-
-      setSession(updatedSession);
-      setNotes(updatedSession.notes ?? "");
-      setInternalSummary(updatedSession.internalSummary ?? "");
-
-      alert("Sesión guardada correctamente.");
+      setStatus("");
+      const updated = await api<Session>(`/sessions/${sessionId}/notes`, {
+        method: "PATCH",
+        body: JSON.stringify({ notes: String(data.get("notes") ?? ""), internalSummary: String(data.get("internalSummary") ?? "") }),
+      });
+      setSession((current) => (current ? { ...current, ...updated } : updated));
+      setStatus("Sesión guardada.");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Se ha producido un error inesperado.",
-      );
+      setError(isForbidden(err)
+        ? "No puedes modificar las notas de esta sesión: solo su profesional, con el proceso activo."
+        : err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
     } finally {
       setSaving(false);
     }
   }
 
   if (loading) {
-    return (
-      <main className="p-8">
-        <p>Cargando sesión...</p>
-      </main>
-    );
-  }
-
-  if (error && !session) {
-    return (
-      <main className="p-8">
-        <button
-          type="button"
-          onClick={() => router.push("/agenda")}
-          className="mb-6 rounded-lg border px-4 py-2"
-        >
-          Volver a la agenda
-        </button>
-
-        <p className="text-red-600">{error}</p>
-      </main>
-    );
+    return <div className="app-layout"><Sidebar /><main className="patient-record-page"><div className="patient-record-loading" role="status">Cargando sesión…</div></main></div>;
   }
 
   if (!session) {
     return (
-      <main className="p-8">
-        <p>No se ha encontrado la sesión.</p>
-      </main>
+      <div className="app-layout"><Sidebar /><main className="patient-record-page">
+        <Link href="/agenda" className="patient-record-back">← Volver a la agenda</Link>
+        {forbidden ? (
+          <div className="e1-notice info" role="note"><div><strong>Sesión de otro profesional</strong><p>No tienes acceso a esta sesión.</p></div></div>
+        ) : (
+          <>
+            <div className="agenda-error" role="alert">{error || "No se ha encontrado la sesión."}</div>
+            <button type="button" className="button secondary" onClick={loadSession}>Reintentar</button>
+          </>
+        )}
+      </main></div>
     );
   }
 
+  const processStatus = session.clinicalProcess?.status ?? null;
+
   return (
-    <main className="mx-auto max-w-5xl p-8">
-      <button
-        type="button"
-        onClick={() => router.push("/agenda")}
-        className="mb-6 rounded-lg border px-4 py-2 hover:bg-gray-50"
-      >
-        ← Volver a la agenda
-      </button>
+    <div className="app-layout"><Sidebar /><main className="patient-record-page e1-session-page">
+      <header className="patient-record-header">
+        <div>
+          <Link href="/agenda" className="patient-record-back">← Volver a la agenda</Link>
+          <div className="patient-record-kicker">Ficha de sesión</div>
+          <h1>{fullName(session.patient)}</h1>
+          <p className="muted">{formatDateTime(session.startsAt)}</p>
+        </div>
+        {session.patient && <Link href={`/patients/${session.patient.id}`} className="button secondary">Abrir ficha del paciente</Link>}
+      </header>
 
-      <div className="mb-8">
-        <p className="text-sm text-gray-500">Ficha de sesión</p>
+      {error && <div className="agenda-error" role="alert">{error}</div>}
+      <p className={status ? "patient-save-state" : undefined} role="status" aria-live="polite">{status}</p>
 
-        <h1 className="text-3xl font-semibold">
-          {getFullName(session.patient)}
-        </h1>
+      <div className="e1-stack">
+        <section className="patient-record-card">
+          <h2>Información de la sesión</h2>
+          <dl className="e1-meta">
+            <div><dt>Inicio</dt><dd>{formatDateTime(session.startsAt)}</dd></div>
+            <div><dt>Fin</dt><dd>{formatDateTime(session.endsAt)}</dd></div>
+            <div><dt>Estado</dt><dd>{session.status ? SESSION_STATUS[session.status] ?? session.status : "No indicado"}</dd></div>
+            <div><dt>Tipo</dt><dd>{session.type ? SESSION_TYPE[session.type] ?? session.type : "No indicado"}</dd></div>
+            <div><dt>Ubicación</dt><dd>{session.location || "No indicada"}</dd></div>
+            <div><dt>Profesional</dt><dd>{fullName(session.therapist)}</dd></div>
+            <div><dt>Proceso</dt><dd>{session.clinicalProcess ? processLabel(session.clinicalProcess) : "Sin proceso"}</dd></div>
+            <div><dt>Modalidad</dt><dd>{modalityLabel(session.clinicalProcess?.modality) ?? "No indicada"}</dd></div>
+          </dl>
+          <div className="e1-actions">
+            {session.videoCallUrl && <a href={session.videoCallUrl} target="_blank" rel="noreferrer noopener" className="button">Abrir videollamada</a>}
+            {session.patient && session.clinicalProcess && (
+              <Link href={`/patients/${session.patient.id}/processes/${session.clinicalProcess.id}`} className="button secondary">Ver proceso</Link>
+            )}
+          </div>
+        </section>
 
-        <p className="mt-2 text-gray-600">
-          {formatDateTime(session.startsAt)}
-        </p>
+        {access && !access.canRead && (
+          <div className="e1-notice info" role="note">
+            <div><strong>Notas reservadas</strong><p>Solo el profesional que atiende a este paciente puede ver las notas de la sesión.</p></div>
+          </div>
+        )}
+
+        {access && access.canRead && access.readOnly && (
+          <div className="e1-notice" role="note">
+            <div>
+              <strong>Solo lectura</strong>
+              <p>
+                {!access.isAuthor
+                  ? "Esta sesión es de otro profesional: puedes consultar sus notas, pero solo su autor las modifica."
+                  : processStatus === "PAUSED"
+                    ? "El proceso está en pausa. Reactívalo desde la ficha del proceso para volver a registrar notas."
+                    : "El proceso ya no está activo. Conservas la lectura de lo que registraste."}
+              </p>
+            </div>
+            {access.isAuthor && access.processInactive && session.patient && session.clinicalProcess && (processStatus === "PAUSED" || processStatus === "DISCHARGED") && (
+              <div className="e1-notice-actions">
+                <Link href={`/patients/${session.patient.id}/processes/${session.clinicalProcess.id}`} className="button">Ir al proceso para reactivarlo</Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {access && access.canRead && (access.readOnly ? (
+          <section className="patient-record-card" aria-label="Registro clínico (solo lectura)">
+            <h2>Registro clínico</h2>
+            <h3>Notas de la sesión</h3>
+            <p className="e1-readonly-text">{session.notes || "Sin notas"}</p>
+            {access.isAuthor && <><h3>Resumen interno</h3><p className="e1-readonly-text">{session.internalSummary || "Sin resumen"}</p></>}
+          </section>
+        ) : (
+          <form className="patient-record-card e1-form" style={{ maxWidth: "none" }} onSubmit={saveSession}>
+            <h2>Registro clínico</h2>
+            <label className="field">Notas de la sesión
+              <textarea key={`notes-${session.id}`} name="notes" defaultValue={session.notes ?? ""} rows={7} placeholder="Escribe aquí las notas de la sesión…" />
+            </label>
+            <label className="field">Resumen interno (solo tú)
+              <textarea key={`summary-${session.id}`} name="internalSummary" defaultValue={session.internalSummary ?? ""} rows={5} placeholder="Resumen interno para seguimiento clínico…" />
+            </label>
+            <div className="e1-actions"><button type="submit" className="button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div>
+          </form>
+        ))}
       </div>
-
-      {error && (
-        <div className="mb-6 rounded-lg bg-red-50 p-4 text-red-700">
-          {error}
-        </div>
-      )}
-
-      <section className="grid gap-6 md:grid-cols-2">
-        <article className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">
-            Información de la sesión
-          </h2>
-
-          <div className="space-y-3 text-sm">
-            <p>
-              <strong>Inicio:</strong>{" "}
-              {formatDateTime(session.startsAt)}
-            </p>
-
-            <p>
-              <strong>Finalización:</strong>{" "}
-              {formatDateTime(session.endsAt)}
-            </p>
-
-            <p>
-              <strong>Tipo:</strong> {session.type ?? "No indicado"}
-            </p>
-
-            <p>
-              <strong>Ubicación:</strong>{" "}
-              {session.location ?? "No indicada"}
-            </p>
-
-            <p>
-              <strong>Terapeuta:</strong>{" "}
-              {getFullName(session.therapist)}
-            </p>
-
-            <p>
-              <strong>Modalidad:</strong>{" "}
-              {session.clinicalProcess?.modality ?? "No indicada"}
-            </p>
-
-            <p>
-              <strong>Estado del proceso:</strong>{" "}
-              {session.clinicalProcess?.status ?? "No indicado"}
-            </p>
-          </div>
-
-          {session.videoCallUrl && (
-            <a
-              href={session.videoCallUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-block rounded-lg bg-black px-4 py-2 text-white"
-            >
-              Abrir videollamada
-            </a>
-          )}
-        </article>
-
-        <article className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">
-            Datos del paciente
-          </h2>
-
-          <div className="space-y-3 text-sm">
-            <p>
-              <strong>Nombre:</strong>{" "}
-              {getFullName(session.patient)}
-            </p>
-
-            <p>
-              <strong>Email:</strong>{" "}
-              {session.patient?.email ?? "No disponible"}
-            </p>
-
-            <p>
-              <strong>Proceso clínico:</strong>{" "}
-              {session.clinicalProcess?.id ?? "No disponible"}
-            </p>
-          </div>
-        </article>
-      </section>
-
-      {isClinical === true && (
-      <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold">
-          Registro clínico
-        </h2>
-
-        <div className="space-y-6">
-          <div>
-            <label
-              htmlFor="notes"
-              className="mb-2 block text-sm font-medium"
-            >
-              Notas de la sesión
-            </label>
-
-            <textarea
-              id="notes"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={7}
-              className="w-full rounded-lg border p-3"
-              placeholder="Escribe aquí las notas de la sesión..."
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="internalSummary"
-              className="mb-2 block text-sm font-medium"
-            >
-              Resumen interno
-            </label>
-
-            <textarea
-              id="internalSummary"
-              value={internalSummary}
-              onChange={(event) =>
-                setInternalSummary(event.target.value)
-              }
-              rows={5}
-              className="w-full rounded-lg border p-3"
-              placeholder="Resumen interno para seguimiento clínico..."
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={saveSession}
-            disabled={saving}
-            className="rounded-lg bg-black px-5 py-3 text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
-        </div>
-      </section>
-      )}
-    </main>
+    </main></div>
   );
 }

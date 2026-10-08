@@ -1,6 +1,7 @@
 import { PatientCareService } from '../src/patients/patient-care.service';
 import { CLINICAL_HISTORY_ENCRYPTED_FIELDS } from '../src/common/crypto/clinical-crypto';
 import { decryptField } from '../src/common/crypto/field-encryption';
+import { treatingAccessStub } from './support/clinical-access-fixture';
 
 // Datos 100 % ficticios.
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER' } as any;
@@ -24,7 +25,7 @@ function setup(existingCount: number) {
     auditLog: { create: jest.fn(async () => ({})) },
   };
   const prisma: any = { ...tx, $transaction: jest.fn(async (cb: any) => cb(tx)) };
-  const access: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'patient-1', status: 'ACTIVE' })) };
+  const access: any = treatingAccessStub({ id: 'patient-1', status: 'ACTIVE' });
   return { prisma, tx, service: new PatientCareService(prisma, access), getStored: () => stored };
 }
 

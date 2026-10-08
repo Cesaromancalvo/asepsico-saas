@@ -4,6 +4,7 @@ import { PatientAccessService } from '../src/patients/patient-access.service';
 import { PatientTasksService } from '../src/patients/patient-tasks.service';
 import { DashboardService } from '../src/dashboard/dashboard.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { treating, withClinicalAccess } from './support/clinical-access-fixture';
 
 /**
  * Regresión del hallazgo ALTA de Argos: Patient.consultationReason salía descifrado en
@@ -120,15 +121,30 @@ describe('Patients: la vista general nunca expone el motivo de consulta ni títu
 
   it.each([['OWNER', owner], ['ADMIN', admin], ['THERAPIST', therapist]])(
     'POST /patients (%s) no devuelve consultationReason aunque se haya escrito', async (_role, actor) => {
-      const prisma = patientsPrisma();
+      // Registrar el motivo en el alta exige ser profesional clínico.
+      const prisma = withClinicalAccess(patientsPrisma(), { members: [{ userId: actor.sub, role: actor.role, isClinician: true }] });
       const result = await new PatientsService(prisma).create('ws-1', actor, { firstName: 'Paciente', lastName: 'Ficticio', consultationReason: REASON } as any);
       expectNoClinicalContent(result);
       expect(prisma.patient.create.mock.calls[0][0].select).not.toHaveProperty('consultationReason');
     },
   );
 
-  it('PATCH /patients/:id (OWNER) no devuelve consultationReason', async () => {
-    const prisma = patientsPrisma();
+  it.each([['OWNER', owner], ['ADMIN', admin]])('POST /patients con motivo por un %s NO clínico → 403 sin escribir (auditado)', async (_role, actor) => {
+    const prisma = withClinicalAccess(patientsPrisma(), { members: [{ userId: actor.sub, role: actor.role, isClinician: false }] });
+    await expect(new PatientsService(prisma).create('ws-1', actor, { firstName: 'Paciente', lastName: 'Ficticio', consultationReason: REASON } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.patient.create).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'CLINICAL_ACCESS_DENIED' }) }));
+  });
+
+  it('PATCH /patients/:id con motivo por un OWNER que no trata al paciente → 403 sin escribir', async () => {
+    const prisma = withClinicalAccess(patientsPrisma(), { members: [{ userId: 'owner-1', role: 'OWNER', isClinician: true }] });
+    await expect(new PatientsService(prisma).update('ws-1', owner, 'patient-1', { consultationReason: REASON } as any)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.patient.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /patients/:id (OWNER que trata al paciente) no devuelve consultationReason', async () => {
+    const prisma = treating(patientsPrisma(), owner);
     const result = await new PatientsService(prisma).update('ws-1', owner, 'patient-1', { consultationReason: REASON } as any);
     expectNoClinicalContent(result);
   });
@@ -210,8 +226,7 @@ describe('GET /patients/:id/consultation-reason (campo clínico)', () => {
   });
 
   it('THERAPIST sin proceso propio → 403', async () => {
-    const prisma = patientsPrisma();
-    prisma.clinicalProcess.findFirst = jest.fn(async () => null);
+    const prisma = withClinicalAccess(patientsPrisma(), { members: [{ userId: 'therapist-1', role: 'THERAPIST', isClinician: true }] });
     await expect(new PatientsService(prisma).getConsultationReason('ws-1', therapist, 'patient-1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -231,8 +246,13 @@ describe('GET /patients/:id/consultation-reason (campo clínico)', () => {
     expect(prisma.patient.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-2' } }));
   });
 
-  it.each([['OWNER', owner], ['ADMIN', admin], ['THERAPIST', therapist]])('%s lo recibe descifrado, acotado al workspace', async (_role, actor) => {
-    const prisma = patientsPrisma();
+  it.each([['OWNER', owner], ['ADMIN', admin]])('%s que no trata al paciente → 403 (aunque sea clínico)', async (_role, actor) => {
+    const prisma = withClinicalAccess(patientsPrisma(), { members: [{ userId: actor.sub, role: actor.role, isClinician: true }] });
+    await expect(new PatientsService(prisma).getConsultationReason('ws-1', actor, 'patient-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it.each([['OWNER', owner], ['ADMIN', admin], ['THERAPIST', therapist]])('%s que trata al paciente lo recibe descifrado, acotado al workspace', async (_role, actor) => {
+    const prisma = treating(patientsPrisma(), actor);
     const result = await new PatientsService(prisma).getConsultationReason('ws-1', actor, 'patient-1');
     expect(result).toEqual({ patientId: 'patient-1', consultationReason: REASON });
     expect(prisma.patient.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'patient-1', workspaceId: 'ws-1' } }));
@@ -240,8 +260,8 @@ describe('GET /patients/:id/consultation-reason (campo clínico)', () => {
 });
 
 describe('Dashboard: sin Message.body ni títulos de proceso', () => {
-  function dashboardPrisma() {
-    return {
+  function dashboardPrisma(actor: any = owner) {
+    return treating({
       workspaceMember: { findUnique: jest.fn(async () => ({ role: 'OWNER', onboardingStep: 0, onboardingCompletedAt: null, onboardingDismissedAt: null, user: { firstName: 'O', lastName: 'W' } })) },
       session: {
         findMany: jest.fn(async () => [{ id: 's1', startsAt: new Date(Date.now() + 3600_000), status: 'SCHEDULED', patient: { id: 'p1', firstName: 'P', lastName: 'F' }, clinicalProcess: { title: PROCESS_TITLE, modality: 'ONLINE' } }]),
@@ -251,11 +271,11 @@ describe('Dashboard: sin Message.body ni títulos de proceso', () => {
       therapeuticTask: { findMany: jest.fn(async () => []) },
       message: { findMany: jest.fn(async () => [{ id: 'm1', createdAt: new Date(), body: MESSAGE_BODY, conversation: { patient: { id: 'p1', firstName: 'P', lastName: 'F' } } }]) },
       notificationPreference: { findUnique: jest.fn(async () => null) },
-    } as any;
+    } as any, actor, 'p1');
   }
 
   it.each([['OWNER', owner], ['ADMIN', admin], ['THERAPIST', therapist]])('%s: la consulta de mensajes no carga body y la respuesta no lo contiene', async (_role, actor) => {
-    const prisma = dashboardPrisma();
+    const prisma = dashboardPrisma(actor);
     const result = await new DashboardService(prisma).get(actor);
     const messageArgs = prisma.message.findMany.mock.calls[0][0];
     expect(messageArgs.include).toBeUndefined();
@@ -286,6 +306,7 @@ describe('Timeline: los modelos hijos se filtran por workspace', () => {
       therapyGoal: empty(), therapeuticTask: empty(), clinicalAssessment: empty(), session: empty(),
       patientDocument: empty(), consentRecord: empty(), clinicalReport: empty(), resourceShare: empty(),
     };
+    treating(prisma, owner);
     const service = new PatientTasksService(prisma, new PatientAccessService(prisma));
     await service.getTimeline('ws-1', owner, 'patient-1');
 

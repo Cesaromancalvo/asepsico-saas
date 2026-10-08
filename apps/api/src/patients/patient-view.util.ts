@@ -58,9 +58,9 @@ export function toPatientView(row: Record<string, any>): PatientView {
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 
 /**
- * El motivo de consulta es contenido clínico: solo OWNER, ADMIN y THERAPIST pueden escribirlo
- * a través de POST/PATCH /patients. Un ASSISTANT (o un rol desconocido) que lo envíe → 403,
- * sin escribir nada (ni siquiera el resto de campos).
+ * Primera barrera (síncrona, por rol) para escribir el motivo de consulta en POST/PATCH /patients:
+ * un ASSISTANT (o un rol desconocido) que lo envíe → 403, sin escribir nada. Después,
+ * PatientCoreService exige además ser clínico (alta) o tratar al paciente (modificación).
  */
 export function assertCanWriteConsultationReason(actor: AuthUser, dto: { consultationReason?: unknown }) {
   if (dto.consultationReason !== undefined && !CLINICAL_ROLES.includes(actor.role)) {

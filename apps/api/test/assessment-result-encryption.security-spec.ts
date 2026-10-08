@@ -3,12 +3,13 @@ import { PatientTasksService } from '../src/patients/patient-tasks.service';
 import { PortalService } from '../src/portal/portal.service';
 import { DECRYPTION_FAILED_PLACEHOLDER, decryptField, encryptField } from '../src/common/crypto/field-encryption';
 import { decryptAssessment, encryptAssessmentResult } from '../src/common/crypto/clinical-crypto';
+import { treatingAccessStub } from './support/clinical-access-fixture';
 
 // Puntuación, gravedad y alerta de riesgo de las escalas se cifran juntas en `result`.
 // Datos 100 % ficticios.
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER' } as any;
 const ENC = /^enc:v1:|^enc:v2:/;
-const access: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'p1', status: 'ACTIVE' })) };
+const access: any = treatingAccessStub({ id: 'p1', status: 'ACTIVE' });
 
 describe('ClinicalAssessment.result: totalScore, severity y riskFlag cifrados', () => {
   it('al crear, result va cifrado y las columnas en claro no se escriben; la auditoría no los copia', async () => {

@@ -179,6 +179,11 @@ model WorkspaceMember {
   workspaceId String
   userId      String
   role        WorkspaceRole @default(THERAPIST)
+  /// Profesional clínico: puede tratar pacientes. No da acceso por sí solo: el contenido clínico
+  /// exige además un proceso ACTIVO con el paciente (o ser autor de un proceso cerrado, solo lo suyo).
+  /// Solo es configurable en OWNER/ADMIN (lo cambia el OWNER): THERAPIST siempre es clínico y
+  /// ASSISTANT nunca (ambas cosas con CHECK en la base de datos).
+  isClinician Boolean       @default(false)
   createdAt   DateTime      @default(now())
   onboardingStep Int        @default(0)
   onboardingCompletedAt DateTime?
@@ -390,6 +395,8 @@ model ClinicalProcess {
   status             ClinicalProcessStatus @default(ACTIVE)
   startedAt          DateTime              @default(now())
   endedAt            DateTime?
+  /// Momento en que pasó a PAUSED (fin de la ventana de mensajes mientras está en pausa).
+  pausedAt           DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 

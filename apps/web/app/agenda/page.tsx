@@ -9,7 +9,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import { api } from '@/lib/api';
-import { processLabel, useIsClinicalRole } from '@/lib/clinical';
+import { processLabel, useViewer } from '@/lib/clinical';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -29,6 +29,7 @@ type ClinicalProcessSummary = {
   id: string;
   modality: TherapyModality;
   status: string;
+  therapist?: { id: string } | null;
 };
 
 type Patient = {
@@ -177,9 +178,10 @@ function formatDuration(startsAt: string, endsAt: string) {
 export default function AgendaPage() {
   const router = useRouter();
 
-  // Las notas de sesión son contenido clínico: ASSISTANT no las ve ni las envía (la API
-  // respondería 403 y no crearía la cita).
-  const isClinical = useIsClinicalRole();
+  // Las notas de sesión son contenido clínico: solo las escribe el profesional de la sesión,
+  // que además trata al paciente (proceso ACTIVO). A cualquier otro la API le respondería 403 y
+  // no crearía la cita, así que el campo solo se ofrece en ese caso (ver canWriteNotes).
+  const viewer = useViewer();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
 
@@ -219,6 +221,13 @@ export default function AgendaPage() {
 
   const activeProcess =
     selectedPatient?.summary?.activeProcess ?? null;
+
+  const canWriteNotes = Boolean(
+    viewer?.isClinician &&
+      viewer.userId &&
+      activeProcess?.status === 'ACTIVE' &&
+      activeProcess.therapist?.id === viewer.userId,
+  );
 
   async function loadAgenda() {
     try {
@@ -429,7 +438,7 @@ export default function AgendaPage() {
       payload.videoCallUrl = videoCallUrl;
     }
 
-    if (notes && isClinical === true) {
+    if (notes && canWriteNotes) {
       payload.notes = notes;
     }
 
@@ -840,7 +849,7 @@ export default function AgendaPage() {
                 />
               </label>
 
-              {isClinical === true && (
+              {canWriteNotes && (
                 <label className="agenda-form-notes">
                   <span>Notas</span>
 

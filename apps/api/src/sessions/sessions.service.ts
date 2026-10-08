@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   Prisma,
@@ -21,6 +22,7 @@ import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
 import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view.util';
 import { projectSelect } from '../patients/patient-view.util';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -28,8 +30,9 @@ const THERAPIST_CAPABLE_ROLES = [
   'THERAPIST',
 ];
 
-// Roles con acceso a contenido clínico de la sesión (notes, internalSummary, título del
-// proceso). Lista blanca: cualquier otro rol (ASSISTANT o desconocido) queda fuera.
+// Roles que PUEDEN llegar a ver contenido clínico de la sesión (notes, internalSummary, título
+// del proceso). No basta con el rol: lo decide ClinicalAccessService (clínico con proceso activo
+// con el paciente, o autor de la sesión). ASSISTANT o rol desconocido: nunca.
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 
 function isClinicalRole(actor: Pick<AuthUser, 'role'>): boolean {
@@ -51,7 +54,23 @@ function assertCanWriteSessionNotes(actor: Pick<AuthUser, 'role'>, dto: { notes?
 
 @Injectable()
 export class SessionsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly access: ClinicalAccessService;
+
+  constructor(private prisma: PrismaService, @Optional() access?: ClinicalAccessService) {
+    this.access = access ?? new ClinicalAccessService(prisma);
+  }
+
+  /**
+   * Las notas de sesión solo las escribe el profesional de la sesión, clínico y tratando al
+   * paciente (proceso ACTIVO). Ni OWNER/ADMIN por serlo, ni otro terapeuta.
+   */
+  private async assertCanWriteNotesFor(workspaceId: string, actor: AuthUser, therapistId: string, patientId: string) {
+    if (therapistId !== actor.sub) {
+      await this.access.auditDenied(workspaceId, actor, 'session-notes', 'NOT_AUTHOR', patientId);
+      throw new ForbiddenException('Solo el profesional de la sesión puede registrar sus notas');
+    }
+    await this.access.assertTreating(workspaceId, actor, patientId, 'session-notes');
+  }
 
   async list(
     workspaceId: string,
@@ -175,9 +194,7 @@ export class SessionsService {
           },
 
           // Sin consultationReason ni goals: eso es contenido clínico narrativo y NUNCA se
-          // expone desde Sessions, aunque el proceso pertenezca al mismo terapeuta que pide
-          // la sesión. Ese contenido solo se sirve desde GET /clinical-processes/:id, que sí
-          // aplica el control de acceso por propiedad.
+          // expone desde Sessions. Ese contenido solo se sirve desde GET /clinical-processes/:id.
           clinicalProcess: {
             select: {
               id: true,
@@ -196,12 +213,25 @@ export class SessionsService {
       );
     }
 
-    // Un THERAPIST solo puede ver el detalle de sus propias sesiones.
-    if (actor.role === 'THERAPIST' && session.therapistId !== actor.sub) {
+    // Contenido clínico de la sesión: su autor (clínico, lo suyo aunque el proceso se cerrara) o
+    // un clínico que trata al paciente (sin el resumen interno, que es nota interna del autor).
+    const isAuthor = session.therapistId === actor.sub;
+    const scope = await this.access.resolveScope(workspaceId, actor, session.patientId);
+    if (scope && (isAuthor || scope.level === 'TREATING')) {
+      const decrypted = decryptSession(session);
+      if (isAuthor) return decrypted;
+      const { internalSummary: _hidden, ...visible } = decrypted;
+      return visible;
+    }
+
+    // Un THERAPIST no ve sesiones ajenas de pacientes que no trata (ni siquiera sus metadatos).
+    if (actor.role === 'THERAPIST' && !isAuthor) {
+      await this.access.auditDenied(workspaceId, actor, 'session', scope ? 'READ_ONLY' : 'NO_PROCESS', session.patientId);
       throw new ForbiddenException('No puedes acceder a la sesión de otro profesional');
     }
 
-    return decryptSession(session);
+    // OWNER/ADMIN que no tratan al paciente (o autor que ya no es clínico): vista administrativa.
+    return projectSelect<typeof session>(session, SESSION_ADMIN_DETAIL_SELECT);
   }
 
   async create(
@@ -261,6 +291,10 @@ export class SessionsService {
       throw new BadRequestException(
         'El terapeuta de la sesión debe coincidir con el terapeuta responsable del proceso clínico',
       );
+    }
+
+    if (dto.notes !== undefined) {
+      await this.assertCanWriteNotesFor(workspaceId, actor, therapistId, dto.patientId);
     }
 
     await this.assertNoOverlap(
@@ -348,6 +382,10 @@ export class SessionsService {
       actor,
       session.therapistId,
     );
+
+    if (dto.notes !== undefined) {
+      await this.assertCanWriteNotesFor(workspaceId, actor, session.therapistId, session.patientId);
+    }
 
     if (
       session.status !==
@@ -454,10 +492,7 @@ export class SessionsService {
       id,
     );
 
-    this.assertCanManage(
-      actor,
-      session.therapistId,
-    );
+    await this.assertCanWriteNotesFor(workspaceId, actor, session.therapistId, session.patientId);
 
     if (
       dto.notes === undefined &&
