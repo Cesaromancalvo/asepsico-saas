@@ -28,6 +28,8 @@ export type Viewer = {
   lastName: string | null;
   /** Nombre de la consulta (dato administrativo). Un ASSISTANT no lo recibe del dashboard. */
   workspaceName: string | null;
+  /** La API pide activar la verificación en dos pasos antes de continuar (403 del guard). */
+  mfaPending?: boolean;
 };
 
 const ANONYMOUS_VIEWER: Viewer = { userId: null, role: null, isClinician: false, firstName: null, lastName: null, workspaceName: null };
@@ -59,6 +61,12 @@ export function fetchViewer(): Promise<Viewer> {
       };
     })
     .catch((err: unknown) => {
+      // El 403 del MFA pendiente no significa "recepción": no se adivina el rol.
+      // No se cachea: tras activarlo, la siguiente pantalla vuelve a preguntar.
+      if (isForbidden(err) && /dos pasos/i.test((err as Error).message)) {
+        viewerCache = null;
+        return { ...ANONYMOUS_VIEWER, mfaPending: true };
+      }
       if (isForbidden(err)) return { ...ANONYMOUS_VIEWER, role: 'ASSISTANT' as const };
       viewerCache = null;
       return ANONYMOUS_VIEWER;

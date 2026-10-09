@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
-import { modalityLabel } from '../lib/clinical';
+import AdminDayView from '../components/AdminDayView';
+import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
 
 type DashboardData = {
   professional: { firstName: string; lastName: string; role: string };
@@ -44,7 +45,47 @@ function minutesUntil(value: string) {
   return Math.max(0, Math.round((new Date(value).getTime() - Date.now()) / 60000));
 }
 
+/**
+ * "Mi jornada". Quien atiende pacientes ve la jornada clínica (GET /dashboard). La recepción
+ * (ASSISTANT) y titular/administración sin "atiende pacientes" ven la jornada administrativa, que
+ * no llama a /dashboard ni muestra nada clínico.
+ */
 export default function Home() {
+  const viewer = useViewer();
+
+  if (!viewer) {
+    return <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-loading" role="status">Preparando tu jornada…</section></main></div>;
+  }
+
+  if (viewer.mfaPending) {
+    return (
+      <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
+        <h1>Activa la verificación en dos pasos</h1>
+        <p>Antes de empezar a trabajar tienes que activarla. Solo te llevará un par de minutos.</p>
+        <Link href="/settings/security" className="primary-action">Activarla ahora</Link>
+      </section></main></div>
+    );
+  }
+
+  if (!viewer.role) {
+    // No se ha podido saber quién eres (fallo de red o de la API): no se adivina la vista.
+    return (
+      <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
+        <h1>No hemos podido preparar tu jornada</h1>
+        <p>Comprueba tu conexión y vuelve a intentarlo.</p>
+        <button className="primary-action" onClick={() => { invalidateViewer(); window.location.reload(); }}>Reintentar</button>
+      </section></main></div>
+    );
+  }
+
+  if (!viewer.isClinician) {
+    return <div className="app-layout"><Sidebar syncText="Información actualizada" /><AdminDayView viewer={viewer} /></div>;
+  }
+
+  return <ClinicalHome viewer={viewer} />;
+}
+
+function ClinicalHome({ viewer }: { viewer: Viewer }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -90,7 +131,7 @@ export default function Home() {
         <header className="dashboard-header">
           <div>
             <p className="eyebrow">MI JORNADA</p>
-            <h1>Buenos días, {data.professional.firstName}</h1>
+            <h1>Buenos días, {data.professional.firstName || viewer.firstName}</h1>
             <p className="dashboard-subtitle">
               {data.summary.sessionsToday === 0
                 ? 'No tienes sesiones programadas para hoy.'

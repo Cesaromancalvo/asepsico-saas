@@ -679,3 +679,5 @@ html{scroll-padding-top:var(--demo-banner-height,0px)}
 @media(max-width:700px){.demo-banner{padding-top:8px;padding-bottom:8px;font-size:13px}}
 /* Con poca altura (móvil apaisado, zoom al 200 %) deja de estar pegado para no quitar pantalla. */
 @media(max-height:560px){.demo-banner{position:static}html{scroll-padding-top:0}}
+/* Jornada administrativa: en móvil se mantiene el botón "Ver cita" (en la clínica se oculta). */
+@media(max-width:700px){.admin-session-row{grid-template-columns:44px minmax(0,1fr) auto}.admin-session-row .session-avatar{display:none}.admin-session-row .session-buttons{display:grid;align-self:center}}
