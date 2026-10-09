@@ -7,6 +7,9 @@ import { API_PREFIX, assertTermsAccepted, normalizeRequestPath } from '../../leg
 // para activarlo. ASSISTANT queda fuera a propósito: no toca contenido clínico.
 const MFA_REQUIRED_ROLES = new Set(['OWNER', 'ADMIN', 'THERAPIST']);
 
+/** Código del 403 cuando un rol que exige MFA aún no lo ha activado. */
+export const MFA_SETUP_REQUIRED = 'MFA_SETUP_REQUIRED';
+
 // Únicas rutas alcanzables sin tener aún el MFA activo: las necesarias para configurarlo,
 // y cerrar sesión. Todo lo demás queda bloqueado hasta que el usuario lo active. Comparación
 // EXACTA con la ruta normalizada completa bajo /api/v1 (mismo criterio que la C2 de Argos en
@@ -54,7 +57,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const request = context.switchToHttp().getRequest();
       const path = requestPath(request);
       if (!isMfaSetupAllowedPath(path)) {
-        throw new ForbiddenException('Activa la verificación en dos pasos antes de continuar');
+        // Mismo texto de siempre (compatibilidad) y un código estable para que la web no dependa del texto.
+        throw new ForbiddenException({ statusCode: 403, code: MFA_SETUP_REQUIRED, message: 'Activa la verificación en dos pasos antes de continuar' });
       }
     }
 

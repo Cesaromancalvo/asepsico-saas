@@ -45,6 +45,13 @@ describe('JwtAuthGuard: excepción del MFA por ruta exacta normalizada', () => {
     expect(guard.handleRequest(null, { ...therapistWithoutMfa, mfaEnabled: true }, null, ctx('/api/v1/patients'))).toBeTruthy();
   });
 
+  it('el 403 lleva code MFA_SETUP_REQUIRED (la web no depende del texto) y conserva el mensaje', () => {
+    let error: any;
+    try { guard.handleRequest(null, therapistWithoutMfa, null, ctx('/api/v1/patients')); } catch (e) { error = e; }
+    expect(error?.getStatus()).toBe(403);
+    expect(error.getResponse()).toEqual({ statusCode: 403, code: 'MFA_SETUP_REQUIRED', message: 'Activa la verificación en dos pasos antes de continuar' });
+  });
+
   it('el guard ya no decide la excepción con endsWith', () => {
     const src = readFileSync(join(__dirname, '..', 'src', 'common', 'guards', 'jwt-auth.guard.ts'), 'utf8');
     expect(src).not.toMatch(/endsWith\(/);
