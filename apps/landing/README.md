@@ -2,12 +2,15 @@
 
 Web estática de una sola página: HTML, CSS y un poco de JavaScript sin dependencias.
 **No tiene `package.json`** a propósito: npm workspaces no la recoge, así que ni `npm ci`, ni el
-typecheck ni el build del monorepo la tocan, y ella no depende de la app.
+typecheck ni el build del monorepo la tocan, y ella no depende de la app. El único "build" es
+`build.mjs` (Node sin dependencias), que copia `public/` a `dist/` y rellena el NIF y el domicilio
+del titular desde variables de entorno (ver "Datos del titular").
 
 ## Estructura
 
 ```
 apps/landing/
+  build.mjs                <- build de publicación: public/ → dist/ rellenando [[NIF]] y [[DOMICILIO]]
   borradores/              <- bloques NO publicados (p. ej. la calculadora); fuera de public/
   public/                  <- directorio que se publica
     index.html             <- la landing
@@ -43,7 +46,11 @@ apps/landing/
 `apps/landing/public` aparece un dominio externo fuera de la lista permitida (`asepsico.es`,
 `forms.gle`, `instagram.com`, y los que cita la política de la lista de espera: `policies.google.com`, `dataprivacyframework.gov`, `aepd.es`), un `<iframe>`/`<object>`/`<embed>`, estilos en línea (`style=`,
 `<style>`), un `<script>` en línea, un manejador `on*=` o una URL `javascript:`. Ignora los
-comentarios. Avisa, sin fallar, si quedan los marcadores `[[NIF]]` o `[[DOMICILIO]]`.
+comentarios. En `public/` los marcadores `[[NIF]]` y `[[DOMICILIO]]` son lo esperado (falla con
+cualquier otro `[[...]]`); con `--require-filled` (salida del build) cualquier marcador es error.
+`npm run test:landing` ejecuta además `scripts/check-landing-build.mjs`, que prueba `build.mjs` con
+datos ficticios: salida sin marcadores y válida para la CSP, fallo cerrado sin variables o con
+valores mal formados, y ningún valor escrito en el log.
 Excepción: los bloques `<script type="application/ld+json">` (datos estructurados) se permiten si
 son JSON válido, no llevan `src` y solo contienen URLs de la propia web o el identificador
 `https://schema.org` (que no se descarga). Fuera del JSON-LD, `schema.org` no está permitido.
@@ -102,8 +109,9 @@ New → Static Site → este repositorio, rama `main`:
 | Campo | Valor |
 |---|---|
 | Root Directory | `apps/landing` |
-| Build Command | `echo ok` (no hay build) |
-| Publish Directory | `public` |
+| Build Command | `node build.mjs` |
+| Publish Directory | `dist` |
+| Environment | `LEGAL_TITULAR_NIF` y `LEGAL_TITULAR_DOMICILIO` (ver "Datos del titular") |
 | Build Filters → Included Paths | `apps/landing/**` |
 | Custom Domain | `asepsico.es` (y `www.asepsico.es` redirigiendo a la raíz) |
 
@@ -139,9 +147,30 @@ La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`), 
 (cambiarlo solo cuando cambie el contenido). Nunca una URL con `noindex` (p. ej. `404.html`), oculta o
 que redirija. `/aviso-legal/` queda fuera hasta que Lex Psi decida si lleva `noindex` (domicilio).
 
+## Datos del titular (NIF y domicilio)
+
+El repositorio es público (decisión del Jefe, 09/10): el NIF y el domicilio **no se escriben en el
+código**. `public/aviso-legal/index.html` lleva `[[NIF]]` y `[[DOMICILIO]]`, y
+`public/privacidad/index.html` lleva `[[DOMICILIO]]`. Al publicar, `build.mjs` los sustituye con las
+variables de entorno del Static Site (Render → Static Site → **Environment**; nunca en el repo ni en
+un `render.yaml`):
+
+| Variable | Formato (igual que la API, `apps/api/src/legal/legal-documents.ts`) |
+|---|---|
+| `LEGAL_TITULAR_NIF` | DNI (8 cifras + letra) o NIE (X/Y/Z + 7 cifras + letra) con letra de control válida |
+| `LEGAL_TITULAR_DOMICILIO` | una línea postal, 10–200 caracteres: letras, cifras y `.,ºª°'’/()-` |
+
+- **Falla cerrado:** si falta una variable, tiene un formato no válido o queda algún marcador en la
+  salida, el build termina con error y Render **mantiene la versión anterior** publicada.
+- **No escribe los valores en el log de build**: solo cuántos marcadores ha sustituido.
+- El HTML resultante no añade scripts ni estilos: la CSP no cambia.
+- Probar en local (datos ficticios): `LEGAL_TITULAR_NIF=00000000T LEGAL_TITULAR_DOMICILIO="Calle
+  Ficticia 1, 00000 Ninguna" node apps/landing/build.mjs` y servir `apps/landing/dist`.
+- Los valores que ya estuvieran en el historial de git no se reescriben.
+
 ## Pendiente antes de publicar
 
-- NIF: sustituir `[[NIF]]` en `public/aviso-legal/index.html` (único sitio; el check de CI avisa mientras siga) y quitar el `noindex` de `/aviso-legal/` y `/privacidad/`; añadirlas entonces al sitemap.
+- Quitar el `noindex` de `/aviso-legal/` y `/privacidad/` si lo llevan y añadirlas entonces al sitemap (decisión de Lex Psi).
 
 - Confirmar el DPA de Render con cláusulas contractuales tipo (condición de Argos para el apartado 4
   de la privacidad).

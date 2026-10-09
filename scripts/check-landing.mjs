@@ -8,7 +8,11 @@
  *   - scripts en línea (<script> sin src o con contenido), manejadores on*= o URL javascript:.
  * Los comentarios (HTML y CSS/JS) no se tienen en cuenta: no se ejecutan ni se descargan.
  *
- * Uso: node scripts/check-landing.mjs [directorio]   (por defecto apps/landing/public)
+ *   - (con --require-filled, para la salida de apps/landing/build.mjs) un marcador [[...]] sin
+ *     rellenar. Sin esa opción, [[NIF]] y [[DOMICILIO]] son lo esperado en el código fuente.
+ *
+ * Uso: node scripts/check-landing.mjs [directorio] [--require-filled]
+ *      (por defecto apps/landing/public)
  * Sin dependencias.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -24,8 +28,15 @@ const IGNORED_FILES = new Set(['fonts/OFL.txt']);
 const TEXT_EXTENSIONS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.xml', '.txt', '.json', '.svg', '.webmanifest']);
 const MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.svg', '.xml']);
 
+// Marcadores que apps/landing/build.mjs sustituye al publicar (NIF y domicilio del titular).
+const KNOWN_MARKERS = new Set(['[[NIF]]', '[[DOMICILIO]]']);
+
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const root = resolve(process.argv[2] ?? join(repoRoot, 'apps/landing/public'));
+const args = process.argv.slice(2);
+const requireFilled = args.includes('--require-filled');
+const dirArg = args.find((a) => !a.startsWith('--'));
+const root = resolve(dirArg ?? join(repoRoot, 'apps/landing/public'));
+let markers = 0;
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -124,9 +135,12 @@ for (const full of files) {
   }
   for (const m of scan.matchAll(/javascript\s*:/gi)) report(problems, rel, text, m.index, 'URL javascript: no permitida');
 
-  // Aviso (no falla): datos legales pendientes.
-  for (const m of raw.matchAll(/\[\[(NIF|DOMICILIO)\]\]/g)) {
-    report(warnings, rel, raw, m.index, `pendiente: ${m[0]} (rellenar antes de publicar)`);
+  // Marcadores de datos del titular. En el código fuente son lo esperado (el repo es público: los
+  // rellena apps/landing/build.mjs al publicar); en la salida del build (--require-filled) son error.
+  for (const m of raw.matchAll(/\[\[[A-ZÁÉÍÓÚÜÑ_ ]+\]\]/g)) {
+    if (requireFilled) report(problems, rel, raw, m.index, `marcador sin rellenar: ${m[0]}`);
+    else if (!KNOWN_MARKERS.has(m[0])) report(problems, rel, raw, m.index, `marcador desconocido: ${m[0]} (build.mjs no lo rellena)`);
+    else markers += 1;
   }
 }
 
@@ -136,4 +150,5 @@ if (problems.length) {
   console.error(`\ncheck-landing: ${problems.length} problema(s) en ${relative(repoRoot, root) || root}.`);
   process.exit(1);
 }
-console.log(`check-landing: OK (${scanned} archivos revisados; dominios permitidos: ${ALLOWED_HOSTS.join(', ')}).`);
+const markerNote = markers ? `; ${markers} marcadores de datos del titular que rellena build.mjs al publicar` : '';
+console.log(`check-landing: OK (${scanned} archivos revisados; dominios permitidos: ${ALLOWED_HOSTS.join(', ')}${markerNote}).`);

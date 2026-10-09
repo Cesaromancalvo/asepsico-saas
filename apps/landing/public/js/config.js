@@ -65,7 +65,8 @@ window.ASEPSICO_CONFIG = Object.freeze({
     OTHER_NAME_MAX: 40,
     }),
 
-  // El NIF y el domicilio del titular están escritos en HTML estático en aviso-legal/index.html.
+  // El NIF y el domicilio del titular NO están en el código: aviso-legal/ y privacidad/ llevan
+  // marcadores NIF y DOMICILIO entre dobles corchetes, que rellena apps/landing/build.mjs al publicar.
 
   FEATURES: Object.freeze({
     // Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?".
