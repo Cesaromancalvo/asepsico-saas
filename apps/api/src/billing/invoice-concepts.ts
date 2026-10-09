@@ -47,3 +47,35 @@ export function summaryConcept(lines: { description: string }[] | undefined): In
   if (first === undefined) return null;
   return isInvoiceLineConcept(first) ? first : 'Otro concepto';
 }
+
+/**
+ * Campos de texto libre de facturación que solo ven OWNER/ADMIN. A cualquier otro rol (ASSISTANT)
+ * le llegan a null, con un indicador `<campo>Hidden: true` si tenían contenido (condición de Argos).
+ */
+const INVOICE_FREE_TEXT = ['notes', 'voidReason'] as const;
+const PAYMENT_FREE_TEXT = ['notes', 'reference', 'reversalReason'] as const;
+
+function hideFreeText<T extends Record<string, any>>(row: T, fields: readonly string[]): T {
+  const out: Record<string, any> = { ...row };
+  for (const field of fields) {
+    if (!(field in out)) continue;
+    const hasText = typeof out[field] === 'string' && out[field].length > 0;
+    out[field] = null;
+    if (hasText) out[`${field}Hidden`] = true;
+  }
+  return out as T;
+}
+
+export function paymentForRole<T extends Record<string, any>>(payment: T, role: string): T {
+  if (!payment || LEGACY_TEXT_ROLES.has(role)) return payment;
+  return hideFreeText(payment, PAYMENT_FREE_TEXT);
+}
+
+/** Detalle de factura para el rol: líneas antiguas, notas, motivo de anulación y textos de pagos. */
+export function invoiceForRole<T extends Record<string, any>>(invoice: T, role: string): T {
+  if (!invoice || LEGACY_TEXT_ROLES.has(role)) return invoice;
+  const out: Record<string, any> = hideFreeText(invoice, INVOICE_FREE_TEXT);
+  if (Array.isArray(out.lines)) out.lines = linesForRole(out.lines, role);
+  if (Array.isArray(out.payments)) out.payments = out.payments.map((p: Record<string, any>) => paymentForRole(p, role));
+  return out as T;
+}
