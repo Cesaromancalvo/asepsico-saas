@@ -6,10 +6,15 @@ import {
   useState,
 } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiErrorCode } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
+
+// [CLIO] Texto pendiente de revisión. 409 DEMO_MEMBERS_ACTIVE: fuera del entorno demo, el espacio aún
+// tiene cuentas de demostración y la API no deja dar de alta pacientes hasta borrarlas.
+const DEMO_MEMBERS_ACTIVE_MESSAGE =
+  'Todavía no puedes dar de alta pacientes: esta consulta conserva las cuentas de la demostración. Pide a la persona responsable de AsePsico que las elimine y vuelve a intentarlo.';
 import {
   canManageProcess,
   fetchConsultationReason,
@@ -177,6 +182,7 @@ export default function PatientsPage() {
     useState(true);
 
   const [error, setError] = useState('');
+  const [createError, setCreateError] = useState('');
 
   // El rol solo decide acciones de gestión. El contenido clínico (motivo de consulta) solo se
   // pide si la API indica que el usuario puede leer algo clínico de este paciente.
@@ -299,6 +305,7 @@ export default function PatientsPage() {
 
     try {
       setError('');
+      setCreateError('');
 
       await api('/patients', {
         method: 'POST',
@@ -327,10 +334,13 @@ export default function PatientsPage() {
         await load('ACTIVE');
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo crear el paciente',
+      // El error del alta se enseña junto al formulario, no arriba de la página.
+      setCreateError(
+        apiErrorCode(err) === 'DEMO_MEMBERS_ACTIVE'
+          ? DEMO_MEMBERS_ACTIVE_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : 'No se pudo crear el paciente',
       );
     }
   }
@@ -1003,6 +1013,10 @@ export default function PatientsPage() {
                   />
                   {demo && <small id="new-patient-reason-hint" className="demo-hint">{DEMO_HINT.clinicalFreeText}</small>}
                 </label>
+              )}
+
+              {createError && (
+                <p className="error" role="alert">{createError}</p>
               )}
 
               <button className="button">
