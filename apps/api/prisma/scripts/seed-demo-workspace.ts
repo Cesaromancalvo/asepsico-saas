@@ -21,7 +21,7 @@ import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { DEMO_PATIENTS } from './demo/demo-dataset';
 import {
-  assertDemoEnvironment, assertEncryptionConfigured, assertEncryptionKeyMatchesDatabase, assertNoRealPatients,
+  ALLOW_FIRST_ENCRYPTED_DATA_FLAG, assertDemoEnvironment, assertEncryptionConfigured, assertEncryptionKeyMatchesDatabase, assertNoRealPatients,
   DemoRefusal, parseTargetArgs, resolveDemoTarget, safeErrorMessage,
 } from './demo/demo-guards';
 import { DemoCounts, emptyCounts, PortalCredential, randomPassword, randomSuffix, writeDemoPatient } from './demo/demo-writer';
@@ -41,7 +41,7 @@ async function main() {
   const prisma = new PrismaClient({ log: [] });
   try {
     const target = await resolveDemoTarget(prisma, args);
-    await assertEncryptionKeyMatchesDatabase(prisma);
+    await assertEncryptionKeyMatchesDatabase(prisma, { allowNoSamples: process.argv.includes(ALLOW_FIRST_ENCRYPTED_DATA_FLAG) });
     await assertNoRealPatients(prisma, target.workspaceId);
     const now = new Date();
 

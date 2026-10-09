@@ -3,7 +3,7 @@
  * ante cualquier duda, el script se niega a escribir y explica por qué (sin datos ni secretos).
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { decryptFieldStrict } from '../../../src/common/crypto/field-encryption';
+import { decryptFieldStrict, encryptField } from '../../../src/common/crypto/field-encryption';
 
 export class DemoRefusal extends Error {}
 
@@ -70,7 +70,21 @@ const KEY_SAMPLES: { model: string; field: string }[] = [
   { model: 'clinicalHistory', field: 'currentProblem' },
 ];
 
-export async function assertEncryptionKeyMatchesDatabase(db: Db) {
+export const ALLOW_FIRST_ENCRYPTED_DATA_FLAG = '--primeros-datos-cifrados';
+
+/**
+ * 1. Ida y vuelta con la configuración actual (clave inválida o llavero mal formado → se niega).
+ * 2. Si la BD ya tiene valores cifrados, al menos uno debe descifrarse con esta clave.
+ * 3. Si NO tiene ninguno (BD sin datos clínicos), no hay con qué comparar: contra una BD no local
+ *    se exige confirmarlo con --primeros-datos-cifrados (y comprobar después que la API arranca:
+ *    su autocomprobación de arranque usa justo estos datos como muestra).
+ */
+export async function assertEncryptionKeyMatchesDatabase(db: Db, opts: { allowNoSamples?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+  const probe = `demo-seed-canario-${Date.now()}`;
+  let roundTrip = false;
+  try { roundTrip = decryptFieldStrict(encryptField(probe)!) === probe; } catch { roundTrip = false; }
+  if (!roundTrip) throw new DemoRefusal('La configuración de cifrado no supera la prueba de ida y vuelta: no se escribe nada.');
+
   let checked = 0;
   let ok = 0;
   for (const { model, field } of KEY_SAMPLES) {
@@ -82,6 +96,11 @@ export async function assertEncryptionKeyMatchesDatabase(db: Db) {
   if (checked > 0 && ok === 0) {
     throw new DemoRefusal('La clave de cifrado configurada no descifra los datos existentes de esta BD: no se escribe nada.');
   }
+  const env = opts.env ?? process.env;
+  if (checked === 0 && !opts.allowNoSamples && !isLocalDatabaseUrl(env.DATABASE_URL)) {
+    throw new DemoRefusal(`La BD no tiene ningún dato cifrado con el que comprobar la clave. Si es correcto, repite con ${ALLOW_FIRST_ENCRYPTED_DATA_FLAG} y comprueba después que la API arranca.`);
+  }
+  return { checked, ok };
 }
 
 export interface DemoTarget { workspaceId: string; workspaceName: string; ownerUserId: string; ownerMemberId: string; ownerIsClinician: boolean }
