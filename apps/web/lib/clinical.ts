@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from './api';
+import type { AuthErrorCode, AuthMeContract, StaffRole } from '@asepsico/contracts';
+import { api, ApiError, apiErrorCode } from './api';
+
+/** Código del 403 de la API cuando falta activar la verificación en dos pasos. */
+export const MFA_SETUP_REQUIRED = 'MFA_SETUP_REQUIRED' satisfies AuthErrorCode;
 
 /*
  * Acceso clínico en la web (E1).
@@ -16,7 +20,7 @@ import { api, ApiError } from './api';
  * equipo, cambiar el estado de un proceso, abrir un proceso a nombre de otro profesional).
  */
 
-export type StaffRole = 'OWNER' | 'ADMIN' | 'THERAPIST' | 'ASSISTANT';
+export type { StaffRole };
 
 /** Quién usa la web. Es solo una pista para la UI: el control real lo hace el backend. */
 export type Viewer = {
@@ -26,49 +30,52 @@ export type Viewer = {
   isClinician: boolean;
   firstName: string | null;
   lastName: string | null;
-  /** Nombre de la consulta (dato administrativo). Un ASSISTANT no lo recibe del dashboard. */
+  /** Nombre de la consulta (dato administrativo, de GET /auth/me para todos los roles). */
   workspaceName: string | null;
-  /** La API pide activar la verificación en dos pasos antes de continuar (403 del guard). */
+  /** La API pide activar la verificación en dos pasos antes de continuar (403 MFA_SETUP_REQUIRED). */
   mfaPending?: boolean;
 };
 
 const ANONYMOUS_VIEWER: Viewer = { userId: null, role: null, isClinician: false, firstName: null, lastName: null, workspaceName: null };
 
-type DashboardProfessional = {
-  professional?: { userId?: string; role?: string; isClinician?: boolean; firstName?: string; lastName?: string; workspaceName?: string | null };
-};
+const STAFF_ROLES: readonly StaffRole[] = ['OWNER', 'ADMIN', 'THERAPIST', 'ASSISTANT'];
+
+/** 403 de la API cuando el rol exige verificación en dos pasos y aún no está activa. */
+export function isMfaSetupRequired(err: unknown): boolean {
+  return isForbidden(err) && apiErrorCode(err) === MFA_SETUP_REQUIRED;
+}
+
+/** Traduce la respuesta de GET /auth/me a lo que necesita la UI. */
+export function viewerFromMe(me: Partial<AuthMeContract> | null | undefined): Viewer {
+  const role = STAFF_ROLES.find((r) => r === me?.role) ?? null;
+  return {
+    userId: me?.userId ?? null,
+    role,
+    isClinician: role === 'THERAPIST' || ((role === 'OWNER' || role === 'ADMIN') && me?.isClinician === true),
+    firstName: me?.firstName?.trim() || null,
+    lastName: me?.lastName?.trim() || null,
+    workspaceName: me?.workspace?.name?.trim() || null,
+  };
+}
 
 let viewerCache: Promise<Viewer> | null = null;
 
 /**
- * Datos del propio usuario desde GET /dashboard (rol, si atiende pacientes y su id). El dashboard
- * responde 403 a un ASSISTANT: se interpreta como "sin acceso clínico ni de gestión". Se cachea
- * durante la navegación (una sola petición para la barra lateral y la pantalla); un error que no
- * sea 403 no se cachea para poder reintentar.
+ * Datos del propio usuario desde GET /auth/me (nombre, rol, si atiende pacientes y nombre de la
+ * consulta; nada clínico). Lo responde a todos los roles de personal, también a recepción, así que
+ * ya no hace falta pedir GET /dashboard (vista clínica) para saber quién usa la web. Se cachea
+ * durante la navegación (una sola petición para la barra lateral y la pantalla); un error no se
+ * cachea para poder reintentar.
  */
 export function fetchViewer(): Promise<Viewer> {
   if (viewerCache) return viewerCache;
-  const pending = api<DashboardProfessional>('/dashboard')
-    .then(({ professional }) => {
-      const role = (['OWNER', 'ADMIN', 'THERAPIST', 'ASSISTANT'] as const).find((r) => r === professional?.role) ?? null;
-      return {
-        userId: professional?.userId ?? null,
-        role,
-        isClinician: role === 'THERAPIST' || ((role === 'OWNER' || role === 'ADMIN') && professional?.isClinician === true),
-        firstName: professional?.firstName ?? null,
-        lastName: professional?.lastName ?? null,
-        workspaceName: professional?.workspaceName ?? null,
-      };
-    })
+  const pending = api<AuthMeContract>('/auth/me')
+    .then(viewerFromMe)
     .catch((err: unknown) => {
-      // El 403 del MFA pendiente no significa "recepción": no se adivina el rol.
-      // No se cachea: tras activarlo, la siguiente pantalla vuelve a preguntar.
-      if (isForbidden(err) && /dos pasos/i.test((err as Error).message)) {
-        viewerCache = null;
-        return { ...ANONYMOUS_VIEWER, mfaPending: true };
-      }
-      if (isForbidden(err)) return { ...ANONYMOUS_VIEWER, role: 'ASSISTANT' as const };
       viewerCache = null;
+      // MFA pendiente (código estable MFA_SETUP_REQUIRED, no el texto): no se adivina el rol.
+      // Tras activarlo, la siguiente pantalla vuelve a preguntar.
+      if (isMfaSetupRequired(err)) return { ...ANONYMOUS_VIEWER, mfaPending: true };
       return ANONYMOUS_VIEWER;
     });
   viewerCache = pending;

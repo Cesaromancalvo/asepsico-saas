@@ -41,6 +41,12 @@ function formatTime(value: string) {
   return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
+/** Saludo con el nombre de GET /auth/me; sin nombre, sin coma colgando. */
+function greetingFor(firstName?: string | null) {
+  const name = firstName?.trim();
+  return name ? `Buenos días, ${name}` : 'Buenos días';
+}
+
 function minutesUntil(value: string) {
   return Math.max(0, Math.round((new Date(value).getTime() - Date.now()) / 60000));
 }
@@ -131,7 +137,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
         <header className="dashboard-header">
           <div>
             <p className="eyebrow">MI JORNADA</p>
-            <h1>Buenos días, {data.professional.firstName || viewer.firstName}</h1>
+            <h1>{greetingFor(viewer.firstName || data.professional.firstName)}</h1>
             <p className="dashboard-subtitle">
               {data.summary.sessionsToday === 0
                 ? 'No tienes sesiones programadas para hoy.'
