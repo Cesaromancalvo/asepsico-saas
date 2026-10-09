@@ -78,11 +78,85 @@ describe('Facturación: detalle con líneas', () => {
     expect(linesForRole(undefined, 'OWNER')).toEqual([]);
   });
 
-  it('todas las respuestas con líneas pasan por forRole', () => {
+  it('todas las respuestas de factura pasan por forRole y las de pago por paymentForRole', () => {
     const src = readFileSync(join(__dirname, '..', 'src', 'billing', 'billing.service.ts'), 'utf8');
-    const withLines = (src.match(/lines: true/g) ?? []).length;
-    expect(withLines).toBeGreaterThan(0);
-    expect((src.match(/return this\.forRole\(/g) ?? []).length).toBe(withLines);
+    expect((src.match(/lines: true/g) ?? []).length).toBe(1); // solo INVOICE_DETAIL_INCLUDE
+    expect((src.match(/return this\.forRole\(/g) ?? []).length).toBe(5); // get, create, update, issue, void
+    expect(src).not.toMatch(/return (payment|existing|updatedPayment);/);
+  });
+
+  it('ASSISTANT no recibe notas, motivo de anulación ni notas/referencia/motivo de los pagos; solo indicadores', async () => {
+    const detail = {
+      ...row, notes: 'Nota libre con algo sensible', voidReason: 'Motivo libre',
+      payments: [{ id: 'pay-1', amountCents: 6000, method: 'CARD', notes: 'Nota del pago', reference: 'Ref libre', reversalReason: null }],
+    };
+    const asAssistant: any = await new BillingService(prismaWith([], detail)).get('ws-1', actor('ASSISTANT'), 'inv-1');
+    const json = JSON.stringify(asAssistant);
+    for (const text of ['Nota libre con algo sensible', 'Motivo libre', 'Nota del pago', 'Ref libre', LEGACY]) expect(json).not.toContain(text);
+    expect(asAssistant).toMatchObject({ notes: null, notesHidden: true, voidReason: null, voidReasonHidden: true });
+    expect(asAssistant.payments[0]).toMatchObject({ notes: null, notesHidden: true, reference: null, referenceHidden: true, reversalReason: null });
+    expect(asAssistant.payments[0]).not.toHaveProperty('reversalReasonHidden');
+    for (const role of ['OWNER', 'ADMIN']) {
+      const asAdmin: any = await new BillingService(prismaWith([], detail)).get('ws-1', actor(role), 'inv-1');
+      expect(asAdmin.payments[0].notes).toBe('Nota del pago');
+      expect(asAdmin.notes).toBe('Nota libre con algo sensible');
+    }
+  });
+
+  it('el pago devuelto a ASSISTANT al registrarlo o revertirlo tampoco lleva texto libre', async () => {
+    const tx: any = {
+      payment: {
+        create: jest.fn(async ({ data }: any) => ({ id: 'pay-1', ...data })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findFirst: jest.fn(async () => ({ id: 'pay-1', notes: 'Nota del pago', reference: 'Ref', reversalReason: 'Motivo' })),
+        aggregate: jest.fn(async () => ({ _sum: { amountCents: 0 } })),
+      },
+      invoice: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      auditLog: { create: jest.fn() },
+    };
+    const prisma: any = {
+      invoice: { findFirst: jest.fn(async () => ({ id: 'inv-1', patientId: 'p-1', status: 'ISSUED', totalCents: 6000, payments: [] })) },
+      payment: { findFirst: jest.fn(async () => ({ id: 'pay-1', invoiceId: 'inv-1', reversedAt: null, invoice: { totalCents: 6000 } })) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    };
+    const service = new BillingService(prisma);
+    const created: any = await service.recordPayment('ws-1', actor('ASSISTANT'), { invoiceId: 'inv-1', amountCents: 1000, method: 'CARD', notes: 'Nota del pago', reference: 'Ref' } as any);
+    expect(created).toMatchObject({ notes: null, notesHidden: true, reference: null, referenceHidden: true });
+    const reversed: any = await service.reversePayment('ws-1', actor('ASSISTANT'), 'pay-1', 'Motivo');
+    expect(JSON.stringify(reversed)).not.toMatch(/Nota del pago|"Ref"|Motivo/);
+    // Escrituras acotadas al workspace.
+    expect(tx.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'pay-1', workspaceId: 'ws-1', reversedAt: null } }));
+    for (const call of tx.invoice.updateMany.mock.calls) expect(call[0].where).toMatchObject({ workspaceId: 'ws-1' });
+  });
+});
+
+describe('Facturación: ninguna escritura solo por id (regla dura 1)', () => {
+  const src = readFileSync(join(__dirname, '..', 'src', 'billing', 'billing.service.ts'), 'utf8');
+
+  it('no usa update/delete/upsert por clave única sobre facturas, líneas ni pagos', () => {
+    expect(src).not.toMatch(/\.(invoice|invoiceLine|payment)\.(update|delete|upsert)\(/);
+  });
+
+  it('toda updateMany/deleteMany lleva workspaceId en el where', () => {
+    const writes = [...src.matchAll(/\.(invoice|invoiceLine|payment)\.(updateMany|deleteMany)\(\{ where: ([^}]*\}?[^}]*)\}/g)];
+    const helper = /scopedInvoiceUpdate\(tx, \{ ([^}]*)\}/g;
+    expect(writes.length + [...src.matchAll(helper)].length).toBeGreaterThan(0);
+    for (const m of writes) expect(m[3]).toMatch(/workspaceId/);
+    for (const m of src.matchAll(helper)) expect(m[1]).toMatch(/workspaceId/);
+    expect(src).toMatch(/updateMany\(\{ where, data \}\)/);
+  });
+
+  it('editar, emitir y anular comprueban el estado en la propia escritura (compare-and-set)', async () => {
+    const tx: any = {
+      invoice: { updateMany: jest.fn(async () => ({ count: 0 })), findFirst: jest.fn() },
+      invoiceLine: { deleteMany: jest.fn(), createMany: jest.fn() }, auditLog: { create: jest.fn() },
+    };
+    const prisma: any = { invoice: { findFirst: jest.fn(async () => ({ id: 'inv-1', status: 'DRAFT', payments: [] })) }, $transaction: jest.fn(async (cb: any) => cb(tx)) };
+    const service = new BillingService(prisma);
+    await expect(service.issue('ws-1', actor('OWNER'), 'inv-1')).rejects.toMatchObject({ status: 400 });
+    expect(tx.invoice.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: 'inv-1', workspaceId: 'ws-1', status: 'DRAFT' } }));
+    await expect(service.update('ws-1', actor('OWNER'), 'inv-1', { lines: [{ description: 'Sesión', quantity: 1, unitPriceCents: 6000 }] } as any)).rejects.toMatchObject({ status: 400 });
+    expect(tx.invoiceLine.deleteMany).not.toHaveBeenCalled(); // no toca líneas si la factura no es suya o ya no es borrador
   });
 });
 

@@ -4,7 +4,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { linesForRole, summaryConcept } from './invoice-concepts';
+import { invoiceForRole, paymentForRole, summaryConcept } from './invoice-concepts';
 
 /**
  * Listado de facturas: resumen SIN líneas ni notas (texto libre). Recepción (ASSISTANT) usa
@@ -17,6 +17,12 @@ const INVOICE_LIST_SELECT = {
   payments: { where: { reversedAt: null }, orderBy: { paidAt: 'desc' as const }, select: { id: true, amountCents: true, method: true, paidAt: true } },
   // Solo para calcular `concept`; no se devuelve.
   lines: { select: { description: true }, orderBy: { createdAt: 'asc' as const }, take: 1 },
+} as const;
+
+const INVOICE_DETAIL_INCLUDE = {
+  patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+  lines: true,
+  payments: { orderBy: { paidAt: 'desc' as const } },
 } as const;
 
 @Injectable()
@@ -66,15 +72,26 @@ export class BillingService {
   async get(workspaceId: string, actor: AuthUser, id: string) {
     this.assertBillingRole(actor);
     const invoice = await (this.prisma as any).invoice.findFirst({
-      where: { id, workspaceId }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: { orderBy: { paidAt: 'desc' } } },
+      where: { id, workspaceId }, include: INVOICE_DETAIL_INCLUDE,
     });
     if (!invoice) throw new NotFoundException('Factura no encontrada');
     return this.forRole(invoice, actor);
   }
 
-  /** Detalle con líneas: textos libres antiguos fuera del catálogo solo para OWNER/ADMIN. */
-  private forRole<T extends { lines?: { description: string }[] }>(invoice: T, actor: AuthUser): T {
-    return invoice && Array.isArray(invoice.lines) ? { ...invoice, lines: linesForRole(invoice.lines, actor.role) } : invoice;
+  /** Detalle: los textos libres (líneas antiguas, notas, motivo de anulación, notas y referencia de pagos) solo para OWNER/ADMIN. */
+  private forRole<T extends Record<string, any>>(invoice: T, actor: AuthUser): T {
+    return invoiceForRole(invoice, actor.role);
+  }
+
+  /** Detalle completo de una factura, siempre acotado al workspace. */
+  private loadInvoice(db: any, workspaceId: string, id: string) {
+    return db.invoice.findFirst({ where: { id, workspaceId }, include: INVOICE_DETAIL_INCLUDE });
+  }
+
+  /** Escritura acotada al workspace (nunca solo por id) con compare-and-set; 0 filas → 400. */
+  private async scopedInvoiceUpdate(tx: any, where: Record<string, unknown> & { id: string; workspaceId: string }, data: Record<string, unknown>) {
+    const { count } = await tx.invoice.updateMany({ where, data });
+    if (count !== 1) throw new BadRequestException('La factura cambió mientras se guardaba; vuelve a intentarlo');
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateInvoiceDto) {
@@ -95,7 +112,7 @@ export class BillingService {
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null, notes: dto.notes,
           subtotalCents: amounts.subtotalCents, taxCents: amounts.taxCents, totalCents: amounts.totalCents,
           createdById: actor.sub, lines: { create: amounts.lines },
-        }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true },
+        }, include: INVOICE_DETAIL_INCLUDE,
       });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_CREATED', entityType: 'Invoice', entityId: invoice.id, metadata: { invoiceNumber, totalCents: amounts.totalCents } } });
       return this.forRole(invoice, actor);
@@ -109,15 +126,17 @@ export class BillingService {
     if (invoice.status !== 'DRAFT') throw new BadRequestException('Solo se pueden editar facturas en borrador');
     const amounts = dto.lines ? this.calculate(dto.lines) : null;
     return (this.prisma as any).$transaction(async (tx: any) => {
-      if (dto.lines) await tx.invoiceLine.deleteMany({ where: { invoiceId: id } });
-      const updated = await tx.invoice.update({
-        where: { id },
-        data: {
-          dueDate: dto.dueDate ? new Date(dto.dueDate) : dto.dueDate === undefined ? undefined : null,
-          notes: dto.notes,
-          ...(amounts ? { subtotalCents: amounts.subtotalCents, taxCents: amounts.taxCents, totalCents: amounts.totalCents, lines: { create: amounts.lines } } : {}),
-        }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true },
+      await this.scopedInvoiceUpdate(tx, { id, workspaceId, status: 'DRAFT' }, {
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : dto.dueDate === undefined ? undefined : null,
+        notes: dto.notes,
+        ...(amounts ? { subtotalCents: amounts.subtotalCents, taxCents: amounts.taxCents, totalCents: amounts.totalCents } : {}),
       });
+      if (amounts) {
+        // Solo tras confirmar (arriba) que la factura es de este workspace y sigue en borrador.
+        await tx.invoiceLine.deleteMany({ where: { invoiceId: id, invoice: { workspaceId } } });
+        await tx.invoiceLine.createMany({ data: amounts.lines.map((line) => ({ ...line, invoiceId: id })) });
+      }
+      const updated = await this.loadInvoice(tx, workspaceId, id);
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_UPDATED', entityType: 'Invoice', entityId: id } });
       return this.forRole(updated, actor);
     });
@@ -129,7 +148,8 @@ export class BillingService {
     if (!invoice) throw new NotFoundException('Factura no encontrada');
     if (invoice.status !== 'DRAFT') throw new BadRequestException('La factura no está en borrador');
     return (this.prisma as any).$transaction(async (tx: any) => {
-      const updated = await tx.invoice.update({ where: { id }, data: { status: 'ISSUED', issueDate: new Date() }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true } });
+      await this.scopedInvoiceUpdate(tx, { id, workspaceId, status: 'DRAFT' }, { status: 'ISSUED', issueDate: new Date() });
+      const updated = await this.loadInvoice(tx, workspaceId, id);
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_ISSUED', entityType: 'Invoice', entityId: id } });
       return this.forRole(updated, actor);
     });
@@ -142,7 +162,8 @@ export class BillingService {
     if (invoice.status === 'PAID' || invoice.payments.length) throw new BadRequestException('No se puede anular una factura con pagos activos');
     if (invoice.status === 'VOID') throw new BadRequestException('La factura ya está anulada');
     return (this.prisma as any).$transaction(async (tx: any) => {
-      const updated = await tx.invoice.update({ where: { id }, data: { status: 'VOID', voidReason: reason }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true } });
+      await this.scopedInvoiceUpdate(tx, { id, workspaceId, status: { notIn: ['VOID', 'PAID'] } as any }, { status: 'VOID', voidReason: reason });
+      const updated = await this.loadInvoice(tx, workspaceId, id);
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_VOIDED', entityType: 'Invoice', entityId: id, metadata: { reason } } });
       return this.forRole(updated, actor);
     });
@@ -165,7 +186,7 @@ export class BillingService {
         if (!sameOperation) {
           throw new BadRequestException('La clave de idempotencia ya se utilizó para otra operación');
         }
-        return existing;
+        return paymentForRole(existing, actor.role);
       }
     }
 
@@ -176,9 +197,9 @@ export class BillingService {
         idempotencyKey: dto.idempotencyKey, notes: dto.notes, recordedById: actor.sub,
       }});
       const paidCents = activePaid + dto.amountCents;
-      await tx.invoice.update({ where: { id: invoice.id }, data: { paidCents, status: paidCents === invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID' } });
+      await this.scopedInvoiceUpdate(tx, { id: invoice.id, workspaceId }, { paidCents, status: paidCents === invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID' });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PAYMENT_RECORDED', entityType: 'Payment', entityId: payment.id, metadata: { invoiceId: invoice.id, amountCents: dto.amountCents, method: dto.method } } });
-      return payment;
+      return paymentForRole(payment, actor.role);
     });
   }
 
@@ -188,12 +209,14 @@ export class BillingService {
     if (!payment) throw new NotFoundException('Pago no encontrado');
     if (payment.reversedAt) throw new BadRequestException('El pago ya está revertido');
     return (this.prisma as any).$transaction(async (tx: any) => {
-      const updatedPayment = await tx.payment.update({ where: { id: paymentId }, data: { reversedAt: new Date(), reversalReason: reason } });
-      const aggregate = await tx.payment.aggregate({ where: { invoiceId: payment.invoiceId, reversedAt: null, id: { not: paymentId } }, _sum: { amountCents: true } });
+      const reversed = await tx.payment.updateMany({ where: { id: paymentId, workspaceId, reversedAt: null }, data: { reversedAt: new Date(), reversalReason: reason } });
+      if (reversed.count !== 1) throw new BadRequestException('El pago ya está revertido');
+      const updatedPayment = await tx.payment.findFirst({ where: { id: paymentId, workspaceId } });
+      const aggregate = await tx.payment.aggregate({ where: { workspaceId, invoiceId: payment.invoiceId, reversedAt: null, id: { not: paymentId } }, _sum: { amountCents: true } });
       const paidCents = aggregate._sum.amountCents ?? 0;
-      await tx.invoice.update({ where: { id: payment.invoiceId }, data: { paidCents, status: paidCents === 0 ? 'ISSUED' : paidCents >= payment.invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID' } });
+      await this.scopedInvoiceUpdate(tx, { id: payment.invoiceId, workspaceId }, { paidCents, status: paidCents === 0 ? 'ISSUED' : paidCents >= payment.invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID' });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PAYMENT_REVERSED', entityType: 'Payment', entityId: paymentId, metadata: { invoiceId: payment.invoiceId, reason } } });
-      return updatedPayment;
+      return paymentForRole(updatedPayment, actor.role);
     });
   }
 
