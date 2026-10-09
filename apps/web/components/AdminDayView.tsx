@@ -201,7 +201,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
               <div className="task-list">
                 {invoices.state === 'loading' && <p className="muted" role="status">Cargando…</p>}
                 {(invoices.state === 'error' || invoices.state === 'forbidden') && (
-                  <div className="dashboard-empty compact" role="alert"><strong>No se han podido cargar las facturas</strong><p>Inténtalo de nuevo en unos minutos.</p></div>
+                  <div className="dashboard-empty compact" role="alert"><strong>No se han podido cargar los cobros</strong><p>Inténtalo de nuevo en unos minutos.</p></div>
                 )}
                 {invoices.state === 'ready' && pendingInvoices.length === 0 && (
                   <div className="dashboard-empty compact"><strong>Todo cobrado</strong><p>No hay facturas pendientes.</p></div>

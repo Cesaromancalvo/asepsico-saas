@@ -122,7 +122,7 @@ export default function Sidebar({
       <div className="sidebar-bottom">
         {terms?.acceptanceRequired && (
           <p className="sidebar-terms-notice" role="note">
-            Tienes condiciones nuevas pendientes de aceptar. <Link href="/terms">Revisarlas y aceptarlas</Link>
+            Tienes condiciones nuevas pendientes de aceptar. <Link href="/terms">Revisar y aceptar</Link>
           </p>
         )}
         <div className="sync-status">

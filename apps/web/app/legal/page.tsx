@@ -56,8 +56,8 @@ export default function LegalPage() {
           <div className="brand">AsePsico</div>
           <h1>Condiciones vigentes</h1>
           <p className="muted">
-            Estos son los textos que acepta cada profesional al darse de alta, tanto quien crea la consulta como las
-            personas que se unen por invitación.
+            Estos son los textos que acepta cada persona al darse de alta, tanto quien crea la consulta como quien se
+            une a su equipo por invitación.
           </p>
           <Link href="/login">Ir a iniciar sesión</Link>
         </div>
@@ -81,8 +81,8 @@ export default function LegalPage() {
             {doc.draft && (
               <div className="e1-notice" role="note">
                 <div>
-                  <strong>Texto en borrador</strong>
-                  <p>A este documento aún le faltan datos por completar, así que todavía no es la versión definitiva.</p>
+                  <strong>Texto pendiente de completar</strong>
+                  <p>Este documento aún tiene datos por completar, así que todavía no es la versión definitiva.</p>
                 </div>
               </div>
             )}

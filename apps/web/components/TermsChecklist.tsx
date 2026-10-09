@@ -24,7 +24,8 @@ export function legalDocumentTitle(doc: Pick<Doc, 'documentType' | 'title'>) {
 export function missingTermsMessage(docs: Doc[], checked: Record<string, boolean>): string | null {
   const missing = docs.filter((doc) => checked[doc.documentType] !== true).map(legalDocumentTitle);
   if (missing.length === 0) return null;
-  return `Para continuar tienes que marcar la casilla de: ${missing.join(' y ')}.`;
+  const list = new Intl.ListFormat('es', { type: 'conjunction' }).format(missing);
+  return `Para continuar, marca ${missing.length === 1 ? 'la casilla' : 'las casillas'} de: ${list}.`;
 }
 
 /**
@@ -38,15 +39,15 @@ export default function TermsChecklist({ docs, checked, onChange, disabled, idPr
     <fieldset className="terms-fieldset" aria-describedby={`${idPrefix}-intro`}>
       <legend>Condiciones y privacidad</legend>
       <p id={`${idPrefix}-intro`} className="muted terms-intro">
-        Léelas antes de continuar (se abren en otra pestaña) y marca cada casilla. Son obligatorias.
+        Lee los textos antes de continuar (se abren en otra pestaña) y marca cada casilla. Todas son obligatorias.
       </p>
       {hasDraft && (
         <div className="e1-notice" role="note">
           <div>
             <strong>Textos pendientes de completar</strong>
             <p>
-              A alguno de estos documentos aún le faltan datos, así que todavía no es la versión definitiva y puede que
-              no se pueda aceptar. Si ocurre, vuelve a intentarlo más tarde.
+              Alguno de estos documentos aún tiene datos por completar: todavía no es la versión definitiva y es posible
+              que no puedas aceptarlo. Si te ocurre, vuelve a intentarlo más tarde.
             </p>
           </div>
         </div>

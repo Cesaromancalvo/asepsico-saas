@@ -44,7 +44,7 @@ export function isLegalTermsDraftError(err: unknown): boolean {
 }
 
 export const LEGAL_TERMS_DRAFT_MESSAGE =
-  'Estamos terminando de preparar las condiciones del piloto y todavía no se pueden aceptar. No has hecho nada mal: ' +
+  'Las condiciones del piloto aún tienen datos por completar y todavía no se pueden aceptar. No es un error tuyo: ' +
   'vuelve a intentarlo más tarde.';
 
 /** Lo que se envía al aceptar: exactamente lo recibido (sin título ni texto). */

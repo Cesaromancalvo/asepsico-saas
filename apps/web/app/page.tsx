@@ -61,7 +61,7 @@ export default function Home() {
     return (
       <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
         <h1>Activa la verificación en dos pasos</h1>
-        <p>Antes de empezar a trabajar tienes que activarla. Solo te llevará un par de minutos.</p>
+        <p>Para seguir usando AsePsico tienes que activarla. Necesitarás una app de autenticación en tu móvil.</p>
         <Link href="/settings/security" className="primary-action">Activarla ahora</Link>
       </section></main></div>
     );

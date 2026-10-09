@@ -76,7 +76,7 @@ export default function TermsPage() {
       } else if (isLegalTermsDraftError(err)) {
         setError(LEGAL_TERMS_DRAFT_MESSAGE);
       } else if (err instanceof ApiError && err.status === 403) {
-        setError('No se ha podido guardar tu aceptación porque tu cuenta ya no forma parte de esta consulta. Cierra sesión y vuelve a entrar.');
+        setError('No se ha podido guardar tu aceptación. Puede que tu cuenta ya no forme parte de esta consulta: cierra sesión y vuelve a entrar.');
       } else {
         setError(err instanceof Error && err.message ? err.message : 'No se han podido aceptar las condiciones.');
       }
@@ -125,7 +125,7 @@ export default function TermsPage() {
             <div className="e1-notice" role="note">
               <div>
                 <strong>No se pueden aceptar las condiciones desde esta cuenta</strong>
-                <p>Cierra sesión y vuelve a entrar. Si sigue apareciendo este aviso, escríbenos a soporte.</p>
+                <p>Cierra sesión y vuelve a entrar. Si sigue apareciendo este aviso, escríbenos por email.</p>
               </div>
             </div>
             <button type="button" className="button" onClick={handleLogout}>Cerrar sesión</button>
@@ -135,7 +135,7 @@ export default function TermsPage() {
         {state === 'ready' && status?.acceptanceRequired && status.canAccept && (
           <>
             <p className="muted">
-              Hay condiciones nuevas o actualizadas. Cada profesional del equipo las acepta por sí mismo: revísalas y
+              Hay condiciones nuevas o actualizadas. Cada persona del equipo las acepta por sí misma: revísalas y
               acéptalas para seguir usando AsePsico. Mientras no lo hagas, tu acceso queda en pausa; el del resto del
               equipo no cambia.
             </p>

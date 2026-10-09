@@ -142,7 +142,7 @@ export default function JoinPage() {
                 <div className="e1-notice" role="note">
                   <div>
                     <strong>Texto pendiente de completar</strong>
-                    <p>A este documento aún le faltan datos, así que todavía no es la versión definitiva.</p>
+                    <p>Este documento aún tiene datos por completar, así que todavía no es la versión definitiva.</p>
                   </div>
                 </div>
               )}
@@ -167,8 +167,8 @@ export default function JoinPage() {
           invitación; tu rol ya viene indicado en ella.
         </p>
         <p className="muted">
-          Cada persona del equipo acepta las condiciones por sí misma: antes de crear tu cuenta, lee las condiciones de
-          uso del piloto y la política de privacidad y marca sus casillas.
+          Cada persona del equipo acepta las condiciones por sí misma. Antes de crear tu cuenta, lee las condiciones de
+          uso del piloto demo y la política de privacidad, y marca sus casillas.
         </p>
         <form onSubmit={submit}>
           <label className="field">Nombre<input name="firstName" autoComplete="given-name" required minLength={2} maxLength={100} /></label>
