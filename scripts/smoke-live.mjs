@@ -35,6 +35,18 @@
 //                               opcional del mismo workspace para comprobar el 403 del motivo de
 //                               consulta. Sin ellas, esa comprobación se omite con aviso.
 //
+//   ASEPSICO_SMOKE_EXPECT_TERMS_428=1  Comprueba el 428 de condiciones nuevas con una cuenta que YA
+//                               existe (condición de Argos): tras el login, una ruta protegida
+//                               debe responder 428 TERMS_ACCEPTANCE_REQUIRED; la cuenta acepta
+//                               las versiones vigentes (POST /legal/terms/accept) y deja de
+//                               recibir 428. Para provocarlo de verdad: sembrar la BD SIN
+//                               LEGAL_TITULAR_NIF/LEGAL_TITULAR_DOMICILIO y arrancar la API CON
+//                               un NIF y un domicilio ficticios pero válidos (p. ej. el DNI de
+//                               ejemplo 12345678Z, letra de control correcta, y "Calle Ficticia
+//                               1, 00000 Ciudad Inventada"): el texto servido cambia, su hash
+//                               también, y la aceptación del seed deja de valer. Nunca datos
+//                               reales. Solo en BD desechables: deja evidencia de aceptación.
+//
 // Limitación: si una ejecución con ENROLL_MFA se interrumpe de forma abrupta (kill -9) antes
 // de desactivar el MFA, la cuenta queda con MFA activo y un secreto que nadie conoce. En ese
 // caso hay que volver a sembrar la BD (npm run db:seed) o pasar ASEPSICO_SMOKE_TOTP_SECRET.
@@ -55,6 +67,7 @@ const allowRemoteEnrollment = process.env.ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL ===
 // ve el motivo en las vistas generales. Si no, ese paso se omite y se avisa (no se da por pasado).
 const assistantEmail = process.env.ASEPSICO_SMOKE_ASSISTANT_EMAIL || '';
 const assistantPassword = process.env.ASEPSICO_SMOKE_ASSISTANT_PASSWORD || '';
+const expectTerms428 = process.env.ASEPSICO_SMOKE_EXPECT_TERMS_428 === '1';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MFA_REQUIRED_MESSAGE = 'Activa la verificación en dos pasos';
 
@@ -222,10 +235,29 @@ async function checkClosedRegistration() {
   console.log('   POST /auth/register sin invitación válida → 400 REGISTRATION_NOT_ALLOWED');
 }
 
+// Cuenta existente con condiciones nuevas: 428 → acepta → sin 428 (condición de Argos).
+async function checkTerms428ThenAccept() {
+  assert(LOCAL_HOSTS.has(new URL(API).hostname), 'ASEPSICO_SMOKE_EXPECT_TERMS_428=1 solo contra una API local (deja evidencia de aceptación)');
+  const blocked = await rawReq('/notifications/preferences');
+  assert(blocked.status === 428 && blocked.data?.code === 'TERMS_ACCEPTANCE_REQUIRED', `Se esperaba 428 TERMS_ACCEPTANCE_REQUIRED y llegó ${blocked.status} ${JSON.stringify(blocked.data)}`);
+  assert(Array.isArray(blocked.data.pending) && blocked.data.pending.length > 0 && blocked.data.pending.every((d) => d.text === undefined), 'El 428 no lista lo pendiente o incluye el texto');
+  const before = await req('/legal/terms/status');
+  assert(before.acceptanceRequired === true, 'GET /legal/terms/status no indica condiciones pendientes');
+  const docs = await req('/legal/terms');
+  assert(docs.every((d) => d.draft === false && !/\[NIF\]|\[DOMICILIO\]/.test(d.text)), 'Las condiciones servidas siguen en borrador: arranca la API con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO ficticios válidos');
+  const acceptedTerms = docs.map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
+  const accepted = await req('/legal/terms/accept', { method: 'POST', body: { acceptedTerms } });
+  assert(accepted.acceptanceRequired === false && accepted.pending.length === 0, `Tras aceptar siguen pendientes: ${JSON.stringify(accepted.pending)}`);
+  const after = await rawReq('/notifications/preferences');
+  assert(after.status === 200, `Tras aceptar se esperaba 200 y llegó ${after.status} ${JSON.stringify(after.data)}`);
+  console.log('   cuenta existente: 428 TERMS_ACCEPTANCE_REQUIRED → acepta las versiones vigentes → sin 428');
+}
+
 async function main() {
   const stamp = Date.now();
   console.log('0/11 Registro cerrado y condiciones vigentes'); await checkClosedRegistration();
   console.log('1/11 Login'); await login();
+  if (expectTerms428) await checkTerms428ThenAccept();
   const terms = await req('/legal/terms/status'); assert(terms.acceptanceRequired === false, `La cuenta demo tiene condiciones pendientes: ${JSON.stringify(terms.pending)}`); console.log('   condiciones vigentes aceptadas por el OWNER demo (sin 428)');
   console.log('2/11 Crear paciente y abrir su proceso clínico'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id'); await openClinicalProcess(patient); console.log('   sin proceso: 403 en historia y motivo; proceso clínico abierto a nombre de la cuenta demo');
   console.log('3/11 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');

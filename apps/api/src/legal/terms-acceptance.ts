@@ -103,9 +103,30 @@ export async function recordTermsAcceptances(
   }
 }
 
+/** Prefijo global de la API (main.ts: app.setGlobalPrefix('api/v1')). */
+export const API_PREFIX = '/api/v1';
+
 // Rutas que se pueden usar con condiciones pendientes: leerlas, aceptarlas, cerrar sesión y
-// configurar el MFA (que JwtAuthGuard exige antes que nada).
-const TERMS_PENDING_ALLOWED_SUFFIXES = ['/legal/terms', '/legal/terms/status', '/legal/terms/accept', '/auth/logout', '/auth/mfa/setup', '/auth/mfa/confirm'];
+// configurar el MFA (que JwtAuthGuard exige antes que nada). Comparación EXACTA con la ruta
+// completa: una ruta que solo termine igual (p. ej. /api/v1/patients/legal/terms) no queda exenta.
+const TERMS_PENDING_ALLOWED_PATHS: ReadonlySet<string> = new Set(
+  ['/legal/terms', '/legal/terms/status', '/legal/terms/accept', '/auth/logout', '/auth/mfa/setup', '/auth/mfa/confirm'].map((p) => `${API_PREFIX}${p}`),
+);
+
+/**
+ * Ruta normalizada para decidir las excepciones: sin query ni fragmento, sin barras finales y en
+ * minúsculas (Express enruta sin distinguir mayúsculas ni la barra final, así que la excepción
+ * cubre exactamente las mismas rutas que enruta, ni una más).
+ */
+export function normalizeRequestPath(path: string): string {
+  const withoutQuery = path.split(/[?#]/)[0];
+  const trimmed = withoutQuery.replace(/\/+$/, '');
+  return (trimmed || '/').toLowerCase();
+}
+
+export function isTermsPendingAllowedPath(path: string): boolean {
+  return TERMS_PENDING_ALLOWED_PATHS.has(normalizeRequestPath(path));
+}
 
 /**
  * Bloqueo por condiciones nuevas: afecta a TODO el personal del workspace (titular y miembros
@@ -122,7 +143,7 @@ export async function assertTermsAccepted(
   if (!user || !(STAFF_ROLES as readonly string[]).includes(user.role ?? '')) return;
   // Falla cerrado: un token de personal sin usuario o workspace no es válido.
   if (typeof user.workspaceId !== 'string' || typeof user.sub !== 'string') throw new UnauthorizedException();
-  if (TERMS_PENDING_ALLOWED_SUFFIXES.some((suffix) => path.endsWith(suffix))) return;
+  if (isTermsPendingAllowedPath(path)) return;
   const pending = await pendingLegalDocuments(db, user.workspaceId, user.sub, docs);
   if (pending.length > 0) {
     throw new HttpException(

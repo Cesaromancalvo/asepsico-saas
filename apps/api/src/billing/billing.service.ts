@@ -4,6 +4,20 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { CreateInvoiceDto, CreateInvoiceLineDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { linesForRole, summaryConcept } from './invoice-concepts';
+
+/**
+ * Listado de facturas: resumen SIN líneas ni notas (texto libre). Recepción (ASSISTANT) usa
+ * facturación y no debe recibir nada que pueda ser clínico (condición de Argos).
+ */
+const INVOICE_LIST_SELECT = {
+  id: true, patientId: true, invoiceNumber: true, status: true, currency: true, issueDate: true, dueDate: true,
+  subtotalCents: true, taxCents: true, totalCents: true, paidCents: true, createdAt: true, updatedAt: true,
+  patient: { select: { id: true, firstName: true, lastName: true } },
+  payments: { where: { reversedAt: null }, orderBy: { paidAt: 'desc' as const }, select: { id: true, amountCents: true, method: true, paidAt: true } },
+  // Solo para calcular `concept`; no se devuelve.
+  lines: { select: { description: true }, orderBy: { createdAt: 'asc' as const }, take: 1 },
+} as const;
 
 @Injectable()
 export class BillingService {
@@ -41,11 +55,12 @@ export class BillingService {
 
   async list(workspaceId: string, actor: AuthUser, patientId?: string) {
     this.assertBillingRole(actor);
-    return (this.prisma as any).invoice.findMany({
+    const invoices = await (this.prisma as any).invoice.findMany({
       where: { workspaceId, ...(patientId ? { patientId } : {}) },
-      include: { patient: { select: { id: true, firstName: true, lastName: true } }, lines: true, payments: { where: { reversedAt: null }, orderBy: { paidAt: 'desc' } } },
+      select: INVOICE_LIST_SELECT,
       orderBy: { createdAt: 'desc' },
     });
+    return invoices.map(({ lines, ...invoice }: any) => ({ ...invoice, concept: summaryConcept(lines) }));
   }
 
   async get(workspaceId: string, actor: AuthUser, id: string) {
@@ -54,7 +69,12 @@ export class BillingService {
       where: { id, workspaceId }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: { orderBy: { paidAt: 'desc' } } },
     });
     if (!invoice) throw new NotFoundException('Factura no encontrada');
-    return invoice;
+    return this.forRole(invoice, actor);
+  }
+
+  /** Detalle con líneas: textos libres antiguos fuera del catálogo solo para OWNER/ADMIN. */
+  private forRole<T extends { lines?: { description: string }[] }>(invoice: T, actor: AuthUser): T {
+    return invoice && Array.isArray(invoice.lines) ? { ...invoice, lines: linesForRole(invoice.lines, actor.role) } : invoice;
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateInvoiceDto) {
@@ -78,7 +98,7 @@ export class BillingService {
         }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true },
       });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_CREATED', entityType: 'Invoice', entityId: invoice.id, metadata: { invoiceNumber, totalCents: amounts.totalCents } } });
-      return invoice;
+      return this.forRole(invoice, actor);
     });
   }
 
@@ -99,7 +119,7 @@ export class BillingService {
         }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true },
       });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_UPDATED', entityType: 'Invoice', entityId: id } });
-      return updated;
+      return this.forRole(updated, actor);
     });
   }
 
@@ -111,7 +131,7 @@ export class BillingService {
     return (this.prisma as any).$transaction(async (tx: any) => {
       const updated = await tx.invoice.update({ where: { id }, data: { status: 'ISSUED', issueDate: new Date() }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true } });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_ISSUED', entityType: 'Invoice', entityId: id } });
-      return updated;
+      return this.forRole(updated, actor);
     });
   }
 
@@ -124,7 +144,7 @@ export class BillingService {
     return (this.prisma as any).$transaction(async (tx: any) => {
       const updated = await tx.invoice.update({ where: { id }, data: { status: 'VOID', voidReason: reason }, include: { patient: { select: { id: true, firstName: true, lastName: true, email: true } }, lines: true, payments: true } });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_VOIDED', entityType: 'Invoice', entityId: id, metadata: { reason } } });
-      return updated;
+      return this.forRole(updated, actor);
     });
   }
 

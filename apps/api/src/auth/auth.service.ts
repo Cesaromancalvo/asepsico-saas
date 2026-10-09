@@ -1,4 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { assertStaffRole } from '../common/auth/assert-staff-role';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { compare } from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
@@ -164,6 +166,37 @@ export class AuthService {
       user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
       workspaceId,
       role,
+    };
+  }
+
+  /**
+   * GET /auth/me: datos NO clínicos del propio usuario para la cabecera de la web (todos los roles
+   * de personal, también ASSISTANT y OWNER/ADMIN no clínicos, que reciben 403 en /dashboard).
+   * Rol, isClinician y consulta salen de la BD (no del token), acotados al workspace del token:
+   * si la membresía ya no existe → 401. Nunca devuelve pacientes ni contenido clínico.
+   */
+  async me(actor: AuthUser) {
+    assertStaffRole(actor);
+    if (typeof actor.sub !== 'string' || typeof actor.workspaceId !== 'string') throw new UnauthorizedException();
+    const member = await this.prisma.workspaceMember.findFirst({
+      where: { workspaceId: actor.workspaceId, userId: actor.sub },
+      select: {
+        role: true,
+        isClinician: true,
+        workspace: { select: { id: true, name: true } },
+        user: { select: { id: true, email: true, firstName: true, lastName: true, totpEnabled: true } },
+      },
+    });
+    if (!member) throw new UnauthorizedException();
+    return {
+      userId: member.user.id,
+      email: member.user.email,
+      firstName: member.user.firstName,
+      lastName: member.user.lastName,
+      role: member.role,
+      isClinician: member.isClinician === true,
+      mfaEnabled: member.user.totpEnabled === true,
+      workspace: { id: member.workspace.id, name: member.workspace.name },
     };
   }
 }

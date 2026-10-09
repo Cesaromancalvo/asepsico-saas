@@ -40,6 +40,12 @@ async function main() {
     console.log(`Invitación ${invite.id} para ${invite.email}, caduca el ${invite.expiresAt.toISOString()}.`);
     console.log('Enlace (se muestra solo esta vez; envíalo tú por un canal privado):');
     console.log(buildInviteUrl('/register', token));
+    if (process.env.DEMO_ENVIRONMENT === 'true') {
+      // Piloto demo: los pacientes inventados se siembran DESPUÉS de que la persona se registre
+      // (antes no existe su espacio). Mismo comando que el espacio de demostración del titular.
+      console.log('Cuando se haya registrado, carga sus pacientes inventados con:');
+      console.log(`  DEMO_ENVIRONMENT=true npm run db:seed-demo-workspace -- --owner-email ${invite.email}`);
+    }
   } finally {
     await prisma.$disconnect();
   }

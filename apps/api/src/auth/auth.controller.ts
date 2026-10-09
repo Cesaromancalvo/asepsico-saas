@@ -1,4 +1,4 @@
-import { Body, Controller, Header, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
@@ -82,6 +82,14 @@ export class AuthController {
     const session = await this.auth.refresh(rawToken, meta(req));
     setAuthCookies(res, session);
     return { user: session.user, workspaceId: session.workspaceId, role: session.role };
+  }
+
+  // Datos no clínicos del propio usuario (nombre, rol, isClinician, consulta, MFA). Todos los roles.
+  @Header(...NO_STORE)
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@CurrentUser() user: AuthUser) {
+    return this.auth.me(user);
   }
 
   @UseGuards(JwtAuthGuard)
