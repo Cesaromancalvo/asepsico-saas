@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
+import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 import {
   canManageProcess,
   fetchConsultationReason,
@@ -180,6 +181,7 @@ export default function PatientsPage() {
   // El rol solo decide acciones de gestión. El contenido clínico (motivo de consulta) solo se
   // pide si la API indica que el usuario puede leer algo clínico de este paciente.
   const viewer = useViewer();
+  const demo = useIsDemoEnvironment();
 
   const [selectedReason, setSelectedReason] =
     useState<{
@@ -953,6 +955,10 @@ export default function PatientsPage() {
           <section className="card">
             <h2>Nueva persona</h2>
 
+            {demo && (
+              <p className="e1-notice" role="note">{DEMO_HINT.newPatient}</p>
+            )}
+
             <form
               onSubmit={createPatient}
             >
@@ -993,7 +999,9 @@ export default function PatientsPage() {
                   <input
                     name="consultationReason"
                     maxLength={2000}
+                    aria-describedby={demo ? 'new-patient-reason-hint' : undefined}
                   />
+                  {demo && <small id="new-patient-reason-hint" className="demo-hint">{DEMO_HINT.clinicalFreeText}</small>}
                 </label>
               )}
 

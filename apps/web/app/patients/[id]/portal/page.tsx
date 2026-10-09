@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 
 type AccessMode = 'PATIENT_ONLY' | 'GUARDIAN_ONLY' | 'SHARED';
 type Account = {
@@ -32,6 +33,7 @@ function formatDate(value?: string | null) {
 export default function PatientPortalAdminPage() {
   const { id } = useParams<{ id: string }>();
 
+  const demo = useIsDemoEnvironment();
   const [accessMode, setAccessMode] = useState<AccessMode>('PATIENT_ONLY');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +192,7 @@ export default function PatientPortalAdminPage() {
         <section className="patient-card">
           <h2>Activar o restablecer el acceso del paciente</h2>
           <form className="document-form" onSubmit={enablePatientAccount}>
-            <label><span>Correo del paciente</span><input type="email" value={patientEmail} onChange={(e) => setPatientEmail(e.target.value)} required /></label>
+            <label><span>Correo del paciente</span><input type="email" value={patientEmail} onChange={(e) => setPatientEmail(e.target.value)} required aria-describedby={demo ? 'portal-patient-email-hint' : undefined} />{demo && <small id="portal-patient-email-hint" className="demo-hint">{DEMO_HINT.portalEmail}</small>}</label>
             <label><span>Contraseña temporal</span><input type="password" value={patientPassword} onChange={(e) => setPatientPassword(e.target.value)} minLength={12} required /><small>Debe incluir mayúscula, minúscula y número.</small></label>
             <button className="button primary" disabled={busy}>Activar / restablecer paciente</button>
           </form>
@@ -201,7 +203,7 @@ export default function PatientPortalAdminPage() {
           <form className="document-form" onSubmit={enableGuardianAccount}>
             <label><span>Nombre del tutor</span><input type="text" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} required /></label>
             <label><span>Relación con el paciente</span><input type="text" placeholder="Madre, padre, tutor legal…" value={guardianRelationship} onChange={(e) => setGuardianRelationship(e.target.value)} required /></label>
-            <label><span>Correo del tutor</span><input type="email" value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} required /></label>
+            <label><span>Correo del tutor</span><input type="email" value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} required aria-describedby={demo ? 'portal-guardian-email-hint' : undefined} />{demo && <small id="portal-guardian-email-hint" className="demo-hint">{DEMO_HINT.portalEmail}</small>}</label>
             <label><span>Contraseña temporal</span><input type="password" value={guardianPassword} onChange={(e) => setGuardianPassword(e.target.value)} minLength={12} required /><small>Debe incluir mayúscula, minúscula y número.</small></label>
             <button className="button primary" disabled={busy}>Activar / restablecer tutor</button>
           </form>

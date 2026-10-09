@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { CreatedMemberInviteContract, InvitableRole, MemberInviteContract } from '@asepsico/contracts';
 import { api, ApiError } from '@/lib/api';
 import { ROLE_LABEL } from '@/lib/clinical';
+import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 
 const INVITABLE_ROLES: InvitableRole[] = ['THERAPIST', 'ASSISTANT', 'ADMIN'];
 
@@ -28,6 +29,7 @@ function isPending(invite: MemberInviteContract) {
 export default function TeamInvites({ isOwner, onChanged }: { isOwner: boolean; onChanged?: () => void }) {
   const [invites, setInvites] = useState<MemberInviteContract[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'hidden' | 'error'>('loading');
+  const demo = useIsDemoEnvironment();
   const [role, setRole] = useState<InvitableRole>('THERAPIST');
   const [adminClinician, setAdminClinician] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -126,7 +128,8 @@ export default function TeamInvites({ isOwner, onChanged }: { isOwner: boolean; 
             <div className="invite-form-grid">
               <label className="field">
                 Correo de la persona
-                <input name="email" type="email" autoComplete="off" required maxLength={254} />
+                <input name="email" type="email" autoComplete="off" required maxLength={254} aria-describedby={demo ? 'invite-demo-hint' : undefined} />
+                {demo && <small id="invite-demo-hint" className="demo-hint">{DEMO_HINT.teamInvite}</small>}
               </label>
               <label className="field">
                 Rol
