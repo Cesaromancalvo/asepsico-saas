@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LegalDocumentType, RegisterRequestContract } from '@asepsico/contracts';
 import InviteOnlyCard from '@/components/InviteOnlyCard';
-import TermsChecklist from '@/components/TermsChecklist';
+import TermsChecklist, { missingTermsMessage } from '@/components/TermsChecklist';
 import { api, ApiError } from '@/lib/api';
 import { invalidateViewer } from '@/lib/clinical';
 import { fetchLegalTerms, invalidateTermsStatus, LegalDocument, registrationErrorMessage, toAcceptedTerm, useInviteToken } from '@/lib/legal';
@@ -16,6 +16,7 @@ export default function RegisterPage() {
   const [docs, setDocs] = useState<LegalDocument[]>([]);
   const [termsState, setTermsState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [showTermsErrors, setShowTermsErrors] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -23,8 +24,12 @@ export default function RegisterPage() {
   const loadTerms = useCallback(async () => {
     setTermsState('loading');
     try {
-      setDocs(await fetchLegalTerms());
+      const current = await fetchLegalTerms();
+      // Sin documentos vigentes no hay nada que aceptar y la API rechazaría el alta.
+      if (current.length === 0) throw new Error('sin condiciones');
+      setDocs(current);
       setChecked({});
+      setShowTermsErrors(false);
       setTermsState('ready');
     } catch {
       setTermsState('error');
@@ -55,8 +60,10 @@ export default function RegisterPage() {
       setError('La contraseña debe tener al menos 12 caracteres.');
       return;
     }
-    if (docs.length === 0 || docs.some((doc) => checked[doc.documentType] !== true)) {
-      setError('Para crear la cuenta tienes que aceptar todas las condiciones.');
+    const missingTerms = missingTermsMessage(docs, checked);
+    if (missingTerms) {
+      setShowTermsErrors(true);
+      setError(missingTerms);
       return;
     }
     const body: RegisterRequestContract = {
@@ -138,7 +145,7 @@ export default function RegisterPage() {
             <div className="e1-notice danger" role="alert">
               <div>
                 <strong>No se han podido cargar las condiciones</strong>
-                <p>Sin ellas no se puede completar el alta.</p>
+                <p>Sin ellas no se puede completar el alta. Comprueba tu conexión y vuelve a intentarlo.</p>
               </div>
               <div className="e1-notice-actions">
                 <button type="button" className="button secondary" onClick={loadTerms}>Reintentar</button>
@@ -146,7 +153,7 @@ export default function RegisterPage() {
             </div>
           )}
           {termsState === 'ready' && (
-            <TermsChecklist docs={docs} checked={checked} onChange={setDocChecked} disabled={busy} idPrefix="register-terms" />
+            <TermsChecklist docs={docs} checked={checked} onChange={setDocChecked} disabled={busy} idPrefix="register-terms" showErrors={showTermsErrors} />
           )}
 
           {error && <p className="error" role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}

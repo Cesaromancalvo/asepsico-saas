@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LegalDocumentType, RegisterMemberRequestContract } from '@asepsico/contracts';
 import InviteOnlyCard from '@/components/InviteOnlyCard';
-import TermsChecklist from '@/components/TermsChecklist';
+import TermsChecklist, { missingTermsMessage } from '@/components/TermsChecklist';
 import { api, ApiError } from '@/lib/api';
 import { invalidateViewer, ROLE_LABEL, StaffRole } from '@/lib/clinical';
 import { fetchLegalTerms, invalidateTermsStatus, LegalDocument, registrationErrorMessage, toAcceptedTerm, useInviteToken } from '@/lib/legal';
@@ -21,6 +21,7 @@ export default function JoinPage() {
   const [docs, setDocs] = useState<LegalDocument[]>([]);
   const [termsState, setTermsState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [showTermsErrors, setShowTermsErrors] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState<JoinResponse | null>(null);
@@ -30,8 +31,12 @@ export default function JoinPage() {
   const loadTerms = useCallback(async () => {
     setTermsState('loading');
     try {
-      setDocs(await fetchLegalTerms());
+      const current = await fetchLegalTerms();
+      // Sin documentos vigentes no hay nada que aceptar y la API rechazaría el alta.
+      if (current.length === 0) throw new Error('sin condiciones');
+      setDocs(current);
       setChecked({});
+      setShowTermsErrors(false);
       setTermsState('ready');
     } catch {
       setTermsState('error');
@@ -66,8 +71,10 @@ export default function JoinPage() {
       setError('La contraseña debe tener al menos 12 caracteres.');
       return;
     }
-    if (docs.length === 0 || docs.some((doc) => checked[doc.documentType] !== true)) {
-      setError('Para crear la cuenta tienes que aceptar todas las condiciones.');
+    const missingTerms = missingTermsMessage(docs, checked);
+    if (missingTerms) {
+      setShowTermsErrors(true);
+      setError(missingTerms);
       return;
     }
     const body: RegisterMemberRequestContract = {
@@ -128,14 +135,14 @@ export default function JoinPage() {
                 <h2 id="privacy-notice-title" style={{ marginBottom: 4 }}>{notice.title}</h2>
                 <small className="muted">
                   Versión {notice.version}. Es la política que has aceptado al crear tu cuenta; puedes volver a
-                  leerla cuando quieras en la página de condiciones.
+                  leerla cuando quieras en <Link href="/legal">la página de condiciones</Link>.
                 </small>
               </div>
               {notice.draft && (
                 <div className="e1-notice" role="note">
                   <div>
-                    <strong>Texto en borrador</strong>
-                    <p>Este documento aún es un borrador sin validez legal; recibirás la versión definitiva.</p>
+                    <strong>Texto pendiente de completar</strong>
+                    <p>A este documento aún le faltan datos, así que todavía no es la versión definitiva.</p>
                   </div>
                 </div>
               )}
@@ -159,6 +166,10 @@ export default function JoinPage() {
           Te han invitado a formar parte del equipo de una consulta en AsePsico. Usa el mismo correo al que te llegó la
           invitación; tu rol ya viene indicado en ella.
         </p>
+        <p className="muted">
+          Cada persona del equipo acepta las condiciones por sí misma: antes de crear tu cuenta, lee las condiciones de
+          uso del piloto y la política de privacidad y marca sus casillas.
+        </p>
         <form onSubmit={submit}>
           <label className="field">Nombre<input name="firstName" autoComplete="given-name" required minLength={2} maxLength={100} /></label>
           <label className="field">Apellidos<input name="lastName" autoComplete="family-name" required minLength={2} maxLength={100} /></label>
@@ -173,7 +184,7 @@ export default function JoinPage() {
             <div className="e1-notice danger" role="alert">
               <div>
                 <strong>No se han podido cargar las condiciones</strong>
-                <p>Sin ellas no se puede completar el alta.</p>
+                <p>Sin ellas no se puede completar el alta. Comprueba tu conexión y vuelve a intentarlo.</p>
               </div>
               <div className="e1-notice-actions">
                 <button type="button" className="button secondary" onClick={loadTerms}>Reintentar</button>
@@ -181,7 +192,7 @@ export default function JoinPage() {
             </div>
           )}
           {termsState === 'ready' && (
-            <TermsChecklist docs={docs} checked={checked} onChange={setDocChecked} disabled={busy} idPrefix="join-terms" />
+            <TermsChecklist docs={docs} checked={checked} onChange={setDocChecked} disabled={busy} idPrefix="join-terms" showErrors={showTermsErrors} />
           )}
           {error && <p className="error" role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}
           <button className="button" type="submit" disabled={busy || termsState !== 'ready'}>{busy ? 'Creando cuenta…' : 'Crear mi cuenta'}</button>
