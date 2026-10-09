@@ -5,7 +5,9 @@ import {
   assertDemoEnvironment, assertEncryptionConfigured, assertEncryptionKeyMatchesDatabase, assertNoRealPatients,
   DemoRefusal, isLocalDatabaseUrl, parseTargetArgs, resolveDemoTarget, safeErrorMessage,
 } from '../prisma/scripts/demo/demo-guards';
-import { demoPatientEmail, randomPassword } from '../prisma/scripts/demo/demo-writer';
+import { demoPatientEmail, emptyCounts, randomPassword, writeDemoPatient } from '../prisma/scripts/demo/demo-writer';
+import { assertPurgeable, purgeDemoData, storageKeyFingerprint } from '../prisma/scripts/demo/demo-purge';
+import { assertNoActiveDemoMembers } from '../src/patients/demo-workspace.util';
 import { encryptField } from '../src/common/crypto/field-encryption';
 
 /**
@@ -75,8 +77,21 @@ describe('Espacio demo: barreras de seguridad del script', () => {
     const foreign = 'enc:v1:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AAAA';
     const db = (value: string | null) => new Proxy({}, { get: (_t, model: string) => ({ findFirst: async () => (value ? { notes: value, internalNotes: value, consultationReason: value, body: value, currentProblem: value } : null) }) });
     await expect(assertEncryptionKeyMatchesDatabase(db(foreign) as any)).rejects.toThrow(/no descifra/);
-    await expect(assertEncryptionKeyMatchesDatabase(db(encryptField('ok')!) as any)).resolves.toBeUndefined();
-    await expect(assertEncryptionKeyMatchesDatabase(db(null) as any)).resolves.toBeUndefined();
+    await expect(assertEncryptionKeyMatchesDatabase(db(encryptField('ok')!) as any)).resolves.toMatchObject({ ok: 5 });
+    // BD local sin datos cifrados: se permite (no hay con qué comparar, pero es local).
+    await expect(assertEncryptionKeyMatchesDatabase(db(null) as any, { env: { DATABASE_URL: 'postgresql://u:p@localhost/x' } as any })).resolves.toMatchObject({ checked: 0 });
+  });
+
+  it('BD remota sin ningún dato cifrado: se niega salvo confirmación explícita (canario de la clave)', async () => {
+    const empty = new Proxy({}, { get: () => ({ findFirst: async () => null }) });
+    const remote = { DATABASE_URL: 'postgresql://u:p@db.remoto.example:5432/x' } as any;
+    await expect(assertEncryptionKeyMatchesDatabase(empty as any, { env: remote })).rejects.toThrow(/--primeros-datos-cifrados/);
+    await expect(assertEncryptionKeyMatchesDatabase(empty as any, { env: remote, allowNoSamples: true })).resolves.toMatchObject({ checked: 0 });
+    expect(read('seed-demo-workspace.ts')).toMatch(/allowNoSamples: process\.argv\.includes\(ALLOW_FIRST_ENCRYPTED_DATA_FLAG\)/);
+  });
+
+  it('hace siempre una prueba de cifrado de ida y vuelta antes de escribir', () => {
+    expect(read('demo/demo-guards.ts')).toMatch(/decryptFieldStrict\(encryptField\(probe\)!\) === probe/);
   });
 
   it('los errores nunca vuelcan detalles (solo el mensaje propio o el código de Prisma)', () => {
@@ -144,7 +159,7 @@ describe('Espacio demo: el contenido sembrado es claramente inventado', () => {
 
 describe('Espacio demo: escrituras acotadas y marcadas', () => {
   it('el purge solo borra pacientes y usuarios marcados como demo, acotado al workspace', () => {
-    const purge = read('purge-demo-workspace.ts');
+    const purge = read('demo/demo-purge.ts');
     expect(purge).toMatch(/patient\.deleteMany\(\{ where: \{ workspaceId, isDemo: true/);
     expect(purge).toMatch(/user\.deleteMany\(\{ where: \{ id: member\.userId, isDemo: true \} \}\)/);
     expect(purge).toMatch(/user\.updateMany\(\{\s*where: \{ id: member\.userId, isDemo: true \}/);
@@ -152,7 +167,7 @@ describe('Espacio demo: escrituras acotadas y marcadas', () => {
       expect(m[2]).toMatch(/workspaceId|inPatients|isDemo: true|userId: member\.userId/);
     }
     expect(purge).not.toMatch(/workspace\.delete/);
-    expect(purge).toMatch(/--yes/);
+    expect(read('purge-demo-workspace.ts')).toMatch(/--yes/);
   });
 
   it('el seed marca a pacientes y usuarios como demo, deja DEMO_SEED y solo imprime contraseñas en un sitio', () => {
@@ -175,5 +190,124 @@ describe('Espacio demo: escrituras acotadas y marcadas', () => {
     }
     expect(writer).toMatch(/answers: encryptJsonField/);
     expect(writer).toMatch(/result: encryptAssessmentResult/);
+  });
+});
+
+/** tx falso que registra cada llamada (modelo.método) y devuelve valores neutros. */
+function recordingTx(overrides: Record<string, any> = {}) {
+  const calls: { op: string; args: any }[] = [];
+  let n = 0;
+  const tx: any = new Proxy({}, {
+    get: (_t, model: string) => {
+      if (model === '__calls') return calls;
+      if (model === '$queryRaw') return overrides.$queryRaw ?? (async () => [{ exists: false }]);
+      if (model === '$executeRaw') return async (...args: any[]) => { calls.push({ op: '$executeRaw', args }); return 2; };
+      return new Proxy({}, {
+        get: (_m, method: string) => async (args: any) => {
+          calls.push({ op: `${model}.${method}`, args });
+          const key = `${model}.${method}`;
+          if (key in overrides) return typeof overrides[key] === 'function' ? overrides[key](args) : overrides[key];
+          if (method === 'count') return 0;
+          if (method === 'findMany') return [];
+          if (method.endsWith('Many')) return { count: 0 };
+          return { id: `${model}-${++n}` };
+        },
+      });
+    },
+  });
+  return tx;
+}
+
+describe('Espacio demo: purge con facturas, almacenamiento y solicitudes de derechos', () => {
+  it('se niega si hay facturas de pacientes demo que no son borrador (correlatividad) y no borra nada', async () => {
+    expect(() => assertPurgeable({ nonDraftInvoices: 1 })).toThrow(/numeración/);
+    const tx = recordingTx({ 'patient.findMany': [{ id: 'p-1' }], 'invoice.count': (args: any) => (args.where.status ? 1 : 0) });
+    await expect(purgeDemoData(tx, 'ws-1')).rejects.toThrow(DemoRefusal);
+    expect(tx.__calls.filter((c: any) => /delete|update|create|executeRaw/i.test(c.op))).toEqual([]);
+  });
+
+  it('solo borra facturas en borrador y DEMO_PURGE lleva huellas de las claves, nunca las claves', async () => {
+    const tx = recordingTx({
+      'patient.findMany': [{ id: 'p-1' }],
+      'patientDocument.findMany': [{ storageKey: 'ws-1/p-1/informe-de-alguien.pdf' }],
+      'message.findMany': [{ attachmentKey: 'ws-1/adjunto.png' }],
+    });
+    const { counts, storageKeys } = await purgeDemoData(tx, 'ws-1');
+    expect(storageKeys).toEqual(['ws-1/p-1/informe-de-alguien.pdf', 'ws-1/adjunto.png']);
+    const invoiceDelete = tx.__calls.find((c: any) => c.op === 'invoice.deleteMany');
+    expect(invoiceDelete.args.where).toEqual({ workspaceId: 'ws-1', patientId: { in: ['p-1'] }, status: 'DRAFT' });
+    const audit = tx.__calls.find((c: any) => c.op === 'auditLog.create').args.data;
+    expect(audit.action).toBe('DEMO_PURGE');
+    expect(JSON.stringify(audit.metadata)).not.toMatch(/informe|adjunto|ws-1\//);
+    expect(audit.metadata.storageKeyFingerprints).toEqual(['ws-1/p-1/informe-de-alguien.pdf', 'ws-1/adjunto.png'].map(storageKeyFingerprint));
+    expect(counts.storageObjects).toBe(2);
+  });
+
+  it('si existe DataRightsRequest (RESTRICT), borra primero las solicitudes de pacientes demo, acotadas al workspace', async () => {
+    const tx = recordingTx({ 'patient.findMany': [{ id: 'p-1' }], $queryRaw: async () => [{ exists: true }] });
+    const { counts } = await purgeDemoData(tx, 'ws-1');
+    const ops = tx.__calls.map((c: any) => c.op);
+    expect(ops.indexOf('$executeRaw')).toBeGreaterThanOrEqual(0);
+    expect(ops.indexOf('$executeRaw')).toBeLessThan(ops.indexOf('patient.deleteMany'));
+    const sql = tx.__calls.find((c: any) => c.op === '$executeRaw').args[0].join('?');
+    expect(sql).toMatch(/DELETE FROM "DataRightsRequest" WHERE "workspaceId" = \? AND "patientId" = ANY\(\?::text\[\]\)/);
+    expect(tx.__calls.find((c: any) => c.op === '$executeRaw').args.slice(1)).toEqual(['ws-1', ['p-1']]);
+    expect(counts.dataRightsRequests).toBe(2);
+  });
+
+  it('sin la tabla DataRightsRequest no ejecuta SQL', async () => {
+    const tx = recordingTx({ 'patient.findMany': [{ id: 'p-1' }] });
+    await purgeDemoData(tx, 'ws-1');
+    expect(tx.__calls.some((c: any) => c.op === '$executeRaw')).toBe(false);
+  });
+
+  it('el seed no crea facturas (y por tanto nunca emitidas)', () => {
+    expect(read('demo/demo-writer.ts')).not.toMatch(/invoice/i);
+    expect(read('seed-demo-workspace.ts')).not.toMatch(/invoice\./);
+  });
+});
+
+describe('Espacio demo: E1 del dataset', () => {
+  it('el titular no tiene procesos ni sesiones con los pacientes del terapeuta (y viceversa)', async () => {
+    const ctx = { workspaceId: 'ws-1', now: new Date('2026-10-09T10:00:00Z'), clinicianIds: { OWNER: 'owner-1', THERAPIST: 'therapist-1' } };
+    for (const [index, spec] of DEMO_PATIENTS.entries()) {
+      const tx = recordingTx();
+      await writeDemoPatient(tx, ctx, spec, index, emptyCounts());
+      const expected = spec.clinician === 'OWNER' ? 'owner-1' : 'therapist-1';
+      const rows = tx.__calls.filter((c: any) => c.op === 'clinicalProcess.create' || c.op === 'session.create').map((c: any) => c.args.data);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.therapistId).toBe(expected);
+        expect(row.workspaceId).toBe('ws-1');
+      }
+      const professionalMessages = tx.__calls.filter((c: any) => c.op === 'message.create' && c.args.data.senderType === 'PROFESSIONAL');
+      for (const m of professionalMessages) expect(m.args.data.senderUserId).toBe(expected);
+    }
+    expect(DEMO_PATIENTS.filter((p) => p.clinician === 'THERAPIST').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('Espacio demo: cuentas demo y pacientes reales', () => {
+  const db = (members: number) => ({ workspaceMember: { count: jest.fn(async () => members) } }) as any;
+
+  it('fuera del entorno demo, con miembros demo activos, no se da de alta ningún paciente (409 DEMO_MEMBERS_ACTIVE)', async () => {
+    const error: any = await assertNoActiveDemoMembers(db(1), 'ws-1', { DEMO_ENVIRONMENT: 'false' } as any).catch((e) => e);
+    expect(error?.getStatus()).toBe(409);
+    expect(error.getResponse()).toMatchObject({ code: 'DEMO_MEMBERS_ACTIVE', message: expect.stringMatching(/db:purge-demo-workspace/) });
+  });
+
+  it('fuera del entorno demo y sin miembros demo, sí', async () => {
+    const counter = db(0);
+    await expect(assertNoActiveDemoMembers(counter, 'ws-1', { DEMO_ENVIRONMENT: 'false' } as any)).resolves.toBeUndefined();
+    expect(counter.workspaceMember.count).toHaveBeenCalledWith({ where: { workspaceId: 'ws-1', user: { isDemo: true } } });
+  });
+
+  it('en el entorno demo los invitados pueden crear sus pacientes inventados', async () => {
+    await expect(assertNoActiveDemoMembers(db(2), 'ws-1', { DEMO_ENVIRONMENT: 'true' } as any)).resolves.toBeUndefined();
+  });
+
+  it('el alta de pacientes lo comprueba dentro de la transacción, antes de crear', () => {
+    const src = readFileSync(join(__dirname, '..', 'src', 'patients', 'patient-core.service.ts'), 'utf8');
+    expect(src).toMatch(/await assertNoActiveDemoMembers\(tx, workspaceId\);\s*const patient = await tx\.patient\.create/);
   });
 });
