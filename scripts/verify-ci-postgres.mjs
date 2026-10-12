@@ -162,4 +162,67 @@ if (landingBuildIndex < qualityIndex || landingBuildIndex > postgresIntegrationI
   throw new Error('El job quality debe comprobar que apps/landing/build.mjs falla sin LEGAL_TITULAR_NIF ni LEGAL_TITULAR_DOMICILIO');
 }
 
-console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);
+// Pasos que deben poder romper el job (QA, revisión del CI de la S3): se localiza cada paso por su
+// nombre y se comprueba su bloque, no el texto suelto del workflow (un comando comentado, un
+// `if: false` o un `continue-on-error` dejarían el paso en verde sin ejecutar nada).
+if (/^\s*continue-on-error:/m.test(workflow)) {
+  throw new Error('El workflow no debe usar continue-on-error: un paso que falla tiene que romper el job');
+}
+function stepsOf(job) {
+  const start = workflow.search(new RegExp(`^  ${job}:\\s*$`, 'm'));
+  if (start < 0) throw new Error(`No existe el job ${job}`);
+  const rest = workflow.slice(start + 1);
+  const next = rest.search(/^  [\w-]+:\s*$/m);
+  const body = next < 0 ? rest : rest.slice(0, next);
+  return body.split(/^(?=      - name: )/m).slice(1).map((block) => ({
+    name: block.match(/^      - name: (.+)$/m)[1].trim(),
+    block,
+    // Sin comentarios YAML de línea completa (los que empiezan por # tras la sangría).
+    code: block.replace(/^\s*#.*$/gm, ''),
+  }));
+}
+function requiredStep(job, name, command) {
+  const step = stepsOf(job).find((candidate) => candidate.name === name);
+  if (!step) throw new Error(`Falta el paso "${name}" en el job ${job}`);
+  if (/^\s{8}if:/m.test(step.block)) throw new Error(`El paso "${name}" no puede llevar if: (se omitiría en silencio)`);
+  const lines = step.code.split('\n').map((line) => line.trim());
+  if (!lines.some((line) => line === command || line === `run: ${command}`)) {
+    throw new Error(`El paso "${name}" debe ejecutar exactamente: ${command}`);
+  }
+  return step;
+}
+requiredStep('quality', 'Web unit tests', 'npm --workspace @asepsico/web run test -- --ci');
+requiredStep('postgres-integration', 'Session close race test (real PostgreSQL)',
+  'npm --workspace @asepsico/api run test:security -- --ci --testPathPattern session-close-race');
+requiredStep('postgres-integration', 'Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)',
+  'node scripts/verify-billing-assistant-live.mjs');
+const landingStep = requiredStep('quality', 'Landing build fails closed without legal holder variables',
+  'env -u LEGAL_TITULAR_NIF -u LEGAL_TITULAR_DOMICILIO node apps/landing/build.mjs --out "$out"');
+// Las dos ramas de error terminan en exit 1 y la única salida con 0 antes del build es la omisión
+// mientras build.mjs no esté en la rama.
+if (!/if \[ "\$status" -eq 0 \]; then\n\s*echo "::error[^\n]*\n\s*exit 1\n\s*fi/.test(landingStep.code) ||
+    !/find "\$out" -name '\*\.html' \| grep -q \.; then\n\s*echo "::error[^\n]*\n\s*exit 1\n\s*fi/.test(landingStep.code)) {
+  throw new Error('El paso de la landing debe salir con 1 si build.mjs termina con 0 o si deja HTML');
+}
+if ((landingStep.code.match(/exit 0/g) ?? []).length !== 1 ||
+    !/if \[ ! -f apps\/landing\/build\.mjs \]; then\n\s*echo "::notice[^\n]*\n\s*exit 0\n\s*fi/.test(landingStep.code)) {
+  throw new Error('El paso de la landing solo puede omitirse (exit 0) cuando falta apps/landing/build.mjs');
+}
+if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(stepsOf('postgres-integration').find((step) => step.name.startsWith('Session close race')).code)) {
+  throw new Error('RACE_DATABASE_REQUIRED=1 debe ir en el propio paso session-close-race');
+}
+
+// Comprobación FUNCIONAL de la web, como la de apps/api: el comando de la CI encuentra pruebas.
+let listedWebTests;
+try {
+  listedWebTests = execFileSync('npm', ['--workspace', '@asepsico/web', 'run', 'test', '--', '--listTests'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+} catch (error) {
+  throw new Error(`El script "test" de apps/web no se pudo ejecutar: ${error.stderr || error.message}`);
+}
+const webTestFiles = listedWebTests.split('\n').filter((line) => line.trim().endsWith('.ts'));
+if (webTestFiles.length === 0) {
+  throw new Error('El script "test" de apps/web no encontró ningún archivo de test');
+}
+
+console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test de la API y ${webTestFiles.length} de la web detectados de verdad.`);
