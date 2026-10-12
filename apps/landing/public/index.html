@@ -107,9 +107,8 @@
         </ul>
       </nav>
       <a class="btn btn--primary btn--sm"
-         data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+         data-cta href="#apuntate">
         <span class="only-wide">Apúntate a la lista de espera</span><span class="only-narrow">Lista de espera</span>
-        <span class="visually-hidden">(se abre en una pestaña nueva)</span>
       </a>
     </div>
   </header>
@@ -124,10 +123,9 @@
           <p class="hero__lead">Tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
           <div class="hero__actions">
             <a class="btn btn--primary btn--lg"
-               data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+               data-cta href="#apuntate">
               Apúntate a la lista de espera
               <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
-              <span class="visually-hidden">(se abre en una pestaña nueva)</span>
             </a>
           </div>
           <ul class="trust">
@@ -536,9 +534,8 @@
               <p class="savings__close">Estamos construyendo AsePsico. En el piloto, que es gratuito, queremos medir con quienes lo usen si este tiempo cambia y cuánto. Apúntate a la lista de espera.</p>
               <div class="savings__actions">
                 <a class="btn btn--primary"
-                   data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+                   data-cta href="#apuntate">
                   Apuntarme a la lista de espera
-                  <span class="visually-hidden">(se abre en una pestaña nueva)</span>
                 </a>
                 <a class="btn btn--outline" href="#como-funciona">Ver cómo funciona</a>
               </div>
@@ -654,12 +651,129 @@
               <li>Lo usas y nos cuentas.</li>
             </ol>
             <a class="btn btn--primary btn--block"
-               data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
-              Apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
+               data-cta href="#apuntate">
+              Apúntate a la lista de espera
             </a>
             <p class="small center">El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
           </div>
         </article>
+      </div>
+    </section>
+
+    <!-- APÚNTATE: formulario propio de la lista de espera (interruptor FEATURES.ownWaitlistForm en
+         js/config.js; si se apaga, esta sección se quita y los botones vuelven al Google Form).
+         Se envía con fetch a la API (contrato en docs/WAITLIST_API.md): sin cookies, sin guardar nada
+         en el navegador y sin terceros. El token se pide al enfocar el formulario, no al cargar.
+         Sin JavaScript no se puede enviar (CSP form-action 'none'): se ve el aviso y los campos
+         desactivados. Textos legales: política lista-espera-v2 de Lex Psi (§2). -->
+    <section class="section section--soft grain" id="apuntate" aria-labelledby="apuntate-titulo" data-feature="ownWaitlistForm">
+      <div class="container waitlist">
+        <div class="waitlist__intro">
+          <span class="pilot__tag">Lista de espera</span>
+          <!-- [CLIO] Titular y entradilla de la sección -->
+          <h2 id="apuntate-titulo" class="display display--md">Apúntate a la lista de espera</h2>
+          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Déjanos tus datos y te escribiremos.</p>
+          <p class="small">Los campos marcados con <span aria-hidden="true">*</span><span class="visually-hidden">asterisco</span> son obligatorios.</p>
+        </div>
+
+        <div class="waitlist__box">
+          <form class="waitlist__form" data-waitlist-form novalidate aria-labelledby="apuntate-titulo">
+            <p class="waitlist__notice" data-waitlist-nojs>Para enviar el formulario necesitas tener JavaScript activado en el navegador. Si no puedes, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
+
+            <fieldset class="waitlist__fields" data-waitlist-fields disabled>
+              <legend class="visually-hidden">Tus datos para la lista de espera</legend>
+
+              <div class="sfield">
+                <label for="wl-name">Nombre <span class="req" aria-hidden="true">*</span></label>
+                <input id="wl-name" name="name" type="text" autocomplete="name" required maxlength="120"
+                       aria-describedby="wl-name-err" data-wl-field="name">
+                <p class="sfield__err" id="wl-name-err" hidden></p>
+              </div>
+
+              <div class="sfield">
+                <label for="wl-email">Email <span class="req" aria-hidden="true">*</span></label>
+                <input id="wl-email" name="email" type="email" inputmode="email" autocomplete="email" required maxlength="254"
+                       spellcheck="false" autocapitalize="off" aria-describedby="wl-email-err" data-wl-field="email">
+                <p class="sfield__err" id="wl-email-err" hidden></p>
+              </div>
+
+              <fieldset class="sfield wl-choices" aria-describedby="wl-situation-err" data-wl-group="situation">
+                <legend class="sfield__title">¿Cuál es tu situación? <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></legend>
+                <div class="wl-choices__grid">
+                  <label class="wl-choice"><input type="radio" name="situation" value="SELF_EMPLOYED" required> Autónomo/a</label>
+                  <label class="wl-choice"><input type="radio" name="situation" value="PRACTICE"> Consulta o clínica</label>
+                  <label class="wl-choice"><input type="radio" name="situation" value="STUDENT"> Estudiante</label>
+                  <label class="wl-choice"><input type="radio" name="situation" value="OTHER"> Otra situación</label>
+                </div>
+                <p class="sfield__err" id="wl-situation-err" hidden></p>
+              </fieldset>
+
+              <!-- Solo se muestra si elige "Consulta o clínica" (sin JavaScript queda visible). -->
+              <div class="sfield" data-wl-count-wrap>
+                <label for="wl-count">¿Cuántos profesionales sois? <span class="opt">(opcional)</span></label>
+                <input id="wl-count" name="professionalsCount" type="number" inputmode="numeric" min="1" max="500" step="1"
+                       autocomplete="off" aria-describedby="wl-count-err" data-wl-field="professionalsCount">
+                <p class="sfield__err" id="wl-count-err" hidden></p>
+              </div>
+
+              <div class="sfield">
+                <label for="wl-tools">¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></label>
+                <p class="sfield__help" id="wl-tools-help">Solo herramientas o programas (agenda en papel, Excel, un software de gestión…). No incluyas datos de pacientes.</p>
+                <textarea id="wl-tools" name="tools" rows="3" maxlength="500" autocomplete="off"
+                          aria-describedby="wl-tools-help wl-tools-err" data-wl-field="tools"></textarea>
+                <p class="sfield__err" id="wl-tools-err" hidden></p>
+              </div>
+
+              <div class="sfield">
+                <label for="wl-source">¿Cómo nos has conocido? <span class="opt">(opcional)</span></label>
+                <select id="wl-source" name="source" data-wl-field="source">
+                  <option value="">Elige una opción</option>
+                  <option value="INSTAGRAM">Instagram</option>
+                  <option value="COLLEAGUE">Un compañero o compañera</option>
+                  <option value="PROFESSIONAL_COLLEGE">Mi Colegio profesional</option>
+                  <option value="SEARCH_ENGINE">Un buscador (Google, Bing…)</option>
+                  <option value="OTHER">Otro</option>
+                  <option value="NOT_SAID">Prefiero no decirlo</option>
+                </select>
+              </div>
+
+              <!-- Campo trampa para robots (honeypot): oculto con CSS y fuera del orden de tabulación. -->
+              <div class="wl-hp" aria-hidden="true">
+                <label for="wl-website">Deja este campo vacío</label>
+                <input id="wl-website" name="website" type="text" tabindex="-1" autocomplete="off" data-wl-field="website">
+              </div>
+
+              <!-- [LEX] Casilla 1 (§2.2): obligatoria y sin premarcar. -->
+              <div class="wl-check">
+                <input id="wl-privacy" name="privacyAccepted" type="checkbox" required aria-describedby="wl-privacy-err" data-wl-field="privacyAccepted">
+                <label for="wl-privacy">He leído la <a data-form-privacy href="/privacidad-lista-espera/">política de privacidad</a> y acepto que se traten mis datos para gestionar la lista de espera y contactarme sobre el piloto de AsePsico. <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></label>
+              </div>
+              <p class="sfield__err wl-check__err" id="wl-privacy-err" hidden></p>
+
+              <!-- [LEX] Casilla 2 (§2.3): opcional, sin premarcar y separada de la 1. Solo registra la
+                   SOLICITUD (commercialConsentRequested); se confirma después por email (doble opt-in manual). -->
+              <div class="wl-check wl-check--sep">
+                <input id="wl-commercial" name="commercialConsentRequested" type="checkbox" data-wl-field="commercialConsentRequested">
+                <label for="wl-commercial">Quiero recibir por email novedades y ofertas de AsePsico para profesionales. Te pediremos que lo confirmes por email y podrás darte de baja en cualquier momento. <span class="opt">(Opcional)</span></label>
+              </div>
+
+              <!-- [LEX] Cláusula informativa breve, primera capa (§2.1), junto al botón. -->
+              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento; y, solo si marcas la casilla opcional y lo confirmas por email, para enviarte novedades y ofertas. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
+
+              <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
+              <p class="wl-status" role="status" aria-live="polite" data-wl-status></p>
+            </fieldset>
+          </form>
+
+          <!-- Mensaje tras el 202: siempre el mismo (no dice si el email ya estaba apuntado). -->
+          <div class="waitlist__done" data-wl-done tabindex="-1" hidden>
+            <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
+            <h3 class="waitlist__done-title">Gracias</h3>
+            <p>Si los datos son correctos, te escribiremos a tu email.</p>
+            <p data-wl-done-commercial hidden>Si marcaste la casilla de novedades, te escribiremos para que la confirmes.</p>
+            <p class="small">Si quieres corregir algún dato o borrarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -679,7 +793,7 @@
           <p>Lo que pasa entre sesiones también es parte del trabajo.</p>
           <p>Por eso AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
           <p>Todavía no está abierto al público: empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
-          <p>Si te interesa, <a data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">apúntate a la lista de espera<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a>.</p>
+          <p>Si te interesa, <a data-cta href="#apuntate">apúntate a la lista de espera</a>.</p>
         </div>
       </div>
     </section>
@@ -738,10 +852,9 @@
         <h2 id="final-titulo" class="display display--lg">Piloto gratuito para psicólogos</h2>
         <p class="lead">Estamos construyendo AsePsico. Apúntate a la lista de espera.</p>
         <a class="btn btn--light btn--lg"
-           data-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
+           data-cta href="#apuntate">
           Apúntate a la lista de espera
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg>
-          <span class="visually-hidden">(se abre en una pestaña nueva)</span>
         </a>
         <p class="small">El formulario tiene su propia política de privacidad. <a data-form-privacy href="/privacidad-lista-espera/">Leer la política de privacidad del formulario</a></p>
       </div>
@@ -751,7 +864,8 @@
   <!-- AVISO DE LA LISTA DE ESPERA (interruptor FEATURES.leadPopup en js/config.js).
        Sale solo al pasar el 50 % del scroll, sin temporizador y sin ser modal (no tapa el contenido al
        entrar: criterio de intersticial intrusivo de Google). En móvil es una barra pequeña abajo.
-       No recoge datos: el botón abre el formulario, que tiene su propia información de privacidad.
+       No recoge datos: el botón lleva al formulario de la sección #apuntate (o al Google Form si
+       FEATURES.ownWaitlistForm está apagado), que tiene su propia información de privacidad.
        No guarda nada en el navegador: se muestra una vez por visita. -->
   <div class="leadpop" data-lead hidden>
     <aside class="leadpop__card" aria-labelledby="lead-titulo" data-lead-card>
@@ -762,8 +876,8 @@
       <h2 id="lead-titulo" class="leadpop__title" data-lead-title></h2>
       <p class="leadpop__text">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
       <div class="leadpop__actions">
-        <a class="btn btn--primary" data-cta data-lead-cta href="https://forms.gle/ceKKYV85j1rq4EHZ9" target="_blank" rel="noopener noreferrer">
-          Apuntarme<span class="visually-hidden"> (se abre en una pestaña nueva)</span>
+        <a class="btn btn--primary" data-cta data-lead-cta href="#apuntate">
+          Apuntarme
         </a>
         <button type="button" class="btn btn--ghost leadpop__later" data-lead-close>Ahora no</button>
       </div>
@@ -777,7 +891,7 @@
         <ul class="footer__links">
           <li><a href="/aviso-legal/">Aviso legal</a></li>
           <li><a href="/privacidad/">Política de privacidad</a></li>
-          <li><a href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
+          <li><a data-form-privacy href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
           <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com" aria-describedby="contacto-aviso">Contacto</a></li>
           <!-- Interruptor FEATURES.instagram en js/config.js (apagado hasta corregir la bio) -->
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>

@@ -1,5 +1,7 @@
 /*
- * AsePsico · landing. JavaScript mínimo, sin dependencias ni peticiones de red.
+ * AsePsico · landing. JavaScript mínimo, sin dependencias.
+ * La única petición de red es la del formulario de la lista de espera (bloque 8) a la API propia
+ * (cfg.WAITLIST_API_URL), y solo cuando alguien lo usa. Sin cookies ni almacenamiento.
  * La página funciona sin él: los enlaces llevan su href y las respuestas se ven abiertas.
  * No toca la URL (las UTM se quedan tal cual para que Plausible las lea).
  */
@@ -40,12 +42,22 @@
   }
 
   /* 2. Enlaces a la lista de espera y contacto -------------------------- */
+  // Con FEATURES.ownWaitlistForm encendido, los botones llevan a la sección #apuntate (es su href en
+  // el HTML). Apagado (red de seguridad), vuelven al Google Form en una pestaña nueva, con la política v1.
+  function ownForm() {
+    return features.ownWaitlistForm === true && !!document.getElementById('apuntate');
+  }
   function applyLinks() {
-    if (cfg.FORM_URL) {
+    var own = ownForm();
+    if (!own && /^https:\/\//.test(cfg.FORM_URL || '')) {
       document.querySelectorAll('a[data-cta]').forEach(function (a) {
         a.href = cfg.FORM_URL;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
+        var hint = document.createElement('span');
+        hint.className = 'visually-hidden';
+        hint.textContent = ' (se abre en una pestaña nueva)';
+        a.appendChild(hint);
       });
     }
     var email = (cfg.CONTACT_EMAIL || '').trim();
@@ -54,7 +66,7 @@
       document.querySelectorAll('[data-contact-link]').forEach(function (a) { a.href = 'mailto:' + email; });
     }
     // Política de privacidad del formulario (ruta de la propia web o URL https).
-    var policy = (cfg.FORM_PRIVACY_URL || '').trim();
+    var policy = ((own ? cfg.FORM_PRIVACY_URL : cfg.FORM_PRIVACY_URL_FALLBACK) || '').trim();
     if (/^(\/|https:\/\/)/.test(policy)) {
       document.querySelectorAll('[data-form-privacy]').forEach(function (a) { a.href = policy; });
     }
@@ -507,7 +519,7 @@
     }
 
     root.querySelectorAll('[data-lead-close]').forEach(function (b) { b.addEventListener('click', function () { close(false); }); });
-    // Al pulsar "Apuntarme" se abre el formulario en otra pestaña y el aviso se cierra.
+    // Al pulsar "Apuntarme" se va al formulario (sección #apuntate o Google Form) y el aviso se cierra.
     var cta = root.querySelector('[data-lead-cta]');
     if (cta) cta.addEventListener('click', function () { setTimeout(function () { close(false); }, 0); });
     // Si la persona ya ha ido al formulario desde otro botón, no se le vuelve a ofrecer.
@@ -517,14 +529,297 @@
 
     // Mientras la calculadora está en pantalla, el aviso se aparta (sin cerrarse) para no tapar las
     // cifras ni la salvedad de los euros. Al salir de ella, vuelve si no se había cerrado.
-    var calc = document.getElementById('estimacion');
-    if (calc && 'IntersectionObserver' in window) {
-      new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) { root.classList.toggle('is-away', e.isIntersecting); });
-      }, { threshold: 0 }).observe(calc);
+    // Lo mismo con el formulario de la lista de espera: no tiene sentido ofrecerlo encima de él.
+    var away = ['estimacion', 'apuntate'].map(function (id) { return document.getElementById(id); })
+      .filter(Boolean);
+    if (away.length && 'IntersectionObserver' in window) {
+      var inView = {};
+      var obs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { inView[e.target.id] = e.isIntersecting; });
+        root.classList.toggle('is-away', Object.keys(inView).some(function (k) { return inView[k]; }));
+      }, { threshold: 0 });
+      away.forEach(function (el) { obs.observe(el); });
     }
 
     window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  /* 8. Formulario propio de la lista de espera ------------------------------- */
+  // Contrato: docs/WAITLIST_API.md. Todo con fetch (CSP: connect-src a la API y form-action 'none'),
+  // sin cookies (credentials: 'omit') y sin guardar nada en el navegador. El token se pide la primera
+  // vez que se enfoca el formulario (no al cargar la página) y no se envía antes de minSeconds.
+  // Tras el 202 se muestra siempre el mismo mensaje: nunca se dice si el email ya estaba apuntado.
+  function initWaitlist() {
+    var section = document.getElementById('apuntate');
+    if (!section || features.ownWaitlistForm !== true) return;
+    var form = section.querySelector('[data-waitlist-form]');
+    var fields = section.querySelector('[data-waitlist-fields]');
+    var nojs = section.querySelector('[data-waitlist-nojs]');
+    var done = section.querySelector('[data-wl-done]');
+    var status = section.querySelector('[data-wl-status]');
+    var submit = section.querySelector('[data-wl-submit]');
+    var countWrap = section.querySelector('[data-wl-count-wrap]');
+    if (!form || !fields || !done || !status || !submit) return;
+
+    var api = String(cfg.WAITLIST_API_URL || '').trim().replace(/\/+$/, '');
+    var version = String(cfg.WAITLIST_POLICY_VERSION || '').trim();
+    // Solo https (o http a localhost para probar en local con la API de desarrollo).
+    var apiOk = /^https:\/\/[a-z0-9.-]+(:\d+)?(\/|$)/i.test(api) ||
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(api);
+    if (!apiOk || !version || !window.fetch || !window.Promise || !window.JSON) return; // queda el aviso sin JS
+
+    var email = String(cfg.CONTACT_EMAIL || '').trim() || 'asepsico1@gmail.com';
+    var TIMEOUT_MS = 30000;            // Render puede tardar en despertar
+    var TOKEN_MAX_AGE_MS = 110 * 60000; // el token caduca a las 2 h: se renueva antes
+    var MSG = {
+      sending: 'Enviando tus datos…',
+      slow: 'Enviando tus datos… El servidor puede tardar unos segundos en responder.',
+      invalid: 'Revisa los campos marcados.',
+      rejected: 'No hemos podido apuntarte con esos datos. Revisa el formulario e inténtalo de nuevo.',
+      tooMany: 'Has hecho demasiados intentos. Prueba de nuevo en unos minutos.',
+      network: 'No hemos podido conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo en unos segundos. Si sigue sin funcionar, escríbenos a ' + email + '.',
+      generic: 'Algo ha fallado al enviar el formulario. Inténtalo de nuevo más tarde o escríbenos a ' + email + '.'
+    };
+
+    var token = null;
+    var tokenAt = 0;
+    var minMs = 3000;
+    var tokenPromise = null;
+    var busy = false;
+
+    function delay(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+    // Petición JSON con timeout. Devuelve { status, body } o rechaza con un error de red.
+    function request(path, opts) {
+      var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
+      var init = {
+        method: opts.method,
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+        headers: opts.headers,
+        body: opts.body
+      };
+      if (ctrl) init.signal = ctrl.signal;
+      function clear() { if (timer) clearTimeout(timer); }
+      return fetch(api + path, init).then(function (res) {
+        return res.text().then(function (txt) {
+          clear();
+          var body = null;
+          try { body = txt ? JSON.parse(txt) : null; } catch (e) { body = null; }
+          return { status: res.status, body: body };
+        });
+      }, function (err) { clear(); throw err; });
+    }
+
+    function getToken(force) {
+      if (!force && token && Date.now() - tokenAt < TOKEN_MAX_AGE_MS) return Promise.resolve();
+      if (tokenPromise) return tokenPromise;
+      tokenPromise = request('/public/waitlist/form-token', { method: 'GET', headers: { Accept: 'application/json' } })
+        .then(function (r) {
+          tokenPromise = null;
+          if (r.status === 200 && r.body && typeof r.body.formToken === 'string' && r.body.formToken) {
+            token = r.body.formToken;
+            tokenAt = Date.now();
+            var s = Number(r.body.minSeconds);
+            minMs = (isFinite(s) && s >= 0 && s <= 60 ? s : 3) * 1000;
+            return;
+          }
+          var e = new Error('form-token'); e.httpStatus = r.status; throw e;
+        }, function (err) { tokenPromise = null; throw err; });
+      return tokenPromise;
+    }
+
+    // Espera lo que falte para cumplir minSeconds desde que se emitió el token (con un margen).
+    function waitMin() {
+      var left = tokenAt + minMs + 300 - Date.now();
+      return left > 0 ? delay(left) : Promise.resolve();
+    }
+
+    function post(payload, retried) {
+      return getToken(false).then(waitMin).then(function () {
+        payload.formToken = token;
+        return request('/public/waitlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }).then(function (r) {
+        var code = r.status === 400 && r.body && r.body.code;
+        if (!retried && code === 'WAITLIST_FORM_TOO_FAST') {
+          return delay(minMs + 300).then(function () { return post(payload, true); });
+        }
+        if (!retried && code === 'WAITLIST_FORM_TOKEN_INVALID') {
+          token = null;
+          return getToken(true).then(function () { return post(payload, true); });
+        }
+        if (code === 'WAITLIST_FORM_TOKEN_INVALID' || code === 'WAITLIST_FORM_TOO_FAST') token = null;
+        return r;
+      });
+    }
+
+    /* Validación en el navegador, con las mismas reglas que la API. */
+    function q(sel) { return form.querySelector(sel); }
+    var inName = q('#wl-name');
+    var inEmail = q('#wl-email');
+    var inCount = q('#wl-count');
+    var inTools = q('#wl-tools');
+    var inSource = q('#wl-source');
+    var inHp = q('#wl-website');
+    var inPrivacy = q('#wl-privacy');
+    var inCommercial = q('#wl-commercial');
+    var situationGroup = q('[data-wl-group="situation"]');
+    var radios = Array.prototype.slice.call(form.querySelectorAll('input[name="situation"]'));
+
+    function errEl(id) { return document.getElementById(id); }
+    function setError(target, errId, msg) {
+      var err = errEl(errId);
+      if (err) { err.textContent = msg || ''; err.hidden = !msg; }
+      var list = target === situationGroup ? radios : [target];
+      list.forEach(function (el) {
+        if (msg) el.setAttribute('aria-invalid', 'true');
+        else el.removeAttribute('aria-invalid');
+      });
+      if (target === situationGroup) situationGroup.classList.toggle('is-invalid', !!msg);
+    }
+    function situation() {
+      for (var i = 0; i < radios.length; i++) if (radios[i].checked) return radios[i].value;
+      return '';
+    }
+    function syncCount() {
+      if (!countWrap) return;
+      var show = situation() === 'PRACTICE';
+      countWrap.hidden = !show;
+      if (!show && inCount) { inCount.value = ''; setError(inCount, 'wl-count-err', ''); }
+    }
+
+    function validate() {
+      var bad = [];
+      var name = inName.value.trim().replace(/\s+/g, ' ');
+      var mail = inEmail.value.trim();
+      var sit = situation();
+      var tools = inTools.value.trim();
+      var countRaw = inCount && !countWrap.hidden ? inCount.value.trim() : '';
+
+      var nameMsg = name.length < 2 ? 'Escribe tu nombre (al menos 2 letras).' :
+        name.length > 120 ? 'El nombre puede tener como máximo 120 caracteres.' : '';
+      setError(inName, 'wl-name-err', nameMsg); if (nameMsg) bad.push(inName);
+
+      var mailMsg = !mail ? 'Escribe tu email.' :
+        (mail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) ? 'Escribe un email válido, por ejemplo nombre@dominio.es.' : '';
+      setError(inEmail, 'wl-email-err', mailMsg); if (mailMsg) bad.push(inEmail);
+
+      var sitMsg = sit ? '' : 'Elige tu situación.';
+      setError(situationGroup, 'wl-situation-err', sitMsg); if (sitMsg) bad.push(radios[0]);
+
+      var count = null;
+      var countMsg = '';
+      if (countRaw) {
+        count = Number(countRaw);
+        if (!/^\d+$/.test(countRaw) || count < 1 || count > 500) countMsg = 'Escribe un número entero entre 1 y 500, o déjalo vacío.';
+      }
+      if (inCount) { setError(inCount, 'wl-count-err', countMsg); if (countMsg) bad.push(inCount); }
+
+      var toolsMsg = tools.length > 500 ? 'Puedes escribir como máximo 500 caracteres.' : '';
+      setError(inTools, 'wl-tools-err', toolsMsg); if (toolsMsg) bad.push(inTools);
+
+      var privMsg = inPrivacy.checked ? '' : 'Para apuntarte tienes que aceptar la política de privacidad.';
+      setError(inPrivacy, 'wl-privacy-err', privMsg); if (privMsg) bad.push(inPrivacy);
+
+      if (bad.length) { bad[0].focus(); return null; }
+
+      var payload = {
+        name: name,
+        email: mail,
+        situation: sit,
+        privacyAccepted: true,
+        privacyPolicyVersion: version,
+        commercialConsentRequested: inCommercial.checked === true,
+        website: inHp ? inHp.value : ''
+      };
+      if (tools) payload.tools = tools;
+      if (count !== null && !countMsg) payload.professionalsCount = count;
+      if (inSource && inSource.value) payload.source = inSource.value;
+      return payload;
+    }
+
+    function say(msg, kind) {
+      status.textContent = msg || '';
+      status.className = 'wl-status' + (kind ? ' wl-status--' + kind : '');
+    }
+    function setBusy(on) {
+      busy = on;
+      form.setAttribute('aria-busy', on ? 'true' : 'false');
+      submit.setAttribute('aria-disabled', on ? 'true' : 'false');
+      submit.textContent = on ? 'Enviando…' : 'Apuntarme a la lista de espera';
+    }
+    function showDone(commercial) {
+      var c = done.querySelector('[data-wl-done-commercial]');
+      if (c) c.hidden = !commercial;
+      form.reset();
+      form.hidden = true;
+      done.hidden = false;
+      done.focus();
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (busy) return;
+      say('');
+      var payload = validate();
+      if (!payload) { say(MSG.invalid, 'error'); return; }
+      setBusy(true);
+      say(MSG.sending);
+      var slowTimer = setTimeout(function () { if (busy) say(MSG.slow); }, 6000);
+      post(payload, false).then(function (r) {
+        if (r.status === 202) { say(''); showDone(payload.commercialConsentRequested); return; }
+        if (r.status === 429) { say(MSG.tooMany, 'error'); return; }
+        if (r.status === 400) { say(MSG.rejected, 'error'); return; }
+        say(MSG.generic, 'error');
+      }, function (err) {
+        if (err && err.httpStatus === 429) say(MSG.tooMany, 'error');
+        else if (err && err.httpStatus) say(MSG.generic, 'error');
+        else say(MSG.network, 'error');
+      }).then(function () {
+        clearTimeout(slowTimer);
+        setBusy(false);
+      });
+    });
+
+    // Primer foco en el formulario: se pide el token (si falla, se reintenta al enviar).
+    form.addEventListener('focusin', function () {
+      getToken(false).then(null, function () { /* se reintenta al enviar */ });
+    });
+
+    radios.forEach(function (r) {
+      r.addEventListener('change', function () { syncCount(); setError(situationGroup, 'wl-situation-err', ''); });
+    });
+    [inName, inEmail, inCount, inTools].forEach(function (el) {
+      if (el) el.addEventListener('input', function () {
+        if (el.getAttribute('aria-invalid') === 'true') setError(el, el.getAttribute('aria-describedby').split(' ').pop(), '');
+      });
+    });
+    inPrivacy.addEventListener('change', function () { if (inPrivacy.checked) setError(inPrivacy, 'wl-privacy-err', ''); });
+
+    // Los botones "Apúntate" llevan aquí y ponen el foco en el primer campo (o en el mensaje final).
+    document.querySelectorAll('a[data-cta]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        section.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+        var target = done.hidden ? inName : done;
+        try { target.focus({ preventScroll: true }); } catch (err) { target.focus(); }
+      });
+    });
+
+    // Listo: se activa el formulario y se quita el aviso para navegadores sin JavaScript.
+    syncCount();
+    if (nojs) nojs.hidden = true;
+    fields.disabled = false;
   }
 
   // Cada bloque va aislado: si uno falla, los demás siguen funcionando.
@@ -538,6 +833,7 @@
     safe(initStory);
     safe(initReveal);
     safe(initLeadPopup);
+    safe(initWaitlist);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
