@@ -8,6 +8,9 @@
  *   - scripts en línea (<script> sin src o con contenido), manejadores on*= o URL javascript:.
  * Los comentarios (HTML y CSS/JS) no se tienen en cuenta: no se ejecutan ni se descargan.
  *
+ *   - el origen de la API de la lista de espera (CONNECT_ORIGINS) fuera de js/config.js o sin https;
+ *   - una CSP documentada en apps/landing/README.md cuyo connect-src no sea exactamente
+ *     'self' + CONNECT_ORIGINS, o sin form-action 'none'.
  *   - (con --require-filled, para la salida de apps/landing/build.mjs) un marcador [[...]] sin
  *     rellenar. Sin esa opción, [[NIF]] y [[DOMICILIO]] son lo esperado en el código fuente.
  *
@@ -22,6 +25,12 @@ import { fileURLToPath } from 'node:url';
 // Dominios permitidos (y sus subdominios). Solo enlaces que el visitante pulsa, nunca recursos
 // que se carguen solos. Los tres últimos los cita la política de la lista de espera.
 const ALLOWED_HOSTS = ['asepsico.es', 'forms.gle', 'instagram.com', 'policies.google.com', 'dataprivacyframework.gov', 'aepd.es'];
+
+// Orígenes a los que el navegador puede hacer peticiones (fetch): la API propia de la lista de espera.
+// Coincidencia EXACTA (sin subdominios: onrender.com aloja a cualquiera), solo en js/config.js
+// (WAITLIST_API_URL) y solo con https. Es lo mismo que va en connect-src de la CSP (README).
+const CONNECT_ORIGINS = ['https://asepsico-api.onrender.com'];
+const CONNECT_FILE = 'js/config.js';
 
 // Archivos que no son contenido de la web (licencias) y pueden citar URLs ajenas.
 const IGNORED_FILES = new Set(['fonts/OFL.txt']);
@@ -115,6 +124,12 @@ for (const full of files) {
     const before = scan.slice(Math.max(0, m.index - 16), m.index);
     if (/xmlns(?::[a-z]+)?\s*=\s*["']?(?:https?:)?$/i.test(before)) continue; // espacios de nombres XML
     if (!/^(?:https?|wss?|ftp):/i.test(m[0]) && !/["'(=\s]$/.test(before)) continue; // no es una URL
+    const connect = CONNECT_ORIGINS.find((o) => new URL(o).host === m[1].toLowerCase());
+    if (connect) {
+      if (rel !== CONNECT_FILE) report(problems, rel, text, m.index, `el origen de la API (${m[1]}) solo puede estar en ${CONNECT_FILE}`);
+      else if (!m[0].toLowerCase().startsWith(connect)) report(problems, rel, text, m.index, `el origen de la API tiene que ser exactamente ${connect}`);
+      continue;
+    }
     if (!hostAllowed(m[1])) report(problems, rel, text, m.index, `dominio externo no permitido: ${m[1]}`);
   }
 
@@ -144,6 +159,28 @@ for (const full of files) {
   }
 }
 
+// CSP documentada para Render (README de la landing): connect-src = 'self' + la API, y nada más;
+// form-action 'none' (el formulario se envía con fetch).
+{
+  const readme = join(repoRoot, 'apps/landing/README.md');
+  let md = '';
+  try { md = readFileSync(readme, 'utf8'); } catch { problems.push('apps/landing/README.md: no existe'); }
+  const cspLine = md.split('\n').find((l) => l.startsWith('Content-Security-Policy:'));
+  if (md && !cspLine) problems.push('apps/landing/README.md: falta la línea Content-Security-Policy');
+  if (cspLine) {
+    const directives = Object.fromEntries(cspLine.slice('Content-Security-Policy:'.length).split(';')
+      .map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([k, ...v]) => [k, v.join(' ')]));
+    const expected = ["'self'", ...CONNECT_ORIGINS].join(' ');
+    if (directives['connect-src'] !== expected) {
+      problems.push(`apps/landing/README.md: connect-src debe ser exactamente "${expected}" (es "${directives['connect-src'] ?? ''}")`);
+    }
+    if (directives['form-action'] !== "'none'") problems.push("apps/landing/README.md: form-action debe ser 'none'");
+    for (const k of ['default-src', 'script-src', 'style-src', 'img-src', 'font-src']) {
+      if (directives[k] !== "'self'") problems.push(`apps/landing/README.md: ${k} debe ser 'self'`);
+    }
+  }
+}
+
 for (const w of warnings) console.warn(`AVISO   ${w}`);
 if (problems.length) {
   for (const p of problems) console.error(`ERROR   ${p}`);
@@ -151,4 +188,4 @@ if (problems.length) {
   process.exit(1);
 }
 const markerNote = markers ? `; ${markers} marcadores de datos del titular que rellena build.mjs al publicar` : '';
-console.log(`check-landing: OK (${scanned} archivos revisados; dominios permitidos: ${ALLOWED_HOSTS.join(', ')}${markerNote}).`);
+console.log(`check-landing: OK (${scanned} archivos revisados; dominios permitidos: ${ALLOWED_HOSTS.join(', ')}; connect-src: ${CONNECT_ORIGINS.join(', ')}${markerNote}).`);
