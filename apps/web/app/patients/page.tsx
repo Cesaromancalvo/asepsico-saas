@@ -11,10 +11,10 @@ import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 
-// [CLIO] Texto pendiente de revisión. 409 DEMO_MEMBERS_ACTIVE: fuera del entorno demo, el espacio aún
+// Texto revisado por Clio. 409 DEMO_MEMBERS_ACTIVE: fuera del entorno demo, el espacio aún
 // tiene cuentas de demostración y la API no deja dar de alta pacientes hasta borrarlas.
 const DEMO_MEMBERS_ACTIVE_MESSAGE =
-  'Todavía no puedes dar de alta pacientes: esta consulta conserva las cuentas de la demostración. Pide a la persona responsable de AsePsico que las elimine y vuelve a intentarlo.';
+  'Aún no puedes dar de alta pacientes: en esta consulta siguen las cuentas de la demostración. Escríbenos por email para que las borremos y, cuando te lo confirmemos, vuelve a intentarlo.';
 import {
   canManageProcess,
   fetchConsultationReason,

@@ -115,8 +115,7 @@ export default function ManagementPage() {
         <select value={description} onChange={(e)=>setDescription(e.target.value as InvoiceLineConcept)} aria-describedby="invoice-concept-hint">
           {INVOICE_LINE_CONCEPTS.map((concept) => <option key={concept} value={concept}>{concept}</option>)}
         </select>
-        {/* [CLIO] Texto del aviso pendiente de revisión. */}
-        <small id="invoice-concept-hint" className="demo-hint">No escribas información clínica en las facturas.</small>
+        <small id="invoice-concept-hint" className="demo-hint">Si ninguno encaja, elige «Otro concepto». El concepto nunca lleva información clínica.</small>
       </label>
       <label>Importe (€)<input inputMode="decimal" value={amount} onChange={(e)=>setAmount(e.target.value)} /></label>
       <label>Vencimiento<input type="date" value={dueDate} onChange={(e)=>setDueDate(e.target.value)} /></label>

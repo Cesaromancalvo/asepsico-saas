@@ -5,9 +5,9 @@
  * con `legacyDescriptionHidden`. Aquí solo se traduce eso a lo que se enseña.
  */
 
-// [CLIO] Textos pendientes de revisión.
-export const HIDDEN_FOR_ROLE = 'Oculto para tu rol';
-export const CLINICAL_TEXT_HINT = 'No escribas información clínica.';
+// Textos revisados por Clio (afirmaciones v7: "control de cobros", no "facturación").
+export const HIDDEN_FOR_ROLE = 'No visible con tu rol';
+export const CLINICAL_TEXT_HINT = 'Escribe solo datos administrativos, nada clínico.';
 export const OTHER_CONCEPT = 'Otro concepto';
 
 /** Concepto de una línea del detalle: "Otro concepto" si la API ocultó un texto libre antiguo. */
@@ -16,7 +16,7 @@ export function lineLabel(line: { description: string; legacyDescriptionHidden?:
 }
 
 /**
- * Texto libre del detalle: el valor; "Oculto para tu rol" si la API lo ocultó (nunca un hueco vacío
+ * Texto libre del detalle: el valor; HIDDEN_FOR_ROLE si la API lo ocultó (nunca un hueco vacío
  * que haga pensar que no hay nada); o null si de verdad está vacío (y entonces no se pinta la fila).
  */
 export function freeText(value: string | null | undefined, hidden: boolean | undefined): { text: string; hidden: boolean } | null {
