@@ -44,6 +44,8 @@ export const ENCRYPTED_TEXT_FIELDS = {
   consentRecord: ['notes'],
   message: ['body', 'attachmentName'],
   user: ['totpSecret'],
+  // Lista de espera pública (no clínica, sin workspace): datos de contacto de profesionales.
+  waitlistEntry: ['name', 'email', 'tools'],
 } as const;
 
 /**

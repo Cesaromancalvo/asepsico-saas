@@ -15,7 +15,12 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "test:security": "jest --config ./test/jest-security.json --runInBand",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "db:encrypt-fields": "tsx prisma/scripts/encrypt-plaintext-fields.ts"
+    "db:encrypt-fields": "tsx prisma/scripts/encrypt-plaintext-fields.ts",
+    "waitlist:export": "tsx prisma/scripts/waitlist-export.ts",
+    "waitlist:delete": "tsx prisma/scripts/waitlist-delete.ts",
+    "waitlist:purge": "tsx prisma/scripts/waitlist-purge.ts",
+    "waitlist:confirm-commercial": "tsx prisma/scripts/waitlist-confirm-commercial.ts",
+    "waitlist:withdraw-commercial": "tsx prisma/scripts/waitlist-withdraw-commercial.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
