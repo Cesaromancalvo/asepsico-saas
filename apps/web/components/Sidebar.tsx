@@ -72,7 +72,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const viewer = useViewer();
-  // Condiciones nuevas sin aceptar: al titular le bloquea la API (428 → /terms); al resto solo se le avisa.
+  // Condiciones nuevas sin aceptar: cada profesional las acepta por sí mismo y la API le bloquea
+  // (428 → /terms) hasta que lo haga. Este aviso es solo un recordatorio por si llega a verse.
   const terms = useTermsStatus();
   const items = navigation.filter((item) =>
     (!item.adminOnly || isAdminRole(viewer?.role)) &&
@@ -119,14 +120,9 @@ export default function Sidebar({
         ))}
       </nav>
       <div className="sidebar-bottom">
-        {terms?.acceptanceRequired && !terms.canAccept && (
+        {terms?.acceptanceRequired && (
           <p className="sidebar-terms-notice" role="note">
-            Tu consulta tiene que aceptar las nuevas condiciones; avisa a la persona titular.
-          </p>
-        )}
-        {terms?.acceptanceRequired && terms.canAccept && (
-          <p className="sidebar-terms-notice" role="note">
-            Hay condiciones nuevas pendientes. <Link href="/terms">Revisarlas</Link>
+            Tienes condiciones nuevas pendientes de aceptar. <Link href="/terms">Revisar y aceptar</Link>
           </p>
         )}
         <div className="sync-status">

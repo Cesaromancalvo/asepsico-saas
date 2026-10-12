@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LegalDocumentType } from '@asepsico/contracts';
-import TermsChecklist from '@/components/TermsChecklist';
+import TermsChecklist, { missingTermsMessage } from '@/components/TermsChecklist';
 import { api, ApiError, logout } from '@/lib/api';
 import { invalidateViewer } from '@/lib/clinical';
-import { fetchLegalTerms, fetchTermsStatus, invalidateTermsStatus, LegalDocument, TermsStatus, toAcceptedTerm } from '@/lib/legal';
+import { fetchLegalTerms, fetchTermsStatus, invalidateTermsStatus, isLegalTermsDraftError, LEGAL_TERMS_DRAFT_MESSAGE, LegalDocument, TermsStatus, toAcceptedTerm } from '@/lib/legal';
 
 type State = 'loading' | 'ready' | 'error';
 
 /**
  * "Nuevas condiciones". Llega aquí cualquier pantalla que reciba el 428 TERMS_ACCEPTANCE_REQUIRED
- * (interceptor de lib/api.ts). Solo la persona titular (OWNER) puede aceptarlas; el resto ve un aviso.
+ * (interceptor de lib/api.ts). Cada profesional (titular o miembro del equipo) las acepta por sí mismo:
+ * la API devuelve canAccept=true para cualquier miembro. Si aun así llegara canAccept=false, se
+ * muestra un aviso neutro en lugar del formulario.
  */
 export default function TermsPage() {
   const router = useRouter();
@@ -20,6 +22,7 @@ export default function TermsPage() {
   const [status, setStatus] = useState<TermsStatus | null>(null);
   const [current, setCurrent] = useState<LegalDocument[]>([]);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [showTermsErrors, setShowTermsErrors] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -33,6 +36,7 @@ export default function TermsPage() {
       setStatus(nextStatus);
       setCurrent(docs);
       setChecked({});
+      setShowTermsErrors(false);
       setState('ready');
     } catch {
       setState('error');
@@ -52,8 +56,10 @@ export default function TermsPage() {
 
   async function accept() {
     setError('');
-    if (pending.some((doc) => checked[doc.documentType] !== true)) {
-      setError('Para continuar tienes que aceptar todos los documentos.');
+    const missingTerms = missingTermsMessage(pending, checked);
+    if (missingTerms) {
+      setShowTermsErrors(true);
+      setError(missingTerms);
       return;
     }
     setBusy(true);
@@ -67,10 +73,10 @@ export default function TermsPage() {
       if (err instanceof ApiError && err.status === 400 && err.code === 'TERMS_NOT_ACCEPTED') {
         await load();
         setError('Las condiciones se han actualizado mientras las revisabas. Vuelve a revisarlas y aceptarlas.');
-      } else if (err instanceof ApiError && err.status === 503 && err.code === 'LEGAL_TERMS_DRAFT') {
-        setError('Las condiciones aún no están disponibles. Inténtalo más adelante.');
+      } else if (isLegalTermsDraftError(err)) {
+        setError(LEGAL_TERMS_DRAFT_MESSAGE);
       } else if (err instanceof ApiError && err.status === 403) {
-        setError('Solo la persona titular de la consulta puede aceptar las condiciones.');
+        setError('No se ha podido guardar tu aceptación. Puede que tu cuenta ya no forme parte de esta consulta: cierra sesión y vuelve a entrar.');
       } else {
         setError(err instanceof Error && err.message ? err.message : 'No se han podido aceptar las condiciones.');
       }
@@ -109,7 +115,7 @@ export default function TermsPage() {
 
         {state === 'ready' && status && !status.acceptanceRequired && (
           <>
-            <p>Tu consulta tiene aceptadas las condiciones vigentes. No tienes que hacer nada.</p>
+            <p>Ya tienes aceptadas las condiciones vigentes. No tienes que hacer nada.</p>
             <button type="button" className="button" onClick={() => router.push('/')}>Ir a Mi jornada</button>
           </>
         )}
@@ -118,19 +124,20 @@ export default function TermsPage() {
           <>
             <div className="e1-notice" role="note">
               <div>
-                <strong>Tu consulta tiene que aceptar las nuevas condiciones</strong>
-                <p>Avisa a la persona titular: solo ella puede aceptarlas. Mientras tanto puedes seguir trabajando.</p>
+                <strong>No se pueden aceptar las condiciones desde esta cuenta</strong>
+                <p>Cierra sesión y vuelve a entrar. Si sigue apareciendo este aviso, escríbenos por email.</p>
               </div>
             </div>
-            <button type="button" className="button" onClick={() => router.push('/')}>Volver</button>
+            <button type="button" className="button" onClick={handleLogout}>Cerrar sesión</button>
           </>
         )}
 
         {state === 'ready' && status?.acceptanceRequired && status.canAccept && (
           <>
             <p className="muted">
-              Hemos actualizado las condiciones del servicio. Como titular de la consulta, revísalas y acéptalas para
-              seguir usando AsePsico. Mientras no las aceptes, el acceso queda en pausa para ti.
+              Hay condiciones nuevas o actualizadas. Cada persona del equipo las acepta por sí misma: revísalas y
+              acéptalas para seguir usando AsePsico. Mientras no lo hagas, tu acceso queda en pausa; el del resto del
+              equipo no cambia.
             </p>
             <TermsChecklist
               docs={pending}
@@ -138,6 +145,7 @@ export default function TermsPage() {
               onChange={(documentType: LegalDocumentType, value: boolean) => setChecked((c) => ({ ...c, [documentType]: value }))}
               disabled={busy}
               idPrefix="new-terms"
+              showErrors={showTermsErrors}
             />
             {error && <p className="error" role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}
             <div className="e1-actions">

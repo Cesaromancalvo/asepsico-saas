@@ -76,7 +76,7 @@ export default function DataSettingsPage() {
   return <div className="app-layout"><Sidebar/><main className="patient-record-page">
     <header className="patient-record-header"><div><span className="eyebrow">Datos y continuidad</span><h1>Exportaciones y preparación del piloto</h1><p>Descarga información de forma controlada y revisa los puntos operativos antes de incorporar usuarios reales.</p></div></header>
     {error && <div className="agenda-error" role="alert">{error}</div>}
-    <section className="patient-card"><h2>Exportar expediente de un paciente</h2><p>Incluye historia, procesos, sesiones, objetivos, tareas, escalas, consentimientos, informes, documentos, facturas y recursos compartidos.</p>
+    <section className="patient-card"><h2>Exportar expediente de un paciente</h2><p>Incluye historia, procesos, sesiones, objetivos, tareas, escalas, consentimientos, informes, documentos, cobros y recursos compartidos.</p>
       <div className="billing-form"><label>Paciente<select value={patientId} onChange={(e)=>{ setPatientId(e.target.value); setPatientExportError(''); }}>{patients.map(p=><option value={p.id} key={p.id}>{p.firstName} {p.lastName}</option>)}</select></label><button className="button primary" disabled={busy||!patientId} onClick={exportPatient}>Descargar JSON</button></div>
       {patientExportError && <div className="e1-notice danger" role="alert" style={{ marginTop: 14 }}><div><strong>Exportación no disponible</strong><p>{patientExportError}</p></div></div>}
       <small>El archivo contiene información clínica confidencial. Protégelo fuera de AsePsico. Se te pedirá tu contraseña antes de descargar.</small>

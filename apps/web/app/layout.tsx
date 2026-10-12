@@ -1,3 +1,16 @@
 import './globals.css';
+import DemoBanner from '@/components/DemoBanner';
+
 export const metadata = { title: 'AsePsico', description: 'Sistema operativo para la práctica psicológica' };
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="es"><body>{children}</body></html>; }
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="es">
+      <body>
+        {/* Aviso fijo del piloto demo: en todas las pantallas, antes del contenido. */}
+        <DemoBanner />
+        {children}
+      </body>
+    </html>
+  );
+}

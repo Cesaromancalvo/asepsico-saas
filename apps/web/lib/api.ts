@@ -37,12 +37,17 @@ export function apiErrorCode(err: unknown): string | undefined {
 export const TERMS_PAGE = '/terms';
 
 /**
- * Interceptor global del 428: la API bloquea al titular hasta que acepte las condiciones nuevas.
- * Cualquier pantalla que lo reciba lleva a la de "Nuevas condiciones" (salvo si ya está en ella).
+ * Interceptor global del 428: la API bloquea a cada profesional (titular o miembro) hasta que
+ * acepte las condiciones nuevas. Cualquier pantalla que lo reciba lleva a la de "Nuevas
+ * condiciones" (salvo si ya está en ella). Solo se redirige una vez aunque lleguen varios 428 a la
+ * vez (las pantallas lanzan varias peticiones en paralelo).
  */
+let redirectingToTerms = false;
+
 function redirectToTermsIfRequired(status: number, code: string | undefined) {
   if (status !== 428 || code !== 'TERMS_ACCEPTANCE_REQUIRED' || typeof window === 'undefined') return;
-  if (window.location.pathname === TERMS_PAGE) return;
+  if (window.location.pathname === TERMS_PAGE || redirectingToTerms) return;
+  redirectingToTerms = true;
   window.location.assign(TERMS_PAGE);
 }
 

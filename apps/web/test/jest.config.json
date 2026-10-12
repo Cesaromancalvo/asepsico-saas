@@ -1,0 +1,10 @@
+{
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/.*\\.spec\\.ts$",
+  "moduleFileExtensions": ["ts", "tsx", "js", "json"],
+  "moduleNameMapper": { "^@/(.*)$": "<rootDir>/$1" },
+  "transform": {
+    "^.+\\.tsx?$": ["ts-jest", { "diagnostics": false, "tsconfig": { "isolatedModules": true, "module": "commonjs", "jsx": "react-jsx", "esModuleInterop": true } }]
+  }
+}

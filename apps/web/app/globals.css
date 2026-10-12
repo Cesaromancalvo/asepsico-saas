@@ -659,3 +659,31 @@
 .invite-form-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px}
 .sidebar-terms-notice{margin:0 0 12px;padding:10px 12px;border:1px solid #ecd9a3;border-radius:12px;background:#fffaeb;color:#6b4300;font-size:12px;line-height:1.4}
 @media(max-width:700px){.auth-card{margin:16px auto}.invite-form-grid{grid-template-columns:1fr}.invite-link-row .button{width:100%}}
+.terms-intro{margin:0 0 12px;font-size:14px}
+.terms-fieldset .e1-checkbox.is-invalid{padding:8px 10px;margin-left:-10px;border-left:3px solid #a83939;border-radius:6px;background:var(--danger-soft)}
+.terms-fieldset .e1-checkbox small.terms-field-error{color:#a83939;font-weight:700}
+.legal-text-heading{font-weight:700;scroll-margin-top:calc(var(--demo-banner-height,0px) + 12px)}
+.demo-hint{display:block;margin-top:4px;color:#6b4300;font-size:12px;line-height:1.4}
+
+/* Aviso fijo "Entorno de prueba" (piloto demo). En el flujo del documento (no tapa nada) y pegado
+   arriba al hacer scroll; sin botón de cerrar. Texto #4a2e00 sobre #ffe9a8 (contraste > 9:1); el
+   icono y "Entorno de prueba:" lo identifican sin depender del color. */
+html{scroll-padding-top:var(--demo-banner-height,0px)}
+.demo-banner{position:sticky;top:0;z-index:60;display:flex;align-items:flex-start;gap:10px;margin:0;padding:9px max(16px,env(safe-area-inset-right)) 9px max(16px,env(safe-area-inset-left));border-bottom:2px solid #c99a1b;background:#ffe9a8;color:#4a2e00;font-size:14px;line-height:1.45}
+.demo-banner p{margin:0;max-width:1100px;min-width:0}
+.demo-banner strong{font-weight:800}
+.demo-banner a{color:#4a2e00;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+.demo-banner a:focus-visible{outline:3px solid #4a2e00;outline-offset:2px;border-radius:3px}
+.demo-banner-icon{display:inline-grid;flex:0 0 20px;width:20px;height:20px;margin-top:1px;place-items:center;border-radius:50%;background:#4a2e00;color:#ffe9a8;font-size:13px;font-weight:900;line-height:1}
+@media(min-width:701px){.sidebar{top:var(--demo-banner-height,0px)}.patient-record-side{top:calc(var(--demo-banner-height,0px) + 22px)}}
+@media(max-width:700px){.demo-banner{padding-top:8px;padding-bottom:8px;font-size:13px}}
+/* Con poca altura (móvil apaisado, zoom al 200 %) deja de estar pegado para no quitar pantalla. */
+@media(max-height:560px){.demo-banner{position:static}html{scroll-padding-top:0}}
+/* Jornada administrativa: en móvil se mantiene el botón "Ver cita" (en la clínica se oculta). */
+@media(max-width:700px){.admin-session-row{grid-template-columns:44px minmax(0,1fr) auto}.admin-session-row .session-avatar{display:none}.admin-session-row .session-buttons{display:grid;align-self:center}}
+.billing-detail{grid-column:1/-1;border-top:1px solid #e5e9e7;padding-top:10px}.billing-detail ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}.billing-detail li{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.billing-detail{display:flex;flex-direction:column;gap:10px}.billing-detail-title{font-size:13px}.billing-hidden{font-style:italic;color:#6c7772}.billing-payment{flex-wrap:wrap}.billing-payment>ul{flex-basis:100%;padding-left:12px!important;font-size:13px}.billing-notes{grid-column:1/-2}.billing-notes textarea{border:1px solid #d8dfdc;border-radius:10px;padding:8px 11px;font:inherit;resize:vertical}@media(max-width:1000px){.billing-notes{grid-column:1/-1}}
+/* Diálogo de motivo (anular cobro, revertir pago) sobre <dialog> nativo */
+.reason-dialog{margin:auto;color:var(--text)}.reason-dialog::backdrop{background:rgba(25,23,34,.48);backdrop-filter:blur(4px)}.reason-dialog-desc{margin:6px 0 0;color:var(--text-soft);font-size:13px;line-height:1.5}.reason-dialog-field{display:grid;gap:6px;font-size:13px;font-weight:700}.reason-dialog-field textarea{resize:vertical;font:inherit;font-weight:400}.reason-dialog-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:6px}.reason-dialog-count{flex:0 0 auto;color:var(--text-soft);font-size:12px}.reason-dialog-count.is-near{color:#a44141;font-weight:700}.reason-dialog-error{margin:12px 0 0}.reason-dialog .agenda-modal-header>button:focus-visible,.reason-dialog button:focus-visible{outline:3px solid var(--primary);outline-offset:2px}@media(max-width:700px){.reason-dialog .agenda-modal-actions{flex-direction:column-reverse}.reason-dialog .agenda-modal-actions>*{width:100%}}
+.billing-reverse{margin-left:auto;border:1px solid #cfd7d3;background:#fff;border-radius:9px;padding:6px 10px;font-size:13px;cursor:pointer}.billing-reverse:hover{border-color:#d68c8c;color:#aa3e3e}
+.reason-dialog .button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none}

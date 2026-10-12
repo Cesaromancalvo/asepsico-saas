@@ -17,16 +17,35 @@ import { api, ApiError } from './api';
 export type LegalDocument = LegalDocumentContract;
 export type TermsStatus = TermsStatusContract;
 
+/**
+ * Nombre de respaldo de cada documento (si la API no envía título). Coincide con los títulos que
+ * sirve la API en el piloto demo. DPA_ART28 no está vigente durante el piloto demo (en el demo
+ * AsePsico no trata datos de pacientes); se mantiene para cuando vuelva con el piloto real.
+ */
 export const LEGAL_DOCUMENT_LABEL: Record<LegalDocumentType, string> = {
-  PILOT_TERMS: 'Condiciones del programa piloto',
+  PILOT_TERMS: 'Condiciones de uso del piloto demo',
+  PRIVACY_PRODUCT: 'Política de privacidad para profesionales (piloto demo)',
   DPA_ART28: 'Contrato de encargo del tratamiento (art. 28 RGPD)',
-  PRIVACY_PRODUCT: 'Política de privacidad para profesionales',
 };
 
 /** Ancla de cada documento en la página pública /legal. */
 export function legalDocumentHref(documentType: LegalDocumentType) {
   return `/legal#doc-${documentType}`;
 }
+
+/** id del apartado "## N." de un documento en /legal (p. ej. doc-PILOT_TERMS-apartado-4). */
+export function legalSectionId(documentType: LegalDocumentType, section: string) {
+  return `doc-${documentType}-apartado-${section}`;
+}
+
+/** 503 LEGAL_TERMS_DRAFT: algún texto vigente aún tiene datos por completar y no se puede aceptar. */
+export function isLegalTermsDraftError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 503 && err.code === 'LEGAL_TERMS_DRAFT';
+}
+
+export const LEGAL_TERMS_DRAFT_MESSAGE =
+  'Las condiciones del piloto aún tienen datos por completar y todavía no se pueden aceptar. No es un error tuyo: ' +
+  'vuelve a intentarlo más tarde.';
 
 /** Lo que se envía al aceptar: exactamente lo recibido (sin título ni texto). */
 export function toAcceptedTerm(doc: Pick<LegalDocument, 'documentType' | 'version' | 'textHash'>): AcceptedTermContract {
@@ -69,7 +88,8 @@ export function useInviteToken(): { ready: boolean; token: string | null } {
 let statusCache: Promise<TermsStatus | null> | null = null;
 
 /**
- * Estado de las condiciones del workspace para la sesión actual (cacheado durante la navegación).
+ * Estado de las condiciones de la persona que ha iniciado sesión (cada profesional acepta por sí
+ * mismo), cacheado durante la navegación.
  * Devuelve null si no se puede saber (sin sesión, MFA pendiente…): en ese caso no se avisa de nada.
  */
 export function fetchTermsStatus(force = false): Promise<TermsStatus | null> {
@@ -108,9 +128,7 @@ const GENERIC_REGISTRATION_ERROR = 'No se ha podido completar el registro. Revis
  */
 export function registrationErrorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) return 'No se ha podido conectar. Comprueba tu conexión e inténtalo de nuevo.';
-  if (err.status === 503 && err.code === 'LEGAL_TERMS_DRAFT') {
-    return 'Las condiciones aún no están disponibles, así que todavía no se puede completar el alta. Inténtalo más adelante.';
-  }
+  if (isLegalTermsDraftError(err)) return LEGAL_TERMS_DRAFT_MESSAGE;
   if (err.status === 429) return err.message;
   if (err.status === 400) return GENERIC_REGISTRATION_ERROR;
   return 'No se ha podido completar el registro. Inténtalo de nuevo en unos minutos.';

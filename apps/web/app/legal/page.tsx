@@ -1,8 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { fetchLegalTerms, LegalDocument } from '@/lib/legal';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { fetchLegalTerms, legalSectionId, LegalDocument } from '@/lib/legal';
+
+/**
+ * El texto se muestra tal cual (el hash aceptado es el de este texto). Solo se envuelven los
+ * títulos "## N." en un <span> con id para poder enlazar a un apartado (p. ej. el aviso de entorno
+ * de prueba enlaza al apartado 4 de las condiciones).
+ */
+function renderLegalText(doc: LegalDocument): ReactNode[] {
+  return doc.text.split(/(^## \d+\..*$)/m).map((part, index) => {
+    const match = /^## (\d+)\./.exec(part);
+    if (!match) return part;
+    return <span key={index} id={legalSectionId(doc.documentType, match[1])} className="legal-text-heading">{part}</span>;
+  });
+}
 
 /** Textos vigentes de las condiciones (público). Cada documento tiene un ancla #doc-TIPO. */
 export default function LegalPage() {
@@ -23,10 +36,17 @@ export default function LegalPage() {
     load();
   }, [load]);
 
-  // Al cargar los textos, lleva al documento del ancla (#doc-…), que antes no existía en la página.
+  // Al cargar los textos, lleva al documento o apartado del ancla (#doc-…), que antes no existía
+  // en la página. También si el ancla cambia estando ya aquí (enlace del aviso de entorno de prueba).
   useEffect(() => {
-    if (state !== 'ready' || !window.location.hash.startsWith('#doc-')) return;
-    document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+    if (state !== 'ready') return;
+    const scrollToHash = () => {
+      if (!window.location.hash.startsWith('#doc-')) return;
+      document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView();
+    };
+    scrollToHash();
+    window.addEventListener('hashchange', scrollToHash);
+    return () => window.removeEventListener('hashchange', scrollToHash);
   }, [state]);
 
   return (
@@ -35,7 +55,10 @@ export default function LegalPage() {
         <div className="card">
           <div className="brand">AsePsico</div>
           <h1>Condiciones vigentes</h1>
-          <p className="muted">Estos son los textos que acepta la persona titular de cada consulta al darse de alta.</p>
+          <p className="muted">
+            Estos son los textos que acepta cada persona al darse de alta, tanto quien crea la consulta como quien se
+            une a su equipo por invitación.
+          </p>
           <Link href="/login">Ir a iniciar sesión</Link>
         </div>
         {state === 'loading' && <div className="card"><p className="muted" role="status">Cargando los textos…</p></div>}
@@ -58,12 +81,12 @@ export default function LegalPage() {
             {doc.draft && (
               <div className="e1-notice" role="note">
                 <div>
-                  <strong>Texto en borrador</strong>
-                  <p>Este documento aún no es definitivo y no tiene validez legal.</p>
+                  <strong>Texto pendiente de completar</strong>
+                  <p>Este documento aún tiene datos por completar, así que todavía no es la versión definitiva.</p>
                 </div>
               </div>
             )}
-            <pre className="legal-text" tabIndex={0} aria-label={`Texto de ${doc.title}`}>{doc.text}</pre>
+            <pre className="legal-text" tabIndex={0} aria-label={`Texto de ${doc.title}`}>{renderLegalText(doc)}</pre>
           </section>
         ))}
       </div>

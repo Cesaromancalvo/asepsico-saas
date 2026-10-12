@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
-import { modalityLabel } from '../lib/clinical';
+import AdminDayView from '../components/AdminDayView';
+import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
 
 type DashboardData = {
   professional: { firstName: string; lastName: string; role: string };
@@ -40,11 +41,57 @@ function formatTime(value: string) {
   return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
+/** Saludo con el nombre de GET /auth/me; sin nombre, sin coma colgando. */
+function greetingFor(firstName?: string | null) {
+  const name = firstName?.trim();
+  return name ? `Buenos días, ${name}` : 'Buenos días';
+}
+
 function minutesUntil(value: string) {
   return Math.max(0, Math.round((new Date(value).getTime() - Date.now()) / 60000));
 }
 
+/**
+ * "Mi jornada". Quien atiende pacientes ve la jornada clínica (GET /dashboard). La recepción
+ * (ASSISTANT) y titular/administración sin "atiende pacientes" ven la jornada administrativa, que
+ * no llama a /dashboard ni muestra nada clínico.
+ */
 export default function Home() {
+  const viewer = useViewer();
+
+  if (!viewer) {
+    return <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-loading" role="status">Preparando tu jornada…</section></main></div>;
+  }
+
+  if (viewer.mfaPending) {
+    return (
+      <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
+        <h1>Activa la verificación en dos pasos</h1>
+        <p>Para seguir usando AsePsico tienes que activarla. Necesitarás una app de autenticación en tu móvil.</p>
+        <Link href="/settings/security" className="primary-action">Activarla ahora</Link>
+      </section></main></div>
+    );
+  }
+
+  if (!viewer.role) {
+    // No se ha podido saber quién eres (fallo de red o de la API): no se adivina la vista.
+    return (
+      <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
+        <h1>No hemos podido preparar tu jornada</h1>
+        <p>Comprueba tu conexión y vuelve a intentarlo.</p>
+        <button className="primary-action" onClick={() => { invalidateViewer(); window.location.reload(); }}>Reintentar</button>
+      </section></main></div>
+    );
+  }
+
+  if (!viewer.isClinician) {
+    return <div className="app-layout"><Sidebar syncText="Información actualizada" /><AdminDayView viewer={viewer} /></div>;
+  }
+
+  return <ClinicalHome viewer={viewer} />;
+}
+
+function ClinicalHome({ viewer }: { viewer: Viewer }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -90,7 +137,7 @@ export default function Home() {
         <header className="dashboard-header">
           <div>
             <p className="eyebrow">MI JORNADA</p>
-            <h1>Buenos días, {data.professional.firstName}</h1>
+            <h1>{greetingFor(viewer.firstName || data.professional.firstName)}</h1>
             <p className="dashboard-subtitle">
               {data.summary.sessionsToday === 0
                 ? 'No tienes sesiones programadas para hoy.'
@@ -174,7 +221,7 @@ export default function Home() {
                 )) : <div className="dashboard-empty compact"><strong>Todo al día</strong><p>No hay acciones pendientes.</p></div>}
               </div>
             </section>
-            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span>＋</span>Nueva cita</Link><Link href="/patients?new=true"><span>◉</span>Nuevo paciente</Link><Link href="/messages"><span>✉</span>Mensajes</Link><Link href="/management"><span>€</span>Crear factura</Link></div></section>
+            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span>＋</span>Nueva cita</Link><Link href="/patients?new=true"><span>◉</span>Nuevo paciente</Link><Link href="/messages"><span>✉</span>Mensajes</Link><Link href="/management"><span>€</span>Registrar cobro</Link></div></section>
           </aside>
         </div>
       </main>
