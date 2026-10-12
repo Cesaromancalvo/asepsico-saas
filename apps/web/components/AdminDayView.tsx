@@ -138,7 +138,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
             </Link>
             <Link href="/management" className="dashboard-card metric-card">
               <span aria-hidden="true">!</span>
-              <div><strong>{summary.data ? summary.data.overdueCount : '–'}</strong><small>Facturas vencidas</small></div>
+              <div><strong>{summary.data ? summary.data.overdueCount : '–'}</strong><small>Cobros vencidos</small></div>
             </Link>
           </>
         )}
@@ -204,7 +204,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                   <div className="dashboard-empty compact" role="alert"><strong>No se han podido cargar los cobros</strong><p>Inténtalo de nuevo en unos minutos.</p></div>
                 )}
                 {invoices.state === 'ready' && pendingInvoices.length === 0 && (
-                  <div className="dashboard-empty compact"><strong>Todo cobrado</strong><p>No hay facturas pendientes.</p></div>
+                  <div className="dashboard-empty compact"><strong>Todo cobrado</strong><p>No hay cobros pendientes.</p></div>
                 )}
                 {pendingInvoices.map((invoice) => (
                   <Link key={invoice.id} href="/management" className="task-row">
@@ -253,7 +253,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
               <Link href="/agenda?new=true"><span aria-hidden="true">＋</span>Nueva cita</Link>
               <Link href="/patients?new=true"><span aria-hidden="true">◉</span>Nuevo paciente</Link>
               <Link href="/agenda"><span aria-hidden="true">▣</span>Agenda</Link>
-              {!billingHidden && <Link href="/management"><span aria-hidden="true">€</span>Crear factura</Link>}
+              {!billingHidden && <Link href="/management"><span aria-hidden="true">€</span>Registrar cobro</Link>}
             </div>
           </section>
         </aside>

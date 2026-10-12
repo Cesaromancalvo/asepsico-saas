@@ -175,7 +175,7 @@ export default function MessagesPage() {
         </header>
         {error && <div className="agenda-error" role="alert">{error}</div>}
         {viewer && !canUseMessages ? (
-          <div className="e1-notice info" role="note"><div><strong>Mensajería reservada al equipo clínico</strong><p>Los mensajes con pacientes solo los gestionan sus profesionales. Si un paciente necesita algo administrativo (citas, facturas), consúltalo con su terapeuta.</p></div></div>
+          <div className="e1-notice info" role="note"><div><strong>Mensajería reservada al equipo clínico</strong><p>Los mensajes con pacientes solo los gestionan sus profesionales. Si un paciente necesita algo administrativo (citas, cobros), consúltalo con su terapeuta.</p></div></div>
         ) : (
         <section className="messages-layout">
           <aside className="messages-list" aria-label="Conversaciones">

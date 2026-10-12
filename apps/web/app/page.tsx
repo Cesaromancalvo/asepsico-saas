@@ -221,7 +221,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
                 )) : <div className="dashboard-empty compact"><strong>Todo al día</strong><p>No hay acciones pendientes.</p></div>}
               </div>
             </section>
-            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span>＋</span>Nueva cita</Link><Link href="/patients?new=true"><span>◉</span>Nuevo paciente</Link><Link href="/messages"><span>✉</span>Mensajes</Link><Link href="/management"><span>€</span>Crear factura</Link></div></section>
+            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span>＋</span>Nueva cita</Link><Link href="/patients?new=true"><span>◉</span>Nuevo paciente</Link><Link href="/messages"><span>✉</span>Mensajes</Link><Link href="/management"><span>€</span>Registrar cobro</Link></div></section>
           </aside>
         </div>
       </main>
