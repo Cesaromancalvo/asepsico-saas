@@ -5,12 +5,17 @@ import helmet from 'helmet';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { describeTrustProxy, parseTrustProxy } from './config/trust-proxy';
+import { buildCorsDelegate } from './config/cors';
+import { WAITLIST_PATH, assertWaitlistConfig } from './waitlist/waitlist.config';
+import { waitlistBodyParser } from './waitlist/waitlist-body.middleware';
 
 async function bootstrap() {
   // Se valida ANTES de crear la app: un TRUST_PROXY mal escrito debe impedir el arranque, no
   // dejar el rate limiting por IP abierto (o compartido entre todos) en silencio.
   // Ver src/config/trust-proxy.ts y ops/PILOT_RUNBOOK.md (topología de Render).
   const trustProxy = parseTrustProxy(process.env.TRUST_PROXY, process.env.NODE_ENV);
+  // Igual con la lista de espera pública: orígenes CORS y WAITLIST_SECRET (obligatorio en producción).
+  assertWaitlistConfig();
 
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
@@ -39,7 +44,10 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: 'same-site' },
     }),
   );
-  app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000', credentials: true });
+  // CORS por ruta: la app (WEB_ORIGIN, con credenciales) y, solo en /public/waitlist, la landing.
+  app.enableCors(buildCorsDelegate());
+  // Límite de 16 KB en la ruta pública (después de CORS, antes de los parsers globales de 100 KB).
+  app.use(WAITLIST_PATH, waitlistBodyParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
   const config = new DocumentBuilder()

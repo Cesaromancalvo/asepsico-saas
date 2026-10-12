@@ -52,6 +52,7 @@ la usan los servicios al escribir y leer, la exportación, el script de migraci�
 | `ConsentRecord` | `notes` |
 | `Message` | `body`, `attachmentName` |
 | `User` | `totpSecret` |
+| `WaitlistEntry` (lista de espera pública, sin workspace) | `name`, `email`, `tools` (+ `emailHash` HMAC para deduplicar) |
 
 **Fuera del cifrado (decisión consciente o pendiente):**
 
@@ -94,6 +95,33 @@ OWNER/ADMIN que no le tratan, 403 (custodia y copia del art. 15 sin terapeuta: p
 THERAPIST nunca exporta facturación. La exportación clínica descifra con los mismos helpers y,
 como red de seguridad, descifra cualquier string que aún lleve prefijo `enc:` (registrando solo
 la ruta, nunca el valor).
+
+## Lista de espera pública (`/api/v1/public/waitlist`)
+
+Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (módulo `apps/api/src/waitlist/`; contrato en
+`docs/WAITLIST_API.md`). No pertenece a ningún workspace y no admite datos de salud.
+
+- CORS propio solo para esa ruta (`WAITLIST_ALLOWED_ORIGINS`, por defecto `https://asepsico.es` y
+  `https://www.asepsico.es`, sin credenciales) y además se exige la cabecera `Origin` permitida
+  (403 si falta o no coincide). El resto de la API sigue con `WEB_ORIGIN`.
+- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
+  cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
+  (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
+- Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.
+- Alta solo con `create` (nunca upsert): un email repetido o dos altas simultáneas chocan en el
+  índice único de `emailHash` (P2002) y reciben el mismo 202 sin tocar la fila existente.
+- El formulario solo registra la solicitud comercial (`commercialConsentRequested` + fecha). El
+  consentimiento válido lo fija únicamente `waitlist:confirm-commercial` (doble opt-in manual) y
+  se retira con `waitlist:withdraw-commercial`. Nada comercial sin doble opt-in.
+- No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
+  Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
+- `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
+  token. No se rota: rompe la deduplicación y `waitlist:delete` de las altas previas.
+- Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,
+  permisos 600, sin sobrescribir, celdas neutralizadas contra fórmulas) y
+  `npm run waitlist:delete -- --email <email>` (vacía todos los datos personales y el hash; deja
+  `deletedAt`) y `npm run waitlist:purge` (plazo de 12 meses; tarea mensual en el runbook). Las
+  claves de producción solo se usan en ejecuciones puntuales, nunca en un `.env` permanente.
 
 ## Antes de producción (pendiente)
 
