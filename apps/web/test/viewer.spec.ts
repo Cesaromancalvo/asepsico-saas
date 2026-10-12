@@ -63,6 +63,42 @@ describe('fetchViewer (GET /auth/me)', () => {
     api.mockResolvedValueOnce({ ...ME, role: 'PATIENT' });
     expect((await loadModule().fetchViewer()).role).toBeNull();
   });
+
+  // Condición (c) de Argos: un fallo del servidor o de red nunca da un rol y no se queda cacheado
+  // (si se cacheara, la barra y la portada seguirían sin rol hasta recargar la página).
+  it('un 500 devuelve role null, sin MFA, y no se cachea', async () => {
+    const mod = loadModule();
+    api.mockRejectedValueOnce(new ApiError('Internal server error', 500));
+    const failed = await mod.fetchViewer();
+    expect(failed.role).toBeNull();
+    expect(failed.isClinician).toBeFalsy();
+    expect(failed.mfaPending).toBeUndefined();
+
+    api.mockResolvedValueOnce(ME);
+    expect((await mod.fetchViewer()).role).toBe('ASSISTANT');
+    expect(api.mock.calls.map(([path]) => path)).toEqual(['/auth/me', '/auth/me']);
+  });
+
+  it('un error de red devuelve role null y no se cachea', async () => {
+    const mod = loadModule();
+    api.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const failed = await mod.fetchViewer();
+    expect(failed.role).toBeNull();
+    expect(failed.isClinician).toBeFalsy();
+
+    api.mockResolvedValueOnce({ ...ME, role: 'THERAPIST' });
+    expect(await mod.fetchViewer()).toMatchObject({ role: 'THERAPIST', isClinician: true });
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('el éxito sí se cachea: una sola petición para varias llamadas', async () => {
+    const mod = loadModule();
+    api.mockResolvedValueOnce(ME);
+    const [a, b] = await Promise.all([mod.fetchViewer(), mod.fetchViewer()]);
+    expect(await mod.fetchViewer()).toBe(a);
+    expect(b).toBe(a);
+    expect(api).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('"Mi jornada" de recepción (revisión estática)', () => {
