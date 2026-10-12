@@ -19,6 +19,7 @@ import { ClinicalAccessModule } from './clinical-access/clinical-access.module';
 import { WorkspaceMembersModule } from './workspace-members/workspace-members.module';
 import { PatientImportModule } from './patient-import/patient-import.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
+import { LegalModule } from './legal/legal.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     WorkspaceMembersModule,
     PatientImportModule,
     WaitlistModule,
+    LegalModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

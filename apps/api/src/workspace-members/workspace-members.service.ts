@@ -35,8 +35,9 @@ export class WorkspaceMembersService {
     return members.map(toMemberView);
   }
 
-  // TODO-E1: cuando exista el cambio de rol (o la invitación) de un miembro, fijar isClinician en
-  // la MISMA transacción: ASSISTANT → false, THERAPIST → true (los CHECK de la BD lo exigen).
+  // Invitaciones: isClinician se fija con el rol en la misma transacción (member-role.util.ts y
+  // RegistrationService.registerMember). TODO-E1 pendiente: cuando exista el CAMBIO de rol de un
+  // miembro, aplicar clinicianFlagForRole en la misma transacción (los CHECK de la BD lo exigen).
 
   /** Solo el OWNER (según la BD) cambia el atributo clínico. ASSISTANT nunca es clínico. */
   async setClinician(workspaceId: string, actor: AuthUser, userId: string, dto: UpdateMemberClinicianDto) {

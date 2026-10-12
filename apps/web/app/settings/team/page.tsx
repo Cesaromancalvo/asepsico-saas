@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import TeamInvites from '@/components/TeamInvites';
 import { api } from '@/lib/api';
 import { invalidateViewer, isForbidden, ROLE_LABEL, StaffRole, useViewer } from '@/lib/clinical';
 
@@ -77,7 +78,7 @@ export default function TeamPage() {
           <div>
             <span className="eyebrow">Consulta</span>
             <h1>Equipo</h1>
-            <p>Quién forma parte de la consulta y quién atiende pacientes.</p>
+            <p>Quién forma parte de la consulta, quién atiende pacientes y a quién has invitado.</p>
           </div>
         </header>
 
@@ -171,6 +172,8 @@ export default function TeamPage() {
             )}
           </section>
         )}
+
+        {state === 'ready' && viewer && <TeamInvites isOwner={isOwner} />}
       </main>
     </div>
   );

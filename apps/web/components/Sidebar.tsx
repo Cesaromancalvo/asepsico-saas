@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
 import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
+import { invalidateTermsStatus, useTermsStatus } from '../lib/legal';
 type SidebarProps = {
   syncText?: string;
 };
@@ -71,6 +72,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const viewer = useViewer();
+  // Condiciones nuevas sin aceptar: al titular le bloquea la API (428 → /terms); al resto solo se le avisa.
+  const terms = useTermsStatus();
   const items = navigation.filter((item) =>
     (!item.adminOnly || isAdminRole(viewer?.role)) &&
     (!item.processAccess || isStaffWithProcessAccess(viewer?.role)));
@@ -86,6 +89,7 @@ export default function Sidebar({
     try {
       await logout();
       invalidateViewer();
+      invalidateTermsStatus();
     } finally {
       window.location.href = '/login';
     }
@@ -115,6 +119,16 @@ export default function Sidebar({
         ))}
       </nav>
       <div className="sidebar-bottom">
+        {terms?.acceptanceRequired && !terms.canAccept && (
+          <p className="sidebar-terms-notice" role="note">
+            Tu consulta tiene que aceptar las nuevas condiciones; avisa a la persona titular.
+          </p>
+        )}
+        {terms?.acceptanceRequired && terms.canAccept && (
+          <p className="sidebar-terms-notice" role="note">
+            Hay condiciones nuevas pendientes. <Link href="/terms">Revisarlas</Link>
+          </p>
+        )}
         <div className="sync-status">
           <span className="sync-dot" />
           <div>

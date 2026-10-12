@@ -22,10 +22,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Respons
 
 /** Error de la API con el código HTTP, para que las pantallas distingan 401, 429, 400… */
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Código estable de la API (p. ej. REGISTRATION_NOT_ALLOWED) o undefined. */
+export function apiErrorCode(err: unknown): string | undefined {
+  return err instanceof ApiError ? err.code : undefined;
+}
+
+/** Pantalla a la que lleva el 428 TERMS_ACCEPTANCE_REQUIRED (condiciones nuevas sin aceptar). */
+export const TERMS_PAGE = '/terms';
+
+/**
+ * Interceptor global del 428: la API bloquea al titular hasta que acepte las condiciones nuevas.
+ * Cualquier pantalla que lo reciba lleva a la de "Nuevas condiciones" (salvo si ya está en ella).
+ */
+function redirectToTermsIfRequired(status: number, code: string | undefined) {
+  if (status !== 428 || code !== 'TERMS_ACCEPTANCE_REQUIRED' || typeof window === 'undefined') return;
+  if (window.location.pathname === TERMS_PAGE) return;
+  window.location.assign(TERMS_PAGE);
 }
 
 // Rutas en las que un 401 es una respuesta de negocio (credenciales, código, pendingToken) y
@@ -37,11 +55,15 @@ const NO_REFRESH_PATHS = new Set(['/auth/login', '/auth/login/mfa', '/auth/refre
 const BUSINESS_401_PATHS = new Set(['/auth/mfa/confirm', '/auth/mfa/disable']);
 const AUTH_LAYER_401_MESSAGES = new Set(['Unauthorized', 'Token no válido para este dominio']);
 
+async function readError(response: Response): Promise<{ message?: string; code?: string }> {
+  const body = (await response.json().catch(() => ({}))) as { message?: unknown; code?: unknown };
+  const code = typeof body.code === 'string' ? body.code : undefined;
+  if (Array.isArray(body.message)) return { message: body.message.join('. '), code };
+  return { message: typeof body.message === 'string' ? body.message : undefined, code };
+}
+
 async function readMessage(response: Response): Promise<string | undefined> {
-  const body = await response.json().catch(() => ({}));
-  const message = (body as { message?: unknown }).message;
-  if (Array.isArray(message)) return message.join('. ');
-  return typeof message === 'string' ? message : undefined;
+  return (await readError(response)).message;
 }
 
 async function shouldRefresh(path: string, response: Response): Promise<boolean> {
@@ -66,12 +88,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
   if (!response.ok) {
-    let message = (await readMessage(response)) ?? 'Error de conexión';
+    const { message: apiMessage, code } = await readError(response);
+    let message = apiMessage ?? 'Error de conexión';
     // El límite genérico por IP (Throttler) responde en inglés; el del MFA ya trae su texto.
     if (response.status === 429 && message.startsWith('ThrottlerException')) {
       message = 'Demasiadas peticiones seguidas. Espera un minuto y vuelve a intentarlo.';
     }
-    throw new ApiError(message, response.status);
+    redirectToTermsIfRequired(response.status, code);
+    throw new ApiError(message, response.status, code);
   }
   return response.json();
 }

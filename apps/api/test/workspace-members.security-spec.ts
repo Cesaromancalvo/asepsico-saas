@@ -127,34 +127,4 @@ describe('Migración de isClinician', () => {
   });
 });
 
-describe('Registro: el OWNER de un workspace nuevo no es clínico salvo que lo indique', () => {
-  const { AuthService } = require('../src/auth/auth.service');
-  function registerPrisma() {
-    const created: any[] = [];
-    const tx: any = {
-      user: { create: jest.fn(async ({ data }: any) => ({ id: 'u-1', ...data })) },
-      workspace: { create: jest.fn(async ({ data }: any) => ({ id: 'w-1', ...data })) },
-      workspaceMember: { create: jest.fn(async ({ data }: any) => { created.push(data); return { id: 'm-1', ...data }; }) },
-    };
-    const prisma: any = { user: { findUnique: jest.fn(async () => null) }, $transaction: jest.fn(async (cb: any) => cb(tx)), created };
-    return prisma;
-  }
-  const dto = { firstName: 'Nombre', lastName: 'Ficticio', email: 'nuevo@example.com', password: 'contrasena-ficticia-larga', workspaceName: 'Consulta ficticia' };
-
-  it.each([[undefined, false], [false, false], [true, true]])('isClinician=%s → miembro OWNER con isClinician=%s', async (input, expected) => {
-    const prisma = registerPrisma();
-    const service = new AuthService(prisma, {} as any, {} as any);
-    (service as any).issueSession = jest.fn(async () => ({}));
-    await service.register({ ...dto, ...(input === undefined ? {} : { isClinician: input }) } as any, {});
-    expect(prisma.created).toEqual([expect.objectContaining({ role: 'OWNER', isClinician: expected })]);
-  });
-
-  it('el DTO de registro valida isClinician como booleano opcional (whitelist)', async () => {
-    const { validate } = require('class-validator');
-    const { plainToInstance } = require('class-transformer');
-    const { RegisterDto } = require('../src/auth/dto/register.dto');
-    expect(await validate(plainToInstance(RegisterDto, dto))).toEqual([]);
-    const errors = await validate(plainToInstance(RegisterDto, { ...dto, isClinician: 'sí' }));
-    expect(errors.map((e: any) => e.property)).toEqual(['isClinician']);
-  });
-});
+// Registro del OWNER (isClinician, invitación y condiciones): test/registration-invites.security-spec.ts

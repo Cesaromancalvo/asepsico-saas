@@ -74,6 +74,10 @@ function client(name) {
 async function main() {
   const hash = await bcrypt.hash(password, 10);
   const workspace = await prisma.workspace.create({ data: { name: `Consulta QA Web ${stamp}` } });
+  // Condiciones vigentes: cada profesional (titular y miembros) las acepta o la API le responde 428.
+  const termsRes = await fetch(`${API}/legal/terms`);
+  if (!termsRes.ok) throw new Error(`GET /legal/terms → ${termsRes.status}`);
+  const acceptedTerms = (await termsRes.json()).map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
   const defs = {
     owner: { role: 'OWNER', isClinician: false, mfa: true, first: 'Olga' },
     admin: { role: 'ADMIN', isClinician: false, mfa: true, first: 'Adrián' },
@@ -87,6 +91,7 @@ async function main() {
     const email = `qa-web-${key}-${stamp}@example.test`;
     const user = await prisma.user.create({ data: { email, passwordHash: hash, firstName: def.first, lastName: 'Ficticio QA' } });
     await prisma.workspaceMember.create({ data: { workspaceId: workspace.id, userId: user.id, role: def.role, isClinician: def.isClinician } });
+    await prisma.termsAcceptance.createMany({ data: acceptedTerms.map((t) => ({ workspaceId: workspace.id, userId: user.id, ...t, userAgent: 'seed-e1-web-qa' })) });
     const c = client(key);
     await c.call('/auth/login', { method: 'POST', body: { email, password } });
     let secret = null;

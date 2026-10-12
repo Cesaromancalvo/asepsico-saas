@@ -112,6 +112,13 @@ enum ResourceCategory {
   OTHER
 }
 
+/// Documentos legales que acepta el titular de la consulta (versionados en src/legal/).
+enum LegalDocumentType {
+  PILOT_TERMS
+  DPA_ART28
+  PRIVACY_PRODUCT
+}
+
 enum SessionType {
   INDIVIDUAL
   COUPLE
@@ -142,6 +149,9 @@ model Workspace {
   conversations        Conversation[]
   patientImportJobs    PatientImportJob[]
   patientImportItems   PatientImportItem[]
+  termsAcceptances     TermsAcceptance[]
+  workspaceInvites     WorkspaceInvite[]
+  registrationInvite   RegistrationInvite?
 }
 
 model User {
@@ -174,6 +184,79 @@ model User {
   resourcesCreated             TherapeuticResource[]
   messagesSent                 Message[]
   patientImportJobs            PatientImportJob[]
+  termsAcceptances             TermsAcceptance[]
+  workspaceInvitesSent         WorkspaceInvite[]     @relation("WorkspaceInviteInvitedBy")
+  workspaceInvitesAccepted     WorkspaceInvite[]     @relation("WorkspaceInviteAcceptedUser")
+  registrationInviteUsed       RegistrationInvite?   @relation("RegistrationInviteUsedBy")
+}
+
+/// Invitación de un solo uso para crear un workspace nuevo (registro cerrado). La crea solo la
+/// plataforma (CLI con acceso a la BD), nunca un usuario. El token solo se guarda como hash.
+/// No tiene workspaceId al crearse: es previa a cualquier workspace (dato de plataforma).
+model RegistrationInvite {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  /// Correo destinatario, en minúsculas. El registro exige que coincida.
+  email        String
+  expiresAt    DateTime
+  /// Quién la emitió (etiqueta libre del operador de la plataforma, p. ej. "cli:cesar").
+  createdBy    String
+  createdAt    DateTime   @default(now())
+  usedAt       DateTime?
+  revokedAt    DateTime?
+  usedByUserId String?    @unique
+  workspaceId  String?    @unique
+  usedBy       User?      @relation("RegistrationInviteUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+}
+
+/// Invitación de un miembro a un workspace existente. Rol e isClinician quedan fijados por el
+/// OWNER al invitar (CHECK en la BD: THERAPIST siempre clínico, ASSISTANT nunca, nunca OWNER).
+model WorkspaceInvite {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  tokenHash      String        @unique
+  email          String
+  role           WorkspaceRole
+  isClinician    Boolean
+  invitedById    String?
+  expiresAt      DateTime
+  createdAt      DateTime      @default(now())
+  acceptedAt     DateTime?
+  acceptedUserId String?
+  revokedAt      DateTime?
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy      User?         @relation("WorkspaceInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedUser   User?         @relation("WorkspaceInviteAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([email])
+}
+
+/// Evidencia de aceptación de un documento legal en una versión concreta (hash del texto exacto).
+/// Se conserva aunque cambie la versión vigente: es la prueba de qué se aceptó y cuándo.
+/// RESTRICT a propósito: la evidencia se conserva frente a la supresión (art. 17.3.e RGPD).
+/// TODO(supresión): el futuro flujo de supresión de cuentas seudonimiza el User, nunca lo borra
+/// (ver docs/SECURITY_BASELINE.md, "Registro por invitación y aceptación de condiciones").
+model TermsAcceptance {
+  id           String            @id @default(cuid())
+  workspaceId  String
+  userId       String
+  documentType LegalDocumentType
+  version      String
+  /// SHA-256 (hex) del texto exacto aceptado.
+  textHash     String
+  acceptedAt   DateTime          @default(now())
+  ipAddress    String?
+  userAgent    String?
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// Incluye el hash: si el texto cambia (aunque no cambie la versión) hay que volver a aceptarlo.
+  @@unique([workspaceId, userId, documentType, version, textHash])
+  @@index([workspaceId, documentType, version])
 }
 
 model WorkspaceMember {

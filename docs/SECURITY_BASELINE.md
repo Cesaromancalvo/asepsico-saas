@@ -123,6 +123,48 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   `deletedAt`) y `npm run waitlist:purge` (plazo de 12 meses; tarea mensual en el runbook). Las
   claves de producción solo se usan en ejecuciones puntuales, nunca en un `.env` permanente.
 
+## Registro por invitación y aceptación de condiciones
+
+- **Registro cerrado:** `POST /auth/register` solo funciona con una invitación de plataforma de un
+  solo uso (`npm run invites:create -- --email x`; solo el hash SHA-256 en la BD, caduca a los 14 días,
+  ligada al correo). Cualquier fallo responde 400 neutro `REGISTRATION_NOT_ALLOWED`.
+- **Condiciones versionadas** (`apps/api/src/legal/`): en el piloto demo están vigentes las
+  condiciones de uso del piloto demo (`PILOT_TERMS`, `demo-1.1`) y la política de privacidad para
+  profesionales (`PRIVACY_PRODUCT`, `demo-1.1`). El contrato art. 28 (`DPA_ART28`) **no** está
+  vigente durante el demo (sigue en borrador y no debe haber datos de pacientes); vuelve con el
+  piloto real. Cada profesional acepta por sí mismo: el titular al registrarse (`POST /auth/register`)
+  y cada miembro invitado al darse de alta (`POST /auth/register/member`). Cada aceptación guarda
+  la versión, el hash SHA-256 del texto, la fecha, la IP y el user agent, y se audita en la misma
+  transacción. Si hay una versión nueva, cualquier profesional con condiciones pendientes recibe
+  428 `TERMS_ACCEPTANCE_REQUIRED` hasta aceptarla (`POST /legal/terms/accept`).
+- **Textos sin marcadores en producción:** un texto que conserve cualquier marcador sin rellenar
+  (`[NIF]`, `[DOMICILIO]`, `[PENDIENTE DEL DESPACHO]`...) es borrador. Con `NODE_ENV=production`
+  registro, alta de miembros y aceptación responden 503 `LEGAL_TERMS_DRAFT`. No hay válvula de
+  escape (`LEGAL_ALLOW_DRAFT` se eliminó y se ignora).
+- **Datos del titular fuera del repositorio:** `[NIF]` y `[DOMICILIO]` se sustituyen al arrancar con
+  `LEGAL_TITULAR_NIF` y `LEGAL_TITULAR_DOMICILIO`, definidas solo en el panel de Render. El NIF se
+  valida (DNI/NIE con letra de control) y el domicilio debe ser una línea sin corchetes; si faltan o
+  no son válidos, el marcador se queda y el texto sigue en borrador (503). Los valores nunca se
+  registran en logs. Cambiar cualquiera de ellos cambia el hash y obliga a aceptar de nuevo.
+- **Entorno de prueba:** `GET /api/v1/environment` (público) devuelve `{ demo }`. Solo
+  `DEMO_ENVIRONMENT=false` lo pone a `false`; por defecto la web muestra el aviso fijo.
+- **Miembros invitados:** aceptan las mismas condiciones vigentes que el titular, y la respuesta de
+  `POST /auth/register/member` incluye además la política de privacidad (`privacyNotice`, art. 13
+  RGPD), cuya versión queda en la auditoría (`MEMBER_JOINED`).
+- **Conservación de la evidencia frente a la supresión:** `TermsAcceptance` referencia a `User` y a
+  `Workspace` con `ON DELETE RESTRICT`. La prueba de qué contrato se aceptó, quién lo aceptó y cuándo
+  se conserva aunque el usuario pida la supresión, porque es necesaria para la formulación, el
+  ejercicio o la defensa de reclamaciones (art. 17.3.e RGPD). Por eso, al suprimir un usuario **no
+  se borra su fila de `User`**: se **seudonimiza**. Se sustituyen el correo, el nombre y los
+  apellidos por valores no identificativos, se invalidan la contraseña, el MFA y los refresh tokens,
+  y se eliminan sus membresías. Así se mantienen las aceptaciones y la auditoría. Plazo de
+  conservación (piloto demo): la evidencia de aceptación y la auditoría se conservan **bloqueadas
+  3 años** desde el fin de la prueba o la baja, y después se suprimen (política de privacidad del
+  demo, apartado 4). **Pendiente:** el procedimiento de purga a los 3 años.
+  **TODO (flujo de supresión de cuentas de profesionales):** todavía no existe. Cuando se
+  implemente, debe seudonimizar en lugar de borrar, en una transacción auditada, y nunca saltarse el
+  `RESTRICT`.
+
 ## Antes de producción (pendiente)
 
 - MFA para las cuentas de terapeutas/administradores.

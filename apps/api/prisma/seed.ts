@@ -2,6 +2,8 @@ import { PrismaClient, WorkspaceRole } from '@prisma/client';
 import { hash } from 'bcryptjs';
 // El seed escribe igual que la API: los campos clínicos van cifrados (ver clinical-crypto.ts).
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { buildInviteUrl, createRegistrationInvite } from '../src/auth/invite-token.util';
+import { pendingLegalDocuments, recordTermsAcceptances } from '../src/legal/terms-acceptance';
 const prisma = new PrismaClient();
 async function main() {
   const email = 'demo@asepsico.es';
@@ -15,6 +17,17 @@ async function main() {
     const startsAt = new Date(); startsAt.setDate(startsAt.getDate() + 1); startsAt.setHours(10, 0, 0, 0);
     await prisma.session.create({ data: { workspaceId: workspace.id, patientId: patient.id, therapistId: user.id, startsAt, endsAt: new Date(startsAt.getTime() + 50 * 60 * 1000), notes: encryptField('Primera sesión de seguimiento') } });
   }
+  // La cuenta demo (OWNER) acepta las condiciones vigentes; si no, la API le respondería 428.
+  // Idempotente: solo registra lo pendiente (también tras publicar una versión nueva).
+  const workspaceId = membership.workspaceId;
+  await prisma.$transaction(async (tx) => {
+    const pending = await pendingLegalDocuments(tx, workspaceId, user.id);
+    if (pending.length > 0) await recordTermsAcceptances(tx, { workspaceId, userId: user.id, docs: pending, meta: { userAgent: 'seed' } });
+  });
+  // Invitación de registro de ejemplo (correo ficticio). Token aleatorio en cada ejecución:
+  // nunca uno fijo, porque el repo es público. Revoca la del seed anterior.
+  const { token } = await createRegistrationInvite(prisma, { email: 'nueva-consulta@example.com', createdBy: 'seed' });
   console.log({ email, password: 'AsePsico2026!', workspace: membership.workspace.name });
+  console.log(`Invitación de registro de prueba (nueva-consulta@example.com): ${buildInviteUrl('/register', token)}`);
 }
 main().finally(() => prisma.$disconnect());

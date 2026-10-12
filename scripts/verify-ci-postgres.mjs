@@ -18,6 +18,10 @@ const checks = [
   ['API start', /npm --workspace @asepsico\/api run start/],
   ['real health endpoint', /127\.0\.0\.1:4000\/api\/v1\/health/],
   ['real HTTP smoke test', /npm run test:smoke/],
+  // Cuenta existente con condiciones nuevas: 428 → acepta → sin 428 (condición de Argos), con la API
+  // reiniciada con datos del titular FICTICIOS (12345678Z) tras sembrar sin ellos.
+  ['smoke del 428 de condiciones nuevas', /ASEPSICO_SMOKE_EXPECT_TERMS_428:\s*'1'/],
+  ['API reiniciada con NIF ficticio para el 428', /LEGAL_TITULAR_NIF:\s*12345678Z/],
   ['smoke con MFA temporal (BD desechable)', /ASEPSICO_SMOKE_ENROLL_MFA:\s*'1'/],
   ['failure log artifact', /actions\/upload-artifact@v4/],
   // La API de CI solo confía en loopback; nunca "true" (permitiría falsear la IP del throttle).
@@ -47,6 +51,11 @@ const smokeIndex = workflow.indexOf('npm run test:smoke');
 const mfaIndex = workflow.indexOf('node scripts/verify-mfa-concurrency.mjs');
 if (mfaIndex < smokeIndex) {
   throw new Error('verify-mfa-concurrency debe ejecutarse después del smoke HTTP real');
+}
+// Registro por invitación: la ráfaga concurrente contra PostgreSQL real debe ejecutarse siempre.
+const inviteIndex = workflow.indexOf('node scripts/verify-registration-invite-live.mjs');
+if (inviteIndex < 0 || inviteIndex < smokeIndex) {
+  throw new Error('verify-registration-invite-live debe ejecutarse en CI después del smoke HTTP real');
 }
 if (/TRUST_PROXY:\s*['"]?true/i.test(workflow)) {
   throw new Error('La CI no debe usar TRUST_PROXY=true');

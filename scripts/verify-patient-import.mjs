@@ -124,6 +124,18 @@ function assertLocalTargets() {
 const prisma = new PrismaClient();
 const password = `Qa1${randomBytes(18).toString('base64url')}`;
 
+// Registro por invitación: cada profesional (titular y miembros) acepta las condiciones vigentes
+// o la API le responde 428 TERMS_ACCEPTANCE_REQUIRED. Se toman tal cual las sirve la API.
+let currentTerms = null;
+async function acceptedTerms() {
+  if (!currentTerms) {
+    const res = await fetch(`${API}/legal/terms`);
+    assert(res.ok, `GET /legal/terms → ${res.status}`);
+    currentTerms = (await res.json()).map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
+  }
+  return currentTerms;
+}
+
 async function createUser(workspaceId, key, role, { isClinician = role === 'THERAPIST' } = {}) {
   const email = `qa-import-${key}-${STAMP}@example.test`;
   const user = await prisma.user.create({
@@ -131,6 +143,7 @@ async function createUser(workspaceId, key, role, { isClinician = role === 'THER
   });
   // E1: THERAPIST siempre clínico y ASSISTANT nunca (CHECK en la BD); OWNER/ADMIN según isClinician.
   await prisma.workspaceMember.create({ data: { workspaceId, userId: user.id, role, isClinician } });
+  await prisma.termsAcceptance.createMany({ data: (await acceptedTerms()).map((t) => ({ workspaceId, userId: user.id, ...t, userAgent: 'verify-patient-import' })) });
   return { ...user, email };
 }
 

@@ -196,6 +196,53 @@ jobs:
       - name: Verify public waitlist (real PostgreSQL)
         run: node scripts/verify-waitlist.mjs
 
+      # Registro cerrado por invitación (hallazgo de Argos): ráfaga de registros con el mismo token
+      # → un solo 201 y sin usuarios ni workspaces huérfanos; el THERAPIST invitado recibe 403 de
+      # MFA antes de tocar datos clínicos. Usa X-Forwarded-For (TRUST_PROXY=loopback).
+      - name: Verify invitation-only registration under concurrency (real PostgreSQL)
+        run: node scripts/verify-registration-invite-live.mjs
+
+      # Condiciones nuevas para una cuenta que YA existe (condición de Argos, commit 37b9b78): la BD
+      # se sembró sin LEGAL_TITULAR_*; se reinicia la API CON un NIF y un domicilio FICTICIOS
+      # válidos, el texto servido cambia de hash y la cuenta demo debe recibir 428
+      # TERMS_ACCEPTANCE_REQUIRED, aceptar y dejar de recibirlo. Nunca datos reales: 12345678Z es
+      # el DNI de ejemplo con letra de control válida. Va antes del paso de MFA (que deja la cuenta
+      # demo en espera ~1 min) y deja la API en marcha para los pasos siguientes.
+      - name: Restart API with fictitious legal holder data (new terms version)
+        shell: bash
+        env:
+          LEGAL_TITULAR_NIF: 12345678Z
+          LEGAL_TITULAR_DOMICILIO: Calle Ficticia 1, 00000 Ciudad Inventada
+        run: |
+          kill "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+          for attempt in {1..30}; do
+            curl --silent --output /dev/null http://127.0.0.1:4000/api/v1/health || break
+            sleep 1
+          done
+          npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/asepsico-api.pid"
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4000/api/v1/health > "$RUNNER_TEMP/health.json"; then
+              cat "$RUNNER_TEMP/health.json"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null; then
+              echo "La API terminó antes de estar saludable" >&2
+              cat "$RUNNER_TEMP/asepsico-api.log" >&2
+              exit 1
+            fi
+            echo "API todavía no disponible (intento ${attempt}/60)"
+            sleep 2
+          done
+          echo "La API no respondió a tiempo" >&2
+          cat "$RUNNER_TEMP/asepsico-api.log" >&2
+          exit 1
+
+      - name: Real HTTP smoke test with new terms (428 → accept → no 428)
+        run: npm run test:smoke
+        env:
+          ASEPSICO_SMOKE_EXPECT_TERMS_428: '1'
+
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
       # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR
