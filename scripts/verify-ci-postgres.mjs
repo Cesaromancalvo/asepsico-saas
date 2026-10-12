@@ -148,4 +148,18 @@ if (!/recoveryCodes/.test(smoke)) {
   throw new Error('El smoke debe desactivar el MFA temporal con un código de recuperación, no reutilizando el TOTP');
 }
 
+// Web: las pruebas unitarias de apps/web y el build cerrado de la landing (condición de Argos)
+// deben ejecutarse en el job quality.
+const qualityIndex = workflow.indexOf('quality:');
+const postgresIntegrationIndex = workflow.indexOf('postgres-integration:');
+const webTestIndex = workflow.indexOf('npm --workspace @asepsico/web run test');
+if (webTestIndex < qualityIndex || webTestIndex > postgresIntegrationIndex) {
+  throw new Error('Las pruebas de la web (npm --workspace @asepsico/web run test) deben ejecutarse en el job quality');
+}
+const landingBuildIndex = workflow.indexOf('env -u LEGAL_TITULAR_NIF -u LEGAL_TITULAR_DOMICILIO node apps/landing/build.mjs');
+if (landingBuildIndex < qualityIndex || landingBuildIndex > postgresIntegrationIndex ||
+    !/if \[ "\$status" -eq 0 \]; then[\s\S]*?exit 1/.test(workflow.slice(landingBuildIndex))) {
+  throw new Error('El job quality debe comprobar que apps/landing/build.mjs falla sin LEGAL_TITULAR_NIF ni LEGAL_TITULAR_DOMICILIO');
+}
+
 console.log(`OK: ${checks.length} comprobaciones textuales + ${testFiles.length} archivos de test detectados de verdad.`);
