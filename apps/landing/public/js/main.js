@@ -656,7 +656,10 @@
           token = null;
           return getToken(true).then(function () { return post(payload, true); });
         }
-        if (code === 'WAITLIST_FORM_TOKEN_INVALID' || code === 'WAITLIST_FORM_TOO_FAST') token = null;
+        // Respuesta final (202, 400, 403, 413, 415, 429, 5xx): el token no se reutiliza nunca; el
+        // siguiente envío pide otro (y vuelve a esperar minSeconds). Solo un fallo de red lo conserva.
+        token = null;
+        tokenAt = 0;
         return r;
       });
     }
@@ -726,7 +729,7 @@
       var toolsMsg = tools.length > 500 ? 'Puedes escribir como máximo 500 caracteres.' : '';
       setError(inTools, 'wl-tools-err', toolsMsg); if (toolsMsg) bad.push(inTools);
 
-      var privMsg = inPrivacy.checked ? '' : 'Para apuntarte tienes que aceptar la política de privacidad.';
+      var privMsg = inPrivacy.checked ? '' : 'Para apuntarte, marca la casilla de privacidad: es obligatoria.';
       setError(inPrivacy, 'wl-privacy-err', privMsg); if (privMsg) bad.push(inPrivacy);
 
       if (bad.length) { bad[0].focus(); return null; }

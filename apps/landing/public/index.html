@@ -672,13 +672,13 @@
           <span class="pilot__tag">Lista de espera</span>
           <!-- [CLIO] Titular y entradilla de la sección -->
           <h2 id="apuntate-titulo" class="display display--md">Apúntate a la lista de espera</h2>
-          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Déjanos tus datos y te escribiremos.</p>
+          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Déjanos tus datos y te escribiremos para contarte si hay plaza.</p>
           <p class="small">Los campos marcados con <span aria-hidden="true">*</span><span class="visually-hidden">asterisco</span> son obligatorios.</p>
         </div>
 
         <div class="waitlist__box">
-          <form class="waitlist__form" data-waitlist-form novalidate aria-labelledby="apuntate-titulo">
-            <p class="waitlist__notice" data-waitlist-nojs>Para enviar el formulario necesitas tener JavaScript activado en el navegador. Si no puedes, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
+          <form class="waitlist__form" method="post" data-waitlist-form novalidate aria-labelledby="apuntate-titulo">
+            <p class="waitlist__notice" data-waitlist-nojs>Para enviar el formulario necesitas tener JavaScript activado en el navegador. Si no puedes activarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a> con el asunto "Lista de espera": te enviaremos la información de privacidad y te apuntaremos cuando nos confirmes que estás de acuerdo.</p>
 
             <fieldset class="waitlist__fields" data-waitlist-fields disabled>
               <legend class="visually-hidden">Tus datos para la lista de espera</legend>
@@ -757,7 +757,9 @@
                 <label for="wl-commercial">Quiero recibir por email novedades y ofertas de AsePsico para profesionales. Te pediremos que lo confirmes por email y podrás darte de baja en cualquier momento. <span class="opt">(Opcional)</span></label>
               </div>
 
-              <!-- [LEX] Cláusula informativa breve, primera capa (§2.1), junto al botón. -->
+              <!-- [LEX] Cláusula informativa breve, primera capa (§2.1), junto al botón.
+                   [PENDIENTE DPF] "con garantías adecuadas" depende de la condición 3 de la v2 (DPA de Render y DPF):
+                   si Render no figura "Active" el viernes, revisar esta frase con Lex Psi. -->
               <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento; y, solo si marcas la casilla opcional y lo confirmas por email, para enviarte novedades y ofertas. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
 
               <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
@@ -770,7 +772,7 @@
             <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
             <h3 class="waitlist__done-title">Gracias</h3>
             <p>Si los datos son correctos, te escribiremos a tu email.</p>
-            <p data-wl-done-commercial hidden>Si marcaste la casilla de novedades, te escribiremos para que la confirmes.</p>
+            <p data-wl-done-commercial hidden>Si marcaste la casilla de novedades, te escribiremos para que lo confirmes. Hasta que no lo confirmes, no te enviaremos novedades ni ofertas.</p>
             <p class="small">Si quieres corregir algún dato o borrarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
           </div>
         </div>

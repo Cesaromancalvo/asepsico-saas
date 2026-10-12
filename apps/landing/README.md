@@ -61,6 +61,11 @@ cualquier otro `[[...]]`); con `--require-filled` (salida del build) cualquier m
 `npm run test:landing` ejecuta además `scripts/check-landing-build.mjs`, que prueba `build.mjs` con
 datos ficticios: salida sin marcadores y válida para la CSP, fallo cerrado sin variables o con
 valores mal formados, y ningún valor escrito en el log.
+`scripts/check-landing-form.mjs` prueba el formulario de la lista de espera con un DOM mínimo y un
+`fetch` simulado (sin red): ninguna petición al cargar y un solo token aunque haya varios focos, espera de
+`minSeconds`, tras el `202` campos vacíos y token descartado, el token no se reenvía tras 400/413/415/429,
+reintentos únicos (`TOO_FAST`, `TOKEN_INVALID`), mensajes de 429, de red y de validación, `credentials:
+'omit'` y ningún acceso a `localStorage`, `sessionStorage` ni cookies.
 Excepción: los bloques `<script type="application/ld+json">` (datos estructurados) se permiten si
 son JSON válido, no llevan `src` y solo contienen URLs de la propia web o el identificador
 `https://schema.org` (que no se descarga). Fuera del JSON-LD, `schema.org` no está permitido.
@@ -78,6 +83,7 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | Constante | Valor actual | Notas |
 |---|---|---|
 | `FEATURES.ownWaitlistForm` | `true` | Formulario propio de la lista de espera (sección `#apuntate`), enviado con `fetch` a `WAITLIST_API_URL`. Todos los botones "Apúntate" llevan a esa sección (`href="#apuntate"` en el HTML) y ponen el foco en el primer campo. **Apagado = red de seguridad**: la sección desaparece, los botones vuelven a `FORM_URL` (Google Forms, pestaña nueva) y los enlaces de privacidad a `FORM_PRIVACY_URL_FALLBACK` (v1). Si se apaga, cambiar también a mano el enlace de privacidad dentro del Google Form a `/privacidad-lista-espera/v1/` |
+| (red de seguridad) | — | **Si se apaga `FEATURES.ownWaitlistForm`, en el mismo despliegue** hay que restaurar la mención a Google Forms en el apartado 5 de `/aviso-legal/` y el texto anterior del apartado 2 de `/privacidad/` (auditoría de Lex Psi, 12/10): si no, los dos textos dirían algo falso |
 | `WAITLIST_API_URL` | `https://asepsico-api.onrender.com/api/v1` | API de la lista de espera. Único sitio con la URL. Si cambia el host: CSP (`connect-src`) y `CONNECT_ORIGINS` de `scripts/check-landing.mjs` |
 | `WAITLIST_POLICY_VERSION` | `lista-espera-v2` | Se envía en `privacyPolicyVersion`. Tiene que coincidir con la versión visible en `/privacidad-lista-espera/` y con la que acepta la API |
 | `FORM_URL` | formulario de Google Forms de la lista de espera | Solo se usa con `FEATURES.ownWaitlistForm: false` (sin JavaScript, los botones van a `#apuntate`, que muestra un aviso y el email de contacto) |
