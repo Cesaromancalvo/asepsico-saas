@@ -4,6 +4,7 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { getJwtSecret } from '../src/auth/jwt-secret.util';
 import { getPortalJwtSecret } from '../src/portal/portal-jwt-secret.util';
+import { withClinicalAccess } from './support/clinical-access-fixture';
 
 /**
  * Regresión para el hallazgo: un paciente con acceso al portal podía reutilizar su propio
@@ -108,7 +109,8 @@ describe('SessionsService falla cerrado ante un rol desconocido', () => {
 
   it('get() bloquea a un THERAPIST que intenta ver la sesión de otro profesional', async () => {
     const prisma = sessionsPrismaMock();
-    prisma.session.findFirst.mockResolvedValue({ id: 'session-1', therapistId: 'other-therapist' });
+    prisma.session.findFirst.mockResolvedValue({ id: 'session-1', patientId: 'patient-1', therapistId: 'other-therapist' });
+    withClinicalAccess(prisma, { members: [{ userId: 'therapist-1', role: 'THERAPIST', isClinician: true }] });
     const service = new SessionsService(prisma);
     const therapist = { sub: 'therapist-1', workspaceId: 'ws-1', role: 'THERAPIST', email: 't@example.com' } as any;
     await expect(service.get('ws-1', therapist, 'session-1')).rejects.toBeInstanceOf(ForbiddenException);
@@ -116,7 +118,8 @@ describe('SessionsService falla cerrado ante un rol desconocido', () => {
 
   it('get() ya no expone consultationReason/goals del proceso clínico', async () => {
     const prisma = sessionsPrismaMock();
-    prisma.session.findFirst.mockResolvedValue({ id: 'session-1', therapistId: 'therapist-1' });
+    prisma.session.findFirst.mockResolvedValue({ id: 'session-1', patientId: 'patient-1', therapistId: 'therapist-1' });
+    withClinicalAccess(prisma, { members: [{ userId: 'owner-1', role: 'OWNER', isClinician: true }] });
     const service = new SessionsService(prisma);
     const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER', email: 'o@example.com' } as any;
     await service.get('ws-1', owner, 'session-1');

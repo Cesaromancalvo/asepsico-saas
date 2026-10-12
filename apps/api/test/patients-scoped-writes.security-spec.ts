@@ -27,10 +27,19 @@ function prismaMock(seed: Partial<Stores> = {}) {
       { id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE', deletedAt: null, firstName: 'Paciente', lastName: 'Ficticio', portalAccessMode: 'PATIENT_ONLY' },
       { id: 'patient-ws2', workspaceId: 'ws-2', status: 'ACTIVE', deletedAt: null, firstName: 'Otro', lastName: 'Ficticio', portalAccessMode: 'PATIENT_ONLY' },
     ],
-    clinicalProcess: [{ id: 'proc-1', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1' }],
+    clinicalProcess: [
+      { id: 'proc-1', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1', status: 'ACTIVE', createdAt: new Date('2026-01-01') },
+      // Acceso clínico (E1): el OWNER que escribe es clínico y trata al paciente (proceso ACTIVO propio).
+      { id: 'proc-owner', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'owner-1', status: 'ACTIVE', createdAt: new Date('2026-01-01') },
+    ],
     therapeuticTaskTemplate: [], therapeuticTask: [], therapyGoal: [], clinicalAssessment: [], clinicalHistory: [],
     patientDocument: [], consentRecord: [], clinicalReport: [], patientPortalAccount: [], auditLog: [], notification: [],
-    session: [], invoice: [], resourceShare: [], workspaceMember: [],
+    session: [], invoice: [], resourceShare: [],
+    workspaceMember: [
+      { id: 'm-owner', workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: true },
+      { id: 'm-assistant', workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false },
+      { id: 'm-therapist', workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true },
+    ],
     ...seed,
   } as Stores;
   const clone = (s: Stores): Stores => Object.fromEntries(Object.entries(s).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]));
@@ -245,7 +254,7 @@ const cases: Case[] = [
   {
     name: 'updateClinicalReport', model: 'clinicalReport', kind: 'update', action: 'CLINICAL_REPORT_UPDATED',
     rows: [
-      { id: 'rep-1', workspaceId: 'ws-1', patientId: 'patient-1', type: 'EVOLUTION', status: 'DRAFT', title: 'Informe', content: 'x', finalizedAt: null },
+      { id: 'rep-1', workspaceId: 'ws-1', patientId: 'patient-1', type: 'EVOLUTION', status: 'DRAFT', title: 'Informe', content: 'x', finalizedAt: null, createdById: 'owner-1' },
       { id: 'rep-ws2', workspaceId: 'ws-2', patientId: 'patient-ws2', type: 'EVOLUTION', status: 'DRAFT', title: 'Ajeno', content: 'x', finalizedAt: null },
     ],
     foreignId: 'rep-ws2', moveAway: recordMove,
@@ -256,7 +265,7 @@ const cases: Case[] = [
   {
     name: 'deleteClinicalReport', model: 'clinicalReport', kind: 'delete', action: 'CLINICAL_REPORT_DELETED',
     rows: [
-      { id: 'rep-1', workspaceId: 'ws-1', patientId: 'patient-1', type: 'EVOLUTION', status: 'DRAFT', title: 'Informe' },
+      { id: 'rep-1', workspaceId: 'ws-1', patientId: 'patient-1', type: 'EVOLUTION', status: 'DRAFT', title: 'Informe', createdById: 'owner-1' },
       { id: 'rep-ws2', workspaceId: 'ws-2', patientId: 'patient-ws2', type: 'EVOLUTION', status: 'DRAFT', title: 'Ajeno' },
     ],
     foreignId: 'rep-ws2', moveAway: recordMove,
@@ -314,11 +323,13 @@ describe('Escrituras de patients/ acotadas por workspace y auditadas en la misma
       expect(prisma.__rows('auditLog')).toHaveLength(0);
     });
 
-    it('ASSISTANT no accede: 403 sin escrituras ni auditoría', async () => {
+    it('ASSISTANT no accede: 403 sin escrituras; solo se audita el intento denegado', async () => {
       const { prisma, service, ownId } = setup(c);
       await expect(c.run(service, ownId, assistant)).rejects.toBeInstanceOf(ForbiddenException);
       expect(writesOf(prisma, c.model)).toHaveLength(0);
-      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+      expect(prisma.__rows('auditLog')).toEqual([
+        expect.objectContaining({ workspaceId: 'ws-1', actorId: 'assistant-1', action: 'CLINICAL_ACCESS_DENIED' }),
+      ]);
     });
   });
 
@@ -394,6 +405,7 @@ describe('Tareas: therapyGoalId y sessionId enlazados deben ser del mismo pacien
     ],
     session: [
       { id: 'ses-own', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1' },
+      { id: 'ses-owner', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'owner-1' },
       { id: 'ses-other-patient', workspaceId: 'ws-1', patientId: 'patient-2', therapistId: 'therapist-1' },
       { id: 'ses-ws2', workspaceId: 'ws-2', patientId: 'patient-ws2', therapistId: 'therapist-9' },
       { id: 'ses-other-therapist', workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-2' },
@@ -436,15 +448,20 @@ describe('Tareas: therapyGoalId y sessionId enlazados deben ser del mismo pacien
     }));
   });
 
-  it.each([[owner], [therapist]])('permite enlazar objetivo y sesión propios (%#)', async (actor) => {
+  it.each([[owner, 'ses-owner'], [therapist, 'ses-own']])('permite enlazar objetivo y sesión propios (%#)', async (actor, sessionId) => {
     const prisma = prismaMock(linkSeed());
     const service = new PatientsService(prisma);
-    await service.createTherapeuticTask('ws-1', actor, 'patient-1', { title: 'Nueva', therapyGoalId: 'goal-own', sessionId: 'ses-own' } as any);
-    await service.updateTherapeuticTask('ws-1', actor, 'patient-1', 'task-1', { therapyGoalId: 'goal-own', sessionId: 'ses-own' } as any);
+    await service.createTherapeuticTask('ws-1', actor, 'patient-1', { title: 'Nueva', therapyGoalId: 'goal-own', sessionId } as any);
+    await service.updateTherapeuticTask('ws-1', actor, 'patient-1', 'task-1', { therapyGoalId: 'goal-own', sessionId } as any);
     expect(prisma.__rows('therapeuticTask')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'task-1', therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
-      expect.objectContaining({ title: expect.stringMatching(/^enc:v[12]:/), therapyGoalId: 'goal-own', sessionId: 'ses-own' }),
+      expect.objectContaining({ id: 'task-1', therapyGoalId: 'goal-own', sessionId }),
+      expect.objectContaining({ title: expect.stringMatching(/^enc:v[12]:/), therapyGoalId: 'goal-own', sessionId }),
     ]));
+  });
+
+  it('OWNER que trata al paciente no enlaza la sesión de otro profesional (400)', async () => {
+    const prisma = prismaMock(linkSeed());
+    await expect(new PatientsService(prisma).updateTherapeuticTask('ws-1', owner, 'patient-1', 'task-1', { sessionId: 'ses-own' } as any)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('desenlazar (null) no requiere validación', async () => {

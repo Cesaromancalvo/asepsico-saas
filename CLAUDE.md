@@ -69,9 +69,14 @@ el cambio vuelve a Bruno/Fina.
 ## Reglas duras del proyecto (no negociables)
 
 1. **Multi-tenant:** toda lectura y escritura de datos filtra por `workspaceId`, también en las escrituras.
-2. **Contenido clínico por rol:** `ASSISTANT` sin acceso a `ClinicalProcess`; `THERAPIST` solo a lo suyo;
-   `OWNER`/`ADMIN` a todo el workspace. Las vistas generales (`GET /patients`, listados) **nunca**
-   devuelven motivo de consulta, objetivos, notas internas ni notas de sesión.
+2. **Contenido clínico por relación asistencial, no por rol:** solo lo ve un profesional clínico
+   (`THERAPIST` siempre; `OWNER`/`ADMIN` solo con `isClinician`; `ASSISTANT` nunca) con proceso
+   ACTIVO con ese paciente; el autor de un proceso cerrado conserva la lectura de lo suyo; un proceso
+   en pausa es de solo lectura. Quien no trata al paciente (incluidos `OWNER`/`ADMIN`) solo ve datos
+   administrativos. Los mensajes con el paciente son contenido clínico. Las notas internas solo las ve
+   su autor. Toda decisión pasa por `ClinicalAccessService`, que falla en cerrado y audita las
+   denegaciones. Las vistas generales (`GET /patients`, listados) **nunca** devuelven motivo de
+   consulta, objetivos, notas internas, notas de sesión ni títulos de proceso.
 3. **Auditoría** transaccional en altas, modificaciones, archivado y accesos excepcionales.
 4. **Nunca datos clínicos reales** en código, tests, seeds, logs ni commits. Solo datos ficticios.
 5. **Nunca secretos** en el repo (`.env` está ignorado; usar `.env.example`).

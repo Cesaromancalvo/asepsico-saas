@@ -51,9 +51,25 @@ export const STORE_NAMES = [
   'conversation', 'notification', 'auditLog', 'patientImportJob', 'patientImportItem', 'workspaceMember',
 ];
 
+/**
+ * Miembros por defecto (E1): el criterio de importación lee WorkspaceMember de la BD. THERAPIST
+ * siempre clínico, ASSISTANT nunca y OWNER/ADMIN según isClinician (owner-1 y admin-1 no
+ * clínicos; owner-clinico-1 sí).
+ */
+export const DEFAULT_MEMBERS: Row[] = [
+  { workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true },
+  { workspaceId: 'ws-1', userId: 'therapist-2', role: 'THERAPIST', isClinician: true },
+  { workspaceId: 'ws-2', userId: 'therapist-9', role: 'THERAPIST', isClinician: true },
+  { workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false },
+  { workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: false },
+  { workspaceId: 'ws-1', userId: 'admin-1', role: 'ADMIN', isClinician: false },
+  { workspaceId: 'ws-1', userId: 'owner-clinico-1', role: 'OWNER', isClinician: true },
+];
+
 export function prismaMock(seed: Partial<Stores> = {}) {
+  const initial: Partial<Stores> = { workspaceMember: DEFAULT_MEMBERS, ...seed };
   const db: { stores: Stores } = {
-    stores: Object.fromEntries(STORE_NAMES.map((name) => [name, (seed[name] ?? []).map((r) => ({ ...r }))])),
+    stores: Object.fromEntries(STORE_NAMES.map((name) => [name, (initial[name] ?? []).map((r) => ({ ...r }))])),
   };
   const clone = (s: Stores): Stores => Object.fromEntries(Object.entries(s).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]));
   const failOn: { model?: string; op?: string; nth?: number; calls: number; error?: () => Error } = { calls: 0 };

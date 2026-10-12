@@ -4,6 +4,7 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { PatientCareService } from '../src/patients/patient-care.service';
 import { PatientTasksService } from '../src/patients/patient-tasks.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { treating, treatingAccessStub, withClinicalAccess } from './support/clinical-access-fixture';
 
 /**
  * Regresión de los hallazgos de Argos que quedaron fuera de la PR #13:
@@ -78,9 +79,9 @@ function expectNoNarrative(value: unknown, forbidden: string[]) {
 
 describe('GET /clinical-processes (listado) sin notas de sesión ni narrativa clínica', () => {
   it.each(CLINICAL)('%s: las sesiones del listado son solo metadatos', async (_role, actor) => {
-    const prisma: any = {
+    const prisma: any = treating({
       clinicalProcess: { findMany: jest.fn(async () => [processRow()]), count: jest.fn(async () => 1) },
-    };
+    }, actor);
     const result = await new ClinicalProcessesService(prisma).list('ws-1', actor, {} as any);
 
     expect(result.data).toHaveLength(1);
@@ -96,7 +97,7 @@ describe('GET /clinical-processes (listado) sin notas de sesión ni narrativa cl
     expect(row.patient).not.toHaveProperty('consultationReason');
     expectNoNarrative(result, [SESSION_NOTES, SESSION_SUMMARY, PROCESS_REASON, PROCESS_GOALS, PROCESS_NOTES, PATIENT_REASON]);
 
-    const args = prisma.clinicalProcess.findMany.mock.calls[0][0];
+    const args = prisma.clinicalProcess.findMany.mock.calls.map((call: any[]) => call[0]).find((a: any) => a.select?.sessions);
     expect(args.include).toBeUndefined();
     expect(args.select.sessions.select).toBeDefined();
     expect(args.select.sessions.select).not.toHaveProperty('notes');
@@ -107,7 +108,7 @@ describe('GET /clinical-processes (listado) sin notas de sesión ni narrativa cl
 
 describe('GET /clinical-processes/:id no devuelve el motivo de consulta del paciente', () => {
   it.each(CLINICAL)('%s: paciente proyectado con la vista general', async (_role, actor) => {
-    const prisma: any = { clinicalProcess: { findFirst: jest.fn(async () => processRow()) } };
+    const prisma: any = treating({ clinicalProcess: { findFirst: jest.fn(async () => processRow()) } }, actor);
     const result: any = await new ClinicalProcessesService(prisma).get('ws-1', actor, 'proc-1');
 
     expect(result.patient).toMatchObject({ id: 'patient-1', firstName: 'Paciente' });
@@ -173,7 +174,7 @@ function crossTenantPrisma() {
   });
   return { clinicalHistory: model('clinicalHistory'), therapyGoal: model('therapyGoal'), therapeuticTask: model('therapeuticTask') } as any;
 }
-const permissiveAccess: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE' })) };
+const permissiveAccess: any = treatingAccessStub({ id: 'patient-1', workspaceId: 'ws-1', status: 'ACTIVE' });
 
 describe('Lecturas hijas del paciente acotadas también por workspace (patientChildScope)', () => {
   it('GET /patients/:id/history no devuelve la historia de un paciente de otro workspace', async () => {
@@ -250,14 +251,24 @@ describe('GET /sessions/:id y escrituras de notas por rol', () => {
     expect(args.select.clinicalProcess.select).not.toHaveProperty('title');
   });
 
-  it('OWNER en GET /sessions/:id sí ve las notas (detalle clínico)', async () => {
-    const prisma = sessionsPrisma();
+  it('OWNER que trata al paciente en GET /sessions/:id ve las notas, pero no el resumen interno ajeno', async () => {
+    const prisma = treating(sessionsPrisma(), owner);
     const result: any = await new SessionsService(prisma).get('ws-1', owner, 'sess-1');
     expect(result.notes).toBe(SESSION_NOTES);
+    expect(result).not.toHaveProperty('internalSummary');
+  });
+
+  it('OWNER que NO trata al paciente en GET /sessions/:id: vista administrativa, sin notas', async () => {
+    const prisma = withClinicalAccess(sessionsPrisma(), { members: [{ userId: 'owner-1', role: 'OWNER', isClinician: true }] });
+    const result: any = await new SessionsService(prisma).get('ws-1', owner, 'sess-1');
+    expect(result).not.toHaveProperty('notes');
+    expect(result).not.toHaveProperty('internalSummary');
+    expect(result.clinicalProcess).not.toHaveProperty('title');
+    expectNoNarrative(result, [SESSION_NOTES, SESSION_SUMMARY, PROCESS_TITLE, PROCESS_REASON, PATIENT_REASON]);
   });
 
   it('THERAPIST ajeno en GET /sessions/:id → 403', async () => {
-    const prisma = sessionsPrisma();
+    const prisma = withClinicalAccess(sessionsPrisma(), { members: [{ userId: 'therapist-2', role: 'THERAPIST', isClinician: true }] });
     const other = { ...therapist, sub: 'therapist-2' };
     await expect(new SessionsService(prisma).get('ws-1', other, 'sess-1')).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -292,10 +303,17 @@ describe('GET /sessions/:id y escrituras de notas por rol', () => {
     expect(prisma.session.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
   });
 
-  it('OWNER en PATCH /sessions/:id/notes escribe acotado al workspace', async () => {
-    const prisma = sessionsPrisma();
-    await new SessionsService(prisma).updateNotes('ws-1', owner, 'sess-1', { notes: 'Nota ficticia' } as any);
+  it('el THERAPIST autor que trata al paciente en PATCH /sessions/:id/notes escribe acotado al workspace', async () => {
+    const prisma = treating(sessionsPrisma(), therapist);
+    await new SessionsService(prisma).updateNotes('ws-1', therapist, 'sess-1', { notes: 'Nota ficticia' } as any);
     expect(prisma.session.update).not.toHaveBeenCalled();
     expect(prisma.session.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
+  });
+
+  it('OWNER (aunque trate al paciente) no escribe las notas de la sesión de otro profesional → 403', async () => {
+    const prisma = treating(sessionsPrisma(), owner);
+    await expect(new SessionsService(prisma).updateNotes('ws-1', owner, 'sess-1', { notes: 'Nota ficticia' } as any)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.session.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'CLINICAL_ACCESS_DENIED' }) }));
   });
 });

@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { hashSync } from 'bcryptjs';
 import { ExportsService } from '../src/exports/exports.service';
+import { treating } from './support/clinical-access-fixture';
 
 // Contraseña ficticia solo para tests: el servicio exige re-confirmarla (step-up) antes de exportar.
 const STEP_UP_PASSWORD='contrasena-ficticia-de-test';
@@ -33,12 +34,13 @@ describe('Sprint 14 exports and pilot readiness security',()=>{
       .mockResolvedValueOnce({id:'p1'})
       .mockResolvedValueOnce({id:'p1',firstName:'Ana',clinicalHistory:{reason:'sensible'}});
     prisma.auditLog.create.mockResolvedValue({});
+    treating(prisma,therapist,'p1');
     const service=new ExportsService(prisma);
     const result=await service.exportPatient(therapist,'p1',STEP_UP_PASSWORD);
-    expect(prisma.patient.findFirst.mock.calls[0][0]).toEqual(expect.objectContaining({where:expect.objectContaining({
-      id:'p1',workspaceId:'w1',deletedAt:null,
-      clinicalProcesses:{some:{therapistId:'u-therapist'}},
-    })}));
+    // La decisión pasa por el servicio central: paciente del workspace + proceso propio.
+    expect(prisma.patient.findFirst.mock.calls[0][0]).toEqual(expect.objectContaining({where:{id:'p1',workspaceId:'w1'}}));
+    expect(prisma.clinicalProcess.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{workspaceId:'w1',patientId:'p1',therapistId:'u-therapist'}}));
+    expect(prisma.patient.findFirst.mock.calls[1][0].where).toEqual({id:'p1',workspaceId:'w1',deletedAt:null});
     expect(result.exportType).toBe('PATIENT_CLINICAL_RECORD');
   });
 
@@ -67,6 +69,7 @@ describe('Sprint 14 exports and pilot readiness security',()=>{
       .mockResolvedValueOnce({id:'p1'})
       .mockResolvedValueOnce({id:'p1',firstName:'Ana',clinicalHistory:{reason:'TRAUMA CONFIDENCIAL'}});
     prisma.auditLog.create.mockResolvedValue({});
+    treating(prisma,owner,'p1');
     await new ExportsService(prisma).exportPatient(owner,'p1',STEP_UP_PASSWORD);
     const auditCall=prisma.auditLog.create.mock.calls[0][0];
     expect(auditCall.data).toEqual(expect.objectContaining({workspaceId:'w1',actorId:'u-owner',action:'PATIENT_DATA_EXPORTED',entityType:'Patient',entityId:'p1'}));

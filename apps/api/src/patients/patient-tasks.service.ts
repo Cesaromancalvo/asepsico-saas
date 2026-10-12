@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
@@ -43,19 +43,22 @@ export class PatientTasksService {
       if (!goal) throw new BadRequestException('El objetivo seleccionado no pertenece al paciente');
     }
     if (sessionId) {
-      const session = await this.prisma.session.findFirst({ where: { id: sessionId, workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id: true } });
+      // Solo sesiones propias: quien enlaza trata al paciente y enlaza su propio trabajo.
+      const session = await this.prisma.session.findFirst({ where: { id: sessionId, workspaceId, patientId, therapistId: actor.sub }, select: { id: true } });
       if (!session) throw new BadRequestException('La sesión seleccionada no pertenece al paciente');
     }
   }
 
   async getTaskTemplates(workspaceId: string, actor: AuthUser) {
-    if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
+    // Biblioteca de tareas: solo profesionales clínicos (no depende de un paciente).
+    await this.access.assertClinician(workspaceId, actor, 'task-templates');
     const templates = await this.prisma.therapeuticTaskTemplate.findMany({ where:{workspaceId,isActive:true}, orderBy:{title:'asc'} });
     return templates.map(decryptTaskTemplate);
   }
 
   async createTaskTemplate(workspaceId: string, actor: AuthUser, dto: CreateTaskTemplateDto) {
-    if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
+    // Biblioteca de tareas: solo profesionales clínicos (no depende de un paciente).
+    await this.access.assertClinician(workspaceId, actor, 'task-templates');
     return this.prisma.$transaction(async (tx) => {
       const template = await tx.therapeuticTaskTemplate.create({ data: { workspaceId, createdById: actor.sub, title: dto.title.trim(), instructions: encryptField(dto.instructions?.trim() || null), category: dto.category?.trim() || null } });
       await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'TASK_TEMPLATE_CREATED', entityType: 'TherapeuticTaskTemplate', entityId: template.id, metadata: {} } });
@@ -64,7 +67,8 @@ export class PatientTasksService {
   }
 
   async updateTaskTemplate(workspaceId: string, actor: AuthUser, templateId: string, dto: UpdateTaskTemplateDto) {
-    if (!['OWNER','ADMIN','THERAPIST'].includes(actor.role)) throw new ForbiddenException();
+    // Biblioteca de tareas: solo profesionales clínicos (no depende de un paciente).
+    await this.access.assertClinician(workspaceId, actor, 'task-templates');
     const current=await (this.prisma as any).therapeuticTaskTemplate.findFirst({where:{id:templateId,workspaceId}});
     if(!current) throw new NotFoundException('Plantilla no encontrada');
     const data:any={...dto}; if(dto.title!==undefined)data.title=dto.title.trim(); if(dto.instructions!==undefined)data.instructions=encryptField(dto.instructions.trim()||null); if(dto.category!==undefined)data.category=dto.category.trim()||null;
@@ -80,9 +84,15 @@ export class PatientTasksService {
   }
 
   async getTherapeuticTasks(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
-    const tasks = await this.prisma.therapeuticTask.findMany({ where: patientChildScope(workspaceId, patientId), orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
-    return tasks.map(decryptTask);
+    const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'therapeutic-tasks');
+    if (scope.level === 'TREATING') {
+      const tasks = await this.prisma.therapeuticTask.findMany({ where: patientChildScope(workspaceId, patientId), orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+      return tasks.map(decryptTask);
+    }
+    // Autor de un proceso cerrado: solo tareas enlazadas a SUS sesiones y sin el objetivo
+    // terapéutico (no atribuible a un autor).
+    const tasks = await this.prisma.therapeuticTask.findMany({ where: { ...patientChildScope(workspaceId, patientId), session: { workspaceId, therapistId: actor.sub } }, orderBy:[{updatedAt:'desc'}], include:{session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+    return tasks.map((task) => ({ ...decryptTask(task as any), therapyGoal: null }));
   }
 
   async createTherapeuticTask(workspaceId: string, actor: AuthUser, patientId: string, dto: CreateTherapeuticTaskDto) {
@@ -133,7 +143,8 @@ export class PatientTasksService {
   }
 
   async getTimeline(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    // Resumen de TODO el contenido del paciente: solo quien le trata (proceso ACTIVO).
+    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId, 'patient-timeline');
     // Los modelos hijos sin workspaceId propio se acotan por la relación patient (defensa en
     // profundidad: nunca solo por patientId).
     const childScope = patientChildScope(workspaceId, patientId);
@@ -142,8 +153,9 @@ export class PatientTasksService {
       this.prisma.clinicalHistory.findFirst({ where: childScope }),
       this.prisma.therapyGoal.findMany({ where: childScope }),
       this.prisma.therapeuticTask.findMany({ where: childScope }),
-      this.prisma.clinicalProcess.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,title:true,status:true,startedAt:true } }),
-      this.prisma.session.findMany({ where: { workspaceId, patientId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) }, select: { id:true,startsAt:true,status:true,type:true } }),
+      // Quien trata al paciente ve también los procesos y sesiones anteriores (solo metadatos aquí).
+      this.prisma.clinicalProcess.findMany({ where: { workspaceId, patientId }, select: { id:true,title:true,status:true,startedAt:true } }),
+      this.prisma.session.findMany({ where: { workspaceId, patientId }, select: { id:true,startsAt:true,status:true,type:true } }),
       this.prisma.clinicalAssessment.findMany({ where: childScope, select: { id:true,scaleName:true,administeredAt:true,...ASSESSMENT_RESULT_SELECT } }),
       this.prisma.patientDocument.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,type:true,createdAt:true } }),
       this.prisma.consentRecord.findMany({ where: { patientId, workspaceId }, select: { id:true,title:true,status:true,updatedAt:true } }),

@@ -1,5 +1,6 @@
 import { hashSync } from 'bcryptjs';
 import { ExportsService } from '../src/exports/exports.service';
+import { treating } from './support/clinical-access-fixture';
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { ENCRYPTED_TEXT_FIELDS, encryptAssessmentResult, encryptJsonField } from '../src/common/crypto/clinical-crypto';
 
@@ -32,6 +33,11 @@ function mockPrisma(patient: any) {
   } as any;
 }
 
+/** El OWNER exporta como profesional que trata al paciente (proceso ACTIVO propio). */
+function treatingPrisma(patient: any) {
+  return treating(mockPrisma(patient), owner, 'p1');
+}
+
 describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', () => {
   it('descifra todos los campos cifrados de la ficha y de sus relaciones', async () => {
     const patient = {
@@ -49,7 +55,7 @@ describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', (
     };
     expect(encryptedPaths(patient).length).toBeGreaterThan(20); // el fixture sí está cifrado
 
-    const result: any = await new ExportsService(mockPrisma(patient)).exportPatient(owner, 'p1', PASSWORD);
+    const result: any = await new ExportsService(treatingPrisma(patient)).exportPatient(owner, 'p1', PASSWORD);
 
     expect(encryptedPaths(result)).toEqual([]);
     expect(result.patient.consultationReason).toBe('patient.consultationReason ficticio');
@@ -68,7 +74,7 @@ describe('Exportación clínica (arts. 15/20 RGPD): nunca sale texto cifrado', (
       clinicalAssessments: [], consentRecords: [], clinicalReports: [], patientDocuments: [], resourceShares: [],
       invoices: [{ id: 'inv-1', lines: [{ description: encryptField('Concepto ficticio') }], payments: [] }],
     };
-    const result: any = await new ExportsService(mockPrisma(patient)).exportPatient(owner, 'p1', PASSWORD);
+    const result: any = await new ExportsService(treatingPrisma(patient)).exportPatient(owner, 'p1', PASSWORD);
     expect(encryptedPaths(result)).toEqual([]);
     expect(result.patient.invoices[0].lines[0].description).toBe('Concepto ficticio');
   });

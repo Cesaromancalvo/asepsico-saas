@@ -10,6 +10,7 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { PortalService } from '../src/portal/portal.service';
 import { MfaService } from '../src/auth/mfa.service';
+import { treatingAccessStub } from './support/clinical-access-fixture';
 
 /**
  * Test tabla-driven: por CADA campo marcado como cifrado en common/crypto/clinical-crypto.ts,
@@ -22,7 +23,7 @@ import { MfaService } from '../src/auth/mfa.service';
 const ENC = /^enc:v1:|^enc:v2:/;
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER', email: 'owner@example.com' } as any;
 const portal = { portalAccountId: 'acc-1', patientId: 'patient-1', workspaceId: 'ws-1', accessorType: 'PATIENT' };
-const access: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'patient-1', status: 'ACTIVE' })) };
+const access: any = treatingAccessStub({ id: 'patient-1', status: 'ACTIVE' });
 const WRITE_METHODS = new Set(['create', 'update', 'updateMany', 'upsert']);
 
 type Call = { model: string; method: string; args: any };
@@ -35,6 +36,8 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
     createdAt: new Date(), updatedAt: new Date(), startsAt: new Date(Date.now() + 3_600_000), endsAt: new Date(Date.now() + 7_200_000),
     email: 'ficticio@example.com', firstName: 'Paciente', lastName: 'Ficticio', totpSecret: null, totpEnabled: false,
     patientCanReply: true, signedAt: null, portalAccessMode: 'PATIENT_ONLY', patientFeedback: null,
+    // Acceso clínico (E1): el OWNER es clínico, autor, y trata al paciente (proceso ACTIVO propio).
+    userId: 'owner-1', role: 'OWNER', isClinician: true, createdById: 'owner-1', endedAt: null, deletedAt: null,
   };
   const models = new Map<string, any>();
   const model = (name: string) => {
@@ -42,7 +45,7 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
       const row = () => ({ ...base, ...(rows[name] ?? {}) });
       const record = (method: string, impl: (args: any) => any) => jest.fn(async (args: any) => { calls.push({ model: name, method, args }); return impl(args); });
       models.set(name, {
-        findFirst: record('findFirst', row), findUnique: record('findUnique', row), findMany: record('findMany', () => []),
+        findFirst: record('findFirst', row), findUnique: record('findUnique', row), findMany: record('findMany', () => (name === 'clinicalProcess' ? [row()] : [])),
         count: record('count', () => 0), create: record('create', (a) => ({ ...row(), ...a.data })),
         update: record('update', (a) => ({ ...row(), ...a.data })), upsert: record('upsert', (a) => ({ ...row(), ...a.create })),
         updateMany: record('updateMany', () => ({ count: 1 })), deleteMany: record('deleteMany', () => ({ count: 1 })),

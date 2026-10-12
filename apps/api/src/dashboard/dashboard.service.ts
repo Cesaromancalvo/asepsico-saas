@@ -1,14 +1,19 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { decryptField } from '../common/crypto/field-encryption';
 import { UpdateOnboardingDto } from './dto/update-onboarding.dto';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly access: ClinicalAccessService;
+
+  constructor(private readonly prisma: PrismaService, @Optional() access?: ClinicalAccessService) {
+    this.access = access ?? new ClinicalAccessService(prisma);
+  }
 
   private assertAccess(user: AuthUser) {
     if (!CLINICAL_ROLES.includes(user.role)) {
@@ -24,7 +29,7 @@ export class DashboardService {
 
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: user.workspaceId, userId: user.sub } },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: { user: { select: { firstName: true, lastName: true } }, workspace: { select: { name: true } } },
     });
     if (!member) throw new NotFoundException('Miembro no encontrado');
 
@@ -32,6 +37,12 @@ export class DashboardService {
     const patientAccess = user.role === 'THERAPIST'
       ? { clinicalProcesses: { some: { therapistId: user.sub, status: 'ACTIVE' as const } } }
       : {};
+    // Avisos con contenido o recuentos clínicos (tareas entregadas, mensajes sin leer): solo de
+    // pacientes que el usuario TRATA (clínico con proceso ACTIVO propio). Ser OWNER/ADMIN no basta.
+    const clinician = await this.access.isClinician(user.workspaceId, user);
+    const treatingAccess = clinician
+      ? { clinicalProcesses: { some: { workspaceId: user.workspaceId, therapistId: user.sub, status: 'ACTIVE' as const } } }
+      : { id: { in: [] as string[] } };
 
     const [sessions, patientCount, submittedTasks, unreadMessages, activeWithoutFuture, preferences] = await Promise.all([
       this.prisma.session.findMany({
@@ -49,13 +60,13 @@ export class DashboardService {
       }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE', deletedAt: null, ...patientAccess } }),
       this.prisma.therapeuticTask.findMany({
-        where: { status: 'SUBMITTED', patient: { workspaceId: user.workspaceId, ...patientAccess } },
+        where: { status: 'SUBMITTED', patient: { workspaceId: user.workspaceId, ...treatingAccess } },
         orderBy: { submittedAt: 'asc' }, take: 5,
         // Solo lo necesario para el aviso: nada de instrucciones, respuestas ni notas.
         select: { id: true, title: true, patient: { select: { id: true, firstName: true, lastName: true } } },
       }),
       this.prisma.message.findMany({
-        where: { senderType: 'PATIENT', readByProfessionalAt: null, conversation: { workspaceId: user.workspaceId, patient: patientAccess } },
+        where: { senderType: 'PATIENT', readByProfessionalAt: null, conversation: { workspaceId: user.workspaceId, patient: treatingAccess } },
         orderBy: { createdAt: 'desc' }, take: 5,
         // Solo metadatos para el aviso: el cuerpo del mensaje (body) NUNCA se carga aquí; se lee
         // en /messages, con su propio control de acceso.
@@ -87,7 +98,9 @@ export class DashboardService {
     };
 
     return {
-      professional: { firstName: member.user.firstName, lastName: member.user.lastName, role: member.role },
+      // userId e isClinician son datos del propio usuario: la web los usa solo como pista (p. ej.
+      // saber si es el autor de un proceso); el control real sigue en ClinicalAccessService.
+      professional: { userId: member.userId, firstName: member.user.firstName, lastName: member.user.lastName, role: member.role, isClinician: member.isClinician === true, workspaceName: member.workspace?.name ?? null },
       summary: { sessionsToday: sessions.length, pendingReviews: submittedTasks.length, unreadMessages: unreadMessages.length, followUps: activeWithoutFuture.length },
       nextSession: sessions.find((session) => session.startsAt >= now) ?? null,
       sessions,

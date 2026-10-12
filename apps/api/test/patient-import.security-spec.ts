@@ -45,10 +45,10 @@ describe('Importación de pacientes: permisos (solo profesional clínico)', () =
     );
   });
 
-  it('TODO E1 documentado: el criterio de rol vive en un único punto', () => {
-    // Cuando se fusione E1, este test debe cambiar: OWNER/ADMIN no clínicos → 403.
+  it('E1: el criterio vive en un único punto y usa la decisión central de acceso clínico', () => {
     const source = require('fs').readFileSync(require('path').join(__dirname, '../src/patient-import/patient-import-access.ts'), 'utf8');
-    expect(source).toContain('TODO(E1');
+    expect(source).toContain('clinicalAccess.isClinician(');
+    expect(source).not.toMatch(/IMPORT_CLINICAL_ROLES|TODO\(E1/);
   });
 });
 
@@ -167,9 +167,11 @@ describe('Importación de pacientes: aislamiento', () => {
       await expect(svc.revert.revert(who.workspaceId, who, uploaded.id)).rejects.toBeInstanceOf(NotFoundException);
       expect(await svc.imports.list(who.workspaceId, who)).toEqual([]);
     }
-    // Un OWNER tampoco ve lotes ajenos.
-    const owner = actor('owner-1', 'OWNER');
+    // Un OWNER clínico (E1) tampoco ve lotes ajenos; uno no clínico ni siquiera entra (403).
+    const owner = actor('owner-clinico-1', 'OWNER');
     await expect(svc.imports.get('ws-1', owner, uploaded.id)).rejects.toBeInstanceOf(NotFoundException);
+    expect(await svc.imports.list('ws-1', owner)).toEqual([]);
+    await expect(svc.imports.get('ws-1', actor('owner-1', 'OWNER'), uploaded.id)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('duplicados: solo contra los pacientes del propio importador, nunca de otro psicólogo ni de otro workspace', async () => {

@@ -15,7 +15,7 @@
 //   cliente distinta en X-Forwarded-For para no chocar con los límites por IP de las rutas.
 //
 // Cubre: subida, vista previa, confirmación y deshacer con dos THERAPIST (B no ve los lotes ni los
-// duplicados de A); 403 auditado para ASSISTANT; PARTIAL (fallo de sistema) con reintento sin
+// duplicados de A); 403 auditado para ASSISTANT y para un OWNER con isClinician=false (E1); PARTIAL (fallo de sistema) con reintento sin
 // duplicados; fallo de datos real aislado fila a fila (ROW_REJECTED); surrogate suelto y UTF-16; dos
 // confirmaciones y dos deshacer simultáneos (409); deshacer con una cita posterior; minimización
 // del fichero temporal tras la vista previa (descifrándolo); informe de errores sin fórmulas; y
@@ -124,12 +124,13 @@ function assertLocalTargets() {
 const prisma = new PrismaClient();
 const password = `Qa1${randomBytes(18).toString('base64url')}`;
 
-async function createUser(workspaceId, key, role) {
+async function createUser(workspaceId, key, role, { isClinician = role === 'THERAPIST' } = {}) {
   const email = `qa-import-${key}-${STAMP}@example.test`;
   const user = await prisma.user.create({
     data: { email, passwordHash: await bcrypt.hash(password, 10), firstName: 'Usuaria', lastName: `Prueba ${key}` },
   });
-  await prisma.workspaceMember.create({ data: { workspaceId, userId: user.id, role } });
+  // E1: THERAPIST siempre clínico y ASSISTANT nunca (CHECK en la BD); OWNER/ADMIN según isClinician.
+  await prisma.workspaceMember.create({ data: { workspaceId, userId: user.id, role, isClinician } });
   return { ...user, email };
 }
 
@@ -165,12 +166,15 @@ async function main() {
   const userA = await createUser(workspaceId, 'a', 'THERAPIST');
   const userB = await createUser(workspaceId, 'b', 'THERAPIST');
   const userC = await createUser(workspaceId, 'asis', 'ASSISTANT');
+  const userO = await createUser(workspaceId, 'owner-noclin', 'OWNER', { isClinician: false });
   const A = new Client('A');
   const B = new Client('B');
   const C = new Client('ASSISTANT');
+  const O = new Client('OWNER no clínico');
   await login(A, userA, { mfa: true });
   await login(B, userB, { mfa: true });
   await login(C, userC, { mfa: false });
+  await login(O, userO, { mfa: true });
 
   console.log('1. Subida, vista previa (minimización) y confirmación de A');
   const rowsA = Array.from({ length: 5 }, (_, i) => fakeRow(i, 'a'));
@@ -262,6 +266,18 @@ async function main() {
   assert(forbiddenAudits.every((a) => a.metadata?.role === 'ASSISTANT' && Object.keys(a.metadata).sort().join() === 'operation,role'), 'La auditoría del 403 lleva algo más que rol y operación');
   assert((await prisma.patientImportJob.count({ where: { importerId: userC.id } })) === 0, 'El ASSISTANT llegó a crear un lote');
   ok('ASSISTANT recibe 403 en subir, listar, plantilla, ver y deshacer; 5 auditorías con solo rol y operación');
+
+  console.log('3b. OWNER con isClinician=false (E1): 403 auditado');
+  const ownerMember = await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: userO.id } });
+  assert(ownerMember?.role === 'OWNER' && ownerMember.isClinician === false, 'El OWNER de prueba no quedó como no clínico en la BD');
+  const ownerBefore = await auditCount({ workspaceId, actorId: userO.id, action: 'PATIENT_IMPORT_FORBIDDEN' });
+  const ownerUpload = await O.upload(csv(HEADER, [fakeRow(0, 'o')]));
+  assert(ownerUpload.status === 403, `OWNER no clínico al subir: ${ownerUpload.status} ${ownerUpload.text.slice(0, 200)}`);
+  const ownerAudits = await prisma.auditLog.findMany({ where: { workspaceId, actorId: userO.id, action: 'PATIENT_IMPORT_FORBIDDEN' } });
+  assert(ownerAudits.length - ownerBefore === 1, `Se esperaba 1 auditoría PATIENT_IMPORT_FORBIDDEN del OWNER y hay ${ownerAudits.length - ownerBefore}`);
+  assert(ownerAudits.every((a) => a.metadata?.role === 'OWNER' && a.metadata?.operation === 'UPLOAD' && Object.keys(a.metadata).sort().join() === 'operation,role'), 'La auditoría del 403 del OWNER lleva algo más que rol y operación');
+  assert((await prisma.patientImportJob.count({ where: { importerId: userO.id } })) === 0, 'El OWNER no clínico llegó a crear un lote');
+  ok('OWNER con isClinician=false recibe 403 al subir; 1 auditoría PATIENT_IMPORT_FORBIDDEN con solo rol y operación');
 
   // Trigger temporal que hace fallar el INSERT de la fila "Bloqueo" con un error REAL de
   // PostgreSQL/Prisma. errcode '40001' (serialization_failure → P2034) es un fallo de sistema;

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { MessagesService } from '../src/messages/messages.service';
+import { treating } from './support/clinical-access-fixture';
 
 const owner:any={sub:'o1',workspaceId:'w1',role:'OWNER'};
 const therapist:any={sub:'t1',workspaceId:'w1',role:'THERAPIST'};
@@ -9,8 +10,8 @@ function mock(){
   return {
     patient:{findFirst:jest.fn()},
     clinicalProcess:{findFirst:jest.fn(),findMany:jest.fn()},
-    conversation:{findMany:jest.fn(),findFirst:jest.fn(),upsert:jest.fn(),update:jest.fn()},
-    message:{findMany:jest.fn(),updateMany:jest.fn(),create:jest.fn()},
+    conversation:{findMany:jest.fn(),findFirst:jest.fn(),upsert:jest.fn(),update:jest.fn(),updateMany:jest.fn()},
+    message:{findMany:jest.fn(),updateMany:jest.fn(),create:jest.fn(),count:jest.fn()},
     notification:{createMany:jest.fn()},
     auditLog:{create:jest.fn()},
   } as any;
@@ -24,10 +25,12 @@ describe('Structured messages security and persistence',()=>{
 
   it('scopes therapist conversations to assigned patients and returns unread count',async()=>{
     const p=mock();
-    p.conversation.findMany.mockResolvedValue([{id:'c1',messages:[],_count:{messages:2}}]);
-    p.message.findMany.mockResolvedValue([{conversationId:'c1'},{conversationId:'c1'}]);
+    treating(p,therapist,'p1');
+    p.conversation.findMany.mockResolvedValue([{id:'c1',patient:{id:'p1'},updatedAt:new Date('2026-02-01')}]);
+    p.message.findMany.mockResolvedValue([]);
+    p.message.count.mockResolvedValue(2);
     const rows=await new MessagesService(p).list('w1',therapist);
-    expect(p.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({workspaceId:'w1',patient:expect.objectContaining({clinicalProcesses:{some:{therapistId:'t1'}}})})}));
+    expect(p.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({workspaceId:'w1',patient:expect.objectContaining({clinicalProcesses:{some:{workspaceId:'w1',therapistId:'t1'}}})})}));
     expect(rows[0].unreadCount).toBe(2);
   });
 
@@ -39,7 +42,8 @@ describe('Structured messages security and persistence',()=>{
   it('notifies patient without copying clinical message body',async()=>{
     const p=mock();
     p.conversation.findFirst.mockResolvedValue({id:'c1',workspaceId:'w1',patientId:'p1',status:'OPEN'});
-    p.patient.findFirst.mockResolvedValue({id:'p1'});
+    p.patient.findFirst.mockResolvedValue({id:'p1',deletedAt:null});
+    treating(p,owner,'p1');
     p.message.create.mockResolvedValue({id:'m1'});
     p.conversation.update.mockResolvedValue({});
     p.notification.createMany.mockResolvedValue({count:1});

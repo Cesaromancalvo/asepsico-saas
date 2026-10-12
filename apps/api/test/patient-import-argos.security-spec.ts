@@ -1,4 +1,4 @@
-import { ConflictException, HttpException, Logger } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException, Logger } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { strToU8, zipSync } from 'fflate';
@@ -207,19 +207,65 @@ describe('Argos 5: menores con modo de portal seguro', () => {
   });
 });
 
-describe('Argos 4: TODO-E1 — OWNER/ADMIN pueden importar HOY', () => {
-  // TODO-E1: cuando se fusione feat/e1-acceso-clinico y assertCanImport use el guard central
-  // (WorkspaceMember.isClinician), este test DEBE cambiar: un OWNER/ADMIN NO clínico tiene que
-  // recibir 403 (spec, apartado 5) y uno clínico seguir pudiendo importar.
-  it.each(['OWNER', 'ADMIN'])('TODO-E1: %s puede importar con el criterio de rol actual', async (role) => {
+describe('Argos 4 (E1): solo un profesional clínico según la BD puede importar', () => {
+  it.each(['OWNER', 'ADMIN'])('%s NO clínico recibe 403 en todas las operaciones, auditado y sin crear nada', async (role) => {
     const { prisma, db } = prismaMock();
     const svc = services(prisma);
     const who = actor(`${role.toLowerCase()}-1`, role);
+    await expect(svc.imports.template(who, 'csv')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.imports.upload('ws-1', who, csvFile(fakePatientsCsv(1)))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.imports.list('ws-1', who)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.confirm.confirm('ws-1', who, 'job-x', [])).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.revert.revert('ws-1', who, 'job-x')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(db.stores.patientImportJob).toHaveLength(0);
+    expect(db.stores.patient).toHaveLength(0);
+    expect(db.stores.clinicalProcess).toHaveLength(0);
+    const forbidden = db.stores.auditLog.filter((a) => a.action === 'PATIENT_IMPORT_FORBIDDEN');
+    expect(forbidden).toHaveLength(5);
+    expect(forbidden.every((a) => a.actorId === who.sub && a.metadata.role === role)).toBe(true);
+  });
+
+  it.each(['OWNER', 'ADMIN'])('%s clínico (isClinician en BD) importa y los pacientes quedan a su nombre', async (role) => {
+    const sub = `${role.toLowerCase()}-1`;
+    const { prisma, db } = prismaMock({
+      workspaceMember: [{ workspaceId: 'ws-1', userId: sub, role, isClinician: true }],
+    });
+    const svc = services(prisma);
+    const who = actor(sub, role);
     const uploaded = await svc.imports.upload('ws-1', who, csvFile(fakePatientsCsv(1)));
     await svc.imports.preview('ws-1', who, uploaded.id, { hasHeaderRow: true, columns: FULL_MAPPING });
     const result = await svc.confirm.confirm('ws-1', who, uploaded.id, []);
     expect(result.createdCount).toBe(1);
     expect(db.stores.clinicalProcess[0].therapistId).toBe(who.sub);
+  });
+
+  it('el rol del token no basta: un THERAPIST que no es miembro del workspace recibe 403', async () => {
+    const { prisma } = prismaMock({ workspaceMember: [] });
+    await expect(services(prisma).imports.upload('ws-1', actor('therapist-1', 'THERAPIST'), csvFile(fakePatientsCsv(1))))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('C1: token THERAPIST con miembro ASSISTANT en la BD recibe 403, auditado solo con rol y operación', async () => {
+    const { prisma, db } = prismaMock({
+      workspaceMember: [{ workspaceId: 'ws-1', userId: 'degradado-1', role: 'ASSISTANT', isClinician: false }],
+    });
+    const svc = services(prisma);
+    const who = actor('degradado-1', 'THERAPIST');
+    await expect(svc.imports.upload('ws-1', who, csvFile(fakePatientsCsv(1)))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(db.stores.patientImportJob).toHaveLength(0);
+    expect(db.stores.patient).toHaveLength(0);
+    const forbidden = db.stores.auditLog.filter((a) => a.action === 'PATIENT_IMPORT_FORBIDDEN');
+    expect(forbidden).toHaveLength(1);
+    expect(forbidden[0]).toMatchObject({ workspaceId: 'ws-1', actorId: who.sub, entityType: 'PatientImportJob' });
+    expect(forbidden[0].entityId ?? null).toBeNull();
+    // Solo el rol (del token) y la operación: ni datos del fichero ni nada más.
+    expect(forbidden[0].metadata).toEqual({ role: 'THERAPIST', operation: 'UPLOAD' });
+  });
+
+  it('un token ASSISTANT se rechaza aunque la BD dijera otra cosa', async () => {
+    const { prisma } = prismaMock({ workspaceMember: [{ workspaceId: 'ws-1', userId: 'x-1', role: 'THERAPIST', isClinician: true }] });
+    await expect(services(prisma).imports.upload('ws-1', actor('x-1', 'ASSISTANT'), csvFile(fakePatientsCsv(1))))
+      .rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 

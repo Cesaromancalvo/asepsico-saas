@@ -1,9 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ClinicalProcessStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
-import { decryptProcess } from '../common/crypto/clinical-crypto';
+import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
+import { ClinicalAccessService, isClinicalProfile } from '../clinical-access/clinical-access.service';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
@@ -11,9 +12,20 @@ import { ListClinicalProcessesQueryDto } from './dto/list-clinical-processes-que
 import { PATIENT_VIEW_SELECT, projectSelect, toPatientView } from '../patients/patient-view.util';
 import { SESSION_SUMMARY_SELECT } from '../sessions/session-view.util';
 
-// Solo quien puede dar o supervisar terapia entra aquí. ASSISTANT gestiona agenda y altas de
-// pacientes, pero nunca motivo de consulta, objetivos ni notas internas: eso es contenido clínico.
+// Roles que entran en este módulo. ASSISTANT nunca. OWNER/ADMIN entran para operaciones
+// ADMINISTRATIVAS (quién atiende a quién, estado, reasignación); el contenido clínico del proceso
+// lo decide ClinicalAccessService (clínico con proceso activo, o autor para lo suyo).
 const CLINICAL_ACCESS_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
+const ADMIN_ROLES = ['OWNER', 'ADMIN'];
+
+// Campos de contenido clínico del proceso (el título también: puede revelar el motivo).
+const CLINICAL_FIELDS = ['title', 'consultationReason', 'goals', 'internalNotes'] as const;
+
+/** Vista administrativa de un proceso: sin título ni narrativa clínica. */
+const CLINICAL_PROCESS_ADMIN_SELECT = {
+  id: true, workspaceId: true, patientId: true, therapistId: true, modality: true, frequency: true,
+  status: true, startedAt: true, endedAt: true, createdAt: true, updatedAt: true,
+} as const;
 
 // CLOSED es terminal a propósito: si un proceso se cierra por error no se "deshace" reabriéndolo,
 // se documenta y se abre uno nuevo. DISCHARGED sí puede reabrirse (el paciente vuelve a consulta).
@@ -54,24 +66,37 @@ const CLINICAL_PROCESS_LIST_PROJECTION = { ...CLINICAL_PROCESS_LIST_SELECT, sess
 
 @Injectable()
 export class ClinicalProcessesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly access: ClinicalAccessService;
+
+  constructor(private prisma: PrismaService, @Optional() access?: ClinicalAccessService) {
+    this.access = access ?? new ClinicalAccessService(prisma);
+  }
 
   async list(workspaceId: string, actor: AuthUser, query: ListClinicalProcessesQueryDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-processes-list');
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    // Un THERAPIST solo puede listar los suyos, sea cual sea el therapistId que pida por query.
-    const therapistId = actor.role === 'THERAPIST' ? actor.sub : query.therapistId;
+    const { isClinician, treatingPatientIds } = await this.access.listingContext(workspaceId, actor);
+    const treating = [...treatingPatientIds];
+    // Procesos cuyo contenido (título incluido) puede leer: los suyos y los de pacientes que trata.
+    const readable: Prisma.ClinicalProcessWhereInput = isClinician
+      ? { OR: [{ therapistId: actor.sub }, { patientId: { in: treating } }] }
+      : { id: { in: [] } };
 
     const where: Prisma.ClinicalProcessWhereInput = {
       workspaceId,
+      // Un THERAPIST solo lista los suyos y los de pacientes que trata (sea cual sea el
+      // therapistId que pida por query). OWNER/ADMIN listan todos, como vista administrativa.
+      ...(actor.role === 'THERAPIST' ? { AND: [{ OR: [{ therapistId: actor.sub }, { patientId: { in: treating } }] }] } : {}),
       ...(query.patientId ? { patientId: query.patientId } : {}),
-      ...(therapistId ? { therapistId } : {}),
+      ...(query.therapistId ? { therapistId: query.therapistId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.q
         ? {
             OR: [
-              { title: { contains: query.q, mode: 'insensitive' } },
+              // Buscar por título solo dentro de lo que puede leer (si no, el filtro revelaría
+              // el título de procesos ajenos).
+              { AND: [readable, { title: { contains: query.q, mode: 'insensitive' } }] },
               // No se busca dentro de consultationReason: al estar cifrado en la base de
               // datos, un "contains" sobre el texto cifrado nunca encontraría coincidencias
               // reales y daría resultados silenciosamente incompletos. Si en el futuro hace
@@ -106,11 +131,17 @@ export class ClinicalProcessesService {
 
     // Lista blanca también sobre la respuesta: ni notas de sesión ni narrativa del proceso,
     // aunque una consulta futura trajera la fila completa. Nada que descifrar en un listado.
-    return { data: data.map((row) => projectSelect<typeof row>(row, CLINICAL_PROCESS_LIST_PROJECTION)), meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
+    const canRead = (row: { therapistId: string; patientId: string }) =>
+      isClinician && (row.therapistId === actor.sub || treatingPatientIds.has(row.patientId));
+    return { data: data.map((row) => {
+      const projected = projectSelect<typeof row>(row, CLINICAL_PROCESS_LIST_PROJECTION);
+      const readableRow = canRead(row);
+      return { ...projected, title: readableRow ? projected.title : null, canReadClinical: readableRow };
+    }), meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
   }
 
   async get(workspaceId: string, actor: AuthUser, id: string) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process');
     const process = await this.prisma.clinicalProcess.findFirst({
       where: { id, workspaceId },
       include: {
@@ -118,25 +149,59 @@ export class ClinicalProcessesService {
         // GET /patients/:id/consultation-reason). El del proceso sí va: es su detalle clínico.
         patient: { select: PATIENT_VIEW_SELECT },
         therapist: { select: { id: true, firstName: true, lastName: true, email: true } },
-        sessions: { orderBy: { startsAt: 'desc' } },
+        sessions: { where: { workspaceId }, orderBy: { startsAt: 'desc' } },
         _count: { select: { sessions: true } },
       },
     });
     if (!process) throw new NotFoundException('Proceso clínico no encontrado');
-    this.assertCanManage(actor, process.therapistId);
-    return decryptProcess({ ...process, patient: toPatientView(process.patient) });
+
+    // Autor (clínico) → todo lo suyo; clínico que trata al paciente → el proceso en solo lectura y
+    // SIN notas internas ajenas; cualquier otro (OWNER/ADMIN que no trata...) → 403 auditado.
+    const scope = await this.access.resolveScope(workspaceId, actor, process.patientId);
+    const isAuthor = process.therapistId === actor.sub;
+    if (!scope || (!isAuthor && scope.level !== 'TREATING')) {
+      await this.access.auditDenied(workspaceId, actor, 'clinical-process', scope ? 'NOT_AUTHOR' : 'NO_PROCESS', process.patientId);
+      throw new ForbiddenException('No tienes acceso al contenido clínico de este proceso');
+    }
+
+    const { internalNotes, ...rest } = decryptProcess({ ...process, patient: toPatientView(process.patient) });
+    const sessions = (process.sessions ?? []).map((session) => {
+      const decrypted = decryptSession(session);
+      if (session.therapistId === actor.sub) return decrypted;
+      // Resumen interno de otro profesional: nota interna, solo su autor.
+      const { internalSummary: _hidden, ...visible } = decrypted;
+      return visible;
+    });
+    return {
+      ...rest,
+      ...(isAuthor ? { internalNotes } : {}),
+      sessions,
+      readOnly: !(isAuthor && process.status === 'ACTIVE' && scope.level === 'TREATING'),
+    };
   }
 
   async create(workspaceId: string, actor: AuthUser, dto: CreateClinicalProcessDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-create');
     const patient = await this.prisma.patient.findFirst({ where: { id: dto.patientId, workspaceId, status: { not: 'ARCHIVED' } } });
     if (!patient) throw new NotFoundException('Paciente no encontrado o archivado');
 
     const therapistId = this.resolveTherapistId(actor, dto.therapistId);
-    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: therapistId } });
-    if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
+    await this.assertClinicianMember(workspaceId, therapistId);
+    // Abrir un proceso a nombre de otro profesional es una operación administrativa: el contenido
+    // clínico (motivo, objetivos, notas internas) solo lo escribe el propio profesional.
+    const ownProcess = therapistId === actor.sub;
+    if (!ownProcess && (dto.consultationReason !== undefined || dto.goals !== undefined || dto.internalNotes !== undefined)) {
+      await this.access.auditDenied(workspaceId, actor, 'clinical-process-create', 'NOT_AUTHOR', dto.patientId);
+      throw new ForbiddenException('El contenido clínico del proceso solo lo registra el profesional responsable');
+    }
 
     return this.prisma.$transaction(async (tx) => {
+      // Para distinguir la autoasignación en la auditoría: ¿el paciente ya tenía otro profesional
+      // con proceso activo? (el control de apertura llegará con su historia propia).
+      const otherActive = await tx.clinicalProcess.findFirst({
+        where: { workspaceId, patientId: dto.patientId, status: 'ACTIVE', therapistId: { not: therapistId } },
+        select: { id: true },
+      });
       const process = await tx.clinicalProcess.create({
         data: {
           workspaceId,
@@ -152,16 +217,38 @@ export class ClinicalProcessesService {
         },
       });
       await tx.auditLog.create({
-        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId } },
+        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId, therapistId, selfAssigned: ownProcess, hadOtherActiveClinician: Boolean(otherActive) } },
       });
-      return decryptProcess(process);
+      return ownProcess ? decryptProcess(process) : toAdminView(process);
     });
   }
 
   async update(workspaceId: string, actor: AuthUser, id: string, dto: UpdateClinicalProcessDto) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-write');
     const process = await this.getRaw(workspaceId, id);
-    this.assertCanManage(actor, process.therapistId);
+    const isAuthor = process.therapistId === actor.sub;
+    const clinicalChange = CLINICAL_FIELDS.some((field) => dto[field] !== undefined);
+
+    // Reasignar cambiaría el autor del proceso entero: el nuevo profesional heredaría las notas
+    // internas y la ventana de mensajes del anterior, y este perdería su lectura. Hasta que exista
+    // la reasignación controlada, se rechaza y se pide cerrar el proceso y abrir uno nuevo.
+    if (dto.therapistId !== undefined && dto.therapistId !== process.therapistId) {
+      throw new BadRequestException('No se puede cambiar el profesional de un proceso: cierra el proceso y abre uno nuevo');
+    }
+
+    if (clinicalChange) {
+      // Contenido clínico: solo el autor, clínico, que trata al paciente, con ESTE proceso activo.
+      if (!isAuthor) {
+        await this.access.auditDenied(workspaceId, actor, 'clinical-process-write', 'NOT_AUTHOR', process.patientId);
+        throw new ForbiddenException('No puedes modificar el contenido clínico del proceso de otro profesional');
+      }
+      await this.access.assertTreating(workspaceId, actor, process.patientId, 'clinical-process-write');
+      if (process.status === 'PAUSED' || process.status === 'DISCHARGED') {
+        throw new ForbiddenException('Solo lectura: reactiva el proceso para modificar su contenido clínico');
+      }
+    } else {
+      await this.assertCanManage(workspaceId, actor, process.therapistId);
+    }
 
     if (process.status === 'CLOSED') throw new BadRequestException('No se puede editar un proceso cerrado');
     if (dto.patientId && dto.patientId !== process.patientId) throw new BadRequestException('No se puede cambiar el paciente de un proceso existente');
@@ -176,55 +263,64 @@ export class ClinicalProcessesService {
       startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
     };
 
-    if (dto.therapistId && dto.therapistId !== process.therapistId) {
-      // Reasignar el proceso a otro profesional es una decisión de gestión, no del día a día clínico.
-      if (actor.role === 'THERAPIST') throw new ForbiddenException('Solo OWNER/ADMIN pueden reasignar un proceso clínico');
-      const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: dto.therapistId } });
-      if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
-      data.therapistId = dto.therapistId;
-    }
-
     // updateMany + comprobación de count, en vez de update({where:{id}}): así el filtro por
     // workspaceId se aplica también en la escritura, no solo en la comprobación previa.
     const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data });
     if (count === 0) throw new NotFoundException('Proceso clínico no encontrado');
 
-    await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_UPDATED', entityType: 'ClinicalProcess', entityId: id } });
-    return decryptProcess(await this.getRaw(workspaceId, id));
+    await this.prisma.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_UPDATED', entityType: 'ClinicalProcess', entityId: id, metadata: { updatedFields: Object.keys(dto) } } });
+    const saved = await this.getRaw(workspaceId, id);
+    return isAuthor && saved.therapistId === actor.sub ? decryptProcess(saved) : toAdminView(saved);
   }
 
   async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue) {
-    this.assertClinicalAccess(actor);
+    await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-status');
     const process = await this.getRaw(workspaceId, id);
-    this.assertCanManage(actor, process.therapistId);
+    // Estado del proceso: operación de gestión (OWNER/ADMIN) o del propio profesional clínico.
+    await this.assertCanManage(workspaceId, actor, process.therapistId);
+    const view = (row: typeof process) => (row.therapistId === actor.sub ? decryptProcess(row) : toAdminView(row));
 
-    if (process.status === status) return decryptProcess(process);
+    if (process.status === status) return view(process);
 
     const allowed = ALLOWED_TRANSITIONS[process.status] ?? [];
     if (!allowed.includes(status)) {
       throw new BadRequestException(`No se puede pasar de ${process.status} a ${status}`);
     }
 
-    const endedAt = status === 'DISCHARGED' || status === 'CLOSED' ? new Date() : null;
-    const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data: { status, endedAt } });
+    const now = new Date();
+    const endedAt = status === 'DISCHARGED' || status === 'CLOSED' ? now : null;
+    // pausedAt marca el fin de la ventana de un proceso en pausa (no depende de updatedAt, que
+    // cualquier cambio administrativo movería). Se limpia al salir de la pausa.
+    const pausedAt = status === 'PAUSED' ? now : null;
+    const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data: { status, endedAt, pausedAt } });
     if (count === 0) throw new NotFoundException('Proceso clínico no encontrado');
 
     await this.prisma.auditLog.create({
       data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_STATUS_CHANGED', entityType: 'ClinicalProcess', entityId: id, metadata: { from: process.status, to: status } },
     });
-    return decryptProcess(await this.getRaw(workspaceId, id));
+    return view(await this.getRaw(workspaceId, id));
   }
 
-  private assertClinicalAccess(actor: AuthUser) {
-    if (!CLINICAL_ACCESS_ROLES.includes(actor.role)) {
-      throw new ForbiddenException('Tu rol no tiene acceso a procesos clínicos');
-    }
+  private assertClinicalAccess(workspaceId: string, actor: AuthUser, resource: string) {
+    return this.access.assertRoleAllowed(workspaceId, actor, CLINICAL_ACCESS_ROLES, resource, 'Tu rol no tiene acceso a procesos clínicos');
   }
 
-  /** Un THERAPIST solo gestiona sus propios procesos; OWNER/ADMIN pueden ver y gestionar cualquiera. */
-  private assertCanManage(actor: AuthUser, therapistId: string) {
-    if (actor.role === 'THERAPIST' && actor.sub !== therapistId) {
-      throw new ForbiddenException('No puedes acceder al proceso clínico de otro profesional');
+  /**
+   * Gestión administrativa del proceso (estado, modalidad, frecuencia, reasignación): OWNER/ADMIN
+   * de cualquiera; el propio profesional solo del suyo y solo si sigue siendo clínico.
+   */
+  private async assertCanManage(workspaceId: string, actor: AuthUser, therapistId: string) {
+    if (ADMIN_ROLES.includes(actor.role)) return;
+    if (actor.sub === therapistId && (await this.access.isClinician(workspaceId, actor))) return;
+    throw new ForbiddenException('No puedes gestionar el proceso clínico de otro profesional');
+  }
+
+  /** El profesional responsable de un proceso debe ser miembro clínico del workspace. */
+  private async assertClinicianMember(workspaceId: string, userId: string) {
+    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { role: true, isClinician: true } });
+    if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
+    if (!isClinicalProfile(membership)) {
+      throw new BadRequestException('El profesional indicado no está marcado como profesional clínico');
     }
   }
 
@@ -250,4 +346,9 @@ export class ClinicalProcessesService {
     if (!requested) throw new BadRequestException('therapistId es obligatorio para abrir un proceso en nombre de un profesional');
     return requested;
   }
+}
+
+/** Vista administrativa de un proceso (respuestas a quien no es su autor): sin contenido clínico. */
+function toAdminView<T extends Record<string, any>>(process: T) {
+  return projectSelect<Record<string, unknown>>(process, CLINICAL_PROCESS_ADMIN_SELECT);
 }

@@ -148,10 +148,22 @@ function assertNoClinicalContent(value, where) {
   assert(!json.includes(SMOKE_PROCESS_TITLE), `${where} expone el título del proceso`);
 }
 
+// Acceso clínico por proceso ACTIVO (feat/e1-acceso-clinico): ser OWNER e isClinician no basta.
+// Antes de abrir el proceso, la historia del paciente recién creado debe dar 403; después, la
+// cuenta demo lo trata y el resto del flujo clínico (historia, objetivos, escalas...) funciona.
+async function openClinicalProcess(patient) {
+  assert(sessionUserId, 'El login no devolvió user.id para abrir el proceso clínico');
+  const before = await rawReq(`/patients/${patient.id}/history`);
+  assert(before.status === 403, `Sin proceso activo la historia debería dar 403 y dio ${before.status}`);
+  const reasonBefore = await rawReq(`/patients/${patient.id}/consultation-reason`);
+  assert(reasonBefore.status === 403, `Sin proceso activo /consultation-reason debería dar 403 y dio ${reasonBefore.status}`);
+  assert(!JSON.stringify(reasonBefore.data).includes(SMOKE_REASON), 'El 403 sin proceso filtra el motivo');
+  await req('/clinical-processes', { method: 'POST', body: { patientId: patient.id, therapistId: sessionUserId, title: SMOKE_PROCESS_TITLE } });
+}
+
 // Regresión de fix/patient-reason-exposure contra la API y la BD reales.
 async function checkReasonExposure(patient) {
-  assert(sessionUserId, 'El login no devolvió user.id para abrir el proceso clínico');
-  await req('/clinical-processes', { method: 'POST', body: { patientId: patient.id, therapistId: sessionUserId, title: SMOKE_PROCESS_TITLE } });
+  // El proceso clínico se abre en el paso 2 (openClinicalProcess): sin él no hay acceso clínico.
   assertNoClinicalContent(patient, 'POST /patients');
 
   const list = await req(`/patients?q=${encodeURIComponent(patient.lastName)}`);
@@ -195,7 +207,7 @@ async function checkReasonExposure(patient) {
 async function main() {
   const stamp = Date.now();
   console.log('1/11 Login'); await login();
-  console.log('2/11 Crear paciente'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id');
+  console.log('2/11 Crear paciente y abrir su proceso clínico'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id'); await openClinicalProcess(patient); console.log('   sin proceso: 403 en historia y motivo; proceso clínico abierto a nombre de la cuenta demo');
   console.log('3/11 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
   console.log('4/11 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
   console.log('5/11 Guardar escala'); const assessment = await req(`/patients/${patient.id}/assessments`, { method: 'POST', body: { scaleCode: 'PHQ9', answers: [0, 0, 0, 0, 0, 0, 0, 0, 0] } }); const assessments = await req(`/patients/${patient.id}/assessments`); assert(assessments.some(x => x.id === assessment.id), 'La escala no persistió');

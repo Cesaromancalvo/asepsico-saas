@@ -8,10 +8,15 @@ import {
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
+import NewProcessForm from '@/components/NewProcessForm';
 import {
+  canManageProcess,
   fetchConsultationReason,
+  isAdminRole,
+  isStaffWithProcessAccess,
   processLabel,
-  useIsClinicalRole,
+  usePatientClinicalAccess,
+  useViewer,
 } from '@/lib/clinical';
 
 type PatientStatus =
@@ -172,8 +177,9 @@ export default function PatientsPage() {
 
   const [error, setError] = useState('');
 
-  // null mientras se comprueba el rol; el motivo de consulta solo se pide con rol clínico.
-  const isClinical = useIsClinicalRole();
+  // El rol solo decide acciones de gestión. El contenido clínico (motivo de consulta) solo se
+  // pide si la API indica que el usuario puede leer algo clínico de este paciente.
+  const viewer = useViewer();
 
   const [selectedReason, setSelectedReason] =
     useState<{
@@ -186,6 +192,13 @@ export default function PatientsPage() {
       (patient) =>
         patient.id === selectedPatientId,
     ) ?? null;
+
+  const { access: selectedAccess } =
+    usePatientClinicalAccess(
+      selectedPatientId,
+      viewer !== null &&
+        isStaffWithProcessAccess(viewer.role),
+    );
 
   async function load(
     targetStatus = status,
@@ -232,14 +245,14 @@ export default function PatientsPage() {
   }, [status]);
 
   useEffect(() => {
-    if (!isClinical || !selectedPatientId) {
+    if (!selectedAccess.treating || !selectedPatientId) {
       setSelectedReason(null);
       return;
     }
 
     let cancelled = false;
 
-    // 403 (THERAPIST sin proceso propio) se tolera: fetchConsultationReason devuelve null.
+    // Un 403 se tolera igualmente: fetchConsultationReason devuelve null.
     fetchConsultationReason(
       selectedPatientId,
     ).then((reason) => {
@@ -254,7 +267,7 @@ export default function PatientsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isClinical, selectedPatientId]);
+  }, [selectedAccess.treating, selectedPatientId]);
 
   const selectedPatientReason =
     selectedReason &&
@@ -274,7 +287,7 @@ export default function PatientsPage() {
     // El motivo de consulta solo lo envía un rol clínico y solo si tiene contenido:
     // nunca "" ni null (la API responde 403 a un ASSISTANT aunque el valor esté vacío).
     const consultationReason =
-      isClinical
+      viewer?.isClinician
         ? String(
             formData.get(
               'consultationReason',
@@ -316,57 +329,6 @@ export default function PatientsPage() {
         err instanceof Error
           ? err.message
           : 'No se pudo crear el paciente',
-      );
-    }
-  }
-
-  async function createProcess(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    if (!selectedPatient) {
-      return;
-    }
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-
-    try {
-      setError('');
-
-      await api('/clinical-processes', {
-        method: 'POST',
-        body: JSON.stringify({
-          patientId: selectedPatient.id,
-          title:
-            formData.get('title') ||
-            'Proceso de intervención',
-          consultationReason:
-            formData.get(
-              'consultationReason',
-            ) ||
-            selectedPatientReason ||
-            undefined,
-          goals:
-            formData.get('goals') ||
-            undefined,
-          modality:
-            formData.get('modality') ||
-            'IN_PERSON',
-          frequency:
-            formData.get('frequency') ||
-            undefined,
-        }),
-      });
-
-      form.reset();
-      await load();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo crear el proceso',
       );
     }
   }
@@ -887,7 +849,16 @@ export default function PatientsPage() {
                     )}
                   </strong>
 
-                  {isClinical && selectedPatient.summary.activeProcess && (
+                  {selectedPatient.summary.activeProcess && (
+                    <Link
+                      href={`/patients/${selectedPatient.id}/processes/${selectedPatient.summary.activeProcess.id}`}
+                      className="button secondary"
+                      style={{ marginTop: 8 }}
+                    >
+                      Abrir proceso
+                    </Link>
+                  )}
+                  {selectedPatient.summary.activeProcess && canManageProcess(viewer, selectedPatient.summary.activeProcess) && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                       {PROCESS_TRANSITIONS[selectedPatient.summary.activeProcess.status].map((t) => (
                         <button
@@ -952,78 +923,18 @@ export default function PatientsPage() {
                   'CLOSED') &&
                 selectedPatient.status !==
                   'ARCHIVED' &&
-                isClinical && (
-                  <form
-                    onSubmit={createProcess}
-                    style={{
-                      marginTop: 24,
-                    }}
-                  >
-                    <h3>
-                      Abrir proceso clínico
-                    </h3>
-
-                    <label className="field">
-                      Nombre del proceso
-                      <input
-                        name="title"
-                        required
-                        defaultValue="Proceso de intervención individual"
-                      />
-                    </label>
-
-                    <label className="field">
-                      Motivo de consulta
-                      <input
-                        // Se remonta al llegar el motivo para aplicar el prefill.
-                        key={`reason-${selectedPatient.id}-${selectedPatientReason ?? ''}`}
-                        name="consultationReason"
-                        defaultValue={
-                          selectedPatientReason ??
-                          ''
-                        }
-                        placeholder="Describe el motivo principal de consulta"
-                      />
-                    </label>
-
-                    <label className="field">
-                      Objetivos iniciales
-                      <textarea
-                        name="goals"
-                        rows={3}
-                      />
-                    </label>
-
-                    <label className="field">
-                      Modalidad
-                      <select
-                        name="modality"
-                        defaultValue="IN_PERSON"
-                      >
-                        <option value="IN_PERSON">
-                          Presencial
-                        </option>
-                        <option value="ONLINE">
-                          Online
-                        </option>
-                        <option value="HYBRID">
-                          Híbrida
-                        </option>
-                      </select>
-                    </label>
-
-                    <label className="field">
-                      Frecuencia
-                      <input
-                        name="frequency"
-                        placeholder="Ej. Semanal"
-                      />
-                    </label>
-
-                    <button className="button">
-                      Crear proceso
-                    </button>
-                  </form>
+                viewer &&
+                (isAdminRole(viewer.role) ||
+                  viewer.isClinician) && (
+                  <div style={{ marginTop: 24 }}>
+                    <NewProcessForm
+                      key={selectedPatient.id}
+                      patientId={selectedPatient.id}
+                      viewer={viewer}
+                      initialReason={selectedPatientReason}
+                      onCreated={() => load()}
+                    />
+                  </div>
                 )}
             </section>
           ) : (
@@ -1076,7 +987,7 @@ export default function PatientsPage() {
                 <input name="phone" />
               </label>
 
-              {isClinical && (
+              {viewer?.isClinician && (
                 <label className="field">
                   Motivo de consulta
                   <input

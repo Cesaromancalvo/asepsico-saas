@@ -2,27 +2,29 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 /**
- * Criterio de rol clínico ACTUAL (el mismo que PatientAccessService.assertClinicalAccess).
- *
- * TODO(E1 acceso clínico): cuando se fusione feat/e1-acceso-clinico, sustituir este criterio por
- * el guard central de acceso clínico (WorkspaceMember.isClinician leído de base de datos), de
- * modo que un OWNER/ADMIN NO clínico reciba 403 como pide la spec (apartado 5). Hasta entonces
- * OWNER y ADMIN pueden importar (y los pacientes quedan a su nombre, igual que si abrieran un
- * proceso para sí mismos). Es el ÚNICO punto que hay que cambiar: todos los endpoints de
- * importación pasan por assertCanImport().
+ * Quién puede importar pacientes (spec, apartado 5): solo un profesional CLÍNICO del workspace,
+ * decidido por el criterio central de E1 (ClinicalAccessService.isClinician): rol del token
+ * distinto de ASSISTANT y perfil clínico según la BD (THERAPIST siempre; OWNER/ADMIN solo con
+ * WorkspaceMember.isClinician; ASSISTANT nunca). Un OWNER/ADMIN no clínico recibe 403: la
+ * importación crea procesos clínicos a nombre del importador y no tendría sentido (ni acceso)
+ * para quien no trata pacientes. Todos los endpoints de importación pasan por assertCanImport().
  */
-export const IMPORT_CLINICAL_ROLES: readonly string[] = ['OWNER', 'ADMIN', 'THERAPIST'];
-
 @Injectable()
 export class PatientImportAccess {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly clinicalAccess: ClinicalAccessService;
 
-  /** Lanza 403 (y lo audita) si el actor no es un profesional clínico. */
+  constructor(private readonly prisma: PrismaService) {
+    // Sin estado: mismo patrón que PatientCoreService (instancia bajo demanda sobre el mismo Prisma).
+    this.clinicalAccess = new ClinicalAccessService(prisma);
+  }
+
+  /** Lanza 403 (y lo audita) si el actor no es un profesional clínico de este workspace. */
   async assertCanImport(actor: AuthUser, operation: string): Promise<void> {
     assertStaffRole(actor);
-    if (IMPORT_CLINICAL_ROLES.includes(actor.role)) return;
+    if (await this.clinicalAccess.isClinician(actor.workspaceId, actor)) return;
     await this.prisma.auditLog.create({
       data: {
         workspaceId: actor.workspaceId,

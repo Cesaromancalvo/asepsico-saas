@@ -163,6 +163,26 @@ Antes de dar por cerrado cualquier cambio de dominio o DNS de la API:
   `main` (PR #9), quitar la condición "si existe el script" del paso de
   `.github/workflows/ci.yml` para que su ausencia vuelva a hacer fallar el job.
 
+## Importación de pacientes: comportamientos conocidos (Argos, B1 y B2)
+
+Solo puede importar un profesional clínico según la BD (criterio de E1: THERAPIST siempre;
+OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado queda auditado como
+`PATIENT_IMPORT_FORBIDDEN` con el rol y la operación, sin datos del fichero.
+
+- **B1. El permiso se comprueba al empezar el lote, no bloque a bloque.** La confirmación
+  comprueba el permiso una vez, al empezar, y después procesa el lote por bloques. Si a alguien
+  le quitan el rol clínico (o lo pasan a ASSISTANT) con una confirmación en curso, esa confirmación
+  termina. Las llamadas siguientes (reintentar un lote PARTIAL, deshacer, ver, listar) sí reciben
+  403. Si hay que cortar un lote en marcha, retirar el permiso no basta: hay que esperar a que
+  termine y deshacerlo, o seguir el apartado "Incidente".
+- **B2. Un OWNER/ADMIN al que le quitan `isClinician` ya no puede deshacer sus lotes.** Deshacer
+  pasa por la misma comprobación: recibe 403 (auditado) aunque el lote sea suyo y siga dentro de
+  la ventana de 7 días. Los pacientes y procesos importados se quedan. Antes de quitar
+  `isClinician` a un OWNER/ADMIN, revisar si tiene lotes recientes que quiera deshacer y hacerlo
+  primero. Si ya se le quitó, decidir con el responsable del piloto cómo seguir (por ejemplo,
+  devolverle `isClinician` de forma temporal y auditada para deshacer); no hay un deshacer
+  administrativo.
+
 ## Backups
 
 - Frecuencia recomendada para piloto: diaria.

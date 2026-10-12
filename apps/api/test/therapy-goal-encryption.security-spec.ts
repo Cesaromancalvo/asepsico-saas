@@ -1,11 +1,12 @@
 import { PatientCareService } from '../src/patients/patient-care.service';
 import { PatientTasksService } from '../src/patients/patient-tasks.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { treatingAccessStub } from './support/clinical-access-fixture';
 
 // Datos 100 % ficticios.
 const owner = { sub: 'owner-1', workspaceId: 'ws-1', role: 'OWNER' } as any;
 const ENC = /^enc:v1:|^enc:v2:/;
-const access: any = { assertPatientClinicalAccess: jest.fn(async () => ({ id: 'patient-1', status: 'ACTIVE' })) };
+const access: any = treatingAccessStub({ id: 'patient-1', status: 'ACTIVE' });
 
 function prismaWithGoal(goal: any) {
   const tx: any = {

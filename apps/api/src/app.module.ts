@@ -15,6 +15,8 @@ import { ResourcesModule } from './resources/resources.module';
 import { MessagesModule } from './messages/messages.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
+import { ClinicalAccessModule } from './clinical-access/clinical-access.module';
+import { WorkspaceMembersModule } from './workspace-members/workspace-members.module';
 import { PatientImportModule } from './patient-import/patient-import.module';
 
 @Module({
@@ -23,6 +25,7 @@ import { PatientImportModule } from './patient-import/patient-import.module';
     // Límite global por defecto para toda la API (además del límite más estricto en auth).
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     DatabaseModule,
+    ClinicalAccessModule,
     AuthModule,
     PatientsModule,
     SessionsModule,
@@ -35,6 +38,7 @@ import { PatientImportModule } from './patient-import/patient-import.module';
     MessagesModule,
     DashboardModule,
     ExportsModule,
+    WorkspaceMembersModule,
     PatientImportModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

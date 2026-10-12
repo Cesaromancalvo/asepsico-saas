@@ -1,30 +1,29 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { CreateResourceDto, UpdateResourceDto } from './dto/resource.dto';
+import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 
 @Injectable()
 export class ResourcesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly access: ClinicalAccessService;
+
+  constructor(private readonly prisma: PrismaService, @Optional() access?: ClinicalAccessService) {
+    this.access = access ?? new ClinicalAccessService(prisma);
+  }
 
   private assertProfessional(actor: AuthUser) {
     if (actor.role === 'ASSISTANT') throw new ForbiddenException('No tienes acceso a recursos terapéuticos');
   }
 
+  /**
+   * Qué recursos tiene compartidos un paciente es contenido clínico (revela el tratamiento):
+   * solo quien le trata (decisión central en ClinicalAccessService).
+   */
   private async assertPatientAccess(workspaceId: string, actor: AuthUser, patientId: string) {
     this.assertProfessional(actor);
-    const patient = await this.prisma.patient.findFirst({
-      where: {
-        id: patientId,
-        workspaceId,
-        deletedAt: null,
-        ...(actor.role === 'THERAPIST'
-          ? { clinicalProcesses: { some: { workspaceId, therapistId: actor.sub } } }
-          : {}),
-      },
-      select: { id: true },
-    });
-    if (!patient) throw new NotFoundException('Paciente no encontrado');
+    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId, 'patient-resources');
+    if (patient.deletedAt) throw new NotFoundException('Paciente no encontrado');
   }
 
   async list(workspaceId: string, actor: AuthUser, query?: string) {

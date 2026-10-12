@@ -1,6 +1,9 @@
 'use client';
 import { FormEvent, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { invalidateViewer } from '@/lib/clinical';
+import { SELF_REGISTRATION_ENABLED } from '@/lib/features';
 import { api, ApiError } from '@/lib/api';
 
 type LoginResponse =
@@ -37,6 +40,7 @@ export default function LoginPage() {
       if (result.mfaRequired) {
         setPendingToken(result.pendingToken);
       } else {
+        invalidateViewer();
         router.push('/patients');
       }
     } catch (err) {
@@ -59,6 +63,7 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ pendingToken, code }),
       });
+      invalidateViewer();
       router.push('/patients');
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'Código no válido';
@@ -116,6 +121,7 @@ export default function LoginPage() {
           {error && <p className="error" role="alert">{error}</p>}
           <button className="button" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         </form>
+        {SELF_REGISTRATION_ENABLED && <p className="muted" style={{ marginTop: 16 }}>¿Todavía no tienes cuenta? <Link href="/register">Crea tu consulta</Link></p>}
       </div>
     </main>
   );

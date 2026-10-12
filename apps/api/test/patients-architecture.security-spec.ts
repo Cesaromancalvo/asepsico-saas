@@ -38,10 +38,16 @@ describe('Patients module architecture regression', () => {
   });
 
   it('centralizes patient-level clinical authorization', () => {
+    // La decisión vive en un único servicio (common a todos los módulos clínicos).
+    const central = readFileSync(join(__dirname, '..', 'src', 'clinical-access', 'clinical-access.service.ts'), 'utf8');
+    expect(central).toContain('assertPatientClinicalAccess');
+    expect(central).toContain('isClinician');
+    expect(central).toContain("status === 'ACTIVE'");
+    expect(central).toContain('therapistId: actor.sub');
+    expect(central).toContain('CLINICAL_ACCESS_DENIED');
+
     const access = read('patient-access.service.ts');
-    expect(access).toContain('assertPatientClinicalAccess');
-    expect(access).toContain("actor.role === 'THERAPIST'");
-    expect(access).toContain('therapistId: actor.sub');
+    expect(access).toContain('extends ClinicalAccessService');
 
     for (const file of [
       'patient-care.service.ts',
@@ -51,6 +57,21 @@ describe('Patients module architecture regression', () => {
     ]) {
       const source = read(file);
       expect(source).toContain('this.access.assertPatientClinicalAccess');
+    }
+  });
+
+  it('todos los módulos con contenido clínico deciden con ClinicalAccessService', () => {
+    const src = join(__dirname, '..', 'src');
+    for (const file of [
+      'clinical-processes/clinical-processes.service.ts',
+      'sessions/sessions.service.ts',
+      'messages/messages.service.ts',
+      'exports/exports.service.ts',
+      'dashboard/dashboard.service.ts',
+      'resources/resources.service.ts',
+      'patients/patient-core.service.ts',
+    ]) {
+      expect({ file, usesCentral: readFileSync(join(src, file), 'utf8').includes('ClinicalAccessService') }).toEqual({ file, usesCentral: true });
     }
   });
 
