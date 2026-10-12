@@ -21,7 +21,9 @@
     "waitlist:purge": "tsx prisma/scripts/waitlist-purge.ts",
     "waitlist:confirm-commercial": "tsx prisma/scripts/waitlist-confirm-commercial.ts",
     "waitlist:withdraw-commercial": "tsx prisma/scripts/waitlist-withdraw-commercial.ts",
-    "invites:create": "tsx prisma/scripts/create-registration-invite.ts"
+    "invites:create": "tsx prisma/scripts/create-registration-invite.ts",
+    "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
+    "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

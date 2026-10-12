@@ -188,6 +188,9 @@ model User {
   workspaceInvitesSent         WorkspaceInvite[]     @relation("WorkspaceInviteInvitedBy")
   workspaceInvitesAccepted     WorkspaceInvite[]     @relation("WorkspaceInviteAcceptedUser")
   registrationInviteUsed       RegistrationInvite?   @relation("RegistrationInviteUsedBy")
+  /// Usuario ficticio creado por db:seed-demo-workspace (Recepción Demo, Terapeuta Demo). Solo lo
+  /// borra db:purge-demo-workspace. Nunca se marca a un usuario real.
+  isDemo                       Boolean               @default(false)
 }
 
 /// Invitación de un solo uso para crear un workspace nuevo (registro cerrado). La crea solo la
@@ -296,6 +299,9 @@ model Patient {
   deletedAt           DateTime?
   blockedAt           DateTime?
   retentionUntil      DateTime?
+  /// Paciente inventado sembrado por db:seed-demo-workspace. db:purge-demo-workspace borra SOLO
+  /// pacientes con isDemo=true (y todo lo que cuelga de ellos). Nunca se marca a un paciente real.
+  isDemo              Boolean                @default(false)
   workspace           Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   sessions            Session[]
   clinicalProcesses   ClinicalProcess[]
@@ -315,6 +321,7 @@ model Patient {
 
   @@index([workspaceId, status])
   @@index([workspaceId, lastName, firstName])
+  @@index([workspaceId, isDemo])
 }
 
 model ClinicalHistory {
