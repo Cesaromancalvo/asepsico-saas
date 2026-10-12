@@ -17,6 +17,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
 import { ClinicalAccessModule } from './clinical-access/clinical-access.module';
 import { WorkspaceMembersModule } from './workspace-members/workspace-members.module';
+import { PatientImportModule } from './patient-import/patient-import.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { WorkspaceMembersModule } from './workspace-members/workspace-members.mo
     DashboardModule,
     ExportsModule,
     WorkspaceMembersModule,
+    PatientImportModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
