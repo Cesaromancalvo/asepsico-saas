@@ -164,7 +164,7 @@ export class BillingService {
     return (this.prisma as any).$transaction(async (tx: any) => {
       await this.scopedInvoiceUpdate(tx, { id, workspaceId, status: { notIn: ['VOID', 'PAID'] } as any }, { status: 'VOID', voidReason: reason });
       const updated = await this.loadInvoice(tx, workspaceId, id);
-      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_VOIDED', entityType: 'Invoice', entityId: id, metadata: { reason } } });
+      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'INVOICE_VOIDED', entityType: 'Invoice', entityId: id, metadata: { invoiceId: id, reasonProvided: true } } });
       return this.forRole(updated, actor);
     });
   }
@@ -215,7 +215,7 @@ export class BillingService {
       const aggregate = await tx.payment.aggregate({ where: { workspaceId, invoiceId: payment.invoiceId, reversedAt: null, id: { not: paymentId } }, _sum: { amountCents: true } });
       const paidCents = aggregate._sum.amountCents ?? 0;
       await this.scopedInvoiceUpdate(tx, { id: payment.invoiceId, workspaceId }, { paidCents, status: paidCents === 0 ? 'ISSUED' : paidCents >= payment.invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID' });
-      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PAYMENT_REVERSED', entityType: 'Payment', entityId: paymentId, metadata: { invoiceId: payment.invoiceId, reason } } });
+      await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action: 'PAYMENT_REVERSED', entityType: 'Payment', entityId: paymentId, metadata: { invoiceId: payment.invoiceId, reasonProvided: true } } });
       return paymentForRole(updatedPayment, actor.role);
     });
   }
