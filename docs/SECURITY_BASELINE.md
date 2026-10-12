@@ -28,6 +28,21 @@ datos clínicos reales en producción.
   `isClinician` solo lo cambia el OWNER (auditado) y no da acceso a ningún paciente por sí solo.
   Las vistas generales de Patients/Sessions nunca exponen motivo de consulta, objetivos, notas
   internas ni notas de sesión.
+- Citas entre profesionales (`GET /sessions/patient/:patientId/agenda`): un `THERAPIST` que
+  trata al paciente ve sus citas con metadatos de agenda y, de las de otros profesionales, solo
+  las programadas futuras con id, inicio, fin y nombre del profesional (sin estado, notas,
+  proceso, tipo, lugar ni enlace). Quien no lo trata recibe 403 auditado. `OWNER`, `ADMIN` y
+  `ASSISTANT` conservan la vista administrativa de la agenda.
+- Cerrar o dar de alta un proceso con citas futuras programadas devuelve 409
+  `PROCESS_HAS_FUTURE_SESSIONS` (citas solo como metadatos) salvo `cancelFutureSessions: true`,
+  que las cancela en la misma transacción con auditoría por cita. Crear o reprogramar una cita
+  exige proceso `ACTIVE` y bloquea la fila del proceso en la misma transacción, igual que el
+  cierre: no puede quedar una cita programada nueva en un proceso cerrado.
+- Bandeja de mensajes (`GET /messages`): cada fila lleva `therapist` (`id`, `firstName`,
+  `lastName`) del proceso activo del paciente, nunca contenido. `OWNER`/`ADMIN` lo ven siempre
+  (quién atiende a quién es dato administrativo); un `THERAPIST` solo en los pacientes que trata
+  ahora (el autor de un proceso cerrado no averigua quién le sustituye). `ASSISTANT` no accede a
+  la bandeja (403), así que tampoco lo ve.
 - Soft delete y auditoría transaccional para altas, modificaciones y archivado de pacientes.
 
 ## Cifrado a nivel de campo (en reposo)

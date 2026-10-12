@@ -23,6 +23,8 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CloseSessionDto } from './dto/close-session.dto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
+import { PatientAgendaQueryDto } from './dto/patient-agenda-query.dto';
+import { PatientAgendaService } from './patient-agenda.service';
 import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
 import { SessionsService } from './sessions.service';
@@ -34,6 +36,7 @@ import { SessionsService } from './sessions.service';
 export class SessionsController {
   constructor(
     private readonly sessions: SessionsService,
+    private readonly agenda: PatientAgendaService,
   ) {}
 
   @Get()
@@ -44,6 +47,24 @@ export class SessionsController {
     return this.sessions.list(
       user.workspaceId,
       user,
+      query,
+    );
+  }
+
+  /**
+   * Agenda de un paciente. THERAPIST que lo trata: sus citas completas (metadatos) y las de otros
+   * profesionales solo como hueco ocupado. OWNER/ADMIN/ASSISTANT: vista administrativa.
+   */
+  @Get('patient/:patientId/agenda')
+  patientAgenda(
+    @CurrentUser() user: AuthUser,
+    @Param('patientId') patientId: string,
+    @Query() query: PatientAgendaQueryDto,
+  ) {
+    return this.agenda.agenda(
+      user.workspaceId,
+      user,
+      patientId,
       query,
     );
   }

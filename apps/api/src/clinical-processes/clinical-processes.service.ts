@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { ClinicalProcessStatus, Prisma } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ClinicalProcessStatus, Prisma, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
@@ -10,7 +10,10 @@ import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
 import { ListClinicalProcessesQueryDto } from './dto/list-clinical-processes-query.dto';
 import { PATIENT_VIEW_SELECT, projectSelect, toPatientView } from '../patients/patient-view.util';
-import { SESSION_SUMMARY_SELECT } from '../sessions/session-view.util';
+import { SESSION_BUSY_SELECT, SESSION_SUMMARY_SELECT } from '../sessions/session-view.util';
+
+/** Código del 409 al cerrar o dar de alta un proceso con citas futuras programadas. */
+export const PROCESS_HAS_FUTURE_SESSIONS = 'PROCESS_HAS_FUTURE_SESSIONS';
 
 // Roles que entran en este módulo. ASSISTANT nunca. OWNER/ADMIN entran para operaciones
 // ADMINISTRATIVAS (quién atiende a quién, estado, reasignación); el contenido clínico del proceso
@@ -273,7 +276,14 @@ export class ClinicalProcessesService {
     return isAuthor && saved.therapistId === actor.sub ? decryptProcess(saved) : toAdminView(saved);
   }
 
-  async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue) {
+  /**
+   * Cambio de estado. Al cerrar o dar de alta (CLOSED / DISCHARGED) con citas futuras programadas
+   * del proceso, no cierra a ciegas: 409 PROCESS_HAS_FUTURE_SESSIONS con esas citas (solo
+   * metadatos), salvo `cancelFutureSessions: true`, que las cancela en la MISMA transacción que el
+   * cambio de estado, con auditoría por cita. Las citas pasadas que sigan SCHEDULED no se tocan
+   * (quedan para marcarlas como realizadas o ausencia), pero ya no se pueden reprogramar.
+   */
+  async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue, options: { cancelFutureSessions?: boolean } = {}) {
     await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-status');
     const process = await this.getRaw(workspaceId, id);
     // Estado del proceso: operación de gestión (OWNER/ADMIN) o del propio profesional clínico.
@@ -292,11 +302,52 @@ export class ClinicalProcessesService {
     // pausedAt marca el fin de la ventana de un proceso en pausa (no depende de updatedAt, que
     // cualquier cambio administrativo movería). Se limpia al salir de la pausa.
     const pausedAt = status === 'PAUSED' ? now : null;
-    const { count } = await this.prisma.clinicalProcess.updateMany({ where: { id, workspaceId }, data: { status, endedAt, pausedAt } });
-    if (count === 0) throw new NotFoundException('Proceso clínico no encontrado');
+    const closing = status === 'DISCHARGED' || status === 'CLOSED';
 
-    await this.prisma.auditLog.create({
-      data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_STATUS_CHANGED', entityType: 'ClinicalProcess', entityId: id, metadata: { from: process.status, to: status } },
+    await this.prisma.$transaction(async (tx) => {
+      // 1) Compare-and-set del estado, acotado al workspace (nunca solo por id). Va PRIMERO: el
+      //    UPDATE bloquea la fila del proceso hasta el commit, y la creación/reprogramación de
+      //    citas toca esa misma fila exigiendo ACTIVE, así que no puede colarse una cita nueva
+      //    entre la lectura de las citas futuras y el cierre.
+      const { count } = await tx.clinicalProcess.updateMany({ where: { id, workspaceId, status: process.status }, data: { status, endedAt, pausedAt } });
+      if (count === 0) throw new ConflictException('El proceso ha cambiado mientras se actualizaba; recarga e inténtalo de nuevo');
+
+      // 2) Citas futuras programadas, leídas ya con la fila bloqueada. Si las hay y no se pidió
+      //    cancelarlas, el 409 revierte también el paso 1.
+      const futureWhere: Prisma.SessionWhereInput = { workspaceId, clinicalProcessId: id, status: SessionStatus.SCHEDULED, startsAt: { gte: now } };
+      const future = closing
+        ? await tx.session.findMany({ where: futureWhere, orderBy: { startsAt: 'asc' }, select: SESSION_BUSY_SELECT })
+        : [];
+      if (future.length && options.cancelFutureSessions !== true) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          code: PROCESS_HAS_FUTURE_SESSIONS,
+          message: `El proceso tiene ${future.length} cita(s) futura(s) programada(s). Cancélalas o confirma su cancelación al cerrar el proceso.`,
+          sessions: future.map((session) => projectSelect<Record<string, unknown>>(session, SESSION_BUSY_SELECT)),
+        });
+      }
+
+      const cancelledIds = future.map((session) => session.id);
+      if (cancelledIds.length) {
+        const { count: cancelled } = await tx.session.updateMany({
+          where: { ...futureWhere, id: { in: cancelledIds } },
+          data: { status: SessionStatus.CANCELLED },
+        });
+        if (cancelled !== cancelledIds.length) {
+          throw new ConflictException('Las citas del proceso han cambiado mientras se cerraba; recarga e inténtalo de nuevo');
+        }
+        await tx.auditLog.createMany({
+          data: cancelledIds.map((sessionId) => ({
+            workspaceId, actorId: actor.sub, action: 'SESSION_STATUS_CHANGED', entityType: 'Session', entityId: sessionId,
+            metadata: { from: SessionStatus.SCHEDULED, to: SessionStatus.CANCELLED, reason: `CLINICAL_PROCESS_${status}`, clinicalProcessId: id },
+          })),
+        });
+      }
+
+      await tx.auditLog.create({
+        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_STATUS_CHANGED', entityType: 'ClinicalProcess', entityId: id, metadata: { from: process.status, to: status, cancelledFutureSessions: cancelledIds.length } },
+      });
     });
     return view(await this.getRaw(workspaceId, id));
   }

@@ -8,6 +8,7 @@ import NewProcessForm from '@/components/NewProcessForm';
 import { api } from '@/lib/api';
 import {
   canManageProcess,
+  changeProcessStatus,
   ClinicalProcessRow,
   isForbidden,
   isStaffWithProcessAccess,
@@ -142,7 +143,7 @@ export default function ProcessPage() {
     setError('');
     setStatus('');
     try {
-      await api(`/clinical-processes/${processId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+      await changeProcessStatus(processId, next);
       setStatus(message);
       await load();
     } catch (err) {
@@ -181,7 +182,7 @@ export default function ProcessPage() {
   async function closeCurrent() {
     if (!meta) return;
     if (meta.status === 'ACTIVE' || meta.status === 'PAUSED') {
-      await api(`/clinical-processes/${processId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'CLOSED' }) });
+      await changeProcessStatus(processId, 'CLOSED');
     }
   }
 

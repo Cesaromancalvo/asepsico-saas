@@ -17,6 +17,7 @@ const DEMO_MEMBERS_ACTIVE_MESSAGE =
   'Aún no puedes dar de alta pacientes: en esta consulta siguen las cuentas de la demostración. Escríbenos por email para que las borremos y, cuando te lo confirmemos, vuelve a intentarlo.';
 import {
   canManageProcess,
+  changeProcessStatus as patchProcessStatus,
   fetchConsultationReason,
   isAdminRole,
   isStaffWithProcessAccess,
@@ -395,10 +396,7 @@ export default function PatientsPage() {
   async function changeProcessStatus(processId: string, next: ProcessStatus) {
     try {
       setError('');
-      await api(`/clinical-processes/${processId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: next }),
-      });
+      await patchProcessStatus(processId, next);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado del proceso');
