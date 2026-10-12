@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { freeText, HIDDEN_FOR_ROLE, lineLabel } from '../lib/billing';
+import { CHARGE_STATUS_LABELS, chargeStatusLabel, freeText, HIDDEN_FOR_ROLE, lineLabel } from '../lib/billing';
 
 describe('Facturación: textos libres ocultos para recepción', () => {
   it('con el indicador Hidden se enseña HIDDEN_FOR_ROLE ("No visible con tu rol"), aunque el valor llegue a null', () => {
@@ -11,6 +11,12 @@ describe('Facturación: textos libres ocultos para recepción', () => {
     expect(freeText('Transferencia 123', undefined)).toEqual({ text: 'Transferencia 123', hidden: false });
     expect(freeText(null, undefined)).toBeNull();
     expect(freeText('   ', undefined)).toBeNull();
+  });
+
+  it('control de cobros: el estado ISSUED se enseña como "Pendiente", nunca "Emitida"', () => {
+    expect(chargeStatusLabel('ISSUED')).toBe('Pendiente');
+    expect(Object.values(CHARGE_STATUS_LABELS).join(' ')).not.toMatch(/emitid|factur/i);
+    expect(chargeStatusLabel('DESCONOCIDO')).toBe('DESCONOCIDO');
   });
 
   it('una línea antigua oculta se enseña como "Otro concepto"', () => {
