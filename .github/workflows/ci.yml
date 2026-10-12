@@ -236,6 +236,14 @@ jobs:
       - name: Verify invitation-only registration under concurrency (real PostgreSQL)
         run: node scripts/verify-registration-invite-live.mjs
 
+      # Recepción (ASSISTANT) anula un cobro y revierte un pago por HTTP (condición de Argos, S3):
+      # las respuestas no le devuelven el motivo, otra consulta recibe 404 sin dejar rastro y el export
+      # del workspace del OWNER contiene INVOICE_VOIDED y PAYMENT_REVERSED con el ASSISTANT como actor
+      # y metadatos {invoiceId, reasonProvided} sin el texto del motivo. Crea sus propias consultas
+      # ficticias (no toca la cuenta demo) y usa IPs 198.51.100.x vía X-Forwarded-For.
+      - name: Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)
+        run: node scripts/verify-billing-assistant-live.mjs
+
       # Condiciones nuevas para una cuenta que YA existe (condición de Argos, commit 37b9b78): la BD
       # se sembró sin LEGAL_TITULAR_*; se reinicia la API CON un NIF y un domicilio FICTICIOS
       # válidos, el texto servido cambia de hash y la cuenta demo debe recibir 428
