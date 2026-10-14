@@ -98,7 +98,7 @@ export default function TermsPage() {
   return (
     <main className="shell">
       <div className="card auth-card">
-        <div className="brand">AsePsico</div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>Nuevas condiciones</h1>
 
         {state === 'loading' && <p className="muted" role="status">Comprobando las condiciones…</p>}

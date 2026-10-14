@@ -463,4 +463,131 @@ h1,h2,h3{color:var(--ink);font-weight:600}
   .agenda-session-avatar{display:grid}
 }
 
+/* ---------- 16. Resto de pantallas (fase 2) ---------- */
+/* Contenedores de página */
+.patient-plan-page,.patient-tasks-page,.assessment-page,.documents-page,.resource-page,.messages-page{max-width:1480px;margin:0 auto;padding:36px var(--space-page) 64px;background:transparent}
+.patient-plan-header{gap:24px;margin-bottom:28px}
+.patient-plan-header h1{margin:6px 0 8px;color:var(--ink);font-size:var(--fs-3xl);font-weight:600;line-height:1.15;letter-spacing:-.02em}
+.patient-plan-header p{color:var(--text-soft);font-size:var(--fs-base)}
+.section-heading h2,.patient-card>h2,.card>h2,.task-list-heading h2,.patient-plan-section-heading h2{color:var(--ink);font-size:var(--fs-lg);font-weight:600;letter-spacing:-.01em}
+.patient-plan-section-heading p,.task-list-heading p,.document-help{color:var(--text-soft);font-size:var(--fs-sm)}
+.patient-plan-section-heading>div>span{width:32px;height:32px;flex-basis:32px;border-radius:10px;background:var(--tint-2);color:var(--violet-ink);font-size:var(--fs-xs);font-weight:600}
+
+/* Secciones planas que pasan a tarjeta */
+.patient-card,.assessment-form,.assessment-history,.document-form,.therapy-goal-card,.therapeutic-task-card,.follow-up-card,.resource-card,.document-list article,.assessment-history article{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-sm)}
+.patient-card{margin-bottom:var(--gap);padding:26px}
+.patient-card h2{margin:0 0 14px}
+.therapy-goal-card,.therapeutic-task-card,.follow-up-card,.resource-card{transition:box-shadow .15s ease,border-color .15s ease}
+.therapy-goal-card:hover,.therapeutic-task-card:hover,.follow-up-card:hover,.resource-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+
+/* Tarjetas de resumen (KPI) con acento malva, como en la ficha */
+.therapy-overview-grid,.assessment-summary-grid,.document-summary-grid,.billing-kpis{gap:16px}
+.therapy-overview-grid article,.assessment-summary-grid article,.document-summary-grid article,.billing-kpis article{position:relative;overflow:hidden;padding:20px 22px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-sm)}
+.therapy-overview-grid article::before,.assessment-summary-grid article::before,.document-summary-grid article::before,.billing-kpis article::before{position:absolute;inset:0 auto 0 0;width:4px;background:var(--mauve);content:""}
+.therapy-overview-grid span,.assessment-summary-grid span,.document-summary-grid span,.billing-kpis span{color:var(--text-soft);font-size:var(--fs-sm);font-weight:500;letter-spacing:0;text-transform:none}
+.therapy-overview-grid strong,.assessment-summary-grid strong,.document-summary-grid strong,.billing-kpis strong{color:var(--ink);font-size:28px;font-weight:600;line-height:1.15}
+.therapy-overview-grid small,.assessment-summary-grid small,.document-summary-grid small{color:var(--text-light);font-size:var(--fs-xs)}
+.therapy-progress{height:8px;border-radius:999px;background:var(--tint-2)}
+.therapy-progress i{background:linear-gradient(90deg,var(--violet),#9A8EEB);border-radius:inherit}
+
+/* Pestañas tipo segmento */
+.timeline-filters,.document-tabs{display:flex;flex-wrap:wrap;gap:4px;width:max-content;max-width:100%;padding:4px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.timeline-filters button,.document-tabs button{min-height:36px;padding:0 14px;border:0;border-radius:10px;background:transparent;color:var(--text-soft);font-family:inherit;font-size:var(--fs-sm);font-weight:500;cursor:pointer}
+.timeline-filters button:hover,.document-tabs button:hover{background:var(--tint);color:var(--ink)}
+.timeline-filters button.active,.document-tabs button.active{background:var(--tint-2);color:var(--violet-ink);font-weight:600}
+
+/* Chips de estado de listas (solo color: el texto ya lo pone cada pantalla) */
+.status-pill,.task-status,.goal-status,.goal-priority,.document-badge,.task-date,.task-goal{display:inline-flex!important;align-items:center;min-height:24px;padding:0 10px!important;border-radius:999px;background:#F0EFF5;color:var(--text-soft);font-size:var(--fs-xs)!important;font-weight:600;letter-spacing:0;text-transform:none;white-space:nowrap}
+.status-pill.ready,.task-status-completed,.status-achieved,.status-signed,.status-final,.priority-3.goal-priority{background:var(--success-soft);color:var(--success)}
+.status-pill.pending,.status-pill.manual,.task-status,.status-pending,.status-draft{background:var(--tint-2);color:var(--violet-ink)}
+.status-pill.warning,.task-status-in_progress,.status-paused,.priority-2.goal-priority{background:var(--warning-soft);color:var(--warning)}
+.status-pill.blocked,.status-revoked,.status-void,.status-expired,.task-status-cancelled,.status-cancelled,.priority-1.goal-priority{background:var(--danger-soft);color:var(--danger)}
+.task-date,.task-goal{background:var(--surface-soft);border:1px solid var(--border);font-weight:500}
+
+/* Filas de listas */
+.billing-row{padding:16px 18px;border-color:var(--border);border-radius:16px;background:var(--surface-soft)}
+.billing-row strong{color:var(--ink);font-size:var(--fs-md);font-weight:600}
+.billing-row small,.billing-row span{color:var(--text-soft);font-size:var(--fs-sm)}
+.billing-actions button,.document-row-actions button,.therapy-goal-actions button{min-height:36px;border-radius:10px;font-family:inherit;font-size:var(--fs-sm);font-weight:500}
+.billing-form label,.document-form label>span,.therapy-goal-form label>span,.assessment-form label>span{color:var(--ink);font-size:var(--fs-sm);font-weight:500}
+.billing-form input,.billing-form select,.document-form input,.document-form select,.document-form textarea,.therapy-goal-form input,.therapy-goal-form textarea,.therapy-goal-form select,.assessment-form select,.assessment-form input,.assessment-form textarea,.task-notes-grid textarea{min-height:44px;border:1px solid var(--border-strong);border-radius:12px;background:#fff;color:var(--text);font-family:inherit;font-size:var(--fs-md)}
+.billing-form input:focus,.billing-form select:focus,.document-form :is(input,select,textarea):focus,.therapy-goal-form :is(input,select,textarea):focus,.assessment-form :is(input,select,textarea):focus,.task-notes-grid textarea:focus{border-color:var(--violet);box-shadow:0 0 0 4px rgba(112,100,210,.16);outline:none}
+.demo-hint{color:var(--warning);font-size:var(--fs-xs)}
+.patient{border-color:var(--border);border-radius:14px;background:var(--surface-soft)}
+.patient strong{color:var(--ink);font-weight:600}
+.notice-message{padding:14px 18px;color:var(--success);background:var(--success-soft);border-color:#CDE8D8}
+
+/* Escalas: opciones de respuesta como tarjetas seleccionables */
+.assessment-questions fieldset{border-color:var(--border);border-radius:16px}
+.assessment-questions label{border-color:var(--border);border-radius:12px;transition:border-color .15s ease,background .15s ease}
+.assessment-questions label:hover{border-color:var(--border-strong)}
+.assessment-questions label.selected{border-color:var(--violet);background:var(--tint);box-shadow:0 0 0 1px var(--violet)}
+.assessment-questions label:has(input:focus-visible){outline:2px solid var(--violet-ink);outline-offset:2px}
+
+/* Línea temporal */
+.clinical-timeline:before{background:var(--border)}
+.timeline-icon{background:var(--tint-2);color:var(--violet-ink)}
+.timeline-item h3{color:var(--ink);font-size:var(--fs-md);font-weight:600}
+.timeline-item time,.timeline-item p{color:var(--text-light);font-size:var(--fs-xs)}
+
+/* Estados vacíos sin componente: ilustración en CSS (dos formas en tonos de marca) */
+.therapy-empty,.empty-state,.dashboard-empty{position:relative;display:grid;justify-items:center;gap:6px;padding:76px 16px 30px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);background:var(--surface-soft);text-align:center;color:var(--text-soft)}
+.therapy-empty::before,.empty-state::before,.dashboard-empty::before{position:absolute;top:22px;left:50%;width:44px;height:44px;margin-left:-22px;border-radius:14px;background:linear-gradient(145deg,var(--tint-2),#fff);box-shadow:inset 0 0 0 1px rgba(112,100,210,.18);content:""}
+.therapy-empty::after,.empty-state::after,.dashboard-empty::after{position:absolute;top:36px;left:50%;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--mauve);content:""}
+.therapy-empty strong,.empty-state strong,.dashboard-empty strong{color:var(--ink);font-size:var(--fs-base);font-weight:600}
+.therapy-empty p,.empty-state p,.dashboard-empty p{max-width:40ch;margin:0;font-size:var(--fs-sm)}
+.dashboard-empty.compact{padding:66px 12px 22px}
+
+/* Mensajes */
+.messages-page .card,.messages-page section{border-radius:var(--r-lg)}
+.message-bubble{border-radius:18px;font-size:var(--fs-md)}
+
+/* Pantallas de acceso (login, registro, invitación, condiciones, textos legales) */
+.shell{width:min(1180px,calc(100% - 32px));padding:48px 0}
+body:has(>.shell),body:has(.shell){background:radial-gradient(circle at 50% -10%,#E6E1FB 0,var(--background) 46%) fixed}
+.shell .card{padding:32px;border-radius:var(--r-xl);box-shadow:var(--shadow-lg)}
+.shell .card h1{color:var(--ink);font-size:28px;font-weight:600;letter-spacing:-.02em}
+.brand{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font-size:20px;font-weight:600;letter-spacing:-.01em}
+.brand .brand-mark{width:36px;height:36px;flex-basis:36px;border-radius:11px;font-size:16px}
+.legal-text{color:var(--text);font-size:var(--fs-md);line-height:1.7}
+.legal-text-heading{color:var(--ink);font-weight:600}
+/* Pacientes: lista + expediente seleccionado (antes con estilos en línea, sin versión móvil) */
+.patients-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr);gap:var(--gap);align-items:start}
+.patients-row-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+@media(max-width:1000px){.patients-layout{grid-template-columns:1fr}}
+.resource-summary-grid{gap:16px}
+.resource-summary-grid article{position:relative;overflow:hidden;padding:20px 22px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-sm)}
+.resource-summary-grid article::before{position:absolute;inset:0 auto 0 0;width:4px;background:var(--mauve);content:""}
+.resource-summary-grid span{color:var(--text-soft);font-size:var(--fs-sm);font-weight:500;letter-spacing:0;text-transform:none}
+.resource-summary-grid strong{color:var(--ink);font-size:28px;font-weight:600}
+.resource-summary-grid small{color:var(--text-light);font-size:var(--fs-xs)}
+.resource-card-top span{color:var(--violet-ink);font-size:var(--fs-xs);font-weight:600}
+label.patient{flex-direction:row!important;align-items:center!important;justify-content:space-between;min-height:48px;cursor:pointer}
+label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--violet)}
+.patients-layout>*,.patients-layout .card{min-width:0}
+.therapy-goal-form{grid-template-columns:minmax(0,1fr);border-color:var(--border);border-radius:16px;background:var(--surface-soft)}
+.therapy-goal-form label,.therapy-goal-form select,.therapy-goal-form input,.therapy-goal-form textarea{min-width:0;max-width:100%}
+.patients-layout [style*="display: flex"]{flex-wrap:wrap}
+@media(max-width:700px){
+  .patient-tasks-layout,.patient-plan-layout,.document-layout,.resource-layout,.assessment-layout{grid-template-columns:minmax(0,1fr)!important}
+  .patient-tasks-layout>*,.patient-plan-layout>*,.document-layout>*,.resource-layout>*,.assessment-layout>*{min-width:0}
+  .task-form-row,.document-form-grid,.therapy-goal-form-row,.resource-form-row,.assessment-form-top,.task-notes-grid{grid-template-columns:minmax(0,1fr)!important}
+  .therapy-overview-grid,.assessment-summary-grid,.document-summary-grid,.resource-summary-grid,.billing-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px}
+  .therapy-overview-grid article,.assessment-summary-grid article,.document-summary-grid article,.resource-summary-grid article,.billing-kpis article{padding:16px}
+}
+@media(max-width:700px){
+  .patients-row-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .billing-form{grid-template-columns:1fr}
+  .billing-form>*{min-width:0}
+}
+@media(max-width:700px){
+  .patient-plan-page,.patient-tasks-page,.assessment-page,.documents-page,.resource-page,.messages-page{padding:20px 16px 32px}
+  .patient-plan-header h1{font-size:26px}
+  .patient-card{padding:20px}
+  .therapy-overview-grid strong,.assessment-summary-grid strong,.document-summary-grid strong,.billing-kpis strong{font-size:24px}
+  .shell{padding:24px 0}
+  .shell .card{padding:24px 20px}
+  .timeline-filters,.document-tabs{width:100%}
+}
+
 @media(prefers-reduced-motion:reduce){.metric-card:hover,.agenda-session:hover,.button:hover,.primary-action:hover{transform:none}}

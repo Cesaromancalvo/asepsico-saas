@@ -48,7 +48,10 @@ export default function DemoBanner() {
   const portal = isPatientPortal(pathname);
   return (
     <div ref={ref} className="demo-banner" role="note" aria-label={portal ? 'Portal de prueba' : 'Entorno de prueba'}>
-      {/* Banda fina: etiqueta en chip ámbar + texto íntegro de Lex Psi (los dos puntos solo para lectores de pantalla). */}
+      {/* Banda fina: etiqueta en chip ámbar + texto íntegro de Lex Psi (los dos puntos solo para lectores de pantalla).
+          [LEX] Propuesta pendiente de Lex Psi para móvil (<= 700 px), que hoy ocupa 3 líneas:
+          "Entorno de prueba · Solo datos inventados, nunca de pacientes reales. Más información".
+          No se aplica hasta que Lex Psi la apruebe: el texto vigente sigue siendo el de abajo. */}
       {portal ? (
         <p>
           <strong className="demo-banner-chip"><span className="demo-banner-dot" aria-hidden="true" />Portal de prueba<span className="sr-only">:</span></strong> todos los datos son inventados.
