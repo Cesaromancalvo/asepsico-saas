@@ -116,7 +116,8 @@ jobs:
       NODE_ENV: test
       ASEPSICO_API_URL: http://127.0.0.1:4000/api/v1
       ASEPSICO_SMOKE_EMAIL: demo@asepsico.es
-      ASEPSICO_SMOKE_PASSWORD: AsePsico2026!
+      # La contraseña de la cuenta demo NO se fija aquí: el paso "Generate disposable seed
+      # password" crea una aleatoria por ejecución (repo público; hallazgo de Argos).
       # BD desechable recién sembrada: el smoke activa MFA temporalmente en la cuenta demo
       # (la API lo exige a OWNER/ADMIN/THERAPIST) y lo desactiva al terminar.
       ASEPSICO_SMOKE_ENROLL_MFA: '1'
@@ -191,6 +192,16 @@ jobs:
           echo "::error title=prisma migrate diff falló::Error ejecutando prisma migrate diff (código $status)."
           cat "$RUNNER_TEMP/schema-drift.sql"
           exit 1
+
+      # Contraseña de la cuenta demo de la BD desechable: aleatoria en cada ejecución, enmascarada en
+      # los logs y compartida por el seed (SEED_DEMO_PASSWORD) y los scripts (ASEPSICO_SMOKE_PASSWORD).
+      - name: Generate disposable seed password
+        shell: bash
+        run: |
+          pass="$(openssl rand -base64 30 | tr -d '\n/+=')"
+          echo "::add-mask::$pass"
+          echo "SEED_DEMO_PASSWORD=$pass" >> "$GITHUB_ENV"
+          echo "ASEPSICO_SMOKE_PASSWORD=$pass" >> "$GITHUB_ENV"
 
       - name: Seed smoke-test account
         run: npm run db:seed

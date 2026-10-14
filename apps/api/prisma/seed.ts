@@ -1,13 +1,34 @@
 import { PrismaClient, WorkspaceRole } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 // El seed escribe igual que la API: los campos clínicos van cifrados (ver clinical-crypto.ts).
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { buildInviteUrl, createRegistrationInvite } from '../src/auth/invite-token.util';
 import { pendingLegalDocuments, recordTermsAcceptances } from '../src/legal/terms-acceptance';
+import { assertSeedAllowed, resolveSeedPassword, SEED_PASSWORD_ENV, SeedRefusal } from './seed-guard';
+
+// Seed SOLO de desarrollo y CI. Antes de abrir ninguna conexión: se niega con NODE_ENV=production
+// o contra una BD no local (salvo --allow-production-seed). Ver seed-guard.ts.
+// Prisma lee apps/api/.env al conectar; se carga antes para que la salvaguarda vea la MISMA
+// DATABASE_URL (sin pisar variables ya exportadas).
+const apiEnvFile = join(__dirname, '..', '.env');
+if (existsSync(apiEnvFile)) process.loadEnvFile(apiEnvFile);
+try {
+  assertSeedAllowed();
+} catch (error) {
+  if (error instanceof SeedRefusal) {
+    console.error(`Seed rechazado: ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}
 const prisma = new PrismaClient();
 async function main() {
   const email = 'demo@asepsico.es';
-  const passwordHash = await hash('AsePsico2026!', 12);
+  // Nunca una contraseña fija (repo público): SEED_DEMO_PASSWORD o una aleatoria por ejecución.
+  const { password, generated } = resolveSeedPassword();
+  const passwordHash = await hash(password, 12);
   const user = await prisma.user.upsert({ where: { email }, update: { passwordHash }, create: { email, passwordHash, firstName: 'Marta', lastName: 'Psicóloga' } });
   let membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id }, include: { workspace: true } });
   if (!membership) {
@@ -27,7 +48,15 @@ async function main() {
   // Invitación de registro de ejemplo (correo ficticio). Token aleatorio en cada ejecución:
   // nunca uno fijo, porque el repo es público. Revoca la del seed anterior.
   const { token } = await createRegistrationInvite(prisma, { email: 'nueva-consulta@example.com', createdBy: 'seed' });
-  console.log({ email, password: 'AsePsico2026!', workspace: membership.workspace.name });
+  // La aleatoria se muestra UNA vez por la terminal; la de la variable de entorno nunca se imprime.
+  console.log({ email, workspace: membership.workspace.name });
+  if (generated) console.log(`Contraseña generada para ${email} (no se guarda en ningún sitio): ${password}`);
+  else console.log(`Contraseña de ${email}: la de ${SEED_PASSWORD_ENV}.`);
   console.log(`Invitación de registro de prueba (nueva-consulta@example.com): ${buildInviteUrl('/register', token)}`);
 }
-main().finally(() => prisma.$disconnect());
+main()
+  .catch((error) => {
+    console.error(error instanceof SeedRefusal ? `Seed rechazado: ${error.message}` : error);
+    process.exitCode = 1;
+  })
+  .finally(() => prisma.$disconnect());

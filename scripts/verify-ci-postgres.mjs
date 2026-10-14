@@ -32,6 +32,21 @@ const checks = [
   ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
 ];
 
+// Hallazgo de Argos: la contraseña de la cuenta demo no puede ser un literal en el workflow;
+// se genera por ejecución y llega al seed y a los scripts por GITHUB_ENV.
+checks.push(
+  ['contraseña del seed generada por ejecución', /echo "SEED_DEMO_PASSWORD=\$pass" >> "\$GITHUB_ENV"/],
+  ['contraseña del smoke = la del seed', /echo "ASEPSICO_SMOKE_PASSWORD=\$pass" >> "\$GITHUB_ENV"/],
+);
+if (/AsePsico2026!/.test(workflow) || /ASEPSICO_SMOKE_PASSWORD:\s*\S/.test(workflow) || /SEED_DEMO_PASSWORD:\s*\S/.test(workflow)) {
+  console.error('FAIL: el workflow no debe fijar la contraseña de la cuenta demo');
+  process.exit(1);
+}
+if (workflow.indexOf('Generate disposable seed password') > workflow.indexOf('npm run db:seed')) {
+  console.error('FAIL: la contraseña del seed debe generarse antes de npm run db:seed');
+  process.exit(1);
+}
+
 const failures = checks.filter(([, pattern]) => !pattern.test(workflow));
 if (failures.length) {
   for (const [name] of failures) console.error(`FAIL: ${name}`);

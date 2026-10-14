@@ -15,7 +15,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "db:generate": "npm --workspace @asepsico/api run prisma:generate",
     "db:migrate": "npm --workspace @asepsico/api run prisma:migrate",
-    "db:seed": "npm --workspace @asepsico/api run prisma:seed",
+    "db:seed": "npm --workspace @asepsico/api run prisma:seed --",
     "db:encrypt-fields": "npm --workspace @asepsico/api run db:encrypt-fields --",
     "waitlist:export": "npm --workspace @asepsico/api run waitlist:export --",
     "waitlist:delete": "npm --workspace @asepsico/api run waitlist:delete --",

@@ -24,7 +24,9 @@ npm run dev:web
 - Swagger: http://localhost:4000/docs
 - Health: http://localhost:4000/api/v1/health
 
-Demo: `demo@asepsico.es` / `AsePsico2026!`
+Cuenta demo local: `demo@asepsico.es`. La contraseña sale de `SEED_DEMO_PASSWORD` (en `.env`) o,
+si no la defines, el seed genera una aleatoria y la imprime una vez. El seed se niega a ejecutarse
+con `NODE_ENV=production` o contra una BD que no sea local (salvo `--allow-production-seed`).
 
 ## Estado
 Implementados Identity, Workspace, Patients, Sessions (Agenda), Clinical Processes y Audit.

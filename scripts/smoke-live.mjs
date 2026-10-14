@@ -3,7 +3,7 @@
 // Variables de entorno:
 //   ASEPSICO_API_URL          URL base de la API (por defecto http://localhost:4000/api/v1).
 //   ASEPSICO_SMOKE_EMAIL      Cuenta de prueba (por defecto demo@asepsico.es, la del seed).
-//   ASEPSICO_SMOKE_PASSWORD   Contraseña de esa cuenta.
+//   ASEPSICO_SMOKE_PASSWORD   Contraseña de esa cuenta (obligatoria, sin valor por defecto).
 //
 // Verificación en dos pasos (MFA). La API exige MFA activo a OWNER/ADMIN/THERAPIST para
 // cualquier ruta que no sea configurarlo, así que el smoke necesita una sesión con MFA:
@@ -58,7 +58,9 @@ import { createRequire } from 'node:module';
 
 const API = process.env.ASEPSICO_API_URL || 'http://localhost:4000/api/v1';
 const email = process.env.ASEPSICO_SMOKE_EMAIL || 'demo@asepsico.es';
-const password = process.env.ASEPSICO_SMOKE_PASSWORD || 'AsePsico2026!';
+// Sin valor por defecto: el seed ya no usa una contraseña fija (SEED_DEMO_PASSWORD o aleatoria).
+const password = process.env.ASEPSICO_SMOKE_PASSWORD || '';
+if (!password) throw new Error('Falta ASEPSICO_SMOKE_PASSWORD (la misma que SEED_DEMO_PASSWORD al sembrar, o la que imprimió el seed)');
 const presetTotpSecret = process.env.ASEPSICO_SMOKE_TOTP_SECRET || '';
 const allowMfaEnrollment = process.env.ASEPSICO_SMOKE_ENROLL_MFA === '1';
 const allowRemoteEnrollment = process.env.ASEPSICO_SMOKE_ALLOW_REMOTE_ENROLL === '1';

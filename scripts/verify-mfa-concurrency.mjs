@@ -17,7 +17,9 @@ import { createRequire } from 'node:module';
 
 const API = process.env.ASEPSICO_API_URL || 'http://127.0.0.1:4000/api/v1';
 const email = process.env.ASEPSICO_SMOKE_EMAIL || 'demo@asepsico.es';
-const password = process.env.ASEPSICO_SMOKE_PASSWORD || 'AsePsico2026!';
+// Sin valor por defecto: el seed ya no usa una contraseña fija (SEED_DEMO_PASSWORD o aleatoria).
+const password = process.env.ASEPSICO_SMOKE_PASSWORD || '';
+if (!password) throw new Error('Falta ASEPSICO_SMOKE_PASSWORD (la misma que SEED_DEMO_PASSWORD al sembrar, o la que imprimió el seed)');
 const BURST = Number(process.env.MFA_BURST || 20);
 const MAX_EVALUATED_PER_TOKEN = 5; // MFA_PENDING_TOKEN_MAX_FAILURES
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
