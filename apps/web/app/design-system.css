@@ -444,6 +444,11 @@ h1,h2,h3{color:var(--ink);font-weight:600}
 .agenda-session-avatar{display:none}
 .agenda-session-actions{display:grid;grid-template-columns:1fr;gap:5px}
 .agenda-session-actions button{min-height:30px}
+.portal-item>p{margin:4px 0 0;color:var(--text-soft);font-size:var(--fs-sm)}
+.portal-item .patient-save-state p{margin:4px 0 0}
+/* Vista administrativa: el resumen va dentro de la rejilla principal (3 tarjetas). */
+.patient-unified-grid>.patient-unified-summary{grid-template-columns:repeat(2,minmax(0,1fr));align-self:start;align-content:start;margin:0}
+.patient-unified-grid>.patient-unified-summary .patient-summary-card>strong{white-space:normal}
 @media(max-width:850px){.patient-record-header.patient-unified-header{align-items:stretch}}
 @media(max-width:700px){
   .patient-record-meta{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 10px}
@@ -453,6 +458,8 @@ h1,h2,h3{color:var(--ink);font-weight:600}
   .sidebar-nav{margin:0}
   .sidebar-nav{grid-template-rows:58px;grid-auto-rows:58px;height:auto;max-height:58px;overflow:hidden}
   .sidebar-link,.sidebar-link:not(.active),.sidebar-link.active{display:flex;flex-direction:column;justify-content:center;align-items:center}
+  .agenda-week{grid-template-columns:repeat(7,80%)}
+  .agenda-day-header{flex-direction:row;align-items:center;justify-content:space-between;min-height:60px}
   .agenda-session-avatar{display:grid}
 }
 
