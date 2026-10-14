@@ -48,14 +48,14 @@ export default function DemoBanner() {
   const portal = isPatientPortal(pathname);
   return (
     <div ref={ref} className="demo-banner" role="note" aria-label={portal ? 'Portal de prueba' : 'Entorno de prueba'}>
-      <span className="demo-banner-icon" aria-hidden="true">!</span>
+      {/* Banda fina: etiqueta en chip ámbar + texto íntegro de Lex Psi (los dos puntos solo para lectores de pantalla). */}
       {portal ? (
         <p>
-          <strong>Portal de prueba:</strong> todos los datos son inventados.
+          <strong className="demo-banner-chip"><span className="demo-banner-dot" aria-hidden="true" />Portal de prueba<span className="sr-only">:</span></strong> todos los datos son inventados.
         </p>
       ) : (
         <p>
-          <strong>Entorno de prueba:</strong> usa solo datos inventados. No introduzcas datos de pacientes reales ni datos
+          <strong className="demo-banner-chip"><span className="demo-banner-dot" aria-hidden="true" />Entorno de prueba<span className="sr-only">:</span></strong> usa solo datos inventados. No introduzcas datos de pacientes reales ni datos
           de salud de nadie.{' '}
           <Link href={DEMO_RULES_HREF}>
             Más información<span className="sr-only"> sobre el uso de datos inventados en las condiciones del piloto demo</span>
