@@ -111,11 +111,10 @@ export default function LoginPage() {
       <div className="card" style={{ maxWidth: 460, margin: '80px auto' }}>
         <div className="brand">AsePsico</div>
         <h1>Accede a tu consulta</h1>
-        <p className="muted">Demo: demo@asepsico.es / AsePsico2026!</p>
         {notice && <p className="error" role="alert">{notice}</p>}
         <form onSubmit={submitPassword}>
-          <label className="field">Correo<input name="email" type="email" autoComplete="username" defaultValue="demo@asepsico.es" required /></label>
-          <label className="field">Contraseña<input name="password" type="password" autoComplete="current-password" defaultValue="AsePsico2026!" autoFocus={!!notice} required /></label>
+          <label className="field">Correo<input name="email" type="email" autoComplete="username" required /></label>
+          <label className="field">Contraseña<input name="password" type="password" autoComplete="current-password" autoFocus={!!notice} required /></label>
           {error && <p className="error" role="alert">{error}</p>}
           <button className="button" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         </form>
