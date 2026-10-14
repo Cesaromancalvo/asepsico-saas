@@ -38,6 +38,17 @@ checks.push(
   ['contraseña del seed generada por ejecución', /echo "SEED_DEMO_PASSWORD=\$pass" >> "\$GITHUB_ENV"/],
   ['contraseña del smoke = la del seed', /echo "ASEPSICO_SMOKE_PASSWORD=\$pass" >> "\$GITHUB_ENV"/],
 );
+// Condición de Argos: la contraseña generada tiene al menos 24 caracteres o el paso falla, y la
+// comprobación va entre la generación y la escritura en GITHUB_ENV.
+{
+  const genIndex = workflow.indexOf('pass="$(openssl rand');
+  const lengthIndex = workflow.search(/^\s*\[ \$\{#pass\} -ge 24 \] \|\| exit 1\s*$/m);
+  const exportIndex = workflow.indexOf('echo "SEED_DEMO_PASSWORD=$pass"');
+  if (genIndex < 0 || lengthIndex < genIndex || lengthIndex > exportIndex) {
+    console.error('FAIL: tras generar la contraseña del seed, el workflow debe exigir [ ${#pass} -ge 24 ] || exit 1 antes de exportarla');
+    process.exit(1);
+  }
+}
 if (/AsePsico2026!/.test(workflow) || /ASEPSICO_SMOKE_PASSWORD:\s*\S/.test(workflow) || /SEED_DEMO_PASSWORD:\s*\S/.test(workflow)) {
   console.error('FAIL: el workflow no debe fijar la contraseña de la cuenta demo');
   process.exit(1);

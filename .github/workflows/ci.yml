@@ -199,6 +199,7 @@ jobs:
         shell: bash
         run: |
           pass="$(openssl rand -base64 30 | tr -d '\n/+=')"
+          [ ${#pass} -ge 24 ] || exit 1
           echo "::add-mask::$pass"
           echo "SEED_DEMO_PASSWORD=$pass" >> "$GITHUB_ENV"
           echo "ASEPSICO_SMOKE_PASSWORD=$pass" >> "$GITHUB_ENV"

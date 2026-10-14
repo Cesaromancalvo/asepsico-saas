@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ALLOW_PRODUCTION_SEED_FLAG, assertSeedAllowed, resolveSeedPassword, SeedRefusal,
+  ALLOW_PRODUCTION_SEED_FLAG, assertDatabaseIsDisposable, assertSeedAllowed, resolveSeedPassword, SEED_DEMO_EMAIL,
+  SEED_DEMO_WORKSPACE_NAME, SeedRefusal, SeedTargetDb,
 } from '../prisma/seed-guard';
 
 /*
@@ -68,5 +69,54 @@ describe('seed: contraseña de la cuenta demo', () => {
     expect(a.generated).toBe(true);
     expect(a.password.length).toBeGreaterThanOrEqual(20);
     expect(a.password).not.toBe(b.password);
+  });
+});
+
+describe('seed: condiciones de Argos al levantar el veto', () => {
+  it('NODE_ENV se normaliza: "Production" y " production " también bloquean', () => {
+    for (const NODE_ENV of ['Production', ' production', 'production ', 'PRODUCTION', '\tProduction\n']) {
+      expect(() => assertSeedAllowed({ NODE_ENV, DATABASE_URL: LOCAL_DB }, [])).toThrow(SeedRefusal);
+    }
+  });
+
+  // BD en memoria que interpreta exactamente los filtros que usa la segunda barrera.
+  type FakeUser = { email: string; isDemo: boolean };
+  function fakeDb(users: FakeUser[], workspaces: string[]): SeedTargetDb {
+    return {
+      user: { count: async ({ where }) => users.filter((u) => u.isDemo === where.isDemo && u.email !== where.email.not).length },
+      workspace: { count: async ({ where }) => workspaces.filter((name) => name !== where.name.not).length },
+    };
+  }
+
+  it('segunda barrera: se niega si hay algún usuario que no es demo, aunque el host sea local', async () => {
+    const db = fakeDb([{ email: SEED_DEMO_EMAIL, isDemo: false }, { email: 'profesional@example.com', isDemo: false }], [SEED_DEMO_WORKSPACE_NAME]);
+    await expect(assertDatabaseIsDisposable(db)).rejects.toThrow(SeedRefusal);
+  });
+
+  it('segunda barrera: se niega si hay un workspace distinto de "Consulta Demo"', async () => {
+    const db = fakeDb([{ email: SEED_DEMO_EMAIL, isDemo: false }], [SEED_DEMO_WORKSPACE_NAME, 'Consulta Ficticia SL']);
+    await expect(assertDatabaseIsDisposable(db)).rejects.toThrow(SeedRefusal);
+  });
+
+  it('segunda barrera: permite una BD vacía o con solo la cuenta demo, usuarios isDemo y "Consulta Demo"', async () => {
+    await expect(assertDatabaseIsDisposable(fakeDb([], []))).resolves.toBeUndefined();
+    const db = fakeDb([{ email: SEED_DEMO_EMAIL, isDemo: false }, { email: 'recepcion-demo@example.com', isDemo: true }], [SEED_DEMO_WORKSPACE_NAME]);
+    await expect(assertDatabaseIsDisposable(db)).resolves.toBeUndefined();
+  });
+
+  it('seed.ts aplica la segunda barrera antes de la primera escritura y sin depender del flag', () => {
+    const barrierIndex = SEED_SOURCE.indexOf('await assertDatabaseIsDisposable(prisma)');
+    const firstWriteIndex = SEED_SOURCE.search(/prisma\.\w+\.(upsert|create|update)\(/);
+    expect(barrierIndex).toBeGreaterThan(-1);
+    expect(firstWriteIndex).toBeGreaterThan(barrierIndex);
+    expect(SEED_SOURCE).not.toMatch(/ALLOW_PRODUCTION_SEED_FLAG[\s\S]*assertDatabaseIsDisposable/);
+  });
+
+  it('CI exige una contraseña generada de al menos 24 caracteres y verify-ci-postgres lo comprueba', () => {
+    const repoRoot = join(__dirname, '..', '..', '..');
+    const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const verifier = readFileSync(join(repoRoot, 'scripts', 'verify-ci-postgres.mjs'), 'utf8');
+    expect(workflow).toMatch(/^\s*\[ \$\{#pass\} -ge 24 \] \|\| exit 1\s*$/m);
+    expect(verifier).toContain('-ge 24');
   });
 });

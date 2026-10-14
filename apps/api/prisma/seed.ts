@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { buildInviteUrl, createRegistrationInvite } from '../src/auth/invite-token.util';
 import { pendingLegalDocuments, recordTermsAcceptances } from '../src/legal/terms-acceptance';
-import { assertSeedAllowed, resolveSeedPassword, SEED_PASSWORD_ENV, SeedRefusal } from './seed-guard';
+import {
+  assertDatabaseIsDisposable, assertSeedAllowed, resolveSeedPassword, SEED_DEMO_EMAIL, SEED_DEMO_WORKSPACE_NAME, SEED_PASSWORD_ENV, SeedRefusal,
+} from './seed-guard';
 
 // Seed SOLO de desarrollo y CI. Antes de abrir ninguna conexión: se niega con NODE_ENV=production
 // o contra una BD no local (salvo --allow-production-seed). Ver seed-guard.ts.
@@ -25,14 +27,16 @@ try {
 }
 const prisma = new PrismaClient();
 async function main() {
-  const email = 'demo@asepsico.es';
+  // Segunda barrera (siempre, también con --allow-production-seed): antes de escribir nada.
+  await assertDatabaseIsDisposable(prisma);
+  const email = SEED_DEMO_EMAIL;
   // Nunca una contraseña fija (repo público): SEED_DEMO_PASSWORD o una aleatoria por ejecución.
   const { password, generated } = resolveSeedPassword();
   const passwordHash = await hash(password, 12);
   const user = await prisma.user.upsert({ where: { email }, update: { passwordHash }, create: { email, passwordHash, firstName: 'Marta', lastName: 'Psicóloga' } });
   let membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id }, include: { workspace: true } });
   if (!membership) {
-    const workspace = await prisma.workspace.create({ data: { name: 'Consulta Demo' } });
+    const workspace = await prisma.workspace.create({ data: { name: SEED_DEMO_WORKSPACE_NAME } });
     membership = await prisma.workspaceMember.create({ data: { workspaceId: workspace.id, userId: user.id, role: WorkspaceRole.OWNER, isClinician: true }, include: { workspace: true } });
     const patient = await prisma.patient.create({ data: { workspaceId: workspace.id, firstName: 'Laura', lastName: 'Gómez', email: 'laura@example.com', consultationReason: encryptField('Ansiedad social y dificultades de sueño') } });
     const startsAt = new Date(); startsAt.setDate(startsAt.getDate() + 1); startsAt.setHours(10, 0, 0, 0);

@@ -26,7 +26,8 @@ npm run dev:web
 
 Cuenta demo local: `demo@asepsico.es`. La contraseña sale de `SEED_DEMO_PASSWORD` (en `.env`) o,
 si no la defines, el seed genera una aleatoria y la imprime una vez. El seed se niega a ejecutarse
-con `NODE_ENV=production` o contra una BD que no sea local (salvo `--allow-production-seed`).
+con `NODE_ENV=production` o contra una BD que no sea local (salvo `--allow-production-seed`) y,
+siempre, si la BD tiene usuarios que no son demo o workspaces distintos de "Consulta Demo".
 
 ## Estado
 Implementados Identity, Workspace, Patients, Sessions (Agenda), Clinical Processes y Audit.
