@@ -299,6 +299,26 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
 - Prueba de restauración: semanal durante el piloto.
 - Nunca guardar dumps en el repositorio Git.
 
+## Cambiar la contraseña de un profesional (operador)
+
+La app aún no permite que un profesional cambie su contraseña (solo el portal del paciente). Hasta
+entonces lo hace el operador con el CLI, desde un clon con `npm ci` y `npm run db:generate` (no hace
+falta desplegarlo):
+
+```bash
+read -rs DB_URL && export DB_URL
+DATABASE_URL="$DB_URL" npm run users:set-password -- --email persona@example.com
+```
+
+- Pide la contraseña nueva dos veces sin mostrarla (mínimo 14 caracteres, máximo 72 bytes). Nunca
+  por argumentos.
+- Mismo hash que el login (bcrypt, coste 12). En una transacción: cambia el hash, revoca todos los
+  `RefreshToken` del usuario y deja un `AuditLog` `USER_PASSWORD_RESET_CLI` por espacio
+  (`entityId` = id del usuario, sin correo ni IP).
+- El token de acceso que ya tenga un navegador sigue valiendo hasta 15 minutos.
+- Si el cambio responde a una posible filtración, antes se revisa quién usó la cuenta y, si hay
+  accesos ajenos, se trata como incidente (sección siguiente).
+
 ## Incidente
 
 1. Detener la operación afectada sin borrar evidencias.

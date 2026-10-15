@@ -26,7 +26,8 @@
     "invites:create": "tsx prisma/scripts/create-registration-invite.ts",
     "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
     "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts",
-    "db:migrate-exceptional-reasons": "tsx prisma/scripts/migrate-exceptional-access-reasons.ts"
+    "db:migrate-exceptional-reasons": "tsx prisma/scripts/migrate-exceptional-access-reasons.ts",
+    "users:set-password": "tsx prisma/scripts/set-user-password.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
