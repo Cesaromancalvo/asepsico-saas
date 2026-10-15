@@ -1,6 +1,7 @@
 import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule, JwtService } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { Test } from '@nestjs/testing';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { compare, hash } from 'bcryptjs';
@@ -9,6 +10,7 @@ import { generate } from 'otplib';
 import request = require('supertest');
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
+import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { MfaService } from '../src/auth/mfa.service';
 import { PasswordService } from '../src/auth/password.service';
 import { RegistrationService } from '../src/auth/registration.service';
@@ -110,6 +112,11 @@ class FakePrisma {
     },
   };
 
+  // Condiciones vigentes: en este spec todas aceptadas (el 428 tiene sus propios tests).
+  termsAcceptance = {
+    findMany: async ({ where }: any) => where.OR.map((d: any) => ({ ...d })),
+  };
+
   auditLog = {
     create: async ({ data }: any) => {
       if (this.failAuditAction && data.action === this.failAuditAction) throw new Error('fallo simulado de auditoría');
@@ -156,22 +163,29 @@ class TestJwtGuard {
   }
 }
 
-async function buildApp(db: FakePrisma, withThrottler = false): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
+const JWT_TEST_SECRET = 'secreto-solo-para-tests';
+
+/**
+ * realJwt=true monta el JwtAuthGuard y el JwtStrategy de verdad (firma, forma del payload, MFA
+ * obligatorio por rol y condiciones), en lugar del guard de prueba que inyecta `currentActor`.
+ */
+async function buildApp(db: FakePrisma, withThrottler = false, realJwt = false): Promise<INestApplication> {
+  if (realJwt) process.env.JWT_SECRET = JWT_TEST_SECRET;
+  const builder = Test.createTestingModule({
     imports: [
-      JwtModule.register({ secret: 'secreto-solo-para-tests', signOptions: { expiresIn: '15m' } }),
+      JwtModule.register({ secret: JWT_TEST_SECRET, signOptions: { expiresIn: '15m' } }),
+      ...(realJwt ? [PassportModule] : []),
       ...(withThrottler ? [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])] : []),
     ],
     controllers: [AuthController],
     providers: [
       AuthService, MfaService, RegistrationService, PasswordService, CsrfGuard,
+      ...(realJwt ? [JwtStrategy] : []),
       { provide: PrismaService, useFactory: () => db },
       ...(withThrottler ? [{ provide: APP_GUARD, useClass: ThrottlerGuard }] : []),
     ],
-  })
-    .overrideGuard(JwtAuthGuard)
-    .useClass(TestJwtGuard)
-    .compile();
+  });
+  const moduleRef = await (realJwt ? builder : builder.overrideGuard(JwtAuthGuard).useClass(TestJwtGuard)).compile();
   const app = moduleRef.createNestApplication({ logger: false });
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
@@ -454,6 +468,88 @@ describe('POST /auth/change-password', () => {
       } finally {
         await throttled.close();
       }
+    });
+  });
+
+  // Condiciones de Argos: el JwtAuthGuard real se aplica a /auth/change-password.
+  describe('con el JwtAuthGuard real (token firmado)', () => {
+    let realApp: INestApplication;
+    const signer = new JwtService({ secret: JWT_TEST_SECRET });
+    const sign = (payload: Record<string, unknown>) => signer.sign(payload, { expiresIn: '15m' });
+    const staffToken = (role: string, mfaEnabled: boolean) =>
+      sign({ sub: USER_ID, workspaceId: WORKSPACE_ID, email: EMAIL, role, mfaEnabled });
+    const postWith = (token: string, body: Record<string, unknown>) =>
+      request(realApp.getHttpServer())
+        .post('/api/v1/auth/change-password')
+        .set('Cookie', [`access_token=${token}`, `csrf_token=${CSRF}`])
+        .set('x-csrf-token', CSRF)
+        .send(body);
+
+    beforeAll(async () => {
+      realApp = await buildApp(db, false, true);
+    });
+    afterAll(async () => {
+      await realApp.close();
+    });
+
+    it.each(['OWNER', 'ADMIN', 'THERAPIST'])(
+      '(a) %s con mfaEnabled=false → 403 MFA_SETUP_REQUIRED y no cambia nada',
+      async (role) => {
+        seedUser();
+        seedSessions();
+        db.members = [{ userId: USER_ID, workspaceId: WORKSPACE_ID, role }];
+        const res = await postWith(staffToken(role, false), { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(403);
+        expect(res.body.code).toBe('MFA_SETUP_REQUIRED');
+        expect(user().passwordHash).toBe(passwordHash);
+        expect(user().mfaFailedAttempts).toBe(0);
+        expect(db.refreshTokens.every((t) => t.revokedAt === null)).toBe(true);
+        expect(db.auditLogs).toEqual([]);
+        expect(res.headers['set-cookie']).toBeUndefined();
+      },
+    );
+
+    it.each([
+      ['token del portal del paciente', { kind: 'portal', sub: 'paciente-ficticio-1', workspaceId: WORKSPACE_ID }],
+      ['token con kind y forma de staff', { kind: 'invite', sub: USER_ID, workspaceId: WORKSPACE_ID, role: 'OWNER', mfaEnabled: true }],
+      ['token con kind vacío y rol ASSISTANT', { kind: '', sub: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT', mfaEnabled: false }],
+    ])('(b) %s → 401 y no cambia nada', async (_label, payload) => {
+      seedUser();
+      seedSessions();
+      db.members = [{ userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT' }];
+      await postWith(sign(payload), { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(401);
+      expect(user().passwordHash).toBe(passwordHash);
+      expect(user().mfaFailedAttempts).toBe(0);
+      expect(db.refreshTokens.every((t) => t.revokedAt === null)).toBe(true);
+      expect(db.auditLogs).toEqual([]);
+    });
+
+    it('(b) token firmado con otro secreto → 401', async () => {
+      seedUser();
+      const forged = new JwtService({ secret: 'otro-secreto-ficticio' }).sign({ sub: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT', mfaEnabled: false });
+      await postWith(forged, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(401);
+      expect(user().passwordHash).toBe(passwordHash);
+    });
+
+    it('(c) ASSISTANT sin MFA cambia la contraseña sin código → 200, sesiones revocadas y auditoría', async () => {
+      seedUser();
+      seedSessions();
+      db.members = [{ userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT' }];
+      const res = await postWith(staffToken('ASSISTANT', false), { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(200);
+      expect(res.body).toEqual({ success: true, otherSessionsClosed: true });
+      expect(await compare(NEW_PASSWORD, user().passwordHash)).toBe(true);
+      expect(db.refreshTokens.filter((t) => ['rt-a', 'rt-b', 'rt-c'].includes(t.id)).every((t) => t.revokedAt instanceof Date)).toBe(true);
+      expect(db.auditLogs.filter((a) => a.action === 'USER_PASSWORD_CHANGED')).toEqual([
+        expect.objectContaining({ workspaceId: WORKSPACE_ID, actorId: USER_ID, metadata: { revokedSessions: 3, mfaVerified: false } }),
+      ]);
+      const cookies = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
+      const access = cookies.find((c) => c.startsWith('access_token='))!.split(';')[0].slice('access_token='.length);
+      expect(signer.verify(decodeURIComponent(access))).toMatchObject({ role: 'ASSISTANT', mfaEnabled: false });
+    });
+
+    it('(c) THERAPIST con MFA activo y token mfaEnabled=true pasa el guard (control positivo)', async () => {
+      seedUserWithMfa();
+      await postWith(staffToken('THERAPIST', true), { currentPassword: PASSWORD, newPassword: NEW_PASSWORD, mfaCode: await totp() }).expect(200);
+      expect(await compare(NEW_PASSWORD, user().passwordHash)).toBe(true);
     });
   });
 });
