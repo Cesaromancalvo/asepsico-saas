@@ -207,10 +207,13 @@ jobs:
       - name: Seed smoke-test account
         run: npm run db:seed
 
+      # setsid: la API arranca en su propio grupo de procesos (PGID = el PID guardado). `npm run start`
+      # cuelga de `sh -c nest start` → nest → node dist/main, y en Ubuntu /bin/sh (dash) no reenvía
+      # SIGTERM: matar solo el PID de npm dejaba viva la API vieja en :4000. Se para con kill -- -PGID.
       - name: Start API
         shell: bash
         run: |
-          npm --workspace @asepsico/api run start > "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          setsid npm --workspace @asepsico/api run start > "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/asepsico-api.pid"
 
       - name: Wait for API health endpoint
@@ -268,12 +271,22 @@ jobs:
           LEGAL_TITULAR_NIF: 12345678Z
           LEGAL_TITULAR_DOMICILIO: Calle Ficticia 1, 00000 Ciudad Inventada
         run: |
-          kill "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+          # Todo el grupo (npm, sh, nest y node dist/main), no solo npm: si no, la API vieja (sin
+          # LEGAL_TITULAR_*) sigue respondiendo en :4000 y el smoke del 428 recibe 200.
+          kill -- "-$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+          stopped=0
           for attempt in {1..30}; do
-            curl --silent --output /dev/null http://127.0.0.1:4000/api/v1/health || break
+            if ! curl --silent --output /dev/null http://127.0.0.1:4000/api/v1/health; then
+              stopped=1
+              break
+            fi
             sleep 1
           done
-          npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          if [ "$stopped" -ne 1 ]; then
+            echo "La API anterior sigue respondiendo en :4000: no se puede reiniciar con las condiciones nuevas" >&2
+            exit 1
+          fi
+          setsid npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/asepsico-api.pid"
           for attempt in {1..60}; do
             if curl --fail --silent --show-error http://127.0.0.1:4000/api/v1/health > "$RUNNER_TEMP/health.json"; then
@@ -326,7 +339,7 @@ jobs:
         shell: bash
         run: |
           if [ -f "$RUNNER_TEMP/asepsico-api.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+            kill -- "-$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
           fi
 
       - name: Upload API logs on failure

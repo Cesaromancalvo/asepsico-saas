@@ -96,6 +96,22 @@ const raceSpec = readFileSync('apps/api/test/session-close-race.security-spec.ts
 if (!/RACE_DATABASE_REQUIRED === '1' && !url\) \{\s*\n\s*throw/.test(raceSpec)) {
   throw new Error('session-close-race debe fallar (no omitirse) cuando RACE_DATABASE_REQUIRED=1 y falta RACE_DATABASE_URL');
 }
+// Reinicio de la API para el 428 (PR #20): `npm run start` deja colgando sh → nest → node dist/main
+// y en Ubuntu dash no reenvía SIGTERM. Matar solo el PID de npm dejaba viva la API vieja en :4000 y
+// el smoke del 428 recibía 200. Cada arranque va en su propio grupo (setsid), cada parada mata el
+// grupo entero (kill -- -PGID) y el reinicio falla si la API anterior sigue respondiendo.
+{
+  const starts = workflow.match(/^\s*(setsid )?npm --workspace @asepsico\/api run start\b/gm) ?? [];
+  if (starts.length === 0 || starts.some((line) => !line.includes('setsid '))) {
+    throw new Error('Cada arranque de la API en CI debe ir con setsid (grupo de procesos propio)');
+  }
+  if (/kill "\$\(cat "\$RUNNER_TEMP\/asepsico-api\.pid"\)"/.test(workflow)) {
+    throw new Error('Parar la API matando solo el PID de npm deja viva la API: usa kill -- "-$(cat ...pid)"');
+  }
+  if (!/La API anterior sigue respondiendo en :4000/.test(workflow)) {
+    throw new Error('El reinicio de la API debe fallar si la API anterior sigue respondiendo en :4000');
+  }
+}
 if (/TRUST_PROXY:\s*['"]?true/i.test(workflow)) {
   throw new Error('La CI no debe usar TRUST_PROXY=true');
 }
