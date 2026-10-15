@@ -255,12 +255,28 @@ async function checkTerms428ThenAccept() {
   console.log('   cuenta existente: 428 TERMS_ACCEPTANCE_REQUIRED → acepta las versiones vigentes → sin 428');
 }
 
+// Cambio de contraseña del profesional (POST /auth/change-password) SIN cambiar nada: una nueva
+// demasiado corta → 400 (validación, no cuenta como fallo). Solo en BD desechables (ENROLL_MFA): una
+// contraseña actual errónea → 401 CHANGE_PASSWORD_INVALID sin cookies nuevas (cuenta 1 fallo de la
+// cuenta, que el disable final pone a cero). La contraseña real nunca se cambia en el smoke.
+async function checkChangePasswordGuards() {
+  const short = await rawReq('/auth/change-password', { method: 'POST', body: { currentPassword: 'smoke-no-es-la-actual', newPassword: 'corta' } });
+  assert(short.status === 400, `change-password con nueva corta debía dar 400 y dio ${short.status}`);
+  if (!allowMfaEnrollment) { console.log('   change-password: 400 con nueva corta (la comprobación del 401 solo corre con ENROLL_MFA)'); return; }
+  const before = cookies.get('access_token');
+  const wrong = await rawReq('/auth/change-password', { method: 'POST', body: { currentPassword: `smoke-incorrecta-${randomBytes(6).toString('hex')}`, newPassword: `Smoke-${randomBytes(12).toString('hex')}`, mfaCode: '000000' } });
+  assert(wrong.status === 401 && wrong.data.code === 'CHANGE_PASSWORD_INVALID', `change-password con actual errónea debía dar 401 CHANGE_PASSWORD_INVALID y dio ${wrong.status}`);
+  assert(cookies.get('access_token') === before, 'change-password fallido no debe emitir sesión nueva');
+  console.log('   change-password: 400 con nueva corta y 401 genérico con actual errónea (sin cambiar nada)');
+}
+
 async function main() {
   const stamp = Date.now();
   console.log('0/11 Registro cerrado y condiciones vigentes'); await checkClosedRegistration();
   console.log('1/11 Login'); await login();
   if (expectTerms428) await checkTerms428ThenAccept();
   const terms = await req('/legal/terms/status'); assert(terms.acceptanceRequired === false, `La cuenta demo tiene condiciones pendientes: ${JSON.stringify(terms.pending)}`); console.log('   condiciones vigentes aceptadas por el OWNER demo (sin 428)');
+  await checkChangePasswordGuards();
   console.log('2/11 Crear paciente y abrir su proceso clínico'); const patient = await req('/patients', { method: 'POST', body: { firstName: 'Prueba', lastName: `Usabilidad ${stamp}`, email: `smoke-${stamp}@example.test`, phone: '+34600000000', consultationReason: SMOKE_REASON } }); assert(patient.id, 'No se devolvió patient.id'); await openClinicalProcess(patient); console.log('   sin proceso: 403 en historia y motivo; proceso clínico abierto a nombre de la cuenta demo');
   console.log('3/11 Guardar y recargar historia'); await req(`/patients/${patient.id}/history`, { method: 'PATCH', body: { reasonForConsultation: 'Prueba automática de persistencia' } }); const history = await req(`/patients/${patient.id}/history`); assert(history.reasonForConsultation === 'Prueba automática de persistencia', 'La historia no persistió');
   console.log('4/11 Guardar objetivo y tarea'); const goal = await req(`/patients/${patient.id}/goals`, { method: 'POST', body: { title: 'Objetivo smoke test', priority: 2 } }); const task = await req(`/patients/${patient.id}/tasks`, { method: 'POST', body: { title: 'Tarea smoke test', therapyGoalId: goal.id } }); const tasks = await req(`/patients/${patient.id}/tasks`); assert(tasks.some(x => x.id === task.id), 'La tarea no apareció al recargar');
