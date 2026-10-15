@@ -152,6 +152,7 @@ model Workspace {
   termsAcceptances     TermsAcceptance[]
   workspaceInvites     WorkspaceInvite[]
   registrationInvite   RegistrationInvite?
+  clinicalProcessOpenings ClinicalProcessOpening[]
 }
 
 model User {
@@ -489,6 +490,9 @@ model ClinicalProcess {
   endedAt            DateTime?
   /// Momento en que pasó a PAUSED (fin de la ventana de mensajes mientras está en pausa).
   pausedAt           DateTime?
+  /// Motivo de apertura cuando el proceso se abrió sobre historia ajena (H6, acceso excepcional).
+  /// null en las altas normales y en los procesos anteriores a esta columna.
+  openingReasonCode  ProcessOpeningReason?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -759,6 +763,9 @@ enum NotificationType {
   CONSENT_EXPIRING
   INVOICE_DUE
   SYSTEM
+  /// Aviso al terapeuta titular: acceso excepcional o apertura de proceso sobre su historia.
+  /// Sin texto clínico ni explicación: persona, rol, iniciales del paciente y motivo.
+  CLINICAL_ACCESS_NOTICE
 }
 
 enum PortalAccessMode {
@@ -1001,4 +1008,54 @@ model WaitlistEntry {
   deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
+}
+
+// --- Acceso excepcional (docs/producto/acceso-excepcional.md) -------------------------------
+
+/// Motivo cerrado para abrir o reactivar un proceso sobre historia ajena (H6). Sin "Otro".
+enum ProcessOpeningReason {
+  SUBSTITUTION
+  TRANSFER_ON_LEAVE
+  PATIENT_REQUESTED_CHANGE
+  REFERRAL
+}
+
+enum ProcessOpeningKind {
+  OPENED
+  REACTIVATED
+}
+
+/// Resultado de la revisión posterior del OWNER (sin texto).
+enum OwnerReviewOutcome {
+  CORRECT
+  INCIDENT
+}
+
+/// Apertura o reactivación de un proceso sobre historia ajena (H6). Solo ids y códigos, nunca
+/// texto. Sin claves ajenas a paciente/proceso a propósito: el registro sobrevive a su borrado.
+model ClinicalProcessOpening {
+  id                   String               @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  clinicalProcessId    String
+  actorId              String
+  actorRole            WorkspaceRole
+  targetTherapistId    String
+  kind                 ProcessOpeningKind
+  reasonCode           ProcessOpeningReason
+  /// El OWNER/ADMIN se lo abrió a sí mismo: entra en la revisión de 72 h.
+  selfAssigned         Boolean
+  /// Número de OWNER del workspace al crearse (C4: decide quién puede revisar).
+  ownerCountAtCreation Int
+  ownerReviewDueAt     DateTime?
+  reviewedAt           DateTime?
+  reviewedById         String?
+  reviewOutcome        OwnerReviewOutcome?
+  selfReview           Boolean?
+  createdAt            DateTime             @default(now())
+  workspace            Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId])
+  @@index([workspaceId, ownerReviewDueAt])
 }

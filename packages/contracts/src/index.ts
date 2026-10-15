@@ -53,6 +53,8 @@ export interface ChangeClinicalProcessStatusRequest {
   status: 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'CLOSED';
   /** Cancela en la misma transacción las citas futuras programadas del proceso. */
   cancelFutureSessions?: boolean;
+  /** H6: obligatorio (solo OWNER/ADMIN) al reactivar con procesos posteriores de otros autores. */
+  openingReasonCode?: import('./exceptional-access').ProcessOpeningReasonCode;
 }
 
 export const PROCESS_HAS_FUTURE_SESSIONS = 'PROCESS_HAS_FUTURE_SESSIONS';
@@ -86,6 +88,7 @@ export interface ConversationListItemContract {
 
 export * from './patient-import';
 export * from './waitlist';
+export * from './exceptional-access';
 
 // Registro por invitación y condiciones versionadas (feat/registro-por-invitacion).
 export type LegalDocumentType = 'PILOT_TERMS' | 'DPA_ART28' | 'PRIVACY_PRODUCT';

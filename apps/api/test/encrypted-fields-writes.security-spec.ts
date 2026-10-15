@@ -58,6 +58,8 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
   };
   const prisma: any = new Proxy({}, {
     get: (_t, prop: string) => {
+      // Advisory lock de H6 (apertura de procesos): no escribe nada.
+      if (prop === '$executeRawUnsafe') return async () => 1;
       if (prop === '$transaction') return async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg));
       if (prop === 'then' || typeof prop !== 'string') return undefined;
       return model(prop);
@@ -91,7 +93,7 @@ const CASES: Case[] = [
   { name: 'PatientTasks.updateTaskTemplate', writes: { therapeuticTaskTemplate: ['instructions'] },
     run: (p) => new PatientTasksService(p, access).updateTaskTemplate('ws-1', owner, 'tpl-1', { instructions: text('instrucciones') } as any) },
   { name: 'ClinicalProcesses.create', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
-    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
+    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', openingReasonCode: 'SUBSTITUTION', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'ClinicalProcesses.update', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
     run: (p) => new ClinicalProcessesService(p).update('ws-1', owner, 'proc-1', { consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'Sessions.updateNotes', writes: { session: ['notes', 'internalSummary'] },

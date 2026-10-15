@@ -42,7 +42,7 @@ export interface ClinicalScope {
 
 export interface MemberClinicalProfile { role: string; isClinician: boolean }
 
-export type DenialReason = 'ROLE' | 'NOT_MEMBER' | 'NOT_CLINICIAN' | 'NO_PROCESS' | 'READ_ONLY' | 'NOT_AUTHOR';
+export type DenialReason = 'ROLE' | 'NOT_MEMBER' | 'NOT_CLINICIAN' | 'NO_PROCESS' | 'READ_ONLY' | 'NOT_AUTHOR' | 'FOREIGN_HISTORY';
 
 type PatientRow = NonNullable<Awaited<ReturnType<PrismaService['patient']['findFirst']>>>;
 

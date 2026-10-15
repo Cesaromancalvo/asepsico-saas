@@ -21,6 +21,7 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     patient: [], workspaceMember: [], clinicalProcess: [], session: [], clinicalHistory: [], therapyGoal: [],
     therapeuticTask: [], clinicalAssessment: [], patientDocument: [], consentRecord: [], clinicalReport: [],
     conversation: [], message: [], auditLog: [], resourceShare: [], invoice: [], notification: [], user: [],
+    clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
     ...seed,
   } as Store;
 
@@ -136,6 +137,9 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       throw error;
     }
   });
+  // Advisory locks (H6): se registran para comprobar que se piden ANTES de leer la historia.
+  prisma.__locks = [] as string[];
+  prisma.$executeRawUnsafe = jest.fn(async (_sql: string, key: string) => { prisma.__locks.push(key); return 1; });
   prisma.__store = store;
   return prisma;
 }
