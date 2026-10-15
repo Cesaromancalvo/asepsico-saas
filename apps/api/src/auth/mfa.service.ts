@@ -31,7 +31,7 @@ const MFA_ALREADY_ENABLED_MESSAGE =
   'La verificación en dos pasos ya está activa. Para configurarla de nuevo, desactívala primero con tu contraseña y un código.';
 
 /** Condición atómica anti-reutilización (RFC 6238 §5.2): el paso TOTP debe ser posterior al último usado. */
-function stepNotYetUsed(step: number): Prisma.UserWhereInput {
+export function stepNotYetUsed(step: number): Prisma.UserWhereInput {
   return { OR: [{ totpLastUsedStep: null }, { totpLastUsedStep: { lt: step } }] };
 }
 
@@ -250,8 +250,11 @@ export class MfaService {
    * attempt → registrar fallo (contador + espera + auditoría) o devolver el éxito.
    * Los fallos y rechazos se confirman (commit) y se lanzan DESPUÉS de la transacción;
    * una excepción inesperada dentro (p. ej. fallo de auditoría) revierte todo.
+   * Público para PasswordService (cambio de contraseña): comparte lock, espera y contador de
+   * fallos por cuenta con el MFA, así que adivinar la contraseña con una sesión robada no da
+   * más intentos que adivinar el código.
    */
-  private async runAttempt<T>(
+  async runAttempt<T>(
     actor: MfaActor,
     failureAction: string,
     meta: RequestMeta,
