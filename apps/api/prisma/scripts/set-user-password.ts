@@ -4,8 +4,10 @@
  *
  *   DATABASE_URL="$DB_URL" npm run users:set-password -- --email persona@example.com
  *
- * - La contraseña nueva se pide por stdin DOS veces y no se muestra (ni se pasa por argumentos,
- *   que quedarían en el historial y en `ps`). Mínimo 14 caracteres, máximo 72 bytes (bcrypt).
+ * - Antes de pedir la contraseña muestra el espacio y el rol de cada membresía de la cuenta y pide
+ *   volver a escribir el correo; si no coincide, aborta (condición de Argos).
+ * - Exige una terminal (TTY): la contraseña nueva se pide DOS veces sin eco. Ni por argumentos ni
+ *   por tubería (`printf … |` la dejaría en el historial). Mínimo 14 caracteres, máximo 72 bytes.
  * - Mismo hash que el alta y el login (bcrypt, coste 12).
  * - Revoca TODOS los RefreshToken activos del usuario (cierra sus sesiones; el token de acceso
  *   que ya tenga un navegador caduca solo en ≤ 15 min).
@@ -17,7 +19,8 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { describeScriptError } from './waitlist-script-utils';
-import { isValidEmailArg, PASSWORD_RESET_CLI_ACTION, SetPasswordError, setUserPassword, validateNewPassword } from './set-password/set-password-core';
+import { createInterface } from 'node:readline/promises';
+import { isValidEmailArg, PASSWORD_RESET_CLI_ACTION, runSetPasswordFlow, SetPasswordError } from './set-password/set-password-core';
 
 function arg(name: string): string | undefined {
   const args = process.argv.slice(2);
@@ -56,12 +59,14 @@ function readHiddenFromTty(prompt: string): Promise<string> {
   });
 }
 
-/** Sin TTY (p. ej. `printf … | npm run …`): dos líneas de stdin. Tampoco se muestran. */
-async function readTwoLinesFromPipe(): Promise<[string, string]> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  const lines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/);
-  return [lines[0] ?? '', lines[1] ?? ''];
+/** Línea visible (confirmación del correo). */
+async function askVisible(prompt: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  try {
+    return await rl.question(prompt);
+  } finally {
+    rl.close();
+  }
 }
 
 async function main() {
@@ -75,29 +80,22 @@ async function main() {
     process.exit(1);
   }
 
-  let first: string;
-  let second: string;
-  if (process.stdin.isTTY) {
-    first = await readHiddenFromTty('Contraseña nueva (no se muestra): ');
-    second = await readHiddenFromTty('Repítela: ');
-  } else {
-    [first, second] = await readTwoLinesFromPipe();
-  }
-  const problem = validateNewPassword(first, second);
-  if (problem) {
-    console.error(`${problem} No se ha cambiado nada.`);
+  if (!process.stdin.isTTY) {
+    console.error('Ejecútalo en una terminal interactiva: la contraseña no se acepta por tubería ni por argumentos. No se ha cambiado nada.');
     process.exit(1);
   }
 
   const prisma = new PrismaClient();
   try {
-    const result = await setUserPassword(prisma, { email, password: first });
+    const result = await runSetPasswordFlow(prisma, email, {
+      print: (line) => console.log(line),
+      ask: askVisible,
+      askHidden: readHiddenFromTty,
+    });
     console.log('Contraseña cambiada.');
     console.log(`Sesiones revocadas: ${result.revokedSessions}. Registros de auditoría (${PASSWORD_RESET_CLI_ACTION}): ${result.auditedWorkspaces}.`);
     console.log('Los navegadores con sesión abierta la pierden en 15 minutos como máximo.');
   } finally {
-    first = '';
-    second = '';
     await prisma.$disconnect();
   }
 }

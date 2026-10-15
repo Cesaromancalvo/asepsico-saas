@@ -35,7 +35,52 @@ export function isValidEmailArg(email: string | undefined): email is string {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-export type SetPasswordResult = { userId: string; revokedSessions: number; auditedWorkspaces: number };
+export type AccountMembership = { workspaceName: string; role: string };
+
+/** Espacios y rol de la cuenta, para que el operador confirme que es la correcta. Select mínimo. */
+export async function describeAccount(prisma: PrismaClient, rawEmail: string): Promise<AccountMembership[]> {
+  const email = normalizeEmail(rawEmail);
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (!user) throw new SetPasswordError('No hay ninguna cuenta de profesional con ese correo. No se ha cambiado nada.');
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId: user.id },
+    select: { role: true, workspace: { select: { name: true } } },
+    orderBy: { createdAt: 'asc' },
+  });
+  return memberships.map((m) => ({ workspaceName: m.workspace.name, role: String(m.role) }));
+}
+
+/** E/S del CLI, inyectable para poder probar el flujo completo sin terminal. */
+export type CliIo = {
+  print(line: string): void;
+  /** Línea visible (confirmación del correo). */
+  ask(prompt: string): Promise<string>;
+  /** Línea sin eco (contraseña). */
+  askHidden(prompt: string): Promise<string>;
+};
+
+/**
+ * Flujo completo (condición ALTA de Argos): 1) muestra espacio y rol de cada membresía; 2) pide
+ * volver a escribir el correo y aborta si no coincide; 3) solo entonces pide la contraseña dos
+ * veces; 4) cambia, revoca y audita en una transacción.
+ */
+export async function runSetPasswordFlow(prisma: PrismaClient, email: string, io: CliIo): Promise<SetPasswordResult> {
+  const memberships = await describeAccount(prisma, email);
+  if (memberships.length === 0) throw new SetPasswordError('La cuenta no pertenece a ningún espacio: no se puede auditar el cambio. No se ha cambiado nada.');
+  io.print('Vas a cambiar la contraseña de la cuenta con estos espacios:');
+  for (const m of memberships) io.print(`  - ${m.workspaceName} (rol ${m.role})`);
+  const typed = await io.ask('Vuelve a escribir el correo de la cuenta para confirmar: ');
+  if (normalizeEmail(typed) !== normalizeEmail(email)) {
+    throw new SetPasswordError('El correo no coincide. No se ha cambiado nada.');
+  }
+  const first = await io.askHidden('Contraseña nueva (no se muestra): ');
+  const second = await io.askHidden('Repítela: ');
+  const problem = validateNewPassword(first, second);
+  if (problem) throw new SetPasswordError(`${problem} No se ha cambiado nada.`);
+  return setUserPassword(prisma, { email, password: first });
+}
+
+export type SetPasswordResult ={ userId: string; revokedSessions: number; auditedWorkspaces: number };
 
 export async function setUserPassword(
   prisma: PrismaClient,

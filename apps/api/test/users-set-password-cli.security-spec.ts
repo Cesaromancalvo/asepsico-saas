@@ -2,7 +2,7 @@ import { compare, getRounds } from 'bcryptjs';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  MIN_CLI_PASSWORD_LENGTH, PASSWORD_RESET_CLI_ACTION, SetPasswordError, setUserPassword, validateNewPassword,
+  CliIo, MIN_CLI_PASSWORD_LENGTH, PASSWORD_RESET_CLI_ACTION, runSetPasswordFlow, SetPasswordError, setUserPassword, validateNewPassword,
 } from '../prisma/scripts/set-password/set-password-core';
 
 // CLI users:set-password (Dora, 15/10). Datos 100 % ficticios.
@@ -42,8 +42,9 @@ function fakeDb(opts: { memberships?: string[]; failAudit?: boolean } = {}) {
       }),
     },
     workspaceMember: {
-      findMany: jest.fn(async ({ where }: any) =>
-        state.memberships.filter((m) => m.userId === where.userId).map(({ workspaceId }) => ({ workspaceId }))),
+      findMany: jest.fn(async ({ where, select }: any) =>
+        state.memberships.filter((m) => m.userId === where.userId).map(({ workspaceId }) =>
+          select.workspace ? { role: 'OWNER', workspace: { name: `Consulta Ficticia ${workspaceId}` } } : { workspaceId })),
     },
     refreshToken: {
       updateMany: jest.fn(async ({ where, data }: any) => {
@@ -167,9 +168,11 @@ describe('users:set-password · el CLI no expone la contraseña', () => {
   const core = readFileSync(join(__dirname, '../prisma/scripts/set-password/set-password-core.ts'), 'utf8');
   const SENSITIVE = '(first|second|email|passwordHash)';
 
-  it('la contraseña no se acepta por argumentos (historial, ps): solo stdin sin eco', () => {
+  it('la contraseña no se acepta por argumentos ni por tubería: exige TTY y lee sin eco', () => {
     expect(cli).not.toMatch(/arg\(['"]password/);
     expect(cli).toMatch(/setRawMode\(true\)/);
+    expect(cli).toMatch(/if \(!process\.stdin\.isTTY\)/);
+    expect(cli).not.toMatch(/readTwoLinesFromPipe|for await \(const \w+ of process\.stdin\)/);
   });
 
   it('no imprime la contraseña, el hash ni el correo', () => {
@@ -186,5 +189,61 @@ describe('users:set-password · el CLI no expone la contraseña', () => {
     const registration = readFileSync(join(__dirname, '../src/auth/registration.service.ts'), 'utf8');
     expect(registration).toMatch(/hash\(dto\.password, 12\)/);
     expect(core).toMatch(/CLI_BCRYPT_COST = 12/);
+  });
+});
+
+describe('users:set-password · confirmación de la cuenta antes de la contraseña (Argos, ALTA)', () => {
+  function io(answers: { email: string; passwords?: [string, string] }) {
+    const printed: string[] = [];
+    const calls: string[] = [];
+    const pw = answers.passwords ?? [NEW_PASSWORD, NEW_PASSWORD];
+    let hidden = 0;
+    const cliIo: CliIo = {
+      print: (line) => { printed.push(line); calls.push('print'); },
+      ask: async () => { calls.push('ask'); return answers.email; },
+      askHidden: async () => { calls.push('askHidden'); return pw[hidden++]; },
+    };
+    return { cliIo, printed, calls };
+  }
+
+  it('muestra espacio y rol de cada membresía antes de pedir el correo y la contraseña', async () => {
+    const { prisma } = fakeDb();
+    const { cliIo, printed, calls } = io({ email: EMAIL });
+    await runSetPasswordFlow(prisma, EMAIL, cliIo);
+    expect(printed.join('\n')).toContain('Consulta Ficticia ws-1 (rol OWNER)');
+    expect(printed.join('\n')).toContain('Consulta Ficticia ws-2 (rol OWNER)');
+    expect(calls.indexOf('ask')).toBeGreaterThan(calls.lastIndexOf('print'));
+    expect(calls.indexOf('askHidden')).toBeGreaterThan(calls.indexOf('ask'));
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el correo confirmado no coincide: aborta, no pide la contraseña y no llama a $transaction', async () => {
+    const { prisma, state } = fakeDb();
+    const { cliIo, calls } = io({ email: 'otro.correo@example.test' });
+    await expect(runSetPasswordFlow(prisma, EMAIL, cliIo)).rejects.toThrow(/no coincide/);
+    expect(calls).not.toContain('askHidden');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(state.users[0].passwordHash).toBe('hash-viejo');
+  });
+
+  it('la confirmación ignora mayúsculas y espacios en los extremos', async () => {
+    const { prisma } = fakeDb();
+    const { cliIo } = io({ email: `  ${EMAIL.toUpperCase()}  ` });
+    await expect(runSetPasswordFlow(prisma, EMAIL, cliIo)).resolves.toMatchObject({ revokedSessions: 2 });
+  });
+
+  it('contraseñas distintas tras confirmar: no llama a $transaction', async () => {
+    const { prisma } = fakeDb();
+    const { cliIo } = io({ email: EMAIL, passwords: [NEW_PASSWORD, `${NEW_PASSWORD}x`] });
+    await expect(runSetPasswordFlow(prisma, EMAIL, cliIo)).rejects.toThrow(/no coinciden/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('correo inexistente: aborta antes de preguntar nada', async () => {
+    const { prisma } = fakeDb();
+    const { cliIo, calls } = io({ email: 'nadie@example.test' });
+    await expect(runSetPasswordFlow(prisma, 'nadie@example.test', cliIo)).rejects.toBeInstanceOf(SetPasswordError);
+    expect(calls).toHaveLength(0);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

@@ -310,8 +310,9 @@ read -rs DB_URL && export DB_URL
 DATABASE_URL="$DB_URL" npm run users:set-password -- --email persona@example.com
 ```
 
-- Pide la contraseña nueva dos veces sin mostrarla (mínimo 14 caracteres, máximo 72 bytes). Nunca
-  por argumentos.
+- Muestra el espacio y el rol de cada membresía y pide volver a escribir el correo; si no
+  coincide, aborta. Después pide la contraseña nueva dos veces sin mostrarla (mínimo 14
+  caracteres, máximo 72 bytes). Exige una terminal: nunca por argumentos ni por tubería.
 - Mismo hash que el login (bcrypt, coste 12). En una transacción: cambia el hash, revoca todos los
   `RefreshToken` del usuario y deja un `AuditLog` `USER_PASSWORD_RESET_CLI` por espacio
   (`entityId` = id del usuario, sin correo ni IP).
