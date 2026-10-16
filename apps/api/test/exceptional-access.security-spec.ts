@@ -12,6 +12,7 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { ExportsService } from '../src/exports/exports.service';
 import { AuthService } from '../src/auth/auth.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { migrateLegacyExceptionalReasons } from '../src/exceptional-access/legacy-reason-migration';
 import { fakeClinicalDb } from './support/fake-clinical-db';
 
 /**
@@ -459,4 +460,42 @@ describe('H4 · registro y revisión del OWNER', () => {
   });
 
   const read = (p: any) => patients(p).getClinicalHistory(WS, actor('owner-c'), 'pat-1');
+});
+
+// ------------------------------------------------------------------------------------------
+describe('H5 · motivos antiguos en claro (CA5.1)', () => {
+  const LEGACY = 'Motivo antiguo ficticio escrito en claro';
+
+  function legacyDb() {
+    const p = seed();
+    store(p).auditLog.push(
+      { id: 'audit-legacy', workspaceId: WS, actorId: 'owner-c', action: 'EXCEPTIONAL_CLINICAL_ACCESS', entityType: 'Patient', entityId: 'pat-1', metadata: { reason: LEGACY, role: 'OWNER' }, createdAt: d('2026-09-01') },
+      { id: 'audit-other', workspaceId: WS, actorId: 'owner-c', action: 'PATIENT_UPDATED', entityType: 'Patient', entityId: 'pat-1', metadata: { updatedFields: ['phone'] }, createdAt: d('2026-09-01') },
+    );
+    return p;
+  }
+
+  it('mueve el texto cifrado (DATA_INCIDENT, migrado, sin conceder acceso) y quita metadata.reason; idempotente', async () => {
+    const p = legacyDb();
+    expect(await migrateLegacyExceptionalReasons(p, { dryRun: true })).toEqual({ found: 1, migrated: 0, skipped: 0 });
+    expect(records(p)).toHaveLength(0);
+
+    expect(await migrateLegacyExceptionalReasons(p)).toEqual({ found: 1, migrated: 1, skipped: 0 });
+    const [row] = records(p);
+    expect(row).toMatchObject({ reasonCode: 'DATA_INCIDENT', migratedFromAuditLogId: 'audit-legacy', authSessionId: null, closeReason: 'MIGRATED', workspaceId: WS });
+    expect(row.justification).toMatch(/^enc:v/);
+    const legacy = store(p).auditLog.find((a: any) => a.id === 'audit-legacy');
+    expect(legacy.metadata).toEqual({ reasonCode: 'DATA_INCIDENT', role: 'OWNER', exceptionalAccessId: row.id, migrated: true });
+    expect(json(store(p).auditLog)).not.toContain(LEGACY);
+
+    expect(await migrateLegacyExceptionalReasons(p)).toEqual({ found: 0, migrated: 0, skipped: 0 });
+    expect(records(p)).toHaveLength(1);
+
+    // No concede nada aunque coincidieran sesión y plazo, y no sale en "Accesos de otras personas".
+    Object.assign(row, { authSessionId: 'sid-owner-c', expiresAt: new Date(Date.now() + HOUR), closedAt: null });
+    await rejects(() => patients(p).getClinicalHistory(WS, actor('owner-c'), 'pat-1'), ForbiddenException);
+    expect((await reg(p).patientAccessHistory(WS, actor('t-a'), 'pat-1') as any).accesses).toHaveLength(0);
+    // El OWNER puede leer el texto migrado con lectura auditada.
+    expect((await reg(p).readJustification(WS, actor('owner-nc'), row.id, 'INTERNAL_AUDIT')).justification).toBe(LEGACY);
+  });
 });
