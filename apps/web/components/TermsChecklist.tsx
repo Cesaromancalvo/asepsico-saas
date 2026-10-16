@@ -73,10 +73,14 @@ export default function TermsChecklist({ docs, checked, onChange, disabled, idPr
               <small id={`${id}-meta`}>
                 Versión {doc.version}
                 {doc.draft && <span className="e1-badge readonly terms-draft-badge">Pendiente de completar</span>}
-                {' · '}
-                <a href={legalDocumentHref(doc.documentType)} target="_blank" rel="noopener noreferrer">
-                  Leer el texto completo<span className="sr-only"> de {title} (se abre en otra pestaña)</span>
-                </a>
+                {' '}
+                {/* Separador y enlace juntos: con el chip del sistema visual el "·" se quedaba solo al final de línea en móvil. */}
+                <span className="terms-doc-link">
+                  ·{' '}
+                  <a href={legalDocumentHref(doc.documentType)} target="_blank" rel="noopener noreferrer">
+                    Leer el texto completo<span className="sr-only"> de {title} (se abre en otra pestaña)</span>
+                  </a>
+                </span>
               </small>
               {invalid && (
                 <small id={`${id}-error`} className="terms-field-error">Falta marcar esta casilla.</small>

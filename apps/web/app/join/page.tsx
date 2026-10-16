@@ -123,7 +123,7 @@ export default function JoinPage() {
     return (
       <main className="shell">
         <div className="card auth-card">
-          <div className="brand">AsePsico</div>
+          <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
           <h1 tabIndex={-1} ref={doneRef}>Ya formas parte del equipo</h1>
           <p className="muted">
             Te has unido como {ROLE_LABEL[joined.role] ?? joined.role}.
@@ -160,7 +160,7 @@ export default function JoinPage() {
   return (
     <main className="shell">
       <div className="card auth-card">
-        <div className="brand">AsePsico</div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>Únete a tu consulta</h1>
         <p className="muted">
           Te han invitado a formar parte del equipo de una consulta en AsePsico. Usa el mismo correo al que te llegó la

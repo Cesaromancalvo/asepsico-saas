@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
+import Icon, { EmptyState } from '../components/Icon';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
 
 type DashboardData = {
@@ -146,8 +147,8 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
             </p>
           </div>
           <div className="dashboard-actions">
-            <Link href="/patients?new=true" className="primary-action">+ Nuevo paciente</Link>
-            <Link href="/agenda?new=true" className="search-action">+ Nueva cita</Link>
+            <Link href="/agenda?new=true" className="search-action"><Icon name="calendar" size={18} />Nueva cita</Link>
+            <Link href="/patients?new=true" className="primary-action"><Icon name="plus" size={18} />Nuevo paciente</Link>
           </div>
         </header>
 
@@ -163,7 +164,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
             <div className="onboarding-list">
               {data.onboarding.checklist.map((item) => (
                 <Link key={item.key} href={item.href} className={item.done ? 'done' : ''}>
-                  <span>{item.done ? '✓' : '○'}</span><strong>{item.label}</strong><span>›</span>
+                  <span className="onboarding-check">{item.done ? <Icon name="check" size={14} /> : null}</span><strong>{item.label}</strong><Icon name="chevronRight" size={16} />
                 </Link>
               ))}
               <button type="button" onClick={() => void dismissOnboarding()}>Ocultar por ahora</button>
@@ -174,27 +175,28 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
         {next ? (
           <section className="next-session">
             <div>
-              <span className="next-session-label">PRÓXIMA SESIÓN · EN {minutesUntil(next.startsAt)} MIN</span>
+              <span className="next-session-label"><Icon name="clock" size={14} />Próxima sesión · en {minutesUntil(next.startsAt)} min</span>
               <h2>{next.patient.firstName} {next.patient.lastName}</h2>
               <p>{formatTime(next.startsAt)} · {next.clinicalProcess ? `Proceso clínico · ${modalityLabel(next.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p>
             </div>
             <div className="next-session-actions">
               <Link href={`/patients/${next.patient.id}`} className="banner-secondary">Abrir ficha</Link>
-              <Link href={`/agenda/${next.id}`} className="banner-primary">Preparar sesión →</Link>
+              <Link href={`/agenda/${next.id}`} className="banner-primary">Preparar sesión<Icon name="arrowRight" size={16} /></Link>
             </div>
           </section>
         ) : (
           <section className="dashboard-card empty-next-session">
+            <span className="empty-next-icon"><Icon name="sun" size={26} /></span>
             <div><p className="eyebrow">AGENDA</p><h2>Tu jornada está despejada</h2><p>Programa una cita o aprovecha para revisar seguimientos pendientes.</p></div>
-            <Link href="/agenda?new=true" className="primary-action">Programar cita</Link>
+            <Link href="/agenda?new=true" className="primary-action"><Icon name="plus" size={18} />Programar cita</Link>
           </section>
         )}
 
         <section className="dashboard-metrics" aria-label="Resumen de jornada">
-          <Link href="/agenda" className="dashboard-card metric-card"><span>▣</span><div><strong>{data.summary.sessionsToday}</strong><small>Sesiones hoy</small></div></Link>
-          <Link href="/follow-up" className="dashboard-card metric-card"><span>✓</span><div><strong>{data.summary.pendingReviews}</strong><small>Tareas por revisar</small></div></Link>
-          <Link href="/messages" className="dashboard-card metric-card"><span>✉</span><div><strong>{data.summary.unreadMessages}</strong><small>Mensajes nuevos</small></div></Link>
-          <Link href="/follow-up" className="dashboard-card metric-card"><span>↗</span><div><strong>{data.summary.followUps}</strong><small>Seguimientos</small></div></Link>
+          <Link href="/agenda" className="dashboard-card metric-card metric-violet"><span><Icon name="calendar" /></span><div><strong>{data.summary.sessionsToday}</strong><small>Sesiones hoy</small></div></Link>
+          <Link href="/follow-up" className="dashboard-card metric-card metric-green"><span><Icon name="clipboard" /></span><div><strong>{data.summary.pendingReviews}</strong><small>Tareas por revisar</small></div></Link>
+          <Link href="/messages" className="dashboard-card metric-card metric-blue"><span><Icon name="message" /></span><div><strong>{data.summary.unreadMessages}</strong><small>Mensajes nuevos</small></div></Link>
+          <Link href="/follow-up" className="dashboard-card metric-card metric-amber"><span><Icon name="trend" /></span><div><strong>{data.summary.followUps}</strong><small>Seguimientos</small></div></Link>
         </section>
 
         <div className="dashboard-grid">
@@ -205,10 +207,10 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
                 <article key={session.id} className="session-row">
                   <div className="session-time"><strong>{formatTime(session.startsAt)}</strong><span>{Math.round((new Date(session.endsAt).getTime() - new Date(session.startsAt).getTime()) / 60000)} min</span></div>
                   <div className="session-avatar purple">{session.patient.firstName[0]}{session.patient.lastName[0]}</div>
-                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess ? `Proceso clínico · ${modalityLabel(session.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p><small className="session-status purple">{session.status === 'SCHEDULED' ? 'Programada' : session.status}</small></div>
+                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess ? `Proceso clínico · ${modalityLabel(session.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p><small className={`session-status ui-chip ${session.status === 'SCHEDULED' ? 'chip-violet' : 'chip-neutral'}`}>{session.status === 'SCHEDULED' ? 'Programada' : session.status}</small></div>
                   <div className="session-buttons"><Link href={`/patients/${session.patient.id}`} className="small-secondary">Abrir caso</Link><Link href={`/agenda/${session.id}`} className="small-primary">Preparar</Link></div>
                 </article>
-              )) : <div className="dashboard-empty"><strong>No hay sesiones hoy</strong><p>La agenda de hoy está libre.</p></div>}
+              )) : <EmptyState icon="calendar" title="No hay sesiones hoy">La agenda de hoy está libre. Buen momento para revisar seguimientos.</EmptyState>}
             </div>
           </section>
 
@@ -217,11 +219,11 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
               <div className="card-heading"><div><p className="eyebrow">REQUIERE ATENCIÓN</p><h2>Próximas acciones</h2></div><span className="task-count">{data.attention.length}</span></div>
               <div className="task-list">
                 {data.attention.length ? data.attention.map((item) => (
-                  <Link key={item.id} href={item.href} className="task-row"><span className="task-checkbox">{item.type === 'MESSAGE' ? '✉' : item.type === 'TASK_REVIEW' ? '✓' : '↗'}</span><span><strong>{item.title}</strong><small>{item.subtitle}</small></span><span>›</span></Link>
-                )) : <div className="dashboard-empty compact"><strong>Todo al día</strong><p>No hay acciones pendientes.</p></div>}
+                  <Link key={item.id} href={item.href} className="task-row"><span className={`task-checkbox task-${item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'review' : 'follow'}`}><Icon name={item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'clipboard' : 'trend'} size={16} /></span><span><strong>{item.title}</strong><small>{item.subtitle}</small></span><Icon name="chevronRight" size={16} /></Link>
+                )) : <EmptyState icon="checkCircle" title="Todo al día" compact>No hay acciones pendientes.</EmptyState>}
               </div>
             </section>
-            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span>＋</span>Nueva cita</Link><Link href="/patients?new=true"><span>◉</span>Nuevo paciente</Link><Link href="/messages"><span>✉</span>Mensajes</Link><Link href="/management"><span>€</span>Registrar cobro</Link></div></section>
+            <section className="dashboard-card quick-card"><p className="eyebrow">ACCESO RÁPIDO</p><div className="quick-grid"><Link href="/agenda?new=true"><span><Icon name="calendar" size={18} /></span>Nueva cita</Link><Link href="/patients?new=true"><span><Icon name="users" size={18} /></span>Nuevo paciente</Link><Link href="/messages"><span><Icon name="message" size={18} /></span>Mensajes</Link><Link href="/management"><span><Icon name="wallet" size={18} /></span>Registrar cobro</Link></div></section>
           </aside>
         </div>
       </main>

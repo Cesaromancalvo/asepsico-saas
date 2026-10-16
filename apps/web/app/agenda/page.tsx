@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
+import Icon from '../../components/Icon';
 import { api } from '@/lib/api';
 import { processLabel, useViewer } from '@/lib/clinical';
 
@@ -561,7 +562,7 @@ export default function AgendaPage() {
                 );
               }}
             >
-              ← Semana anterior
+              <Icon name="chevronLeft" size={18} /><span className="agenda-nav-label">Semana anterior</span>
             </button>
 
             <button
@@ -587,7 +588,7 @@ export default function AgendaPage() {
                 );
               }}
             >
-              Semana siguiente →
+              <span className="agenda-nav-label">Semana siguiente</span><Icon name="chevronRight" size={18} />
             </button>
 
             <button
@@ -599,7 +600,7 @@ export default function AgendaPage() {
                 setNewSessionOpen(true);
               }}
             >
-              + Nueva sesión
+              <Icon name="plus" size={18} />Nueva sesión
             </button>
           </div>
         </header>
@@ -999,13 +1000,14 @@ export default function AgendaPage() {
                                     session.type
                                   ]
                                 }
-                                {' · '}
+                              </small>
+                              <span className={`ui-chip agenda-status-chip status-${session.status.toLowerCase()}`}>
                                 {
                                   STATUS_LABELS[
                                     session.status
                                   ]
                                 }
-                              </small>
+                              </span>
                             </div>
                           </div>
 

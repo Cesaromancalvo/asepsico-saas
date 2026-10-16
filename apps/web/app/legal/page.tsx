@@ -53,7 +53,7 @@ export default function LegalPage() {
     <main className="shell">
       <div className="legal-page">
         <div className="card">
-          <div className="brand">AsePsico</div>
+          <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
           <h1>Condiciones vigentes</h1>
           <p className="muted">
             Estos son los textos que acepta cada persona al darse de alta, tanto quien crea la consulta como quien se

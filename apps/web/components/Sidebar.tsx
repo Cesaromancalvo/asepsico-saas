@@ -4,67 +4,68 @@ import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
 import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
 import { invalidateTermsStatus, useTermsStatus } from '../lib/legal';
+import Icon, { IconName } from './Icon';
 type SidebarProps = {
   syncText?: string;
 };
 // adminOnly: solo OWNER/ADMIN. processAccess: roles que entran en procesos y mensajes (no ASSISTANT).
-const navigation: { href: string; label: string; icon: string; adminOnly?: boolean; processAccess?: boolean }[] = [
+const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean }[] = [
   {
     href: '/',
     label: 'Mi jornada',
-    icon: '⌂',
+    icon: 'home',
   },
   {
     href: '/patients',
     label: 'Pacientes',
-    icon: '◉',
+    icon: 'users',
   },
   {
     href: '/follow-up',
     label: 'Seguimiento',
-    icon: '↗',
+    icon: 'trend',
   },
   {
     href: '/agenda',
     label: 'Agenda',
-    icon: '▣',
+    icon: 'calendar',
   },
   {
     href: '/messages',
     label: 'Mensajes',
-    icon: '✉',
+    icon: 'message',
     processAccess: true,
   },
   {
     href: '/library',
     label: 'Biblioteca',
-    icon: '✦',
+    icon: 'book',
   },
   {
     href: '/notifications',
     label: 'Avisos',
-    icon: '◌',
+    icon: 'bell',
   },
   {
     href: '/management',
     label: 'Gestión',
-    icon: '€',
+    icon: 'wallet',
   },
   {
     href: '/settings/team',
     label: 'Equipo',
-    icon: '☷',
+    icon: 'team',
     adminOnly: true,
   },
   {
     href: '/settings/security',
     label: 'Seguridad',
-    icon: '⛨',
+    icon: 'shield',
   },
   {
     href: '/settings/data',
     label: 'Datos y piloto',
-    icon: '⇩',
+    icon: 'database',
   },
 ];
 export default function Sidebar({
@@ -98,7 +99,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <Link href="/" className="sidebar-brand">
-        <div className="brand-mark">A</div>
+        <div className="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AsePsico</strong>
           <span>{viewer?.workspaceName || 'Tu consulta'}</span>
@@ -114,7 +115,7 @@ export default function Sidebar({
             }`}
             aria-current={isActive(item.href) ? 'page' : undefined}
           >
-            <span aria-hidden="true">{item.icon}</span>
+            <span className="sidebar-icon"><Icon name={item.icon} /></span>
             <span>{item.label}</span>
           </Link>
         ))}
@@ -144,7 +145,7 @@ export default function Sidebar({
           className="sidebar-link sidebar-logout"
           onClick={handleLogout}
         >
-          <span aria-hidden="true">↪</span>
+          <span className="sidebar-icon"><Icon name="logout" /></span>
           <span>Cerrar sesión</span>
         </button>
       </div>

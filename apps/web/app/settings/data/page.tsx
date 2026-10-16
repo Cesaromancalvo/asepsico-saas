@@ -5,6 +5,9 @@ import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { isForbidden } from '@/lib/clinical';
 
+/** Etiqueta visible del estado de cada punto de la checklist (el valor de la API no cambia). */
+const CHECK_LABEL: Record<Check['status'], string> = { READY: 'Listo', PENDING: 'Pendiente', WARNING: 'Revisar', BLOCKED: 'Bloqueado', MANUAL: 'Manual' };
+
 type Patient = { id: string; firstName: string; lastName: string };
 type Check = { key: string; label: string; status: 'READY'|'PENDING'|'WARNING'|'BLOCKED'|'MANUAL'; detail: string };
 
@@ -82,6 +85,6 @@ export default function DataSettingsPage() {
       <small>El archivo contiene información clínica confidencial. Protégelo fuera de AsePsico. Se te pedirá tu contraseña antes de descargar.</small>
     </section>
     <section className="patient-card"><h2>Exportación administrativa del workspace</h2><p>Inventario de miembros, pacientes, actividad y últimos eventos de auditoría. Solo disponible para propietario y administración.</p><button className="button" disabled={busy} onClick={exportWorkspace}>Descargar exportación</button><br/><small>Se te pedirá tu contraseña antes de descargar.</small></section>
-    <section className="patient-card"><h2>Checklist de preparación del piloto</h2><div className="billing-list">{checks.map(check=><article className="billing-row" key={check.key}><div><strong>{check.label}</strong><small>{check.detail}</small></div><span className={`status-pill ${check.status.toLowerCase()}`}>{check.status}</span></article>)}</div></section>
+    <section className="patient-card"><h2>Checklist de preparación del piloto</h2><div className="billing-list">{checks.map(check=><article className="billing-row" key={check.key}><div><strong>{check.label}</strong><small>{check.detail}</small></div><span className={`status-pill ${check.status.toLowerCase()}`}>{CHECK_LABEL[check.status] ?? check.status}</span></article>)}</div></section>
   </main></div>;
 }

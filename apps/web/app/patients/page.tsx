@@ -455,15 +455,7 @@ export default function PatientsPage() {
         <p className="error">{error}</p>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns:
-            'minmax(0, 1.7fr) minmax(320px, 1fr)',
-          gap: 20,
-          alignItems: 'start',
-        }}
-      >
+      <div className="patients-layout">
         <section className="card">
           <div
             style={{
@@ -588,15 +580,7 @@ export default function PatientsPage() {
                       </span>
                     </div>
 
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns:
-                          'repeat(4, minmax(0, 1fr))',
-                        gap: 10,
-                        marginTop: 16,
-                      }}
-                    >
+                    <div className="patients-row-stats">
                       <div>
                         <div className="muted">
                           Procesos

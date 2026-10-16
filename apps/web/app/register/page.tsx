@@ -113,7 +113,7 @@ export default function RegisterPage() {
   return (
     <main className="shell">
       <div className="card auth-card">
-        <div className="brand">AsePsico</div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>Crea tu consulta</h1>
         <p className="muted">
           Crearás la cuenta de la persona titular de la consulta. Usa el mismo correo al que te llegó la invitación.

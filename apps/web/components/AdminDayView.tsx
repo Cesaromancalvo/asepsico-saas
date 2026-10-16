@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { ROLE_LABEL, Viewer } from '@/lib/clinical';
+import Icon, { EmptyState } from '@/components/Icon';
 
 /*
  * "Mi jornada" administrativa: recepción (ASSISTANT) y titular/administración que no atienden
@@ -120,30 +121,30 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
           </p>
         </div>
         <div className="dashboard-actions">
-          <Link href="/agenda?new=true" className="primary-action">+ Nueva cita</Link>
-          <Link href="/patients?new=true" className="search-action">+ Nuevo paciente</Link>
+          <Link href="/patients?new=true" className="search-action"><Icon name="users" size={18} />Nuevo paciente</Link>
+          <Link href="/agenda?new=true" className="primary-action"><Icon name="plus" size={18} />Nueva cita</Link>
         </div>
       </header>
 
       <section className="dashboard-metrics" aria-label="Resumen administrativo de hoy">
-        <Link href="/agenda" className="dashboard-card metric-card">
-          <span aria-hidden="true">▣</span>
+        <Link href="/agenda" className="dashboard-card metric-card metric-violet">
+          <span><Icon name="calendar" /></span>
           <div><strong>{sessions.state === 'ready' ? active.length : '–'}</strong><small>Citas hoy</small></div>
         </Link>
         {!billingHidden && (
           <>
-            <Link href="/management" className="dashboard-card metric-card">
-              <span aria-hidden="true">€</span>
+            <Link href="/management" className="dashboard-card metric-card metric-green">
+              <span><Icon name="wallet" /></span>
               <div><strong>{summary.data ? money(summary.data.outstandingCents) : '–'}</strong><small>Pendiente de cobro</small></div>
             </Link>
-            <Link href="/management" className="dashboard-card metric-card">
-              <span aria-hidden="true">!</span>
+            <Link href="/management" className="dashboard-card metric-card metric-amber">
+              <span><Icon name="clock" /></span>
               <div><strong>{summary.data ? summary.data.overdueCount : '–'}</strong><small>Cobros vencidos</small></div>
             </Link>
           </>
         )}
-        <Link href="/notifications" className="dashboard-card metric-card">
-          <span aria-hidden="true">◌</span>
+        <Link href="/notifications" className="dashboard-card metric-card metric-blue">
+          <span><Icon name="bell" /></span>
           <div><strong>{notices.state === 'ready' ? adminNotices.length : '–'}</strong><small>Avisos sin leer</small></div>
         </Link>
       </section>
@@ -164,7 +165,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
               </div>
             )}
             {sessions.state === 'ready' && today.length === 0 && (
-              <div className="dashboard-empty"><strong>No hay citas hoy</strong><p>La agenda de la consulta está libre.</p></div>
+              <EmptyState icon="calendar" title="No hay citas hoy">La agenda de la consulta está libre.</EmptyState>
             )}
             {sessions.state === 'ready' && today.map((session) => (
               <article key={session.id} className="session-row admin-session-row">
@@ -179,7 +180,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                     <span>{TYPE_LABEL[session.type] ?? 'Cita'}</span>
                   </div>
                   <p>{session.therapist ? `Con ${fullName(session.therapist)}` : 'Profesional sin asignar'}</p>
-                  <small className="session-status purple">{STATUS_LABEL[session.status] ?? session.status}</small>
+                  <small className={`session-status ui-chip ${session.status === 'SCHEDULED' ? 'chip-violet' : session.status === 'COMPLETED' ? 'chip-green' : 'chip-neutral'}`}>{STATUS_LABEL[session.status] ?? session.status}</small>
                 </div>
                 <div className="session-buttons">
                   <Link href={`/agenda/${session.id}`} className="small-primary">
@@ -204,11 +205,11 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                   <div className="dashboard-empty compact" role="alert"><strong>No se han podido cargar los cobros</strong><p>Inténtalo de nuevo en unos minutos.</p></div>
                 )}
                 {invoices.state === 'ready' && pendingInvoices.length === 0 && (
-                  <div className="dashboard-empty compact"><strong>Todo cobrado</strong><p>No hay cobros pendientes.</p></div>
+                  <EmptyState icon="checkCircle" title="Todo cobrado" compact>No hay cobros pendientes.</EmptyState>
                 )}
                 {pendingInvoices.map((invoice) => (
                   <Link key={invoice.id} href="/management" className="task-row">
-                    <span className="task-checkbox" aria-hidden="true">€</span>
+                    <span className="task-checkbox task-review"><Icon name="wallet" size={16} /></span>
                     <span>
                       <strong>{fullName(invoice.patient)} · {money(invoice.totalCents - invoice.paidCents)}</strong>
                       <small>
@@ -217,7 +218,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                         {invoice.status === 'OVERDUE' ? ' · vencida' : ''}
                       </small>
                     </span>
-                    <span aria-hidden="true">›</span>
+                    <Icon name="chevronRight" size={16} />
                   </Link>
                 ))}
               </div>
@@ -235,13 +236,13 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                 <div className="dashboard-empty compact" role="alert"><strong>No se han podido cargar los avisos</strong><p>Inténtalo de nuevo en unos minutos.</p></div>
               )}
               {notices.state === 'ready' && adminNotices.length === 0 && (
-                <div className="dashboard-empty compact"><strong>Todo al día</strong><p>No tienes avisos sin leer.</p></div>
+                <EmptyState icon="bell" title="Todo al día" compact>No tienes avisos sin leer.</EmptyState>
               )}
               {adminNotices.map((notice) => (
                 <Link key={notice.id} href="/notifications" className="task-row">
-                  <span className="task-checkbox" aria-hidden="true">◌</span>
+                  <span className="task-checkbox task-follow"><Icon name="bell" size={16} /></span>
                   <span><strong>{notice.title}</strong><small>{shortDate(notice.createdAt)}</small></span>
-                  <span aria-hidden="true">›</span>
+                  <Icon name="chevronRight" size={16} />
                 </Link>
               ))}
             </div>
@@ -250,10 +251,10 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
           <section className="dashboard-card quick-card">
             <p className="eyebrow">ACCESO RÁPIDO</p>
             <div className="quick-grid">
-              <Link href="/agenda?new=true"><span aria-hidden="true">＋</span>Nueva cita</Link>
-              <Link href="/patients?new=true"><span aria-hidden="true">◉</span>Nuevo paciente</Link>
-              <Link href="/agenda"><span aria-hidden="true">▣</span>Agenda</Link>
-              {!billingHidden && <Link href="/management"><span aria-hidden="true">€</span>Registrar cobro</Link>}
+              <Link href="/agenda?new=true"><span><Icon name="calendar" size={18} /></span>Nueva cita</Link>
+              <Link href="/patients?new=true"><span><Icon name="users" size={18} /></span>Nuevo paciente</Link>
+              <Link href="/agenda"><span><Icon name="clock" size={18} /></span>Agenda</Link>
+              {!billingHidden && <Link href="/management"><span><Icon name="wallet" size={18} /></span>Registrar cobro</Link>}
             </div>
           </section>
         </aside>
