@@ -7,6 +7,7 @@ import { ClinicalAccessService } from '../clinical-access/clinical-access.servic
 import { DEFERRED_NOTICE_REMINDER_MS, ExceptionalAccessReasonCode, reviewPermission } from './exceptional-access.policy';
 import { BLOCKED_READ_PURPOSES, JustificationReadPurposeValue } from './dto/exceptional-access.dto';
 import { notifyAuthors } from './exceptional-access.service';
+import { projectSelect } from '../patients/patient-view.util';
 
 /** Columnas del registro SIN texto (ni explicación ni motivo de diferimiento). */
 const ACCESS_LIST_SELECT = {
@@ -21,6 +22,10 @@ const OPENING_LIST_SELECT = {
   reasonCode: true, selfAssigned: true, ownerReviewDueAt: true, reviewedAt: true, reviewedById: true, reviewOutcome: true,
   selfReview: true, createdAt: true,
 } as const;
+
+/** "Accesos de otras personas" (CA3.2): fecha, persona, rol, motivo y duración. */
+const HISTORY_ACCESS_SELECT = { id: true, actorId: true, actorRole: true, reasonCode: true, createdAt: true, expiresAt: true, closedAt: true } as const;
+const HISTORY_OPENING_SELECT = { id: true, actorId: true, actorRole: true, reasonCode: true, kind: true, targetTherapistId: true, createdAt: true } as const;
 
 type AccessRow = { closedAt: Date | null; expiresAt: Date; blockedAt: Date | null; ownerReviewDueAt: Date | null; reviewedAt: Date | null; notificationDeferredAt: Date | null; notificationReleasedAt: Date | null; migratedFromAuditLogId: string | null };
 
@@ -62,8 +67,9 @@ export class ExceptionalAccessRegisterService {
     const initials = await this.patientInitialsById(workspaceId, patientIds);
     const now = new Date();
     return {
-      accesses: accesses.map((row) => ({ type: 'EXCEPTIONAL_ACCESS' as const, ...row, patientInitials: initials.get(row.patientId) ?? null, status: accessStatus(row, now) })),
-      openings: openings.map((row) => ({ type: 'PROCESS_OPENING_OVER_HISTORY' as const, ...row, patientInitials: initials.get(row.patientId) ?? null, pendingReview: Boolean(row.ownerReviewDueAt && !row.reviewedAt) })),
+      // Lista blanca también sobre la respuesta: nunca la explicación ni el motivo de diferimiento.
+      accesses: accesses.map((row) => ({ type: 'EXCEPTIONAL_ACCESS' as const, ...projectSelect<typeof row>(row, ACCESS_LIST_SELECT), patientInitials: initials.get(row.patientId) ?? null, status: accessStatus(row, now) })),
+      openings: openings.map((row) => ({ type: 'PROCESS_OPENING_OVER_HISTORY' as const, ...projectSelect<typeof row>(row, OPENING_LIST_SELECT), patientInitials: initials.get(row.patientId) ?? null, pendingReview: Boolean(row.ownerReviewDueAt && !row.reviewedAt) })),
     };
   }
 
@@ -132,18 +138,18 @@ export class ExceptionalAccessRegisterService {
       this.prisma.exceptionalAccessJustification.findMany({
         where: { workspaceId, patientId, actorId: { not: actor.sub }, migratedFromAuditLogId: null, OR: [{ notificationDeferredAt: null }, { notificationReleasedAt: { not: null } }] },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, actorId: true, actorRole: true, reasonCode: true, createdAt: true, expiresAt: true, closedAt: true },
+        select: HISTORY_ACCESS_SELECT,
       }),
       this.prisma.clinicalProcessOpening.findMany({
         where: { workspaceId, patientId, actorId: { not: actor.sub } },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, actorId: true, actorRole: true, reasonCode: true, kind: true, targetTherapistId: true, createdAt: true },
+        select: HISTORY_OPENING_SELECT,
       }),
     ]);
     const names = await this.userNames(workspaceId, [...accesses, ...openings].map((row) => row.actorId));
     return {
-      accesses: accesses.map((row) => ({ ...row, actorName: names.get(row.actorId) ?? null, endedAt: row.closedAt && row.closedAt < row.expiresAt ? row.closedAt : row.expiresAt })),
-      openings: openings.map((row) => ({ ...row, actorName: names.get(row.actorId) ?? null })),
+      accesses: accesses.map((row) => ({ ...projectSelect<typeof row>(row, HISTORY_ACCESS_SELECT), actorName: names.get(row.actorId) ?? null, endedAt: row.closedAt && row.closedAt < row.expiresAt ? row.closedAt : row.expiresAt })),
+      openings: openings.map((row) => ({ ...projectSelect<typeof row>(row, HISTORY_OPENING_SELECT), actorName: names.get(row.actorId) ?? null })),
     };
   }
 

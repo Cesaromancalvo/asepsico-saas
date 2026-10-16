@@ -19,6 +19,10 @@ import {
   retentionUntil,
 } from './exceptional-access.policy';
 import { CreateExceptionalAccessDto } from './dto/exceptional-access.dto';
+import { projectSelect } from '../patients/patient-view.util';
+
+/** Respuesta del registro: sin la explicación (la escribió quien la envía; no se devuelve). */
+const CREATED_SELECT = { id: true, reasonCode: true, createdAt: true, expiresAt: true, ownerReviewDueAt: true, notificationDeferredAt: true } as const;
 
 /** 400 cuando la explicación parece clínica y el usuario aún no ha confirmado (CA1.7). */
 export const CLINICAL_TERMS_WARNING = 'CLINICAL_TERMS_WARNING';
@@ -115,7 +119,7 @@ export class ExceptionalAccessService {
           ownerReviewDueAt: OWNER_REVIEW_REASONS.includes(reasonCode) ? new Date(now.getTime() + OWNER_REVIEW_WINDOW_MS) : null,
           ...(deferNotice ? { notificationDeferredAt: now, notificationDeferredReason: encryptField(dto.deferReason!.trim()), lastDeferralReminderAt: now } : {}),
         },
-        select: { id: true, reasonCode: true, createdAt: true, expiresAt: true, ownerReviewDueAt: true, notificationDeferredAt: true },
+        select: CREATED_SELECT,
       });
       // CA1.8: metadata SOLO { reasonCode, role, exceptionalAccessId }. Nunca el texto.
       await tx.auditLog.create({
@@ -128,7 +132,7 @@ export class ExceptionalAccessService {
       } else {
         await notifyAuthors(tx, { workspaceId, actorId: actor.sub, actorRole: profile.role, patient, reasonCode, accessId: record.id, now });
       }
-      return { ...record, hoursValid: EXCEPTIONAL_ACCESS_WINDOW_MS / 3_600_000, noticeDeferred: deferNotice };
+      return { ...projectSelect<typeof record>(record, CREATED_SELECT), hoursValid: EXCEPTIONAL_ACCESS_WINDOW_MS / 3_600_000, noticeDeferred: deferNotice };
     });
   }
 
@@ -161,11 +165,9 @@ export class ExceptionalAccessService {
     if (scope?.level !== 'EXCEPTIONAL' || !scope.exceptionalAccessId) {
       return { active: null, canRequest: allowedReasons.length > 0 && scope?.level !== 'TREATING', allowedReasons };
     }
-    const row = await this.prisma.exceptionalAccessJustification.findFirst({
-      where: { id: scope.exceptionalAccessId, workspaceId, actorId: actor.sub },
-      select: { id: true, reasonCode: true, createdAt: true, expiresAt: true },
-    });
-    return { active: row, canRequest: false, allowedReasons };
+    const select = { id: true, reasonCode: true, createdAt: true, expiresAt: true } as const;
+    const row = await this.prisma.exceptionalAccessJustification.findFirst({ where: { id: scope.exceptionalAccessId, workspaceId, actorId: actor.sub }, select });
+    return { active: projectSelect<typeof row>(row, select), canRequest: false, allowedReasons };
   }
 
   /** CA1.11: "Mi motivo no está en la lista". Solo un contador por workspace. */
