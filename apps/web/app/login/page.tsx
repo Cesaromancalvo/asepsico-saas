@@ -82,7 +82,7 @@ export default function LoginPage() {
     return (
       <main className="shell">
         <div className="card" style={{ maxWidth: 460, margin: '80px auto' }}>
-          <div className="brand">AsePsico</div>
+          <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
           <h1>Verificación en dos pasos</h1>
           <p className="muted">Introduce el código de 6 dígitos de tu app de autenticación, o uno de tus códigos de recuperación.</p>
           <form onSubmit={submitMfaCode}>
@@ -109,7 +109,7 @@ export default function LoginPage() {
   return (
     <main className="shell">
       <div className="card" style={{ maxWidth: 460, margin: '80px auto' }}>
-        <div className="brand">AsePsico</div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>Accede a tu consulta</h1>
         {notice && <p className="error" role="alert">{notice}</p>}
         <form onSubmit={submitPassword}>

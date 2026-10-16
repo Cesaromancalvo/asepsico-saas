@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import ReasonDialog from '@/components/ReasonDialog';
+import { EmptyState } from '@/components/Icon';
 import { api } from '@/lib/api';
 import { CLINICAL_TEXT_HINT, chargeStatusLabel, freeText, lineLabel } from '@/lib/billing';
 import { INVOICE_LINE_CONCEPTS, type BillingFreeTextFlagsContract, type InvoiceLineConcept, type InvoiceListItemContract } from '@asepsico/contracts';
@@ -161,7 +162,7 @@ export default function ManagementPage() {
           {detail.state === 'error' && <small role="alert">No se pudo cargar el detalle. Inténtalo de nuevo.</small>}
           {detail.state === 'ready' && detail.invoice && <InvoiceDetailView invoice={detail.invoice} busy={busy} onReverse={(payment)=>setReasonTarget({ kind: 'reverse', invoice, payment })} />}
         </div>}
-      </article>)}{!invoices.length && <p>No hay cobros registrados todavía.</p>}</div>
+      </article>)}{!invoices.length && <EmptyState icon="wallet" title="No hay cobros registrados todavía." />}</div>
     </section>
     <ReasonDialog
       open={reasonTarget !== null}

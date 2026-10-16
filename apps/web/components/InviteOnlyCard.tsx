@@ -5,7 +5,7 @@ export default function InviteOnlyCard({ title = 'Alta solo por invitación' }: 
   return (
     <main className="shell">
       <div className="card auth-card">
-        <div className="brand">AsePsico</div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>{title}</h1>
         <p className="muted">
           Por ahora el acceso a AsePsico es solo por invitación. Si te han invitado, abre el enlace completo que te
