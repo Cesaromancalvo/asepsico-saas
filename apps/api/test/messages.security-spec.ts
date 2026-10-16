@@ -25,6 +25,8 @@ describe('Structured messages security and persistence',()=>{
 
   it('scopes therapist conversations to assigned patients and returns unread count',async()=>{
     const p=mock();
+    // Profesional del proceso activo de cada fila (bandeja): consulta propia de MessagesService.
+    p.clinicalProcess.findMany.mockResolvedValue([{patientId:'p1',therapistId:'t1',therapist:{id:'t1',firstName:'Ficticio',lastName:'Uno'}}]);
     treating(p,therapist,'p1');
     p.conversation.findMany.mockResolvedValue([{id:'c1',patient:{id:'p1'},updatedAt:new Date('2026-02-01')}]);
     p.message.findMany.mockResolvedValue([]);
@@ -32,6 +34,7 @@ describe('Structured messages security and persistence',()=>{
     const rows=await new MessagesService(p).list('w1',therapist);
     expect(p.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({workspaceId:'w1',patient:expect.objectContaining({clinicalProcesses:{some:{workspaceId:'w1',therapistId:'t1'}}})})}));
     expect(rows[0].unreadCount).toBe(2);
+    expect(rows[0].therapist).toEqual({id:'t1',firstName:'Ficticio',lastName:'Uno'});
   });
 
   it('does not expose a conversation from another workspace',async()=>{

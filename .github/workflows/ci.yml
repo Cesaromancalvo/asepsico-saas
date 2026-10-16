@@ -50,6 +50,40 @@ jobs:
       - name: Security and integration tests
         run: npm --workspace @asepsico/api run test:security
 
+      # Pruebas unitarias de la web (apps/web/test: entorno demo, usuario de /auth/me, conceptos
+      # de factura). Sin red ni BD.
+      - name: Web unit tests
+        run: npm --workspace @asepsico/web run test -- --ci
+
+      # Condición de Argos: el build de la landing debe fallar cerrado sin LEGAL_TITULAR_NIF ni
+      # LEGAL_TITULAR_DOMICILIO (si no, Render publicaría [[NIF]] en el aviso legal). Se ejecuta
+      # sin esas variables y con salida en un directorio temporal; se exige código distinto de 0 y
+      # que no quede ningún HTML publicable. build.mjs llega con feat/landing-v2: hasta que esté en
+      # la rama, el paso se omite con un aviso visible.
+      # TODO: cuando feat/landing-v2 esté en main, quitar la condición para que su ausencia falle.
+      - name: Landing build fails closed without legal holder variables
+        shell: bash
+        run: |
+          if [ ! -f apps/landing/build.mjs ]; then
+            echo "::notice title=build.mjs pendiente::apps/landing/build.mjs aún no está en esta rama (llega con feat/landing-v2). Paso omitido."
+            exit 0
+          fi
+          out="$RUNNER_TEMP/landing-dist-sin-variables"
+          rm -rf "$out"
+          set +e
+          env -u LEGAL_TITULAR_NIF -u LEGAL_TITULAR_DOMICILIO node apps/landing/build.mjs --out "$out"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "::error title=La landing se construye sin datos del titular::node build.mjs terminó con 0 sin LEGAL_TITULAR_NIF ni LEGAL_TITULAR_DOMICILIO."
+            exit 1
+          fi
+          if [ -d "$out" ] && find "$out" -name '*.html' | grep -q .; then
+            echo "::error title=La landing deja HTML publicable::build.mjs falló pero dejó HTML en la salida."
+            exit 1
+          fi
+          echo "OK: build.mjs falla cerrado sin variables (código $status) y no deja HTML."
+
       - name: Build
         run: npm run build
 
@@ -82,7 +116,8 @@ jobs:
       NODE_ENV: test
       ASEPSICO_API_URL: http://127.0.0.1:4000/api/v1
       ASEPSICO_SMOKE_EMAIL: demo@asepsico.es
-      ASEPSICO_SMOKE_PASSWORD: AsePsico2026!
+      # La contraseña de la cuenta demo NO se fija aquí: el paso "Generate disposable seed
+      # password" crea una aleatoria por ejecución (repo público; hallazgo de Argos).
       # BD desechable recién sembrada: el smoke activa MFA temporalmente en la cuenta demo
       # (la API lo exige a OWNER/ADMIN/THERAPIST) y lo desactiva al terminar.
       ASEPSICO_SMOKE_ENROLL_MFA: '1'
@@ -158,13 +193,27 @@ jobs:
           cat "$RUNNER_TEMP/schema-drift.sql"
           exit 1
 
+      # Contraseña de la cuenta demo de la BD desechable: aleatoria en cada ejecución, enmascarada en
+      # los logs y compartida por el seed (SEED_DEMO_PASSWORD) y los scripts (ASEPSICO_SMOKE_PASSWORD).
+      - name: Generate disposable seed password
+        shell: bash
+        run: |
+          pass="$(openssl rand -base64 30 | tr -d '\n/+=')"
+          [ ${#pass} -ge 24 ] || exit 1
+          echo "::add-mask::$pass"
+          echo "SEED_DEMO_PASSWORD=$pass" >> "$GITHUB_ENV"
+          echo "ASEPSICO_SMOKE_PASSWORD=$pass" >> "$GITHUB_ENV"
+
       - name: Seed smoke-test account
         run: npm run db:seed
 
+      # setsid: la API arranca en su propio grupo de procesos (PGID = el PID guardado). `npm run start`
+      # cuelga de `sh -c nest start` → nest → node dist/main, y en Ubuntu /bin/sh (dash) no reenvía
+      # SIGTERM: matar solo el PID de npm dejaba viva la API vieja en :4000. Se para con kill -- -PGID.
       - name: Start API
         shell: bash
         run: |
-          npm --workspace @asepsico/api run start > "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          setsid npm --workspace @asepsico/api run start > "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/asepsico-api.pid"
 
       - name: Wait for API health endpoint
@@ -196,6 +245,71 @@ jobs:
       - name: Verify public waitlist (real PostgreSQL)
         run: node scripts/verify-waitlist.mjs
 
+      # Registro cerrado por invitación (hallazgo de Argos): ráfaga de registros con el mismo token
+      # → un solo 201 y sin usuarios ni workspaces huérfanos; el THERAPIST invitado recibe 403 de
+      # MFA antes de tocar datos clínicos. Usa X-Forwarded-For (TRUST_PROXY=loopback).
+      - name: Verify invitation-only registration under concurrency (real PostgreSQL)
+        run: node scripts/verify-registration-invite-live.mjs
+
+      # Recepción (ASSISTANT) anula un cobro y revierte un pago por HTTP (condición de Argos, S3):
+      # las respuestas no le devuelven el motivo, otra consulta recibe 404 sin dejar rastro y el export
+      # del workspace del OWNER contiene INVOICE_VOIDED y PAYMENT_REVERSED con el ASSISTANT como actor
+      # y metadatos {invoiceId, reasonProvided} sin el texto del motivo. Crea sus propias consultas
+      # ficticias (no toca la cuenta demo) y usa IPs 198.51.100.x vía X-Forwarded-For.
+      - name: Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)
+        run: node scripts/verify-billing-assistant-live.mjs
+
+      # Condiciones nuevas para una cuenta que YA existe (condición de Argos, commit 37b9b78): la BD
+      # se sembró sin LEGAL_TITULAR_*; se reinicia la API CON un NIF y un domicilio FICTICIOS
+      # válidos, el texto servido cambia de hash y la cuenta demo debe recibir 428
+      # TERMS_ACCEPTANCE_REQUIRED, aceptar y dejar de recibirlo. Nunca datos reales: 12345678Z es
+      # el DNI de ejemplo con letra de control válida. Va antes del paso de MFA (que deja la cuenta
+      # demo en espera ~1 min) y deja la API en marcha para los pasos siguientes.
+      - name: Restart API with fictitious legal holder data (new terms version)
+        shell: bash
+        env:
+          LEGAL_TITULAR_NIF: 12345678Z
+          LEGAL_TITULAR_DOMICILIO: Calle Ficticia 1, 00000 Ciudad Inventada
+        run: |
+          # Todo el grupo (npm, sh, nest y node dist/main), no solo npm: si no, la API vieja (sin
+          # LEGAL_TITULAR_*) sigue respondiendo en :4000 y el smoke del 428 recibe 200.
+          kill -- "-$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+          stopped=0
+          for attempt in {1..30}; do
+            if ! curl --silent --output /dev/null http://127.0.0.1:4000/api/v1/health; then
+              stopped=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$stopped" -ne 1 ]; then
+            echo "La API anterior sigue respondiendo en :4000: no se puede reiniciar con las condiciones nuevas" >&2
+            exit 1
+          fi
+          setsid npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/asepsico-api.pid"
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4000/api/v1/health > "$RUNNER_TEMP/health.json"; then
+              cat "$RUNNER_TEMP/health.json"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null; then
+              echo "La API terminó antes de estar saludable" >&2
+              cat "$RUNNER_TEMP/asepsico-api.log" >&2
+              exit 1
+            fi
+            echo "API todavía no disponible (intento ${attempt}/60)"
+            sleep 2
+          done
+          echo "La API no respondió a tiempo" >&2
+          cat "$RUNNER_TEMP/asepsico-api.log" >&2
+          exit 1
+
+      - name: Real HTTP smoke test with new terms (428 → accept → no 428)
+        run: npm run test:smoke
+        env:
+          ASEPSICO_SMOKE_EXPECT_TERMS_428: '1'
+
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
       # que esté en main el paso se omite con un aviso visible en lugar de fallar. Cuando la PR
@@ -211,12 +325,21 @@ jobs:
           fi
           node scripts/verify-mfa-concurrency.mjs
 
+      # Carrera crear cita vs. cerrar proceso con bloqueos de fila reales (no la API: instancia los
+      # servicios contra la BD del servicio postgres). Crea su propio workspace ficticio y no toca
+      # la cuenta demo. RACE_DATABASE_REQUIRED=1 hace que falle, en vez de omitirse, si falta la URL.
+      - name: Session close race test (real PostgreSQL)
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern session-close-race
+        env:
+          RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
+          RACE_DATABASE_REQUIRED: '1'
+
       - name: Stop API
         if: always()
         shell: bash
         run: |
           if [ -f "$RUNNER_TEMP/asepsico-api.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
+            kill -- "-$(cat "$RUNNER_TEMP/asepsico-api.pid")" 2>/dev/null || true
           fi
 
       - name: Upload API logs on failure

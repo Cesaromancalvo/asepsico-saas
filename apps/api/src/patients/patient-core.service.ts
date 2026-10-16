@@ -11,6 +11,7 @@ import { PATIENT_VIEW_SELECT, assertCanWriteConsultationReason, projectSelect, t
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { assertNoActiveDemoMembers } from './demo-workspace.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -367,6 +368,8 @@ export class PatientCoreService {
     assertStaffRole(actor);
     await this.assertConsultationReasonWrite(workspaceId, actor, dto);
     return this.prisma.$transaction(async (tx) => {
+      // Fuera del entorno demo, nada de pacientes reales con cuentas demo activas (409).
+      await assertNoActiveDemoMembers(tx, workspaceId);
       const patient = await tx.patient.create({
         select: PATIENT_VIEW_SELECT,
         data: {

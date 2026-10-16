@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { assertStaffRole } from '../common/auth/assert-staff-role';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
-import { compare, hash } from 'bcryptjs';
+import { compare } from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
-import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { generateOpaqueToken, hashToken } from './token.util';
 import { randomUUID } from 'crypto';
@@ -31,22 +32,6 @@ export type LoginResult =
 @Injectable()
 export class AuthService {
   constructor(private prisma: PrismaService, private jwt: JwtService, private mfa: MfaService) {}
-
-  async register(dto: RegisterDto, meta: { ip?: string; userAgent?: string }) {
-    if (await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } })) {
-      throw new BadRequestException('El correo ya está registrado');
-    }
-    const result = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: { email: dto.email.toLowerCase(), passwordHash: await hash(dto.password, 12), firstName: dto.firstName, lastName: dto.lastName },
-      });
-      const workspace = await tx.workspace.create({ data: { name: dto.workspaceName } });
-      const membership = await tx.workspaceMember.create({ data: { userId: user.id, workspaceId: workspace.id, role: 'OWNER', isClinician: dto.isClinician === true } });
-      return { user, workspace, membership };
-    });
-    const session = await this.issueSession(result.user, result.workspace.id, result.membership.role, meta);
-    return { mfaRequired: false as const, ...session };
-  }
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string }): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() }, include: FIRST_MEMBERSHIP });
@@ -146,7 +131,8 @@ export class AuthService {
     return { success: true };
   }
 
-  private async issueSession(
+  /** Emite la sesión (access + refresh). La usan login, refresh y RegistrationService. */
+  async issueSession(
     user: SessionUser,
     workspaceId: string,
     role: string,
@@ -180,6 +166,37 @@ export class AuthService {
       user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
       workspaceId,
       role,
+    };
+  }
+
+  /**
+   * GET /auth/me: datos NO clínicos del propio usuario para la cabecera de la web (todos los roles
+   * de personal, también ASSISTANT y OWNER/ADMIN no clínicos, que reciben 403 en /dashboard).
+   * Rol, isClinician y consulta salen de la BD (no del token), acotados al workspace del token:
+   * si la membresía ya no existe → 401. Nunca devuelve pacientes ni contenido clínico.
+   */
+  async me(actor: AuthUser) {
+    assertStaffRole(actor);
+    if (typeof actor.sub !== 'string' || typeof actor.workspaceId !== 'string') throw new UnauthorizedException();
+    const member = await this.prisma.workspaceMember.findFirst({
+      where: { workspaceId: actor.workspaceId, userId: actor.sub },
+      select: {
+        role: true,
+        isClinician: true,
+        workspace: { select: { id: true, name: true } },
+        user: { select: { id: true, email: true, firstName: true, lastName: true, totpEnabled: true } },
+      },
+    });
+    if (!member) throw new UnauthorizedException();
+    return {
+      userId: member.user.id,
+      email: member.user.email,
+      firstName: member.user.firstName,
+      lastName: member.user.lastName,
+      role: member.role,
+      isClinician: member.isClinician === true,
+      mfaEnabled: member.user.totpEnabled === true,
+      workspace: { id: member.workspace.id, name: member.workspace.name },
     };
   }
 }

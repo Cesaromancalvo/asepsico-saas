@@ -47,3 +47,18 @@ export const SESSION_ADMIN_DETAIL_SELECT = {
   therapist: { select: { id: true, firstName: true, lastName: true } },
   clinicalProcess: { select: { id: true, modality: true, frequency: true, status: true } },
 } as const satisfies Prisma.SessionSelect;
+
+/**
+ * Cita de OTRO profesional vista por un clínico que trata al paciente (agenda del paciente) o
+ * listada en el 409 PROCESS_HAS_FUTURE_SESSIONS: solo cuándo y con quién (decisión del 02/10:
+ * "solo fecha y hora"). Sin estado (nada de ausencias ni cancelaciones), notas, resumen, proceso
+ * (ni título ni modalidad), tipo, lugar ni enlace de videollamada. Solo se usa para citas
+ * SCHEDULED futuras: quien la lea sabe que es una cita programada.
+ */
+export const SESSION_BUSY_SELECT = {
+  id: true,
+  patientId: true,
+  startsAt: true,
+  endsAt: true,
+  therapist: { select: { id: true, firstName: true, lastName: true } },
+} as const satisfies Prisma.SessionSelect;

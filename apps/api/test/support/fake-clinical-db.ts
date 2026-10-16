@@ -125,7 +125,17 @@ export function fakeClinicalDb(seed: Partial<Store>) {
 
   const prisma: any = {};
   for (const name of Object.keys(store)) prisma[name] = model(name);
-  prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+  // Transacción con reversión: si el callback lanza, el almacén vuelve a como estaba (como
+  // Postgres). Copia superficial por fila: los servicios solo reasignan campos de primer nivel.
+  prisma.$transaction = jest.fn(async (cb: any) => {
+    const snapshot = Object.fromEntries(Object.entries(store).map(([key, rows]) => [key, rows.map((row) => ({ ...row }))]));
+    try {
+      return await cb(prisma);
+    } catch (error) {
+      for (const key of Object.keys(snapshot)) store[key] = snapshot[key];
+      throw error;
+    }
+  });
   prisma.__store = store;
   return prisma;
 }

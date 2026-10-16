@@ -38,6 +38,6 @@ export class ClinicalProcessesController {
 
   @Patch(':id/status')
   changeStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ChangeClinicalProcessStatusDto) {
-    return this.service.changeStatus(user.workspaceId, user, id, dto.status);
+    return this.service.changeStatus(user.workspaceId, user, id, dto.status, { cancelFutureSessions: dto.cancelFutureSessions === true });
   }
 }

@@ -1,11 +1,12 @@
-import { Body, Controller, Header, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto, RegisterMemberDto } from './dto/register.dto';
+import { RegistrationService } from './registration.service';
 import { VerifyMfaLoginDto, ConfirmMfaSetupDto, DisableMfaDto } from './dto/mfa.dto';
 import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from './cookie.util';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -25,14 +26,28 @@ const NO_STORE: [string, string] = ['Cache-Control', 'no-store'];
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService, private mfa: MfaService) {}
+  constructor(private auth: AuthService, private mfa: MfaService, private registration: RegistrationService) {}
 
+  // Registro CERRADO: solo con invitación de plataforma (npm run invites:create) y aceptando las
+  // condiciones vigentes. Cualquier fallo de invitación → 400 REGISTRATION_NOT_ALLOWED (neutro).
   @Throttle(AUTH_THROTTLE)
+  @Header(...NO_STORE)
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const session = await this.auth.register(dto, meta(req));
+    const session = await this.registration.register(dto, meta(req));
     setAuthCookies(res, session);
     return { user: session.user, workspaceId: session.workspaceId, role: session.role };
+  }
+
+  // Alta de un miembro invitado por el OWNER (POST /workspace-members/invites). Misma respuesta neutra.
+  @Throttle(AUTH_THROTTLE)
+  @Header(...NO_STORE)
+  @Post('register/member')
+  async registerMember(@Body() dto: RegisterMemberDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const session = await this.registration.registerMember(dto, meta(req));
+    setAuthCookies(res, session);
+    // privacyNotice: política de privacidad vigente que la web debe mostrar al miembro (art. 13 RGPD).
+    return { user: session.user, workspaceId: session.workspaceId, role: session.role, privacyNotice: session.privacyNotice };
   }
 
   @Throttle(AUTH_THROTTLE)
@@ -67,6 +82,14 @@ export class AuthController {
     const session = await this.auth.refresh(rawToken, meta(req));
     setAuthCookies(res, session);
     return { user: session.user, workspaceId: session.workspaceId, role: session.role };
+  }
+
+  // Datos no clínicos del propio usuario (nombre, rol, isClinician, consulta, MFA). Todos los roles.
+  @Header(...NO_STORE)
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@CurrentUser() user: AuthUser) {
+    return this.auth.me(user);
   }
 
   @UseGuards(JwtAuthGuard)

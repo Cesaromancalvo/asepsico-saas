@@ -63,7 +63,7 @@ Variables opcionales:
 ```bash
 ASEPSICO_API_URL=http://localhost:4000/api/v1
 ASEPSICO_SMOKE_EMAIL=demo@asepsico.es
-ASEPSICO_SMOKE_PASSWORD=AsePsico2026!
+ASEPSICO_SMOKE_PASSWORD=<la de SEED_DEMO_PASSWORD o la que imprimió el seed>
 ```
 
 ## Limitaciones del entorno de verificación

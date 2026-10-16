@@ -80,9 +80,10 @@ export class MessagesService {
     // Vista previa y no leídos solo en las conversaciones de pacientes que trata ahora mismo, y
     // solo con mensajes de sus ventanas. El resto: metadatos.
     const { treatingPatientIds } = await this.access.listingContext(workspaceId, actor);
+    const therapists = await this.activeTherapists(workspaceId, actor, rows.map((row: any) => row.patient.id), treatingPatientIds);
     const result = [];
     for (const row of rows) {
-      const metadata = { ...row, lastActivityAt: row.updatedAt, canReadMessages: false, messages: [] as any[], unreadCount: null as number | null };
+      const metadata = { ...row, therapist: therapists.get(row.patient.id) ?? null, lastActivityAt: row.updatedAt, canReadMessages: false, messages: [] as any[], unreadCount: null as number | null };
       if (!treatingPatientIds.has(row.patient.id)) { result.push(metadata); continue; }
       const scope = await this.access.resolveScope(workspaceId, actor, row.patient.id);
       if (!scope || scope.level !== 'TREATING') { result.push(metadata); continue; }
@@ -94,6 +95,30 @@ export class MessagesService {
       result.push({ ...metadata, canReadMessages: true, messages: last.map((message: any) => this.decryptMessage(message)), unreadCount });
     }
     return result;
+  }
+
+  /**
+   * Profesional del proceso ACTIVO de cada paciente de la bandeja (solo id y nombre). Si hay
+   * varios activos, se prefiere el del propio actor y, si no, el más reciente. OWNER/ADMIN lo ven
+   * siempre (quién atiende a quién es dato administrativo); un THERAPIST solo en los pacientes que
+   * trata ahora (un autor de un proceso cerrado no averigua quién le sustituye).
+   */
+  private async activeTherapists(workspaceId: string, actor: AuthUser, patientIds: string[], treatingPatientIds: Set<string>) {
+    const visible = actor.role === 'THERAPIST' ? patientIds.filter((id) => treatingPatientIds.has(id)) : patientIds;
+    const out = new Map<string, { id: string; firstName: string; lastName: string }>();
+    if (!visible.length) return out;
+    const processes = await this.prisma.clinicalProcess.findMany({
+      where: { workspaceId, patientId: { in: visible }, status: 'ACTIVE' },
+      orderBy: { updatedAt: 'desc' },
+      select: { patientId: true, therapistId: true, therapist: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    for (const process of processes) {
+      if (!process.therapist) continue;
+      const therapist = { id: process.therapist.id, firstName: process.therapist.firstName, lastName: process.therapist.lastName };
+      const current = out.get(process.patientId);
+      if (!current || (process.therapistId === actor.sub && current.id !== actor.sub)) out.set(process.patientId, therapist);
+    }
+    return out;
   }
 
   async getOrCreate(workspaceId: string, actor: AuthUser, patientId: string) {

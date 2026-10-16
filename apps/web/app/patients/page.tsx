@@ -6,11 +6,18 @@ import {
   useState,
 } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiErrorCode } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
+import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
+
+// Texto revisado por Clio. 409 DEMO_MEMBERS_ACTIVE: fuera del entorno demo, el espacio aún
+// tiene cuentas de demostración y la API no deja dar de alta pacientes hasta borrarlas.
+const DEMO_MEMBERS_ACTIVE_MESSAGE =
+  'Aún no puedes dar de alta pacientes: en esta consulta siguen las cuentas de la demostración. Escríbenos por email para que las borremos y, cuando te lo confirmemos, vuelve a intentarlo.';
 import {
   canManageProcess,
+  changeProcessStatus as patchProcessStatus,
   fetchConsultationReason,
   isAdminRole,
   isStaffWithProcessAccess,
@@ -176,10 +183,12 @@ export default function PatientsPage() {
     useState(true);
 
   const [error, setError] = useState('');
+  const [createError, setCreateError] = useState('');
 
   // El rol solo decide acciones de gestión. El contenido clínico (motivo de consulta) solo se
   // pide si la API indica que el usuario puede leer algo clínico de este paciente.
   const viewer = useViewer();
+  const demo = useIsDemoEnvironment();
 
   const [selectedReason, setSelectedReason] =
     useState<{
@@ -297,6 +306,7 @@ export default function PatientsPage() {
 
     try {
       setError('');
+      setCreateError('');
 
       await api('/patients', {
         method: 'POST',
@@ -325,10 +335,13 @@ export default function PatientsPage() {
         await load('ACTIVE');
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo crear el paciente',
+      // El error del alta se enseña junto al formulario, no arriba de la página.
+      setCreateError(
+        apiErrorCode(err) === 'DEMO_MEMBERS_ACTIVE'
+          ? DEMO_MEMBERS_ACTIVE_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : 'No se pudo crear el paciente',
       );
     }
   }
@@ -383,10 +396,7 @@ export default function PatientsPage() {
   async function changeProcessStatus(processId: string, next: ProcessStatus) {
     try {
       setError('');
-      await api(`/clinical-processes/${processId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: next }),
-      });
+      await patchProcessStatus(processId, next);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado del proceso');
@@ -953,6 +963,10 @@ export default function PatientsPage() {
           <section className="card">
             <h2>Nueva persona</h2>
 
+            {demo && (
+              <p className="e1-notice" role="note">{DEMO_HINT.newPatient}</p>
+            )}
+
             <form
               onSubmit={createPatient}
             >
@@ -993,8 +1007,14 @@ export default function PatientsPage() {
                   <input
                     name="consultationReason"
                     maxLength={2000}
+                    aria-describedby={demo ? 'new-patient-reason-hint' : undefined}
                   />
+                  {demo && <small id="new-patient-reason-hint" className="demo-hint">{DEMO_HINT.clinicalFreeText}</small>}
                 </label>
+              )}
+
+              {createError && (
+                <p className="error" role="alert">{createError}</p>
               )}
 
               <button className="button">
