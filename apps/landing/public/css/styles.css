@@ -570,9 +570,9 @@ img { max-width: 100%; height: auto; }
   display: block; font-size: clamp(1.5rem, 1.1rem + 2.2cqi, 2.25rem); font-weight: 600; letter-spacing: -.02em;
   line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-/* Aviso con letra normal, justo debajo de las horas (Lex Psi, cambio 2). */
+/* Aviso con letra normal, justo debajo de las horas. */
 .savings__disclaimer { margin: 16px 0 0; font-size: 1rem; line-height: 1.55; color: var(--ink); }
-/* Euros: nunca más grandes ni más destacados que las horas (cambio 5): texto normal, sin color de acento. */
+/* Euros: nunca más grandes ni más destacados que las horas: texto normal, sin color de acento. */
 .savings__eur, .savings__hint { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 .savings__eur[hidden], .savings__hint[hidden], .savings__chart[hidden] { display: none; }
 .savings__eurline { margin: 0; font-size: 1.125rem; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -820,7 +820,7 @@ img { max-width: 100%; height: auto; }
 .legal h3 { font-size: 1.0625rem; margin-top: 1.4em; }
 .legal-list { padding-left: 1.2em; display: grid; gap: 6px; margin-bottom: 1em; }
 
-/* Calculadora (borrador en apps/landing/borradores; sin uso mientras esté apagada) */
+/* Calculadora (sin uso mientras esté apagada) */
 .calc { display: grid; gap: 24px; margin-top: 24px; }
 @media (min-width: 768px) { .calc { grid-template-columns: 3fr 2fr; align-items: start; } }
 .calc__fields { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 20px; margin: 0; display: grid; gap: 14px; }

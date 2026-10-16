@@ -192,7 +192,7 @@
   }
 
   /* 6. Lo que te cuesta hoy (solo si está encendida) ---------------------- */
-  // Decisión del Jefe (07/10): sin ahorro de AsePsico. Suma las horas a la semana que escribe la
+  // Sin ahorro de AsePsico. Suma las horas a la semana que escribe la
   // persona, las pasa al mes y, si escribe el valor de su hora, a euros. Todo ocurre en el navegador:
   // no se envía, no se guarda y no va a ninguna analítica. Las tareas viven en SAVINGS.TASKS (config.js).
   var SAVINGS = cfg.SAVINGS || {};

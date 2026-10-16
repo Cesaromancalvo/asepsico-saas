@@ -57,22 +57,11 @@
   <link rel="preload" href="/fonts/poppins-semibold-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/styles.css">
 
-  <!--
-    TODO(Plausible): descomentar cuando el Jefe tenga la cuenta de Plausible y haya creado el
-    objetivo de evento personalizado con el nombre exacto "Lista espera" (no es retroactivo).
-    - Sin cookies; recoge solas las UTM (utm_source, utm_medium, utm_campaign, utm_content) de la URL.
-    - Hoy la web no tiene analítica (decisión del Jefe, 01/10). Si se activa, añadir a los botones
-      [data-cta] las clases plausible-event-name=Lista+espera (y plausible-event-seccion=...),
-      actualizar la FAQ 5 y la política de privacidad (versión con Plausible de Argos).
-    - Añadir https://plausible.io a script-src y connect-src de la CSP (ver README).
-  <script defer data-domain="asepsico.es" src="https://plausible.io/js/script.tagged-events.js"></script>
-  -->
 
   <script defer src="/js/config.js"></script>
   <script defer src="/js/main.js"></script>
 </head>
 <body>
-  <!-- Iconos de línea (sprite interno, sin peticiones externas) -->
   <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -114,8 +103,6 @@
   </header>
 
   <main id="contenido">
-    <!-- HERO: titular + composición de producto (ventana del profesional + móvil del paciente, uno
-         al lado del otro). En móvil solo se muestra el móvil del paciente. Datos ficticios. -->
     <section class="hero grain" aria-labelledby="hero-titulo">
       <div class="container hero__inner">
         <div class="hero__text">
@@ -136,7 +123,6 @@
 
         <div class="hero__art">
           <div class="hero__device">
-            <!-- Escritorio · ficha del paciente con su tarea (C2) -->
             <div class="win win--hero" role="img"
                  aria-label="Diseño / prototipo de AsePsico con datos ficticios: ficha de Paciente Demo con una tarea entre sesiones asignada.">
               <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Pacientes</span></div>
@@ -172,7 +158,6 @@
               </div>
             </div>
 
-            <!-- Móvil · portal del paciente con la tarea pendiente (C3) -->
             <div class="phone" role="img"
                  aria-label="Diseño / prototipo de AsePsico con datos ficticios: el portal del paciente con la tarea pendiente.">
               <div class="phone__screen" aria-hidden="true">
@@ -200,7 +185,6 @@
       <p class="container hero__strip">Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
     </section>
 
-    <!-- EL PROBLEMA -->
     <section class="section section--paper" aria-labelledby="problema-titulo">
       <div class="container split">
         <h2 id="problema-titulo" class="display display--md reveal">Lo que pasa entre sesiones también es parte del trabajo.</h2>
@@ -215,10 +199,6 @@
       </div>
     </section>
 
-    <!-- NARRATIVA CON SCROLL: el ciclo de una tarea entre sesiones.
-         Sin JavaScript, en móvil o con "reducir movimiento": pila estática (texto + pantalla de cada paso).
-         En escritorio con JavaScript: la pantalla se fija (sticky), se abre en capas ("anatomía")
-         y se recompone paso a paso. Todas las pantallas usan datos ficticios. -->
     <section class="story grain" id="como-funciona" aria-labelledby="story-titulo">
       <div class="container story__grid" data-story>
         <div class="story__steps">
@@ -256,7 +236,6 @@
         <div class="story__stage">
           <div class="stage">
             <div class="layers">
-              <!-- C1 · Agenda de la semana (profesional) -->
               <div class="layer" data-layer="1">
                 <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la agenda de la semana.">
                   <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Agenda</span></div>
@@ -297,7 +276,6 @@
                 </div>
               </div>
 
-              <!-- C2 · Ficha del paciente con su tarea (profesional) -->
               <div class="layer" data-layer="2">
                 <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: ficha de Paciente Demo con una tarea entre sesiones asignada.">
                   <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Pacientes</span></div>
@@ -331,7 +309,6 @@
                 </div>
               </div>
 
-              <!-- C3 · Portal del paciente: tarea pendiente -->
               <div class="layer" data-layer="3">
                 <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: el portal del paciente con la tarea pendiente.">
                   <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">Portal del paciente</span></div>
@@ -356,7 +333,6 @@
                 </div>
               </div>
 
-              <!-- C4 · Portal del paciente: tarea entregada -->
               <div class="layer" data-layer="4">
                 <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la tarea entregada desde el portal del paciente.">
                   <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">Portal del paciente</span></div>
@@ -381,7 +357,6 @@
                 </div>
               </div>
 
-              <!-- C5 · Tarea revisada y devuelta (profesional) -->
               <div class="layer" data-layer="5">
                 <div class="win" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: la tarea revisada y devuelta por el profesional.">
                   <div class="win__bar" aria-hidden="true"><span class="win__dots"><i></i><i></i><i></i></span><span class="win__app">AsePsico · Tareas</span></div>
@@ -420,7 +395,6 @@
       </div>
     </section>
 
-    <!-- POR QUÉ UNIRTE (beneficios en texto; sin calculadora ni gráfico hasta tener datos del piloto) -->
     <section class="section section--paper" id="por-que-unirte" aria-labelledby="porque-titulo">
       <div class="container">
         <h2 id="porque-titulo" class="display display--md reveal">Por qué unirte</h2>
@@ -449,13 +423,6 @@
       </div>
     </section>
 
-    <!-- LO QUE TE CUESTA HOY (interruptor FEATURES.savingsCalculator en js/config.js, APAGADO).
-         Decisión del Jefe (07/10): la web no dice cuánto ahorra AsePsico. Suma las horas a la semana que
-         escribe la persona en cada tarea (lista SAVINGS.TASKS de config.js), las pasa al mes (46/12
-         semanas) y, solo si escribe el valor de su hora, a euros. Sin supuestos de ahorro, sin precios y
-         sin restar el coste de la herramienta. Todo en el navegador: no se envía ni se guarda nada.
-         Textos revisados por Clio (07/10); pendiente de Lex Psi antes de encenderlo.
-         Vive en un <template>: sin JavaScript o con el interruptor apagado no se pinta. -->
     <div data-slot="ahorro"></div>
     <template id="tpl-ahorro">
       <section class="section section--soft grain" id="estimacion" aria-labelledby="ahorro-titulo">
@@ -469,7 +436,6 @@
             <form class="savings__form" novalidate data-savings-form>
               <fieldset class="savings__fields">
                 <legend class="savings__legend">Escribe cuántas horas a la semana dedicas a cada tarea. Puedes usar decimales (0,5 es media hora) y dejar en blanco lo que no hagas. Los números en gris son solo ejemplos: no cuentan.</legend>
-                <!-- Los campos de las tareas los crea main.js a partir de SAVINGS.TASKS (config.js). -->
                 <div class="savings__tasks" data-sv-tasks></div>
                 <div class="sfield sfield--value">
                   <label for="sv-v">Valor de tu hora (€)</label>
@@ -477,10 +443,6 @@
                   <input id="sv-v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="p. ej. 40" aria-describedby="sv-v-help sv-v-err" data-sv-value>
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
                 </div>
-                <!-- Filas opcionales "Otra tarea" (SAVINGS.OTHER_TASKS, hasta 3). Las crea main.js: nombre de la
-                     actividad (máx. 40 caracteres, solo para la leyenda, con textContent) + horas. Si se rellena
-                     uno de los dos, el otro es obligatorio; mientras falte, la fila no suma. No se envía ni se
-                     guarda. [ARGOS] confirmar que ningún script captura estos campos. -->
                 <div class="savings__others" data-sv-others>
                   <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. Escribe solo el tipo de tarea, nunca datos de pacientes.</p>
                   <div class="savings__others-list" data-sv-others-list></div>
@@ -501,13 +463,10 @@
                   <dd><span class="savings__mid" data-sv-month>0 h</span></dd>
                 </div>
               </dl>
-              <!-- [LEX] Aviso justo debajo de las horas, con letra normal (cambio 2, adaptado; redacción de Clio 07/10). -->
               <p class="savings__disclaimer">Es una cuenta con las horas que tú escribes, no una medición. Que una tarea esté en la lista no significa que AsePsico la haga por ti.</p>
 
-              <!-- Euros: solo si se escribe el valor de la hora; nunca más grandes que las horas (cambio 5). -->
               <div class="savings__eur" data-sv-eur hidden>
                 <p class="savings__eurline"><span data-sv-eur-week></span><span data-sv-eur-month></span></p>
-                <!-- [LEX] Salvedad pegada a la cifra (cambio 5; redacción de Clio 07/10). -->
                 <p class="savings__caveat">Es lo que vale ese tiempo según el valor de tu hora, no dinero que vayas a ganar ni a ahorrar.</p>
               </div>
               <p class="savings__hint" data-sv-eur-hint>Escribe el valor de tu hora para verlo en euros.</p>
@@ -515,7 +474,6 @@
               <div class="savings__chart" data-sv-chart hidden>
                 <p class="savings__k">En qué se va ese tiempo</p>
                 <div class="savings__money">
-                  <!-- Lo que dice el gráfico, en texto (no depende del color). Lo rellena main.js. -->
                   <ul class="donut__legend" data-sv-legend></ul>
                   <div class="donut__chart">
                     <svg class="donut__svg" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
@@ -527,10 +485,8 @@
                 </div>
               </div>
 
-              <!-- Resumen para lectores de pantalla: se anuncia al cambiar los datos. -->
               <p class="visually-hidden" aria-live="polite" aria-atomic="true" data-sv-out>Escribe tus horas para ver el resultado.</p>
 
-              <!-- Cierre sin promesa: no dice que AsePsico reduzca este tiempo (Clio, 07/10). -->
               <p class="savings__close">Estamos construyendo AsePsico. En el piloto, que es gratuito, queremos medir con quienes lo usen si este tiempo cambia y cuánto. Apúntate a la lista de espera.</p>
               <div class="savings__actions">
                 <a class="btn btn--primary"
@@ -543,7 +499,6 @@
           </div>
 
           <details class="disclosure savings__how">
-            <!-- [LEX] cambio 6 -->
             <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
               <ul class="legal-list">
@@ -553,9 +508,7 @@
                 <li><strong>El gráfico:</strong> qué parte de tus horas a la semana va a cada tarea, en porcentaje.</li>
               </ul>
               <p>No calculamos si AsePsico cambiaría este tiempo ni cuánto: todavía no lo hemos medido. Queremos medirlo en el piloto con los psicólogos que lo usen.</p>
-              <!-- [LEX] Confirmar si se puede mencionar la facturación en público (el control de cobros aún no se menciona). -->
               <p>Hoy AsePsico no sustituye a tu programa de facturación, no tiene videollamada integrada y no envía SMS, WhatsApp ni recordatorios a los pacientes: si usas otra herramienta para eso, la seguirás necesitando.</p>
-              <!-- [ARGOS] Cierto en esta implementación (sin envío ni almacenamiento). -->
               <p>Lo que escribes aquí no se envía ni se guarda: el cálculo se hace en tu navegador.</p>
             </div>
           </details>
@@ -563,7 +516,6 @@
       </section>
     </template>
 
-    <!-- QUÉ INCLUYE EL PILOTO -->
     <section class="section section--paper" id="que-incluye" aria-labelledby="incluye-titulo">
       <div class="container">
         <div class="split split--head">
@@ -580,7 +532,6 @@
             <li class="feature reveal"><span class="feature__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg></span><h3>Mensajes</h3><p>Tus pacientes te escriben mensajes desde su portal.</p></li>
           </ul>
 
-          <!-- C6 · Mensaje del paciente en el portal -->
           <figure class="shot reveal">
             <div class="shot__frame" role="img" aria-label="Diseño / prototipo de AsePsico con datos ficticios: un mensaje corto de Paciente Demo en su portal.">
               <div class="shot__screen" aria-hidden="true">
@@ -603,7 +554,6 @@
       </div>
     </section>
 
-    <!-- PARA QUIÉN ES -->
     <section class="section section--soft grain" aria-labelledby="quien-titulo">
       <div class="container narrow quien reveal">
         <h2 id="quien-titulo" class="kicker">Para quién es</h2>
@@ -613,7 +563,6 @@
       </div>
     </section>
 
-    <!-- ÚNETE: una sola tarjeta, sin cifras (no se publican precios) -->
     <section class="section section--paper" id="unete" aria-labelledby="unete-titulo">
       <div class="container">
         <article class="pilot reveal">
@@ -632,7 +581,6 @@
                 </ul>
               </div>
             </details>
-            <!-- Interruptor FEATURES.pricingDetails y texto PRICING_TEXT en js/config.js -->
             <details class="disclosure" data-feature="pricingDetails" hidden>
               <summary>Precios<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
               <div class="disclosure__body">
@@ -660,17 +608,10 @@
       </div>
     </section>
 
-    <!-- APÚNTATE: formulario propio de la lista de espera (interruptor FEATURES.ownWaitlistForm en
-         js/config.js; si se apaga, esta sección se quita y los botones vuelven al Google Form).
-         Se envía con fetch a la API (contrato en docs/WAITLIST_API.md): sin cookies, sin guardar nada
-         en el navegador y sin terceros. El token se pide al enfocar el formulario, no al cargar.
-         Sin JavaScript no se puede enviar (CSP form-action 'none'): se ve el aviso y los campos
-         desactivados. Textos legales: política lista-espera-v2 de Lex Psi (§2). -->
     <section class="section section--soft grain" id="apuntate" aria-labelledby="apuntate-titulo" data-feature="ownWaitlistForm">
       <div class="container waitlist">
         <div class="waitlist__intro">
           <span class="pilot__tag">Lista de espera</span>
-          <!-- [CLIO] Titular y entradilla de la sección -->
           <h2 id="apuntate-titulo" class="display display--md">Apúntate a la lista de espera</h2>
           <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Déjanos tus datos y te escribiremos para contarte si hay plaza.</p>
           <p class="small">Los campos marcados con <span aria-hidden="true">*</span><span class="visually-hidden">asterisco</span> son obligatorios.</p>
@@ -708,7 +649,6 @@
                 <p class="sfield__err" id="wl-situation-err" hidden></p>
               </fieldset>
 
-              <!-- Solo se muestra si elige "Consulta o clínica" (sin JavaScript queda visible). -->
               <div class="sfield" data-wl-count-wrap>
                 <label for="wl-count">¿Cuántos profesionales sois? <span class="opt">(opcional)</span></label>
                 <input id="wl-count" name="professionalsCount" type="number" inputmode="numeric" min="1" max="500" step="1"
@@ -737,29 +677,22 @@
                 </select>
               </div>
 
-              <!-- Campo trampa para robots (honeypot): oculto con CSS y fuera del orden de tabulación. -->
               <div class="wl-hp" aria-hidden="true">
                 <label for="wl-website">Deja este campo vacío</label>
                 <input id="wl-website" name="website" type="text" tabindex="-1" autocomplete="off" data-wl-field="website">
               </div>
 
-              <!-- [LEX] Casilla 1 (§2.2): obligatoria y sin premarcar. -->
               <div class="wl-check">
                 <input id="wl-privacy" name="privacyAccepted" type="checkbox" required aria-describedby="wl-privacy-err" data-wl-field="privacyAccepted">
                 <label for="wl-privacy">He leído la <a data-form-privacy href="/privacidad-lista-espera/">política de privacidad</a> y acepto que se traten mis datos para gestionar la lista de espera y contactarme sobre el piloto de AsePsico. <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></label>
               </div>
               <p class="sfield__err wl-check__err" id="wl-privacy-err" hidden></p>
 
-              <!-- [LEX] Casilla 2 (§2.3): opcional, sin premarcar y separada de la 1. Solo registra la
-                   SOLICITUD (commercialConsentRequested); se confirma después por email (doble opt-in manual). -->
               <div class="wl-check wl-check--sep">
                 <input id="wl-commercial" name="commercialConsentRequested" type="checkbox" data-wl-field="commercialConsentRequested">
                 <label for="wl-commercial">Quiero recibir por email novedades y ofertas de AsePsico para profesionales. Te pediremos que lo confirmes por email y podrás darte de baja en cualquier momento. <span class="opt">(Opcional)</span></label>
               </div>
 
-              <!-- [LEX] Cláusula informativa breve, primera capa (§2.1), junto al botón.
-                   [PENDIENTE DPF] "con garantías adecuadas" depende de la condición 3 de la v2 (DPA de Render y DPF):
-                   si Render no figura "Active" el viernes, revisar esta frase con Lex Psi. -->
               <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento; y, solo si marcas la casilla opcional y lo confirmas por email, para enviarte novedades y ofertas. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
 
               <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
@@ -767,7 +700,6 @@
             </fieldset>
           </form>
 
-          <!-- Mensaje tras el 202: siempre el mismo (no dice si el email ya estaba apuntado). -->
           <div class="waitlist__done" data-wl-done tabindex="-1" hidden>
             <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
             <h3 class="waitlist__done-title">Gracias</h3>
@@ -779,9 +711,6 @@
       </div>
     </section>
 
-    <!-- QUIÉNES SOMOS (versión media de web-landing-textos v3, decisión del Jefe 05/10; sin foto).
-         Fuera hasta que la valide Argos: "Detrás hay datos de salud, y eso pide ir con cuidado."
-         Pendiente de Clio: el "Por eso" inicial de la cuarta frase. -->
     <section class="section section--soft" id="quienes-somos" aria-labelledby="quienes-titulo">
       <div class="container narrow about reveal">
         <figure class="about__figure">
@@ -800,7 +729,6 @@
       </div>
     </section>
 
-    <!-- PREGUNTAS FRECUENTES -->
     <section class="section section--paper" id="preguntas" aria-labelledby="faq-titulo">
       <div class="container split split--faq">
         <h2 id="faq-titulo" class="display display--md">Preguntas frecuentes</h2>
@@ -836,8 +764,6 @@
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-7">¿Qué me pedís a cambio del piloto?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
             <div class="faq__a" id="faq-7"><p>A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</p></div>
           </div>
-          <!-- Interruptor FEATURES.faqPacientes en js/config.js (encendido; pendiente de confirmar).
-               TODO(Jefe): verificar el 024 en sanidad.gob.es/linea024 el día antes de publicar. -->
           <div class="faq__item" data-feature="faqPacientes">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-8">Soy paciente, ¿puedo apuntarme?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
             <div class="faq__a" id="faq-8">
@@ -848,7 +774,6 @@
       </div>
     </section>
 
-    <!-- LLAMADA FINAL -->
     <section class="section cta-final grain" aria-labelledby="final-titulo">
       <div class="container narrow center reveal">
         <h2 id="final-titulo" class="display display--lg">Piloto gratuito para psicólogos</h2>
@@ -863,12 +788,6 @@
     </section>
   </main>
 
-  <!-- AVISO DE LA LISTA DE ESPERA (interruptor FEATURES.leadPopup en js/config.js).
-       Sale solo al pasar el 50 % del scroll, sin temporizador y sin ser modal (no tapa el contenido al
-       entrar: criterio de intersticial intrusivo de Google). En móvil es una barra pequeña abajo.
-       No recoge datos: el botón lleva al formulario de la sección #apuntate (o al Google Form si
-       FEATURES.ownWaitlistForm está apagado), que tiene su propia información de privacidad.
-       No guarda nada en el navegador: se muestra una vez por visita. -->
   <div class="leadpop" data-lead hidden>
     <aside class="leadpop__card" aria-labelledby="lead-titulo" data-lead-card>
       <button type="button" class="leadpop__x" data-lead-close>
@@ -895,11 +814,9 @@
           <li><a href="/privacidad/">Política de privacidad</a></li>
           <li><a data-form-privacy href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
           <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com" aria-describedby="contacto-aviso">Contacto</a></li>
-          <!-- Interruptor FEATURES.instagram en js/config.js (apagado hasta corregir la bio) -->
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
         </ul>
       </nav>
-      <!-- Aviso junto al mailto de Contacto (auditoría SEO de Mou, 07/10; revisado por Clio). -->
       <p class="footer__note" id="contacto-aviso">No envíes por aquí datos de pacientes ni información de salud.</p>
     </div>
   </footer>

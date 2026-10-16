@@ -30,28 +30,27 @@ window.ASEPSICO_CONFIG = Object.freeze({
   // Email de contacto del pie y de las páginas legales.
   CONTACT_EMAIL: 'asepsico1@gmail.com',
 
-  // Título del aviso al entrar (decisión del Jefe). Si se deja vacío, el aviso no se muestra.
+  // Título del aviso al entrar. Si se deja vacío, el aviso no se muestra.
   POPUP_TITLE: 'Sé de los primeros en probar AsePsico',
 
   // Texto del desplegable "Precios" (sin uso: FEATURES.pricingDetails está apagado).
   // Solo se muestra si FEATURES.pricingDetails es true y este texto no está vacío.
   PRICING_TEXT: '',
 
-  // Cuenta "Lo que te cuesta hoy" (FEATURES.savingsCalculator). Decisión del Jefe (07/10): la web
-  // NO dice cuánto ahorra AsePsico. Solo suma las horas que la persona escribe, las pasa al mes y,
+  // Cuenta "Lo que te cuesta hoy" (FEATURES.savingsCalculator). La web NO dice cuánto ahorra
+  // AsePsico. Solo suma las horas que la persona escribe, las pasa al mes y,
   // si escribe el valor de su hora, a euros. Sin supuestos de ahorro, sin precios ni coste de la
   // herramienta (restarlo daría a entender que AsePsico elimina todo ese tiempo).
   SAVINGS: Object.freeze({
     // Mes medio: 46 semanas de trabajo al año (6 de vacaciones y festivos) entre 12 meses = 3,83.
     WEEKS_PER_YEAR: 46,
     // Límites: horas a la semana por tarea y valor de la hora en euros. Los campos empiezan vacíos:
-    // el resultado inicial es 0 (Lex Psi, cambio 3, sin cifras de ejemplo como valor).
+    // el resultado inicial es 0 (sin cifras de ejemplo como valor).
     MAX_HOURS: 40,
     MAX_VALUE: 500,
-    // Tareas, en este orden (lista de Vega, calculadora-tareas-v3, 07/10; versión por defecto, el Jefe
-    // aún puede ajustarla). Textos revisados por Clio (07/10). Para cambiar una tarea basta con editar esta lista:
+    // Tareas, en este orden. Para cambiar una tarea basta con editar esta lista:
     // id (único, sin espacios), label (etiqueta), help (una línea bajo la etiqueta) y placeholder
-    // (ejemplo en gris dentro del campo: NO cuenta en el cálculo; [SUPUESTO] del equipo).
+    // (ejemplo en gris dentro del campo: NO cuenta en el cálculo).
     // Los campos, el gráfico y la leyenda se generan solos.
     TASKS: Object.freeze([
       Object.freeze({ id: 'agenda', label: 'Agenda, citas y recordatorios', placeholder: '1,5',
@@ -89,11 +88,11 @@ window.ASEPSICO_CONFIG = Object.freeze({
     ownWaitlistForm: true,
 
     // Calculadora "¿Cuánto tiempo te lleva lo que no sale en la agenda?".
-    // APAGADA hasta que el Jefe la apruebe tras la revisión de Argos y Pax.
+    // APAGADA.
     calculadora: false,
 
     // Pregunta frecuente "Soy paciente, ¿puedo apuntarme?" con el 024 y el 112.
-    // ENCENDIDA, pendiente de confirmación del Jefe. Verificar el 024 antes de publicar.
+    // ENCENDIDA.
     faqPacientes: true,
 
     // Enlace a Instagram @asepsico en el pie. APAGADO hasta que se corrija la bio.
@@ -101,7 +100,7 @@ window.ASEPSICO_CONFIG = Object.freeze({
 
     // Cuenta "Lo que te cuesta hoy": horas a la semana y al mes de tareas administrativas, su valor en
     // euros si se escribe el valor de la hora y el reparto en %. Sin ahorro ni precios. Todo en el navegador.
-    // APAGADA: la enciende el Jefe cuando la vea (y tras Lex Psi y Clio). main se despliega en asepsico.es.
+    // APAGADA.
     savingsCalculator: false,
 
     // Aviso de la lista de espera (título en POPUP_TITLE). Sale solo al pasar el 50 % del scroll (sin
@@ -109,7 +108,7 @@ window.ASEPSICO_CONFIG = Object.freeze({
     // en móvil es una barra pequeña abajo. Solo lleva al formulario; no recoge ni guarda nada.
     leadPopup: true,
 
-    // Desplegable "Precios" en la tarjeta del piloto. APAGADO por decisión del Jefe: sin precios en la web.
+    // Desplegable "Precios" en la tarjeta del piloto. APAGADO: sin precios en la web.
     pricingDetails: false,
   }),
 });
