@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
-import { ClinicalAccessService, isClinicalProfile } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, isClinicalProfile, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
@@ -164,9 +164,9 @@ export class ClinicalProcessesService {
 
     // Autor (clínico) → todo lo suyo; clínico que trata al paciente → el proceso en solo lectura y
     // SIN notas internas ajenas; cualquier otro (OWNER/ADMIN que no trata...) → 403 auditado.
-    const scope = await this.access.resolveScope(workspaceId, actor, process.patientId);
+    const scope = await this.access.resolveScope(workspaceId, actor, process.patientId, 'clinical-process');
     const isAuthor = process.therapistId === actor.sub;
-    if (!scope || (!isAuthor && scope.level !== 'TREATING')) {
+    if (!scope || (!isAuthor && !readsWholeRecord(scope))) {
       await this.access.auditDenied(workspaceId, actor, 'clinical-process', scope ? 'NOT_AUTHOR' : 'NO_PROCESS', process.patientId);
       throw new ForbiddenException('No tienes acceso al contenido clínico de este proceso');
     }

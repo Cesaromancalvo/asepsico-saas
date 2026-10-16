@@ -30,12 +30,12 @@ export class PatientCareService {
    * propio; siempre acotado al workspace).
    */
   async getConsultationReason(workspaceId: string, actor: AuthUser, patientId: string) {
-    const patient = await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { patient } = await this.access.assertCanReadWholeRecord(workspaceId, actor, patientId, 'patient-consultation-reason');
     return { patientId: patient.id, consultationReason: decryptField(patient.consultationReason) ?? null };
   }
 
   async getClinicalHistory(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    await this.access.assertCanReadWholeRecord(workspaceId, actor, patientId, 'clinical-history');
     // Defensa en profundidad: además del control de acceso, la lectura se acota al workspace.
     const history = await this.prisma.clinicalHistory.findFirst({ where: patientChildScope(workspaceId, patientId) });
     if (history) return decryptClinicalHistory(history);
@@ -66,7 +66,7 @@ export class PatientCareService {
   }
 
   async getTherapyGoals(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    await this.access.assertCanReadWholeRecord(workspaceId, actor, patientId, 'therapy-goals');
     const goals = await this.prisma.therapyGoal.findMany({ where: patientChildScope(workspaceId, patientId), orderBy: [{ status: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }] });
     return goals.map(decryptTherapyGoal);
   }

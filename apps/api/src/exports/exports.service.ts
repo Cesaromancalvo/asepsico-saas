@@ -3,7 +3,8 @@ import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
-import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
+import { EXPORT_ALLOWED_REASONS } from '../exceptional-access/exceptional-access.policy';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 const ADMIN_ROLES = ['OWNER', 'ADMIN'];
@@ -66,7 +67,14 @@ export class ExportsService {
     // contenido clínico (sin notas internas ajenas); el autor de un proceso cerrado, solo lo suyo;
     // OWNER/ADMIN que no le tratan → 403 (la copia de custodia y la del art. 15 irán aparte).
     const { scope } = await this.access.assertCanRead(user.workspaceId, user, patientId, 'patient-export');
-    const treating = scope.level === 'TREATING';
+    const exceptional = scope.level === 'EXCEPTIONAL';
+    // C5 / CA2.7: con acceso excepcional, la historia completa solo se exporta con los tres códigos
+    // permitidos; con los demás, 403 auditado sin generar nada.
+    if (exceptional && !(EXPORT_ALLOWED_REASONS as readonly string[]).includes(scope.exceptionalReasonCode ?? '')) {
+      await this.audit(user, 'EXCEPTIONAL_ACCESS_EXPORT_DENIED', 'Patient', patientId, { exceptionalAccessId: scope.exceptionalAccessId, reasonCode: scope.exceptionalReasonCode });
+      throw new ForbiddenException('El motivo de este acceso excepcional no permite exportar la historia completa');
+    }
+    const treating = readsWholeRecord(scope);
     const ws = user.workspaceId;
     const own = { workspaceId: ws, therapistId: user.sub };
     const patient = await this.prisma.patient.findFirst({
@@ -102,9 +110,14 @@ export class ExportsService {
     });
     // El motivo de consulta de la ficha no es atribuible a un autor: solo para quien trata.
     if (!treating) delete record.consultationReason;
+    // Acceso excepcional: tampoco las notas de los profesionales en tareas y escalas (CA2.2).
+    if (exceptional) {
+      record.therapeuticTasks = (record.therapeuticTasks ?? []).map(({ clinicianNotes: _hidden, ...rest }: any) => rest);
+      record.clinicalAssessments = (record.clinicalAssessments ?? []).map(({ clinicalNotes: _hidden, ...rest }: any) => rest);
+    }
 
     const generatedAt = new Date().toISOString();
-    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON', scope: scope.level });
+    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON', scope: scope.level, ...(exceptional ? { exceptionalAccessId: scope.exceptionalAccessId, reasonCode: scope.exceptionalReasonCode } : {}) });
     return {
       schemaVersion: '1.0',
       exportType: 'PATIENT_CLINICAL_RECORD',

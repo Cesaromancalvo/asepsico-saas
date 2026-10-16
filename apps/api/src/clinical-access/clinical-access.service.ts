@@ -21,7 +21,13 @@ import { assertStaffRole } from '../common/auth/assert-staff-role';
  * Ser OWNER o ADMIN no da acceso clínico: solo operaciones administrativas.
  */
 
-export type ClinicalAccessLevel = 'TREATING' | 'FORMER_AUTHOR';
+/**
+ * EXCEPTIONAL (docs/producto/acceso-excepcional.md): OWNER/ADMIN con un acceso excepcional vigente
+ * para ESTE paciente, registrado con ESTA sesión de autenticación (que sigue viva). Lectura de lo
+ * mismo que TREATING salvo las notas internas ajenas; nunca escritura (assertTreating no lo acepta).
+ * Cada lectura se audita con el exceptionalAccessId.
+ */
+export type ClinicalAccessLevel = 'TREATING' | 'FORMER_AUTHOR' | 'EXCEPTIONAL';
 
 /** Ventana temporal de un proceso propio (para acotar la mensajería a "lo suyo"). */
 export interface ProcessWindow { from: Date; to: Date | null }
@@ -38,6 +44,14 @@ export interface ClinicalScope {
    * que el usuario puede fijar hacia atrás) para no abrir mensajes anteriores a su tratamiento.
    */
   processWindows: ProcessWindow[];
+  /** Solo en EXCEPTIONAL: el acceso que lo concede y su código. */
+  exceptionalAccessId?: string;
+  exceptionalReasonCode?: string;
+}
+
+/** ¿El nivel da lectura de TODO el contenido del paciente (no solo lo propio)? */
+export function readsWholeRecord(scope: Pick<ClinicalScope, 'level'> | null | undefined): boolean {
+  return scope?.level === 'TREATING' || scope?.level === 'EXCEPTIONAL';
 }
 
 export interface MemberClinicalProfile { role: string; isClinician: boolean }
@@ -95,9 +109,39 @@ export class ClinicalAccessService {
    * Nivel de acceso del actor al paciente, o null si no tiene ninguno. No lanza por falta de
    * acceso (para vistas que degradan a datos administrativos); el paciente debe existir antes.
    */
-  async resolveScope(workspaceId: string, actor: AuthUser, patientId: string): Promise<ClinicalScope | null> {
+  async resolveScope(workspaceId: string, actor: AuthUser, patientId: string, readResource?: string): Promise<ClinicalScope | null> {
     const decision = await this.decide(workspaceId, actor, patientId);
+    if (decision.scope?.level === 'EXCEPTIONAL' && readResource) await this.auditExceptionalRead(workspaceId, actor, patientId, readResource, decision.scope);
     return decision.scope;
+  }
+
+  /**
+   * Exige lectura de TODO el contenido del paciente: TREATING o EXCEPTIONAL. Para lecturas de
+   * contenido no atribuible a un autor (motivo, historia, objetivos, escalas, resumen). Nunca
+   * para escrituras (esas usan assertTreating).
+   */
+  async assertCanReadWholeRecord(workspaceId: string, actor: AuthUser, patientId: string, resource: string) {
+    const { patient, scope, reason } = await this.decide(workspaceId, actor, patientId, true);
+    if (!scope || !readsWholeRecord(scope)) {
+      await this.auditDenied(workspaceId, actor, resource, scope ? 'READ_ONLY' : reason!, patientId);
+      throw new ForbiddenException('No tienes acceso al contenido clínico de este paciente');
+    }
+    if (scope.level === 'EXCEPTIONAL') await this.auditExceptionalRead(workspaceId, actor, patientId, resource, scope);
+    return { patient: patient!, scope };
+  }
+
+  /** CA2.1: cada lectura con acceso excepcional queda ligada al exceptionalAccessId. */
+  async auditExceptionalRead(workspaceId: string, actor: AuthUser, patientId: string, resource: string, scope: ClinicalScope) {
+    await this.prisma.auditLog.create({
+      data: {
+        workspaceId,
+        actorId: actor.sub,
+        action: 'EXCEPTIONAL_ACCESS_READ',
+        entityType: 'Patient',
+        entityId: patientId,
+        metadata: { resource, exceptionalAccessId: scope.exceptionalAccessId ?? null, reasonCode: scope.exceptionalReasonCode ?? null },
+      },
+    });
   }
 
   /**
@@ -130,6 +174,7 @@ export class ClinicalAccessService {
 
   async assertTreating(workspaceId: string, actor: AuthUser, patientId: string, resource: string) {
     const { patient, scope, reason } = await this.decide(workspaceId, actor, patientId, true);
+    // EXCEPTIONAL nunca escribe (CA2.3): solo TREATING pasa.
     if (!scope || scope.level !== 'TREATING') {
       await this.auditDenied(workspaceId, actor, resource, scope ? 'READ_ONLY' : reason!, patientId);
       throw new ForbiddenException(scope
@@ -149,6 +194,7 @@ export class ClinicalAccessService {
       await this.auditDenied(workspaceId, actor, resource, reason!, patientId);
       throw new ForbiddenException('No tienes acceso al contenido clínico de este paciente');
     }
+    if (scope.level === 'EXCEPTIONAL') await this.auditExceptionalRead(workspaceId, actor, patientId, resource, scope);
     return { patient: patient!, scope };
   }
 
@@ -187,16 +233,40 @@ export class ClinicalAccessService {
     const profile = await this.getMemberProfile(workspaceId, actor);
     if (!profile) return { patient, scope: null, reason: 'NOT_MEMBER' };
     if (NON_CLINICAL_ROLES.has(profile.role)) return { patient, scope: null, reason: 'ROLE' };
-    if (!isClinicalProfile(profile)) return { patient, scope: null, reason: 'NOT_CLINICIAN' };
 
+    const e1 = isClinicalProfile(profile) ? await this.decideByProcesses(workspaceId, actor, patientId) : null;
+    if (e1?.level === 'TREATING') return { patient, scope: e1 };
+
+    // Excepción a E1: acceso excepcional vigente (solo OWNER/ADMIN según la BD).
+    const exceptional = await this.findLiveExceptionalAccess(workspaceId, actor, profile, patientId);
+    if (exceptional) {
+      return {
+        patient,
+        scope: {
+          level: 'EXCEPTIONAL',
+          actorId: actor.sub,
+          ownProcessIds: e1?.ownProcessIds ?? [],
+          activeProcessIds: [],
+          // Lectura de la conversación del paciente durante la ventana (solo lectura).
+          processWindows: [{ from: new Date(0), to: null }],
+          exceptionalAccessId: exceptional.id,
+          exceptionalReasonCode: exceptional.reasonCode,
+        },
+      };
+    }
+    if (e1) return { patient, scope: e1 };
+    return { patient, scope: null, reason: isClinicalProfile(profile) ? 'NO_PROCESS' : 'NOT_CLINICIAN' };
+  }
+
+  private async decideByProcesses(workspaceId: string, actor: AuthUser, patientId: string): Promise<ClinicalScope | null> {
     const processes = await this.prisma.clinicalProcess.findMany({
       where: { workspaceId, patientId, therapistId: actor.sub },
       select: { id: true, status: true, createdAt: true, endedAt: true, pausedAt: true, updatedAt: true },
     });
-    if (!processes.length) return { patient, scope: null, reason: 'NO_PROCESS' };
+    if (!processes.length) return null;
 
     const active = processes.filter((process) => process.status === 'ACTIVE');
-    const scope: ClinicalScope = {
+    return {
       level: active.length ? 'TREATING' : 'FORMER_AUTHOR',
       actorId: actor.sub,
       ownProcessIds: processes.map((process) => process.id),
@@ -208,7 +278,38 @@ export class ClinicalAccessService {
         to: process.status === 'ACTIVE' ? null : new Date(process.endedAt ?? process.pausedAt ?? process.updatedAt),
       })),
     };
-    return { patient, scope };
+  }
+
+  /**
+   * Acceso excepcional vigente (C3, todo en el servidor y en cada petición):
+   *  - el actor es OWNER/ADMIN en la BD (si pierde el rol, deja de valer);
+   *  - registro del mismo workspace, paciente y actor; no cerrado, no bloqueado, no migrado;
+   *  - `expiresAt` en el futuro;
+   *  - registrado con la sesión de ESTA petición (`sid` del token) y esa sesión sigue viva
+   *    (refresh token de esa familia sin revocar ni caducar). Otra sesión u otro dispositivo no
+   *    lo heredan; tras logout, un access token aún no caducado tampoco;
+   *  - el paciente sigue sin borrar.
+   */
+  private async findLiveExceptionalAccess(workspaceId: string, actor: AuthUser, profile: MemberClinicalProfile, patientId: string) {
+    if (profile.role !== 'OWNER' && profile.role !== 'ADMIN') return null;
+    const sid = actor.sid;
+    if (typeof sid !== 'string' || !sid) return null;
+    const now = new Date();
+    const access = await this.prisma.exceptionalAccessJustification.findFirst({
+      where: {
+        workspaceId, patientId, actorId: actor.sub, authSessionId: sid,
+        closedAt: null, blockedAt: null, migratedFromAuditLogId: null, expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, reasonCode: true },
+    });
+    if (!access) return null;
+    const [session, livePatient] = await Promise.all([
+      this.prisma.refreshToken.findFirst({ where: { family: sid, userId: actor.sub, workspaceId, revokedAt: null, expiresAt: { gt: now } }, select: { id: true } }),
+      this.prisma.patient.findFirst({ where: { id: patientId, workspaceId, deletedAt: null, blockedAt: null }, select: { id: true } }),
+    ]);
+    if (!session || !livePatient) return null;
+    return access;
   }
 }
 

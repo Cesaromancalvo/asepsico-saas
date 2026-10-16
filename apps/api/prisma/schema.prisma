@@ -129,30 +129,32 @@ enum SessionType {
 }
 
 model Workspace {
-  id                   String                 @id @default(cuid())
-  name                 String
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  members              WorkspaceMember[]
-  patients             Patient[]
-  sessions             Session[]
-  auditLogs            AuditLog[]
-  clinicalProcesses    ClinicalProcess[]
-  patientDocuments     PatientDocument[]
-  consentRecords       ConsentRecord[]
-  clinicalReports      ClinicalReport[]
-  invoices             Invoice[]
-  payments             Payment[]
-  portalAccounts       PatientPortalAccount[]
-  therapeuticResources TherapeuticResource[]
-  resourceShares       ResourceShare[]
-  conversations        Conversation[]
-  patientImportJobs    PatientImportJob[]
-  patientImportItems   PatientImportItem[]
-  termsAcceptances     TermsAcceptance[]
-  workspaceInvites     WorkspaceInvite[]
-  registrationInvite   RegistrationInvite?
+  id                      String                           @id @default(cuid())
+  name                    String
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+  members                 WorkspaceMember[]
+  patients                Patient[]
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  clinicalProcesses       ClinicalProcess[]
+  patientDocuments        PatientDocument[]
+  consentRecords          ConsentRecord[]
+  clinicalReports         ClinicalReport[]
+  invoices                Invoice[]
+  payments                Payment[]
+  portalAccounts          PatientPortalAccount[]
+  therapeuticResources    TherapeuticResource[]
+  resourceShares          ResourceShare[]
+  conversations           Conversation[]
+  patientImportJobs       PatientImportJob[]
+  patientImportItems      PatientImportItem[]
+  termsAcceptances        TermsAcceptance[]
+  workspaceInvites        WorkspaceInvite[]
+  registrationInvite      RegistrationInvite?
   clinicalProcessOpenings ClinicalProcessOpening[]
+  exceptionalAccesses     ExceptionalAccessJustification[]
+  exceptionalAccessMisses ExceptionalAccessReasonMiss?
 }
 
 model User {
@@ -1058,4 +1060,78 @@ model ClinicalProcessOpening {
   @@index([workspaceId, createdAt])
   @@index([workspaceId, patientId])
   @@index([workspaceId, ownerReviewDueAt])
+}
+
+/// Motivo cerrado del acceso excepcional (7 códigos, sin "Otro"). Ver exceptional-access.policy.ts.
+enum ExceptionalAccessReason {
+  CONTINUITY_OF_CARE
+  VITAL_URGENCY
+  PATIENT_RIGHTS_REQUEST
+  LEGAL_REQUIREMENT
+  CLAIM_DEFENCE
+  CUSTODY
+  DATA_INCIDENT
+}
+
+/// Motivo por el que el OWNER lee la explicación de un acceso (CA4.2, CA4.6).
+enum JustificationReadPurpose {
+  URGENCY_REVIEW
+  PATIENT_REQUEST
+  CLAIM_OR_AUTHORITY
+  INTERNAL_AUDIT
+}
+
+/// Acceso excepcional a la historia de un paciente (H1–H5). La explicación va CIFRADA y nunca
+/// sale en AuditLog, logs ni exportación ordinaria. Concede EXCEPTIONAL (solo lectura, sin notas
+/// internas) mientras: no esté cerrado ni bloqueado, no haya vencido `expiresAt`, la sesión
+/// `authSessionId` siga viva y sea la de la petición, el paciente no esté borrado y el actor siga
+/// siendo OWNER/ADMIN. Sin claves ajenas a paciente/usuario a propósito: sobrevive a su borrado.
+model ExceptionalAccessJustification {
+  id                         String                  @id @default(cuid())
+  workspaceId                String
+  patientId                  String
+  actorId                    String
+  actorRole                  WorkspaceRole
+  actorIsClinician           Boolean
+  reasonCode                 ExceptionalAccessReason
+  /// Explicación administrativa (20–300 caracteres), cifrada con el cifrado de campos.
+  justification              String
+  clinicalTermWarningIgnored Boolean                 @default(false)
+  /// Familia del refresh token (claim `sid` del access token). null = no concede (migrados).
+  authSessionId              String?
+  createdAt                  DateTime                @default(now())
+  expiresAt                  DateTime
+  closedAt                   DateTime?
+  /// MANUAL, LOGOUT, PATIENT_DELETED, MIGRATED.
+  closeReason                String?
+  retentionUntil             DateTime
+  legalHold                  Boolean                 @default(false)
+  ownerCountAtCreation       Int
+  ownerReviewDueAt           DateTime?
+  reviewedAt                 DateTime?
+  reviewedById               String?
+  reviewOutcome              OwnerReviewOutcome?
+  selfReview                 Boolean?
+  /// Aviso al titular diferido por un OWNER (§3.6). El motivo va cifrado.
+  notificationDeferredAt     DateTime?
+  notificationDeferredReason String?
+  notificationReleasedAt     DateTime?
+  lastDeferralReminderAt     DateTime?
+  blockedAt                  DateTime?
+  /// H5: creado a partir de un AuditLog antiguo con el motivo en claro. Nunca concede acceso.
+  migratedFromAuditLogId     String?                 @unique
+  workspace                  Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId, actorId])
+  @@index([workspaceId, ownerReviewDueAt])
+  @@index([authSessionId])
+}
+
+/// CA1.11: contador agregado del enlace "Mi motivo no está en la lista". Sin paciente, usuario ni texto.
+model ExceptionalAccessReasonMiss {
+  workspaceId String    @id
+  count       Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 }

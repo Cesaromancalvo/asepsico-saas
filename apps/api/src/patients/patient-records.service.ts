@@ -4,6 +4,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptConsent, decryptDocument, decryptReport } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
+import { readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { assertScopedWrite } from './patient-write.util';
 import { CreatePatientDocumentDto } from './dto/create-patient-document.dto';
 import { CreateConsentRecordDto, UpdateConsentRecordDto } from './dto/create-consent-record.dto';
@@ -21,7 +22,7 @@ export class PatientRecordsService {
     const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'patient-documents');
     const documents = await this.prisma.patientDocument.findMany({
       // Autor de un proceso cerrado: solo los documentos que subió él.
-      where: { workspaceId, patientId, ...(scope.level === 'TREATING' ? {} : { createdById: actor.sub }) }, orderBy: { createdAt: 'desc' },
+      where: { workspaceId, patientId, ...(readsWholeRecord(scope) ? {} : { createdById: actor.sub }) }, orderBy: { createdAt: 'desc' },
       select: { id:true,title:true,type:true,description:true,fileName:true,mimeType:true,storageKey:true,createdAt:true,updatedAt:true,createdBy:{select:{id:true,firstName:true,lastName:true}} },
     });
     return documents.map(decryptDocument);
@@ -121,7 +122,7 @@ export class PatientRecordsService {
   async getClinicalReports(workspaceId: string, actor: AuthUser, patientId: string) {
     const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'clinical-reports');
     // Autor de un proceso cerrado: solo sus propios informes.
-    const reports = await this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId, ...(scope.level === 'TREATING' ? {} : { createdById: actor.sub }) }, orderBy: { updatedAt: 'desc' } });
+    const reports = await this.prisma.clinicalReport.findMany({ where: { workspaceId, patientId, ...(readsWholeRecord(scope) ? {} : { createdById: actor.sub }) }, orderBy: { updatedAt: 'desc' } });
     return reports.map(decryptReport);
   }
 
