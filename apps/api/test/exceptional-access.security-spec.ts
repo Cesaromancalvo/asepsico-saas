@@ -469,6 +469,45 @@ describe('H4 · registro y revisión del OWNER', () => {
 });
 
 // ------------------------------------------------------------------------------------------
+describe('Revisión de Argos (prioridad baja)', () => {
+  it('dos POST que pasan a la vez la comprobación previa: el lock por paciente y actor deja crear solo uno (409)', async () => {
+    const p = seed();
+    // Simula la carrera: la comprobación previa (fuera de la transacción) no ve ningún acceso.
+    const real = new (require('../src/clinical-access/clinical-access.service').ClinicalAccessService)(p);
+    const racing: any = Object.assign(Object.create(real), { resolveScope: async () => null });
+    const service = new ExceptionalAccessService(p, racing);
+    await service.create(WS, actor('owner-c'), 'pat-1', body());
+    await rejects(() => service.create(WS, actor('owner-c'), 'pat-1', body()), ConflictException, 'EXCEPTIONAL_ACCESS_NOT_NEEDED');
+    expect(records(p)).toHaveLength(1);
+    expect(p.__locks).toEqual([`asepsico:exceptional-access:${WS}:pat-1:owner-c`, `asepsico:exceptional-access:${WS}:pat-1:owner-c`]);
+  });
+
+  it('close(): el cierre y su auditoría van en la misma transacción', async () => {
+    const p = seed();
+    const res: any = await svc(p).create(WS, actor('owner-c'), 'pat-1', body());
+    const original = p.auditLog.create;
+    p.auditLog.create = jest.fn(async (args: any) => { if (args.data.action === 'EXCEPTIONAL_ACCESS_CLOSED') throw new Error('fallo de auditoría'); return original(args); });
+    await expect(svc(p).close(WS, actor('owner-c'), 'pat-1', res.id)).rejects.toThrow('fallo de auditoría');
+    expect(records(p)[0].closedAt ?? null).toBeNull();
+    p.auditLog.create = original;
+    await svc(p).close(WS, actor('owner-c'), 'pat-1', res.id);
+    expect(records(p)[0].closeReason).toBe('MANUAL');
+    expect(store(p).auditLog.map((a: any) => a.action)).toContain('EXCEPTIONAL_ACCESS_CLOSED');
+  });
+
+  it('closeReason preciso: archivar → PATIENT_ARCHIVED; bloquear → PATIENT_BLOCKED', async () => {
+    const archived = seed();
+    await svc(archived).create(WS, actor('owner-c'), 'pat-1', body());
+    await patients(archived).archive(WS, actor('owner-nc'), 'pat-1');
+    expect(records(archived)[0]).toMatchObject({ closeReason: 'PATIENT_ARCHIVED' });
+    const blocked = seed();
+    await svc(blocked).create(WS, actor('owner-c'), 'pat-1', body());
+    await patients(blocked).block(WS, actor('owner-nc'), 'pat-1');
+    expect(records(blocked)[0]).toMatchObject({ closeReason: 'PATIENT_BLOCKED' });
+  });
+});
+
+// ------------------------------------------------------------------------------------------
 describe('H5 · motivos antiguos en claro (CA5.1)', () => {
   const LEGACY = 'Motivo antiguo ficticio escrito en claro';
 

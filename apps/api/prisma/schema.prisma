@@ -1073,14 +1073,6 @@ enum ExceptionalAccessReason {
   DATA_INCIDENT
 }
 
-/// Motivo por el que el OWNER lee la explicación de un acceso (CA4.2, CA4.6).
-enum JustificationReadPurpose {
-  URGENCY_REVIEW
-  PATIENT_REQUEST
-  CLAIM_OR_AUTHORITY
-  INTERNAL_AUDIT
-}
-
 /// Acceso excepcional a la historia de un paciente (H1–H5). La explicación va CIFRADA y nunca
 /// sale en AuditLog, logs ni exportación ordinaria. Concede EXCEPTIONAL (solo lectura, sin notas
 /// internas) mientras: no esté cerrado ni bloqueado, no haya vencido `expiresAt`, la sesión
@@ -1102,7 +1094,7 @@ model ExceptionalAccessJustification {
   createdAt                  DateTime                @default(now())
   expiresAt                  DateTime
   closedAt                   DateTime?
-  /// MANUAL, LOGOUT, PATIENT_DELETED, MIGRATED.
+  /// MANUAL, LOGOUT, PATIENT_ARCHIVED (paciente archivado/borrado), PATIENT_BLOCKED, MIGRATED.
   closeReason                String?
   retentionUntil             DateTime
   legalHold                  Boolean                 @default(false)

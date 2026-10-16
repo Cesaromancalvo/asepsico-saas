@@ -114,7 +114,7 @@ export class PatientLifecycleService {
       // registros NO se borran (se conservan con su retentionUntil).
       await tx.exceptionalAccessJustification.updateMany({
         where: { workspaceId, patientId: id, closedAt: null },
-        data: { closedAt: new Date(), closeReason: 'PATIENT_DELETED' },
+        data: { closedAt: new Date(), closeReason: 'PATIENT_ARCHIVED' },
       });
 
       await tx.auditLog.create({
@@ -217,7 +217,7 @@ export class PatientLifecycleService {
       // CA4.6: los accesos excepcionales del paciente pasan a bloqueados (no se borran); la
       // explicación solo se lee después con un motivo de bloqueo.
       await tx.exceptionalAccessJustification.updateMany({ where: { workspaceId, patientId: id, blockedAt: null }, data: { blockedAt } });
-      await tx.exceptionalAccessJustification.updateMany({ where: { workspaceId, patientId: id, closedAt: null }, data: { closedAt: blockedAt, closeReason: 'PATIENT_DELETED' } });
+      await tx.exceptionalAccessJustification.updateMany({ where: { workspaceId, patientId: id, closedAt: null }, data: { closedAt: blockedAt, closeReason: 'PATIENT_BLOCKED' } });
 
       await tx.auditLog.create({
         data: {

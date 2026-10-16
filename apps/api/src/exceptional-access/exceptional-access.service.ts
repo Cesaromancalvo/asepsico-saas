@@ -99,7 +99,17 @@ export class ExceptionalAccessService {
 
     const reasonCode = dto.reasonCode;
     return this.prisma.$transaction(async (tx) => {
+      // Dos POST simultáneos del mismo actor sobre el mismo paciente: se serializan y el segundo
+      // ve el acceso del primero (409), en vez de crear dos.
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `asepsico:exceptional-access:${workspaceId}:${patientId}:${actor.sub}`);
       const now = new Date();
+      const live = await tx.exceptionalAccessJustification.findFirst({
+        where: { workspaceId, patientId, actorId: actor.sub, authSessionId: actor.sid!, closedAt: null, blockedAt: null, migratedFromAuditLogId: null, expiresAt: { gt: now } },
+        select: { id: true },
+      });
+      if (live) {
+        throw new ConflictException({ statusCode: 409, error: 'Conflict', code: EXCEPTIONAL_ACCESS_NOT_NEEDED, message: 'Ya tienes un acceso excepcional vigente a este paciente' });
+      }
       const ownerCountAtCreation = await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } });
       const record = await tx.exceptionalAccessJustification.create({
         data: {
@@ -139,16 +149,18 @@ export class ExceptionalAccessService {
   /** [Cerrar acceso]: solo el propio acceso, del workspace, si sigue abierto. */
   async close(workspaceId: string, actor: AuthUser, patientId: string, accessId: string) {
     assertStaffRole(actor);
-    const now = new Date();
-    const { count } = await this.prisma.exceptionalAccessJustification.updateMany({
-      where: { id: accessId, workspaceId, patientId, actorId: actor.sub, closedAt: null },
-      data: { closedAt: now, closeReason: 'MANUAL' },
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const { count } = await tx.exceptionalAccessJustification.updateMany({
+        where: { id: accessId, workspaceId, patientId, actorId: actor.sub, closedAt: null },
+        data: { closedAt: now, closeReason: 'MANUAL' },
+      });
+      if (count === 0) throw new NotFoundException('Acceso no encontrado o ya cerrado');
+      await tx.auditLog.create({
+        data: { workspaceId, actorId: actor.sub, action: 'EXCEPTIONAL_ACCESS_CLOSED', entityType: 'ExceptionalAccessJustification', entityId: accessId, metadata: { closeReason: 'MANUAL' } },
+      });
+      return { closed: true };
     });
-    if (count === 0) throw new NotFoundException('Acceso no encontrado o ya cerrado');
-    await this.prisma.auditLog.create({
-      data: { workspaceId, actorId: actor.sub, action: 'EXCEPTIONAL_ACCESS_CLOSED', entityType: 'ExceptionalAccessJustification', entityId: accessId, metadata: { closeReason: 'MANUAL' } },
-    });
-    return { closed: true };
   }
 
   /**
