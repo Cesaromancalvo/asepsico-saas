@@ -10,7 +10,8 @@ import { retentionUntil } from './exceptional-access.policy';
  *     concede ningún acceso (ClinicalAccessService excluye los migrados);
  *  2. se reescribe la metadata del AuditLog sin `reason`: { reasonCode, role, exceptionalAccessId, migrated }.
  * Las dos cosas en la misma transacción. Idempotente (clave única por AuditLog y solo filas que
- * aún tienen `reason`). Nunca registra el texto: solo recuentos.
+ * aún tienen `reason`). Nunca registra el texto: solo recuentos. Las filas sin paciente o sin
+ * actor (`skipped`) no generan registro, pero también pierden `reason` (reasonDiscarded: true).
  */
 
 type MigrationDb = {
@@ -37,9 +38,19 @@ export async function migrateLegacyExceptionalReasons(db: MigrationDb, options: 
       const metadata = (row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {}) as Record<string, unknown>;
       if (typeof metadata.reason !== 'string') continue;
       result.found += 1;
-      if (options.dryRun) continue;
-      if (!row.entityId || !row.actorId) { result.skipped += 1; continue; }
       const role = metadata.role === 'ADMIN' ? 'ADMIN' : 'OWNER';
+      // Sin paciente o sin actor no se puede crear el registro: el texto se DESCARTA igualmente
+      // (nunca se deja en claro) y la fila queda marcada. El dry-run también los cuenta.
+      if (!row.entityId || !row.actorId) {
+        result.skipped += 1;
+        if (options.dryRun) continue;
+        await db.auditLog.updateMany({
+          where: { id: row.id, workspaceId: row.workspaceId, action: LEGACY_EXCEPTIONAL_ACTION },
+          data: { metadata: { reasonCode: 'DATA_INCIDENT', role, migrated: false, reasonDiscarded: true } },
+        });
+        continue;
+      }
+      if (options.dryRun) continue;
       await db.$transaction(async (tx) => {
         const existing = await tx.exceptionalAccessJustification.findFirst({ where: { migratedFromAuditLogId: row.id, workspaceId: row.workspaceId }, select: { id: true } });
         const record = existing ?? await tx.exceptionalAccessJustification.create({

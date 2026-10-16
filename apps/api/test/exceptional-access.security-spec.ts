@@ -476,6 +476,7 @@ describe('H5 · motivos antiguos en claro (CA5.1)', () => {
     const p = seed();
     store(p).auditLog.push(
       { id: 'audit-legacy', workspaceId: WS, actorId: 'owner-c', action: 'EXCEPTIONAL_CLINICAL_ACCESS', entityType: 'Patient', entityId: 'pat-1', metadata: { reason: LEGACY, role: 'OWNER' }, createdAt: d('2026-09-01') },
+      { id: 'audit-orphan', workspaceId: WS, actorId: null, action: 'EXCEPTIONAL_CLINICAL_ACCESS', entityType: 'Patient', entityId: 'pat-1', metadata: { reason: 'Motivo huérfano ficticio en claro', role: 'ADMIN' }, createdAt: d('2026-09-02') },
       { id: 'audit-other', workspaceId: WS, actorId: 'owner-c', action: 'PATIENT_UPDATED', entityType: 'Patient', entityId: 'pat-1', metadata: { updatedFields: ['phone'] }, createdAt: d('2026-09-01') },
     );
     return p;
@@ -483,16 +484,21 @@ describe('H5 · motivos antiguos en claro (CA5.1)', () => {
 
   it('mueve el texto cifrado (DATA_INCIDENT, migrado, sin conceder acceso) y quita metadata.reason; idempotente', async () => {
     const p = legacyDb();
-    expect(await migrateLegacyExceptionalReasons(p, { dryRun: true })).toEqual({ found: 1, migrated: 0, skipped: 0 });
+    expect(await migrateLegacyExceptionalReasons(p, { dryRun: true })).toEqual({ found: 2, migrated: 0, skipped: 1 });
     expect(records(p)).toHaveLength(0);
+    expect(json(store(p).auditLog)).toContain('Motivo huérfano');
 
-    expect(await migrateLegacyExceptionalReasons(p)).toEqual({ found: 1, migrated: 1, skipped: 0 });
+    expect(await migrateLegacyExceptionalReasons(p)).toEqual({ found: 2, migrated: 1, skipped: 1 });
     const [row] = records(p);
     expect(row).toMatchObject({ reasonCode: 'DATA_INCIDENT', migratedFromAuditLogId: 'audit-legacy', authSessionId: null, closeReason: 'MIGRATED', workspaceId: WS });
     expect(row.justification).toMatch(/^enc:v/);
     const legacy = store(p).auditLog.find((a: any) => a.id === 'audit-legacy');
     expect(legacy.metadata).toEqual({ reasonCode: 'DATA_INCIDENT', role: 'OWNER', exceptionalAccessId: row.id, migrated: true });
     expect(json(store(p).auditLog)).not.toContain(LEGACY);
+    // Condición de Argos: la fila sin actor tampoco conserva el texto en claro.
+    expect(store(p).auditLog.find((a: any) => a.id === 'audit-orphan').metadata).toEqual({ reasonCode: 'DATA_INCIDENT', role: 'ADMIN', migrated: false, reasonDiscarded: true });
+    expect(json(store(p).auditLog)).not.toContain('Motivo huérfano');
+    expect(records(p)).toHaveLength(1);
 
     expect(await migrateLegacyExceptionalReasons(p)).toEqual({ found: 0, migrated: 0, skipped: 0 });
     expect(records(p)).toHaveLength(1);

@@ -31,8 +31,7 @@ async function main() {
   const prisma = new PrismaClient();
   try {
     const result = await migrateLegacyExceptionalReasons(prisma, { dryRun: DRY_RUN, batchSize: BATCH_SIZE });
-    console.log(`${DRY_RUN ? '[dry-run] ' : ''}Registros con motivo en claro: ${result.found} · migrados: ${result.migrated} · omitidos (sin paciente o actor): ${result.skipped}`);
-    if (result.skipped) process.exitCode = 2;
+    console.log(`${DRY_RUN ? '[dry-run] ' : ''}Registros con motivo en claro: ${result.found} · migrados: ${result.migrated} · sin paciente o actor (motivo descartado sin migrar): ${result.skipped}`);
   } finally {
     await prisma.$disconnect();
   }
