@@ -29,7 +29,7 @@ const enc = (text: string) => encryptField(text)!;
 
 const M = {
   history: 'MARK-HISTORY', internal: 'MARK-INTERNAL-NOTES', summary: 'MARK-SES-INTERNAL', sesNotes: 'MARK-SES-NOTES',
-  clinicianNotes: 'MARK-CLINICIAN-NOTES', procReason: 'MARK-PROC-REASON',
+  clinicianNotes: 'MARK-CLINICIAN-NOTES', procReason: 'MARK-PROC-REASON', consentNotes: 'MARK-CONSENT-NOTES',
 };
 const JUSTIFICATION = 'Requerimiento ficticio del Juzgado n.º 0, procedimiento 000/2026.';
 const DEFER = 'Diferido por instrucción ficticia de la autoridad hasta nueva orden.';
@@ -70,6 +70,7 @@ function seed() {
     clinicalHistory: [{ id: 'hist-1', patientId: 'pat-1', currentProblem: enc(M.history), createdAt: d('2026-02-01'), updatedAt: d('2026-02-01') }],
     therapeuticTask: [{ id: 'task-1', patientId: 'pat-1', sessionId: 'ses-a', therapyGoalId: null, title: enc('Tarea ficticia'), instructions: null, clinicianNotes: enc(M.clinicianNotes), status: 'PENDING', createdAt: d('2026-02-10'), updatedAt: d('2026-02-10') }],
     clinicalAssessment: [],
+    consentRecord: [{ id: 'con-1', workspaceId: WS, patientId: 'pat-1', createdById: 't-a', type: 'INFORMED_CONSENT', title: 'Consentimiento', status: 'SIGNED', notes: enc(M.consentNotes), createdAt: d('2026-02-01'), updatedAt: d('2026-02-01') }],
     patientPortalAccount: [],
   } as any);
 }
@@ -230,6 +231,9 @@ describe('H2 · leer durante la ventana y cerrarla', () => {
     expect(json(session)).not.toContain(M.summary);
     const tasks: any = await patients(p).getTherapeuticTasks(WS, owner, 'pat-1');
     expect(json(tasks)).not.toContain(M.clinicianNotes);
+    const consents: any = await patients(p).getConsentRecords(WS, owner, 'pat-1');
+    expect(json(consents)).toContain('con-1');
+    expect(json(consents)).not.toContain(M.consentNotes);
   });
 
   it('CA2.3 ninguna escritura con acceso excepcional', async () => {
@@ -313,7 +317,9 @@ describe('H2 · leer durante la ventana y cerrarla', () => {
     const out: any = await new ExportsService(p).exportPatient(actor('owner-c'), 'pat-1', PASSWORD);
     const text = json(out);
     expect(text).toContain(M.history);
-    for (const hidden of [M.internal, M.summary, M.clinicianNotes]) expect(text).not.toContain(hidden);
+    // Condición de Argos: tampoco las notas de los consentimientos (en pantalla están ocultas).
+    expect(text).toContain('con-1');
+    for (const hidden of [M.internal, M.summary, M.clinicianNotes, M.consentNotes]) expect(text).not.toContain(hidden);
     expect(store(p).auditLog).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'PATIENT_DATA_EXPORTED', metadata: expect.objectContaining({ exceptionalAccessId: id, reasonCode: code, scope: 'EXCEPTIONAL' }) })]));
   });
 });

@@ -110,8 +110,10 @@ export class ExportsService {
     });
     // El motivo de consulta de la ficha no es atribuible a un autor: solo para quien trata.
     if (!treating) delete record.consultationReason;
-    // Acceso excepcional: tampoco las notas de los profesionales en tareas y escalas (CA2.2).
+    // Acceso excepcional: tampoco las notas de los profesionales en tareas y escalas, ni las notas
+    // de los consentimientos (en pantalla se le sirven sin ellas: vista administrativa) (CA2.2).
     if (exceptional) {
+      record.consentRecords = (record.consentRecords ?? []).map(({ notes: _hidden, ...rest }: any) => rest);
       record.therapeuticTasks = (record.therapeuticTasks ?? []).map(({ clinicianNotes: _hidden, ...rest }: any) => rest);
       record.clinicalAssessments = (record.clinicalAssessments ?? []).map(({ clinicalNotes: _hidden, ...rest }: any) => rest);
     }
