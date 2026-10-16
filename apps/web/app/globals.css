@@ -651,6 +651,7 @@
 .terms-fieldset .e1-checkbox label{cursor:pointer}
 .terms-fieldset a{color:var(--primary-dark);font-weight:700;text-decoration:underline}
 .terms-draft-badge{margin-left:6px;font-size:var(--fs-sm);padding:1px 7px}
+.terms-doc-link{white-space:nowrap}
 .legal-text{margin:0;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface-soft);color:var(--text);font:inherit;font-size:var(--fs-md);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto}
 .legal-page{max-width:820px;margin:40px auto;display:grid;gap:18px}
 .invite-link-box{display:grid;gap:8px;margin-top:12px}
