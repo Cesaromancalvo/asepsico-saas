@@ -2,10 +2,17 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CurrentExceptionalAccessResponse } from '@asepsico/contracts';
 import Sidebar from '@/components/Sidebar';
+import ExceptionalAccessBanner from '@/components/ExceptionalAccessBanner';
+import ExceptionalAccessDialog from '@/components/ExceptionalAccessDialog';
+import ExceptionalRecordView from '@/components/ExceptionalRecordView';
+import PatientAccessHistory from '@/components/PatientAccessHistory';
+import { useOpeningReasonPrompt } from '@/components/OpeningReasonPicker';
 import { api } from '@/lib/api';
-import { canManageProcess, fetchConsultationReason, isStaffWithProcessAccess, modalityLabel, processLabel, processTitle, therapistName, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
+import { canManageProcess, changeProcessStatus, fetchConsultationReason, isAdminRole, isStaffWithProcessAccess, modalityLabel, processLabel, processTitle, therapistName, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
+import { OpeningCancelled, withOpeningReason } from '@/lib/exceptional-access';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
@@ -79,7 +86,35 @@ export default function PatientRecordPage(){
   // ficha muestra solo los datos administrativos en lugar de romper la página entera.
   const [clinicalDenied,setClinicalDenied]=useState(false);
   const showClinical=access.treating&&!clinicalDenied;
-  const accessResolved=access.state!=='loading'||(viewer!==null&&!isStaffWithProcessAccess(viewer.role));
+
+  // Acceso excepcional (docs/producto/acceso-excepcional.md). Solo se pregunta a la API por
+  // OWNER/ADMIN que no tratan al paciente: decide ella si puede pedirlo, con qué motivos y si
+  // hay uno vigente en ESTA sesión. A nadie más se le enseña ni se le pide nada.
+  const isAdmin=isAdminRole(viewer?.role);
+  const [exceptional,setExceptional]=useState<CurrentExceptionalAccessResponse|null>(null);
+  const [exceptionalLoaded,setExceptionalLoaded]=useState(false);
+  const [exceptionalVersion,setExceptionalVersion]=useState(0);
+  const [exceptionalDialog,setExceptionalDialog]=useState(false);
+  const reloadExceptional=useCallback(()=>setExceptionalVersion(v=>v+1),[]);
+  const askExceptional=isAdmin&&access.state==='ready'&&!access.treating;
+  useEffect(()=>{
+    if(!patientId||!askExceptional){ setExceptional(null); setExceptionalLoaded(true); return; }
+    let cancelled=false;
+    api<CurrentExceptionalAccessResponse>(`/patients/${patientId}/exceptional-access/current`)
+      .then(value=>{ if(!cancelled) setExceptional(value); })
+      .catch(()=>{ if(!cancelled) setExceptional(null); })
+      .finally(()=>{ if(!cancelled) setExceptionalLoaded(true); });
+    return ()=>{ cancelled=true; };
+  },[patientId,askExceptional,exceptionalVersion]);
+  const exceptionalActive=exceptional?.active??null;
+  const showExceptional=Boolean(exceptionalActive)&&!clinicalDenied;
+  const canRequestExceptional=Boolean(exceptional?.canRequest&&exceptional.allowedReasons.length>0)&&access.processes.length>0;
+  // Autor (profesional) de algún proceso del paciente: ve "Accesos de otras personas" (CA3.2).
+  const isAuthor=Boolean(viewer?.isClinician&&viewer.userId&&access.processes.some(process=>process.therapistId===viewer.userId));
+  const titular=access.processes.find(process=>process.status==='ACTIVE')?.therapist??access.processes[0]?.therapist??null;
+  const accessResolved=(access.state!=='loading'||(viewer!==null&&!isStaffWithProcessAccess(viewer.role)))&&(!askExceptional||exceptionalLoaded);
+  const { ask:askOpeningReason, dialog:openingReasonDialog }=useOpeningReasonPrompt('Reactivar proceso');
+  const clinicalLoadedFor=useRef<string>('');
 
   async function load(){
     try{
@@ -87,6 +122,9 @@ export default function PatientRecordPage(){
       setPatient(await api<Patient>(`/patients/${patientId}`));
     }catch(err){ setError(err instanceof Error?err.message:'No se pudo cargar la ficha del paciente'); }
     finally{ setLoading(false); }
+  }
+  function clearClinical(){
+    setHistory(EMPTY_HISTORY); setGoals([]); setTasks([]); setAssessments([]); setDocuments([]); setTimeline([]);
   }
   async function loadClinical(){
     const [historyRes,goalRes,taskRes,assessmentRes,documentRes,timelineRes]=await Promise.allSettled([
@@ -103,7 +141,14 @@ export default function PatientRecordPage(){
     setDocuments(settledOr(documentRes,[])); setTimeline(settledOr(timelineRes,[]));
   }
   useEffect(()=>{ if(patientId) load(); },[patientId]);
-  useEffect(()=>{ if(patientId&&access.treating) loadClinical(); },[patientId,access.treating]);
+  // Se carga la parte clínica si trata al paciente o tiene un acceso excepcional vigente; al
+  // cerrarse o vencer el acceso se borra de la pantalla (la API ya no la serviría).
+  const clinicalKey=access.treating?'treating':exceptionalActive?`exceptional:${exceptionalActive.id}`:'';
+  useEffect(()=>{
+    if(!patientId) return;
+    if(clinicalKey&&clinicalLoadedFor.current!==clinicalKey){ clinicalLoadedFor.current=clinicalKey; loadClinical(); }
+    if(!clinicalKey&&clinicalLoadedFor.current){ clinicalLoadedFor.current=''; clearClinical(); setClinicalDenied(false); }
+  },[patientId,clinicalKey]);
   useEffect(()=>{
     if(!access.treating||!patientId){ setConsultationReason(null); return; }
     let cancelled=false;
@@ -114,9 +159,11 @@ export default function PatientRecordPage(){
   async function reactivate(processId:string){
     try{
       setProcessBusy(true); setError('');
-      await api(`/clinical-processes/${processId}/status`,{method:'PATCH',body:JSON.stringify({status:'ACTIVE'})});
+      // H6: si otro profesional atendió después al paciente, la API pide el motivo (OWNER/ADMIN)
+      // o explica que la reactivación la hace la dirección (THERAPIST).
+      await withOpeningReason(code=>changeProcessStatus(processId,'ACTIVE',code),askOpeningReason);
       setSavedMessage('Proceso reactivado'); reloadAccess(); await load();
-    }catch(err){ setError(err instanceof Error?err.message:'No se pudo reactivar el proceso'); }
+    }catch(err){ if(!(err instanceof OpeningCancelled)) setError(err instanceof Error?err.message:'No se pudo reactivar el proceso'); }
     finally{ setProcessBusy(false); }
   }
 
@@ -176,11 +223,13 @@ export default function PatientRecordPage(){
     </header>
 
     {error&&<div className="agenda-error">{error}</div>}
-    {!showClinical&&access.readOnly&&<div className="e1-notice" role="note"><div><strong>Solo lectura</strong><p>Tu proceso con este paciente no está activo. Conservas la lectura de lo que registraste (procesos y sesiones), pero no puedes añadir contenido clínico.</p></div>{reactivable.length>0&&<div className="e1-notice-actions">{reactivable.map(process=><button key={process.id} type="button" className="button" disabled={processBusy} onClick={()=>reactivate(process.id)}>{process.status==='DISCHARGED'?'Reabrir proceso':'Reactivar proceso'}{reactivable.length>1?` (${processTitle(process)})`:''}</button>)}</div>}</div>}
-    {!showClinical&&!access.readOnly&&<div className="e1-notice info" role="note"><div><strong>Vista administrativa</strong><p>La información clínica de este paciente solo la ve el profesional que le atiende.</p></div></div>}
+    {showExceptional&&exceptionalActive&&<ExceptionalAccessBanner patientId={patient.id} access={exceptionalActive} onEnded={reloadExceptional}/>}
+    {!showClinical&&!showExceptional&&canRequestExceptional&&<div className="e1-notice info xa-protected" role="note"><div><strong>Contenido clínico protegido</strong><p>{titular?`Este paciente lo atiende ${therapistName(titular)}.`:'Este paciente lo atiende otro profesional.'} Si necesitas consultar su historia por un motivo legítimo, puedes registrar un acceso excepcional: es de solo lectura, dura 8 horas y queda registrado.</p></div><div className="e1-notice-actions"><button type="button" className="button" onClick={()=>setExceptionalDialog(true)}>Registrar acceso excepcional</button></div></div>}
+    {!showClinical&&!showExceptional&&access.readOnly&&<div className="e1-notice" role="note"><div><strong>Solo lectura</strong><p>Tu proceso con este paciente no está activo. Conservas la lectura de lo que registraste (procesos y sesiones), pero no puedes añadir contenido clínico.</p></div>{reactivable.length>0&&<div className="e1-notice-actions">{reactivable.map(process=><button key={process.id} type="button" className="button" disabled={processBusy} onClick={()=>reactivate(process.id)}>{process.status==='DISCHARGED'?'Reabrir proceso':'Reactivar proceso'}{reactivable.length>1?` (${processTitle(process)})`:''}</button>)}</div>}</div>}
+    {!showClinical&&!showExceptional&&!access.readOnly&&!canRequestExceptional&&<div className="e1-notice info" role="note"><div><strong>Vista administrativa</strong><p>La información clínica de este paciente solo la ve el profesional que le atiende.</p></div></div>}
     {showClinical&&<nav className="patient-unified-tabs" aria-label="Secciones de la ficha"><button className={view==='overview'?'active':''} onClick={()=>setView('overview')}>Resumen y seguimiento</button><button className={view==='history'?'active':''} onClick={()=>setView('history')}>Historia clínica</button></nav>}
 
-    {!showClinical ? <div className="patient-unified-grid">
+    {showExceptional&&exceptionalActive ? <ExceptionalRecordView patientId={patient.id} reasonCode={exceptionalActive.reasonCode} history={history} goals={goals} tasks={tasks} assessments={assessments} documents={documents} timeline={timeline} processes={access.processes}/> : !showClinical ? <div className="patient-unified-grid">
       <section className="patient-record-summary-grid patient-unified-summary">
         <article className="patient-summary-card"><span>{nextSessionTitle}</span><strong>{patient.summary.nextSession?formatDate(patient.summary.nextSession.startsAt,true):'Ninguna programada'}</strong><small>{patient.summary.nextSession?'Cita programada':nextSessionEmpty}</small></article>
         <article className="patient-summary-card"><span>{ownSessionsOnly?'Tus sesiones':'Sesiones'}</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
@@ -223,5 +272,8 @@ export default function PatientRecordPage(){
       <section className="patient-record-card"><div className="patient-card-heading"><div><span>03</span><div><h2>Evaluación clínica</h2><p>Riesgos, recursos y observaciones profesionales.</p></div></div></div><div className="patient-form-grid patient-form-grid-two"><label className="patient-field"><span>Factores de riesgo</span><textarea className="is-large" value={history.riskFactors??''} onChange={e=>updateField('riskFactors',e.target.value)}/></label><label className="patient-field"><span>Factores protectores</span><textarea className="is-large" value={history.protectiveFactors??''} onChange={e=>updateField('protectiveFactors',e.target.value)}/></label><label className="patient-field patient-field-full"><span>Observaciones clínicas</span><textarea className="is-xlarge" value={history.clinicalObservations??''} onChange={e=>updateField('clinicalObservations',e.target.value)}/></label></div></section>
       <div className="patient-form-footer"><span>Última actualización: {formatDate(history.updatedAt,true)}</span><button className="button" type="submit" disabled={saving||patient.status==='ARCHIVED'}>{saving?'Guardando…':'Guardar cambios'}</button></div>
     </form>}
+    {isAuthor&&<PatientAccessHistory patientId={patient.id}/>}
+    {isAdmin&&exceptional&&<ExceptionalAccessDialog open={exceptionalDialog} patientId={patient.id} role={viewer.role} allowedReasons={exceptional.allowedReasons} onClose={()=>setExceptionalDialog(false)} onRegistered={reloadExceptional}/>}
+    {openingReasonDialog}
   </main></div>;
 }

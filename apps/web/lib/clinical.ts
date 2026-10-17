@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { AuthErrorCode, AuthMeContract, StaffRole } from '@asepsico/contracts';
+import type { AuthErrorCode, AuthMeContract, ProcessOpeningReasonCode, StaffRole } from '@asepsico/contracts';
 import { api, ApiError, apiErrorCode } from './api';
 
 /** Código del 403 de la API cuando falta activar la verificación en dos pasos. */
@@ -236,10 +236,12 @@ export function canManageProcess(viewer: Viewer | null, process: { therapistId?:
  * misma transacción). Si no acepta, se lanza un error y el proceso sigue como estaba.
  * Apaño mínimo de backend: Fina puede sustituir el window.confirm por un diálogo propio.
  */
-export async function changeProcessStatus(processId: string, status: ProcessStatus): Promise<void> {
+export async function changeProcessStatus(processId: string, status: ProcessStatus, openingReasonCode?: ProcessOpeningReasonCode): Promise<void> {
   const path = `/clinical-processes/${processId}/status`;
+  // H6: el motivo de apertura solo se envía cuando la API lo ha pedido (reactivar sobre historia ajena).
+  const reason = openingReasonCode ? { openingReasonCode } : {};
   try {
-    await api(path, { method: 'PATCH', body: JSON.stringify({ status }) });
+    await api(path, { method: 'PATCH', body: JSON.stringify({ status, ...reason }) });
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 409 || err.body.code !== 'PROCESS_HAS_FUTURE_SESSIONS') throw err;
     const sessions = Array.isArray(err.body.sessions) ? (err.body.sessions as Array<{ startsAt: string }>) : [];
@@ -249,7 +251,7 @@ export async function changeProcessStatus(processId: string, status: ProcessStat
       `Este proceso tiene ${sessions.length} cita(s) futura(s) programada(s): ${dates.join(', ')}${more}. ¿Cancelarlas y continuar?`,
     );
     if (!ok) throw new Error('No se ha cambiado el estado: el proceso tiene citas futuras programadas');
-    await api(path, { method: 'PATCH', body: JSON.stringify({ status, cancelFutureSessions: true }) });
+    await api(path, { method: 'PATCH', body: JSON.stringify({ status, cancelFutureSessions: true, ...reason }) });
   }
 }
 
