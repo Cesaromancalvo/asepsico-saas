@@ -206,6 +206,8 @@ function transactionalPrisma(initialMode:string, accounts:Account[], opts:{failA
     },
     auditLog:{create:jest.fn(async({data}:any)=>{ if(opts.failAuditAction&&data.action===opts.failAuditAction) throw new Error('audit down'); get().audit.push(data); return data; })},
     session:{findMany:jest.fn().mockResolvedValue([])},
+    // Reserva desde el portal: sin solicitudes pendientes en estos escenarios.
+    appointmentRequest:{findMany:jest.fn().mockResolvedValue([]),updateMany:jest.fn().mockResolvedValue({count:0})},
   });
   const root:any=client(()=>state);
   root.$transaction=jest.fn(async(cb:any)=>{
