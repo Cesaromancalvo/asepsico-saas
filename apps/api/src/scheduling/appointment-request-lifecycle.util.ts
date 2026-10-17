@@ -57,7 +57,8 @@ async function closeRows(
   data: Prisma.AppointmentRequestUpdateManyMutationInput,
 ): Promise<PendingRow[]> {
   const changed: PendingRow[] = [];
-  for (const row of rows) {
+  // Orden estable por id: dos rutas sin advisory lock común no cruzan filas en distinto orden.
+  for (const row of [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const { count } = await tx.appointmentRequest.updateMany({
       where: { id: row.id, workspaceId, status: 'PENDING' },
       data: { ...data, heldStartsAt: null, resolvedAt: new Date() },
@@ -79,6 +80,7 @@ export async function expireDueRequests(tx: Tx, workspaceId: string, scope: { th
   const now = new Date();
   const due = await tx.appointmentRequest.findMany({
     where: { workspaceId, status: 'PENDING', expiresAt: { lte: now }, ...scope },
+    orderBy: { id: 'asc' },
     select: PENDING_SELECT,
     take: 200,
   });
@@ -101,7 +103,7 @@ export async function expireDueRequests(tx: Tx, workspaceId: string, scope: { th
  * el motivo "contacta con la consulta", en la misma transacción que el cambio de estado.
  */
 export async function rejectPendingRequestsOfProcess(tx: Tx, workspaceId: string, clinicalProcessId: string, actorId: string, cause: string) {
-  const pending = await tx.appointmentRequest.findMany({ where: { workspaceId, clinicalProcessId, status: 'PENDING' }, select: PENDING_SELECT });
+  const pending = await tx.appointmentRequest.findMany({ where: { workspaceId, clinicalProcessId, status: 'PENDING' }, orderBy: { id: 'asc' }, select: PENDING_SELECT });
   const changed = await closeRows(tx, workspaceId, pending, { status: 'REJECTED', rejectionReason: 'CONTACT_PRACTICE', resolvedById: actorId });
   if (changed.length) {
     await tx.auditLog.createMany({
@@ -130,6 +132,7 @@ export async function rejectOverlappingPendingRequests(
       workspaceId, therapistId: params.therapistId, status: 'PENDING', type: { in: ['NEW', 'RESCHEDULE'] },
       id: { not: params.excludeRequestId }, startsAt: { lt: params.endsAt }, endsAt: { gt: params.startsAt },
     },
+    orderBy: { id: 'asc' },
     select: PENDING_SELECT,
   });
   const changed = await closeRows(tx, workspaceId, overlapping, { status: 'REJECTED', rejectionReason: 'SLOT_UNAVAILABLE', resolvedById: params.actorId });
@@ -161,6 +164,7 @@ export async function withdrawPendingRequestsOfPatient(
   if (accountIds && !accountIds.length) return [];
   const pending = await tx.appointmentRequest.findMany({
     where: { workspaceId, patientId, status: 'PENDING', ...(accountIds ? { requestedByAccountId: { in: accountIds } } : {}) },
+    orderBy: { id: 'asc' },
     select: PENDING_SELECT,
   });
   const changed = await closeRows(tx, workspaceId, pending, { status: 'WITHDRAWN', ...(actorId ? { resolvedById: actorId } : {}) });
