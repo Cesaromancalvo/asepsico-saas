@@ -14,7 +14,7 @@ import {
   BLOCK_REASON_LABEL, blockFormToRange, canToggleBooking, COMMON_TIME_ZONES, formatBlockRange, isValidTimeZone, validateWindows,
 } from '@/lib/booking';
 import {
-  createBlock, deleteBlock, getAvailability, saveAvailability, setPortalBooking, setTimeZone,
+  createBlock, deleteBlock, getAvailability, listProfessionals, saveAvailability, setPortalBooking, setTimeZone,
 } from '@/lib/booking-client';
 import { isAdminRole, isForbidden, useViewer } from '@/lib/clinical';
 
@@ -45,10 +45,6 @@ const MIN_NOTICE = [2, 4, 12, 24, 48, 72, 168];
 const HORIZON = [7, 14, 21, 28, 42, 60];
 const CANCEL_NOTICE = [0, 2, 12, 24, 48, 72];
 
-function personLabel(p: { firstName?: string | null; lastName?: string | null; email?: string | null }) {
-  return [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || p.email || 'Profesional';
-}
-
 /**
  * "Mi disponibilidad": franjas semanales, duración, descanso, antelaciones y bloqueos de un
  * profesional, y el interruptor para que sus pacientes pidan cita desde el portal (desactivado por
@@ -69,28 +65,14 @@ export default function AvailabilityPage() {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Quién puede elegirse: el propio terapeuta; titular y administración, el equipo clínico;
-  // recepción, los profesionales con citas en la agenda (la API no tiene aún un listado propio).
+  // Quién puede elegirse lo decide la API (GET /scheduling/professionals): el propio terapeuta, o
+  // todo el equipo clínico para titular, administración y recepción.
   useEffect(() => {
     if (!viewer?.role) return;
     let cancelled = false;
     (async () => {
       try {
-        let list: Professional[] = [];
-        if (viewer.role === 'THERAPIST' && viewer.userId) {
-          list = [{ id: viewer.userId, name: personLabel(viewer) }];
-        } else if (isAdminRole(viewer.role)) {
-          const members = await api<{ userId: string; role: string; isClinician: boolean; firstName: string | null; lastName: string | null; email: string | null }[]>('/workspace-members');
-          list = members.filter((m) => m.isClinician || m.role === 'THERAPIST').map((m) => ({ id: m.userId, name: personLabel(m) }));
-        } else {
-          const day = 86_400_000;
-          const from = new Date(Date.now() - 30 * day).toISOString();
-          const to = new Date(Date.now() + 90 * day).toISOString();
-          const page = await api<{ data: { therapist?: { id: string; firstName: string; lastName: string } | null }[] }>(`/sessions?from=${from}&to=${to}&pageSize=100`);
-          const seen = new Map<string, Professional>();
-          for (const s of page.data) if (s.therapist && !seen.has(s.therapist.id)) seen.set(s.therapist.id, { id: s.therapist.id, name: personLabel(s.therapist) });
-          list = [...seen.values()];
-        }
+        const list: Professional[] = (await listProfessionals()).professionals.map((p) => ({ id: p.id, name: p.name }));
         if (cancelled) return;
         setProfessionals(list);
         const own = list.find((p) => p.id === viewer.userId);

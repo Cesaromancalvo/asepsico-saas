@@ -174,6 +174,31 @@ describe('Disponibilidad: quién la edita (criterios 6–8)', () => {
     await expect(service.update(owner, 'assistant-1', dto)).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('6c: GET /scheduling/professionals — THERAPIST solo se ve a sí mismo; el resto, a todos los clínicos del espacio', async () => {
+    const prisma = seed({ therapistAvailability: [settings('t-b')] });
+    const service = new AvailabilityService(prisma);
+    const mine = await service.listProfessionals(therapistA);
+    expect(mine.professionals).toEqual([{ id: 't-a', name: 'Ana Ficticia', portalBookingEnabled: false, timeZone: 'Europe/Madrid' }]);
+    for (const actor of [assistant, owner, staff('admin-1', 'ADMIN')]) {
+      const all = await service.listProfessionals(actor);
+      expect(all.professionals).toEqual([
+        { id: 't-a', name: 'Ana Ficticia', portalBookingEnabled: false, timeZone: 'Europe/Madrid' },
+        { id: 't-b', name: 'Beto Ficticio', portalBookingEnabled: true, timeZone: 'Europe/Madrid' },
+      ]);
+    }
+  });
+
+  it('6d: el listado no filtra email ni datos de otro espacio, y un rol no staff se deniega', async () => {
+    const prisma = seed();
+    const service = new AvailabilityService(prisma);
+    const all = await service.listProfessionals(owner);
+    expect(JSON.stringify(all)).not.toMatch(/email|@example\.com|Xenia|t-x/);
+    for (const call of prisma.workspaceMember.findMany.mock.calls) expect(call[0].where.workspaceId).toBe(WS);
+    await expect(service.listProfessionals(staff('p1', 'PATIENT'))).rejects.toBeInstanceOf(ForbiddenException);
+    const otherWs = await service.listProfessionals(staff('owner-2', 'OWNER', 'ws-2'));
+    expect(otherWs.professionals.map((p: any) => p.id)).toEqual(['t-x']);
+  });
+
   it('7: ASSISTANT no activa ni desactiva la reserva online (403 auditado); el propio, OWNER y ADMIN sí', async () => {
     const prisma = seed();
     const service = new AvailabilityService(prisma);

@@ -6,6 +6,7 @@ import type {
   PortalBookingOptionsContract,
   PortalSlotsContract,
   RejectionReason,
+  SchedulingProfessionalsContract,
   StaffAppointmentRequestContract,
   UpdateAvailabilityRequestContract,
 } from '@asepsico/contracts';
@@ -22,6 +23,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1
 const seg = encodeURIComponent;
 
 /* ----------------------------- Profesional ----------------------------- */
+
+export const listProfessionals = () => api<SchedulingProfessionalsContract>('/scheduling/professionals');
 
 export const getAvailability = (therapistId: string) => api<AvailabilityViewContract>(`/scheduling/availability/${seg(therapistId)}`);
 

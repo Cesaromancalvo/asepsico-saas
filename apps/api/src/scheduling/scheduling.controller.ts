@@ -39,6 +39,9 @@ export class SchedulingController {
   @Patch('time-zone')
   setTimeZone(@CurrentUser() user: AuthUser, @Body() dto: SetTimeZoneDto) { return this.availability.setTimeZone(user, dto); }
 
+  @Get('professionals')
+  listProfessionals(@CurrentUser() user: AuthUser) { return this.availability.listProfessionals(user); }
+
   @Get('availability/:therapistId')
   getAvailability(@CurrentUser() user: AuthUser, @Param('therapistId') therapistId: string) { return this.availability.get(user, therapistId); }
 

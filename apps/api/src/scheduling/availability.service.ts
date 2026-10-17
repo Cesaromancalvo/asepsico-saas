@@ -37,6 +37,43 @@ const MAX_BLOCK_DAYS = 366;
 export class AvailabilityService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Profesionales del espacio con agenda, para el selector de la web. THERAPIST ve solo el suyo
+   * (spec: "la suya"); OWNER / ADMIN / ASSISTANT ven a todos los profesionales clínicos. Solo id,
+   * nombre visible, si ofrece reserva en el portal y la zona horaria del espacio: ni email ni clínica.
+   */
+  async listProfessionals(actor: AuthUser) {
+    assertStaffRole(actor);
+    const workspaceId = actor.workspaceId;
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId, ...(actor.role === 'THERAPIST' ? { userId: actor.sub } : {}) },
+      orderBy: { userId: 'asc' },
+      select: { userId: true, role: true, isClinician: true },
+    });
+    const ids = members.filter(isClinicalProfile).map((m) => m.userId);
+    if (!ids.length) return { timeZone: DEFAULT_TIME_ZONE, professionals: [] };
+    const [users, settings, workspace] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } }),
+      this.prisma.therapistAvailability.findMany({ where: { workspaceId, therapistId: { in: ids } }, select: { therapistId: true, portalBookingEnabled: true } }),
+      this.prisma.workspace.findFirst({ where: { id: workspaceId }, select: { timeZone: true } }),
+    ]);
+    const timeZone = workspace?.timeZone ?? DEFAULT_TIME_ZONE;
+    const professionals = ids
+      .map((id) => {
+        const u = users.find((x) => x.id === id);
+        if (!u) return null;
+        return {
+          id,
+          name: [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || 'Profesional',
+          portalBookingEnabled: settings.find((x) => x.therapistId === id)?.portalBookingEnabled === true,
+          timeZone,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => a.name.localeCompare(b.name, 'es') || a.id.localeCompare(b.id));
+    return { timeZone, professionals };
+  }
+
   async get(actor: AuthUser, therapistId: string) {
     const workspaceId = actor.workspaceId;
     await this.assertCanEdit(actor, therapistId, 'availability-read');

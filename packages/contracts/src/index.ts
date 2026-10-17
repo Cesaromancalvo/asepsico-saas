@@ -168,6 +168,10 @@ export interface AvailabilitySettingsContract {
 
 export interface AvailabilityBlockContract { id: string; startsAt: string; endsAt: string; reason: BlockReason; }
 
+/** Fila de GET /scheduling/professionals: sin email ni datos clínicos. */
+export interface SchedulingProfessionalContract { id: string; name: string; portalBookingEnabled: boolean; timeZone: string; }
+export interface SchedulingProfessionalsContract { timeZone: string; professionals: SchedulingProfessionalContract[]; }
+
 /** GET /scheduling/availability/:therapistId */
 export interface AvailabilityViewContract {
   therapistId: string;
