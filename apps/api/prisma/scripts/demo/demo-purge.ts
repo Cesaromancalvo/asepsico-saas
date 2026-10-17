@@ -60,6 +60,10 @@ async function userIsReferenced(tx: Prisma.TransactionClient, userId: string): P
     tx.invoice.count({ where: { createdById: userId } }),
     tx.payment.count({ where: { recordedById: userId } }),
     tx.workspaceMember.count({ where: { userId } }),
+    tx.appointmentRequest.count({ where: { therapistId: userId } }),
+    tx.therapistAvailability.count({ where: { therapistId: userId } }),
+    tx.availabilityWindow.count({ where: { therapistId: userId } }),
+    tx.availabilityBlock.count({ where: { therapistId: userId } }),
   ]);
   return counts.some((n) => n > 0);
 }
@@ -82,6 +86,7 @@ export async function purgeDemoData(tx: Prisma.TransactionClient, workspaceId: s
   const inPatients = { workspaceId, patientId: { in: scope.patientIds } };
   // Hijos con FK RESTRICT hacia Patient, siempre acotados al workspace y a pacientes demo.
   const dataRightsRequests = await deleteDemoDataRightsRequests(tx, workspaceId, scope.patientIds);
+  const appointmentRequests = await tx.appointmentRequest.deleteMany({ where: inPatients });
   const payments = await tx.payment.deleteMany({ where: inPatients });
   const invoices = await tx.invoice.deleteMany({ where: { ...inPatients, status: 'DRAFT' } });
   const sessions = await tx.session.deleteMany({ where: inPatients });
@@ -96,6 +101,12 @@ export async function purgeDemoData(tx: Prisma.TransactionClient, workspaceId: s
   let usersDisabled = 0;
   for (const member of scope.members) {
     await tx.workspaceMember.deleteMany({ where: { id: member.id, workspaceId } });
+    // Disponibilidad del miembro demo en ESTE espacio (configuración de agenda, sin datos de pacientes).
+    await tx.availabilityBlock.deleteMany({ where: { workspaceId, therapistId: member.userId } });
+    await tx.availabilityWindow.deleteMany({ where: { workspaceId, therapistId: member.userId } });
+    await tx.therapistAvailability.deleteMany({ where: { workspaceId, therapistId: member.userId } });
+    // Avisos al profesional (userId, sin paciente): la solicitud de cita le avisa sin patientId y no caería con el paciente.
+    await tx.notification.deleteMany({ where: { workspaceId, audience: 'PROFESSIONAL', userId: member.userId, type: 'APPOINTMENT_REQUEST' } });
     await tx.refreshToken.updateMany({ where: { userId: member.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     if (await userIsReferenced(tx, member.userId)) {
       // Hash inválido para bcrypt: ninguna contraseña coincide. Sin MFA ni sesiones vivas.
@@ -111,7 +122,7 @@ export async function purgeDemoData(tx: Prisma.TransactionClient, workspaceId: s
 
   const counts = {
     patients: patients.count, sessions: sessions.count, processes: processes.count, draftInvoices: invoices.count,
-    payments: payments.count, notifications: notifications.count, dataRightsRequests,
+    payments: payments.count, notifications: notifications.count, dataRightsRequests, appointmentRequests: appointmentRequests.count,
     demoMembersRemoved: scope.members.length, usersDeleted, usersDisabled,
     // Sin claves completas (pueden llevar nombres de archivo): recuento y huellas para localizarlas.
     storageObjects: scope.storageKeys.length, storageKeyFingerprints: scope.storageKeys.map(storageKeyFingerprint),

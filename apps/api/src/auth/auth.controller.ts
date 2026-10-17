@@ -102,9 +102,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   @Post('logout')
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response, @CurrentUser() _user: AuthUser) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response, @CurrentUser() user: AuthUser) {
     const rawToken = req.cookies?.[REFRESH_COOKIE];
-    await this.auth.logout(rawToken);
+    await this.auth.logout(rawToken, user);
     clearAuthCookies(res);
     return { success: true };
   }

@@ -21,6 +21,8 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     patient: [], workspaceMember: [], clinicalProcess: [], session: [], clinicalHistory: [], therapyGoal: [],
     therapeuticTask: [], clinicalAssessment: [], patientDocument: [], consentRecord: [], clinicalReport: [],
     conversation: [], message: [], auditLog: [], resourceShare: [], invoice: [], notification: [], user: [],
+    clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
+    appointmentRequest: [], availabilityBlock: [],
     ...seed,
   } as Store;
 
@@ -88,6 +90,11 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       const row = find(name, args.where)[0];
       return row ? hydrate(name, row, args) : null;
     }),
+    findFirstOrThrow: jest.fn(async (args: Row = {}) => {
+      const row = find(name, args.where)[0];
+      if (!row) throw new Error(`${name}: no encontrado`);
+      return hydrate(name, row, args);
+    }),
     findUnique: jest.fn(async (args: Row = {}) => {
       const row = find(name, args.where)[0];
       return row ? hydrate(name, row, args) : null;
@@ -135,6 +142,13 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       for (const key of Object.keys(snapshot)) store[key] = snapshot[key];
       throw error;
     }
+  });
+  // Advisory locks (H6): se registran para comprobar que se piden ANTES de leer la historia.
+  prisma.__locks = [] as string[];
+  prisma.$executeRawUnsafe = jest.fn(async (_sql: string, key: string) => { prisma.__locks.push(key); return 1; });
+  prisma.$executeRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    prisma.__locks.push(String(values[0]));
+    return 1;
   });
   prisma.__store = store;
   return prisma;

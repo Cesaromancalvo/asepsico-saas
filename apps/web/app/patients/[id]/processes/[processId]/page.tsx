@@ -5,9 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
+import { useOpeningReasonPrompt } from '@/components/OpeningReasonPicker';
 import { api } from '@/lib/api';
+import type { CurrentExceptionalAccessResponse } from '@asepsico/contracts';
+import { OpeningCancelled, withOpeningReason } from '@/lib/exceptional-access';
 import {
   canManageProcess,
+  isAdminRole,
   changeProcessStatus,
   ClinicalProcessRow,
   isForbidden,
@@ -49,7 +53,8 @@ function formatDate(value?: string | null, withTime = false) {
   return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', year: 'numeric', ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}) }).format(new Date(value));
 }
 
-function readOnlyReason(detail: ProcessDetail, isAuthor: boolean): string {
+function readOnlyReason(detail: ProcessDetail, isAuthor: boolean, exceptional: boolean): string {
+  if (exceptional) return 'Acceso excepcional: solo lectura y sin las notas internas de los profesionales.';
   if (!isAuthor) return 'Este proceso es de otro profesional: puedes consultarlo, pero solo su autor lo modifica.';
   if (detail.status === 'PAUSED') return 'El proceso está en pausa. Reactívalo para volver a registrar contenido clínico.';
   if (detail.status === 'DISCHARGED') return 'El proceso está de alta. Reábrelo si el paciente vuelve a consulta.';
@@ -70,6 +75,10 @@ export default function ProcessPage() {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [switching, setSwitching] = useState(false);
+  // OWNER/ADMIN con acceso excepcional vigente a este paciente (en esta sesión).
+  const [exceptional, setExceptional] = useState(false);
+  const [canRequestExceptional, setCanRequestExceptional] = useState(false);
+  const { ask: askOpeningReason, dialog: openingReasonDialog } = useOpeningReasonPrompt('Reactivar proceso');
 
   async function load() {
     setError('');
@@ -99,7 +108,19 @@ export default function ProcessPage() {
         return;
       }
     }
-    if (row?.canReadClinical !== true) {
+    // Sin acceso por E1: un OWNER/ADMIN puede tener un acceso excepcional vigente. Lo dice la API.
+    let viaExceptional = false;
+    if (row && row.canReadClinical !== true && isAdminRole(viewer?.role)) {
+      try {
+        const current = await api<CurrentExceptionalAccessResponse>(`/patients/${patientId}/exceptional-access/current`);
+        viaExceptional = Boolean(current.active);
+        setCanRequestExceptional(current.canRequest && current.allowedReasons.length > 0);
+      } catch {
+        viaExceptional = false;
+      }
+    }
+    setExceptional(viaExceptional);
+    if (row?.canReadClinical !== true && !viaExceptional) {
       setDetail(null);
       setSummary(row);
       setState('administrative');
@@ -135,7 +156,8 @@ export default function ProcessPage() {
 
   const meta = detail ?? summary;
   const isAuthor = Boolean(detail && (viewer?.userId ? detail.therapistId === viewer.userId : Object.prototype.hasOwnProperty.call(detail, 'internalNotes')));
-  const readOnly = detail ? detail.readOnly || detail.status !== 'ACTIVE' : true;
+  // Con acceso excepcional, siempre solo lectura, diga lo que diga la respuesta (revisión de Argos).
+  const readOnly = exceptional || !detail || detail.readOnly || detail.status !== 'ACTIVE';
   const canManage = meta ? canManageProcess(viewer, meta) : false;
 
   async function changeStatus(next: ProcessStatus, message: string) {
@@ -143,10 +165,13 @@ export default function ProcessPage() {
     setError('');
     setStatus('');
     try {
-      await changeProcessStatus(processId, next);
+      // H6: reactivar sobre historia ajena pide motivo (OWNER/ADMIN) o lo hace la dirección (THERAPIST).
+      if (next === 'ACTIVE') await withOpeningReason((code) => changeProcessStatus(processId, next, code), askOpeningReason);
+      else await changeProcessStatus(processId, next);
       setStatus(message);
       await load();
     } catch (err) {
+      if (err instanceof OpeningCancelled) return;
       setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado del proceso');
     } finally {
       setBusy(false);
@@ -235,6 +260,7 @@ export default function ProcessPage() {
           <div>
             <strong>Contenido clínico reservado</strong>
             <p>Solo su terapeuta puede ver el contenido clínico de este proceso. Aquí tienes los datos de gestión.</p>
+            {canRequestExceptional && <p>Si necesitas consultarlo por un motivo legítimo, registra un acceso excepcional desde la <Link href={`/patients/${patientId}`}>ficha del paciente</Link>.</p>}
           </div>
         </div>
       )}
@@ -243,7 +269,7 @@ export default function ProcessPage() {
         <div className="e1-notice" role="note">
           <div>
             <strong>Solo lectura</strong>
-            <p>{readOnlyReason(detail, isAuthor)}</p>
+            <p>{readOnlyReason(detail, isAuthor, exceptional)}</p>
           </div>
           {canReactivate && (
             <div className="e1-notice-actions">
@@ -286,7 +312,7 @@ export default function ProcessPage() {
             <p className="e1-readonly-text">{detail.consultationReason || 'Sin registrar'}</p>
             <h3>Objetivos</h3>
             <p className="e1-readonly-text">{detail.goals || 'Sin registrar'}</p>
-            {isAuthor && <><h3>Notas internas</h3><p className="e1-readonly-text">{detail.internalNotes || 'Sin registrar'}</p></>}
+            {isAuthor && !exceptional && <><h3>Notas internas</h3><p className="e1-readonly-text">{detail.internalNotes || 'Sin registrar'}</p></>}
           </section>
         ) : (
           <form className="patient-record-card e1-form" style={{ maxWidth: 'none' }} onSubmit={save}>
@@ -354,6 +380,7 @@ export default function ProcessPage() {
           </section>
         )}
       </div>
+      {openingReasonDialog}
     </main></div>
   );
 }

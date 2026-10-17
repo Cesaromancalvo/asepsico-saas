@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
 
 type TaskStatus='DRAFT'|'PENDING'|'IN_PROGRESS'|'SUBMITTED'|'CHANGES_REQUESTED'|'COMPLETED'|'CANCELLED';
@@ -14,7 +15,16 @@ type Patient={id:string;firstName:string;lastName:string;status:string};
 const LABEL:Record<TaskStatus,string>={DRAFT:'Borrador',PENDING:'Asignada',IN_PROGRESS:'En curso',SUBMITTED:'Entregada',CHANGES_REQUESTED:'Cambios solicitados',COMPLETED:'Completada',CANCELLED:'Cancelada'};
 const fmt=(v?:string|null)=>v?new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(v)):'Sin fecha';
 
+/**
+ * Solo con TREATING: con acceso excepcional (o sin relación) no se montan las notas internas ni
+ * los controles de escritura; se remite a la ficha en solo lectura (revisión de Argos).
+ */
 export default function PatientTasksPage(){
+  const {id:patientId}=useParams<{id:string}>();
+  return <ClinicalSubpageGate patientId={patientId} section="Tareas"><PatientTasksPageContent/></ClinicalSubpageGate>;
+}
+
+function PatientTasksPageContent(){
  const {id:patientId}=useParams<{id:string}>();
  const [patient,setPatient]=useState<Patient|null>(null),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[templates,setTemplates]=useState<Template[]>([]);
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState<'ALL'|TaskStatus>('ALL');
