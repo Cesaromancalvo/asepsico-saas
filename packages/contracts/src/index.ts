@@ -110,7 +110,15 @@ export type StaffRole = 'OWNER' | 'ADMIN' | 'THERAPIST' | 'ASSISTANT';
 /** GET /auth/me: datos no clínicos del propio usuario (todos los roles de personal). */
 export interface AuthMeContract { userId: string; email: string; firstName: string; lastName: string; role: StaffRole; isClinician: boolean; mfaEnabled: boolean; workspace: { id: string; name: string }; }
 /** 403 de JwtAuthGuard: { statusCode: 403, code: 'MFA_SETUP_REQUIRED', message } (rol que exige MFA sin activarlo). */
-export type AuthErrorCode = 'MFA_SETUP_REQUIRED';
+export type AuthErrorCode = 'MFA_SETUP_REQUIRED' | 'CHANGE_PASSWORD_INVALID' | 'MFA_CODE_REQUIRED' | 'PASSWORD_UNCHANGED';
+/**
+ * POST /auth/change-password (JWT + CSRF, 5/min). `newPassword`: mínimo 12 caracteres y máximo 72 bytes UTF-8
+ * (límite de bcrypt; copia en apps/api/src/auth/password-policy.ts y apps/web/lib/password-change.ts).
+ * `mfaCode` (6 dígitos TOTP) es obligatorio si la cuenta tiene el MFA activo.
+ */
+export interface ChangePasswordRequestContract { currentPassword: string; newPassword: string; mfaCode?: string; }
+/** Respuesta: la sesión actual se renueva (cookies nuevas) y todas las demás quedan cerradas. */
+export interface ChangePasswordResponseContract { success: true; otherSessionsClosed: true; }
 
 /** Conceptos admitidos en una línea de factura (lista cerrada; copia de apps/api/src/billing/invoice-concepts.ts). */
 export const INVOICE_LINE_CONCEPTS = ['Sesión', 'Sesión de psicología', 'Sesión individual', 'Sesión de pareja', 'Sesión familiar', 'Sesión de grupo', 'Sesión online', 'Primera consulta', 'Sesión de evaluación', 'Informe psicológico', 'Bono de sesiones', 'Otro concepto'] as const;

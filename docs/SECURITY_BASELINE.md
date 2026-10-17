@@ -14,6 +14,16 @@ datos clínicos reales en producción.
   cada `/auth/refresh` invalida el token anterior y emite uno nuevo. Si un token ya revocado
   se reutiliza (señal de robo/filtración), se revoca toda la familia de sesiones derivadas de
   ese login.
+- Cambio de contraseña de los profesionales (`POST /auth/change-password`, pantalla
+  `/settings/security`): exige la contraseña actual y, con MFA activo, un código TOTP no usado
+  (no acepta códigos de recuperación); OWNER/ADMIN/THERAPIST sin MFA reciben 403
+  `MFA_SETUP_REQUIRED` y los tokens del portal, 401. Política: 12 caracteres mínimo y 72 bytes
+  UTF-8 máximo, bcrypt coste 12. En una sola transacción guarda el nuevo hash, revoca **todos**
+  los refresh tokens del usuario, audita `USER_PASSWORD_CHANGED` (sin correo, IP ni user agent)
+  y emite una sesión nueva para el navegador actual. **Limitación conocida (aceptada por Argos):**
+  los access tokens ya emitidos en otros dispositivos siguen siendo válidos hasta caducar, como
+  máximo **15 minutos** después del cambio. Pendiente: invalidarlos con `tokenVersion` o
+  `passwordChangedAt` comprobado en el guard.
 - Protección CSRF con patrón *double-submit cookie* en los endpoints que modifican estado.
 - Rate limiting: 5 intentos/minuto en login y registro; 10/minuto en refresh; 100/minuto global.
 - Aislamiento por `workspaceId` aplicado tanto en lectura como en las propias operaciones de

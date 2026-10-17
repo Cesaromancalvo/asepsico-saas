@@ -34,6 +34,8 @@ export type Viewer = {
   workspaceName: string | null;
   /** La API pide activar la verificación en dos pasos antes de continuar (403 MFA_SETUP_REQUIRED). */
   mfaPending?: boolean;
+  /** La cuenta tiene la verificación en dos pasos activa (GET /auth/me). */
+  mfaEnabled?: boolean;
 };
 
 const ANONYMOUS_VIEWER: Viewer = { userId: null, role: null, isClinician: false, firstName: null, lastName: null, workspaceName: null };
@@ -55,6 +57,7 @@ export function viewerFromMe(me: Partial<AuthMeContract> | null | undefined): Vi
     firstName: me?.firstName?.trim() || null,
     lastName: me?.lastName?.trim() || null,
     workspaceName: me?.workspace?.name?.trim() || null,
+    mfaEnabled: me?.mfaEnabled === true,
   };
 }
 

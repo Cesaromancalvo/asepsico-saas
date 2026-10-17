@@ -7,6 +7,8 @@ import { MfaService } from './mfa.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto, RegisterMemberDto } from './dto/register.dto';
 import { RegistrationService } from './registration.service';
+import { PasswordService } from './password.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyMfaLoginDto, ConfirmMfaSetupDto, DisableMfaDto } from './dto/mfa.dto';
 import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from './cookie.util';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -26,7 +28,12 @@ const NO_STORE: [string, string] = ['Cache-Control', 'no-store'];
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService, private mfa: MfaService, private registration: RegistrationService) {}
+  constructor(
+    private auth: AuthService,
+    private mfa: MfaService,
+    private registration: RegistrationService,
+    private passwords: PasswordService,
+  ) {}
 
   // Registro CERRADO: solo con invitación de plataforma (npm run invites:create) y aceptando las
   // condiciones vigentes. Cualquier fallo de invitación → 400 REGISTRATION_NOT_ALLOWED (neutro).
@@ -100,6 +107,24 @@ export class AuthController {
     await this.auth.logout(rawToken);
     clearAuthCookies(res);
     return { success: true };
+  }
+
+  // Cambio de contraseña del propio profesional (todos los roles de personal). Pide la actual y,
+  // con MFA activo, un TOTP. Revoca todas las demás sesiones y renueva la de este navegador.
+  @Throttle(AUTH_THROTTLE)
+  @Header(...NO_STORE)
+  @UseGuards(JwtAuthGuard, CsrfGuard)
+  @HttpCode(200)
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const session = await this.passwords.changePassword({ userId: user.sub, workspaceId: user.workspaceId }, dto, meta(req));
+    setAuthCookies(res, session);
+    return { success: true, otherSessionsClosed: true };
   }
 
   @Throttle(AUTH_THROTTLE)
