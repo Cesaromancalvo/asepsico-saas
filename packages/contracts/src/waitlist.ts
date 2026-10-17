@@ -37,7 +37,10 @@ export interface WaitlistSubmitRequest {
   /** Email válido, máx. 254. */
   email: string;
   situation: WaitlistSituation;
-  /** Opcional, máx. 500. */
+  /**
+   * Opcional, máx. 500. La landing manda una opción ("Doctoralia", "Eholo", "Excel / hojas de cálculo",
+   * "Papel / agenda", "Nada todavía", "Otra") o "Otra: <texto>" (texto de máx. 100).
+   */
   tools?: string;
   /** Opcional, entero 1–500. */
   professionalsCount?: number;
@@ -47,6 +50,7 @@ export interface WaitlistSubmitRequest {
   privacyAccepted: true;
   privacyPolicyVersion: typeof WAITLIST_PRIVACY_POLICY_VERSION;
   /**
+   * La landing ya no lo envía (sin casilla de novedades); la API lo sigue aceptando y, si falta, guarda false.
    * Casilla opcional de comunicaciones comerciales. Por defecto false. Solo registra la SOLICITUD:
    * el consentimiento válido requiere doble opt-in por email (manual, fuera del formulario).
    */

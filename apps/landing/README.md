@@ -16,7 +16,8 @@ apps/landing/
     index.html             <- la landing
     aviso-legal/index.html <- aviso legal (texto final de Argos)
     privacidad/index.html  <- política de privacidad y cookies (versión sin analítica)
-    privacidad-lista-espera/index.html    <- política de la lista de espera v2 (formulario propio)
+    privacidad-lista-espera/index.html    <- política de la lista de espera v3 (formulario propio)
+    privacidad-lista-espera/v2/index.html <- política v2 archivada (altas hechas con la versión lista-espera-v2; la v3 la enlaza); noindex
     privacidad-lista-espera/v1/index.html <- política v1 (Google Forms), solo para la red de seguridad; noindex
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
@@ -85,9 +86,9 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `FEATURES.ownWaitlistForm` | `true` | Formulario propio de la lista de espera (sección `#apuntate`), enviado con `fetch` a `WAITLIST_API_URL`. Todos los botones "Apúntate" llevan a esa sección (`href="#apuntate"` en el HTML) y ponen el foco en el primer campo. **Apagado = red de seguridad**: la sección desaparece, los botones vuelven a `FORM_URL` (Google Forms, pestaña nueva) y los enlaces de privacidad a `FORM_PRIVACY_URL_FALLBACK` (v1). Si se apaga, cambiar también a mano el enlace de privacidad dentro del Google Form a `/privacidad-lista-espera/v1/` |
 | (red de seguridad) | — | **Si se apaga `FEATURES.ownWaitlistForm`, en el mismo despliegue** hay que restaurar la mención a Google Forms en el apartado 5 de `/aviso-legal/` y el texto anterior del apartado 2 de `/privacidad/` (auditoría de Lex Psi, 12/10): si no, los dos textos dirían algo falso |
 | `WAITLIST_API_URL` | `https://asepsico-api.onrender.com/api/v1` | API de la lista de espera. Único sitio con la URL. Si cambia el host: CSP (`connect-src`) y `CONNECT_ORIGINS` de `scripts/check-landing.mjs` |
-| `WAITLIST_POLICY_VERSION` | `lista-espera-v2` | Se envía en `privacyPolicyVersion`. Tiene que coincidir con la versión visible en `/privacidad-lista-espera/` y con la que acepta la API |
+| `WAITLIST_POLICY_VERSION` | `lista-espera-v3` | Se envía en `privacyPolicyVersion`. Tiene que coincidir con la versión visible en `/privacidad-lista-espera/` y estar entre las que acepta la API (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`: v2 y v3 durante la transición). Al cambiarla, **desplegar primero la API y después la landing**; si no, el formulario devuelve 400 |
 | `FORM_URL` | formulario de Google Forms de la lista de espera | Solo se usa con `FEATURES.ownWaitlistForm: false` (sin JavaScript, los botones van a `#apuntate`, que muestra un aviso y el email de contacto) |
-| `FORM_PRIVACY_URL` | `/privacidad-lista-espera/` | Política de la lista de espera v2 (Lex Psi). Enlazada en el formulario, la FAQ 5, la llamada final y el pie, con `href` estático |
+| `FORM_PRIVACY_URL` | `/privacidad-lista-espera/` | Política de la lista de espera v3 (Lex Psi). Enlazada en el formulario, la FAQ 5, la llamada final y el pie, con `href` estático |
 | `FORM_PRIVACY_URL_FALLBACK` | `/privacidad-lista-espera/v1/` | Política v1 (Google Forms, texto del Jefe del 29/09). Solo se enlaza con el formulario propio apagado. `noindex` y fuera del sitemap |
 | `CONTACT_EMAIL` | `asepsico1@gmail.com` | También está escrito en los `mailto:` de las páginas (respaldo sin JavaScript) |
 | `POPUP_TITLE` | "Sé de los primeros en probar AsePsico" | Título del aviso al entrar. Mientras esté vacío, el aviso no se muestra aunque `FEATURES.leadPopup` esté encendido |
@@ -98,7 +99,7 @@ Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), 
 | `FEATURES.instagram` | `false` | Enlace a @asepsico en el pie. Apagado hasta corregir la bio. Al encenderlo, añadir `"sameAs": ["https://www.instagram.com/asepsico/"]` al `Organization` del JSON-LD |
 | `FEATURES.leadPopup` | `true` | Aviso "Sé de los primeros en probar AsePsico". Sale una vez por visita **solo al pasar el 50 % del scroll** (sin temporizador, para no contar como intersticial intrusivo en móvil). No es modal: no roba el foco ni bloquea la página. En escritorio es una tarjeta abajo a la derecha; en móvil, una barra pequeña pegada abajo (título, "Apuntarme" y cerrar). Se cierra con la X, "Ahora no" o Esc. No recoge datos ni guarda nada en el navegador |
 | `FEATURES.savingsCalculator` | `false` | "Lo que te cuesta hoy" (decisión del Jefe, 07/10): horas a la semana por tarea (lista `SAVINGS.TASKS`), total a la semana y al mes (× 46/12, hacia abajo a la media hora), euros a la semana y al mes solo si se escribe el valor de la hora, y reparto en %. **No dice cuánto ahorra AsePsico**, no publica precios ni resta el coste de la herramienta. Vive en `<template id="tpl-ahorro">` y calcula en el navegador. La enciende el Jefe tras Lex Psi y Clio |
-| `SAVINGS.TASKS` | 9 tareas (lista de Vega, v3) | Lista ordenada de tareas de "Lo que te cuesta hoy" (`id`, `label`, `help`, `placeholder`). Cambiar una tarea es editar esta lista; los campos, el gráfico (9 colores) y la leyenda se generan solos. Los campos empiezan vacíos: el placeholder es un ejemplo en gris que **no cuenta** y el resultado inicial es 0 h. `SAVINGS.OTHER_TASK` (`true`): fila opcional "Otra tarea" (nombre + horas) que suma y no sale del navegador |
+| `SAVINGS.TASKS` | 4 tareas (agrupadas por el Jefe, v4) | Lista ordenada de tareas de "Lo que te cuesta hoy" (`id`, `label`, `help`, `placeholder`). Cambiar una tarea es editar esta lista; los campos, el gráfico (hasta 9 colores en el CSS) y la leyenda se generan solos. Los campos empiezan vacíos: el placeholder es un ejemplo en gris que **no cuenta** y el resultado inicial es 0 h. Sin fila "Otra tarea" |
 
 Bloques que **no deben existir** en `public/` hasta que se aprueben: la calculadora (guardada en
 `borradores/calculadora.html`; `FEATURES.calculadora` no hace nada sin pegar antes ese bloque) y
@@ -186,7 +187,7 @@ Comprobaciones para Dora tras el primer despliegue (auditoría SEO de Mou, C4 y 
 
 ## Sitemap
 
-La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`; `/privacidad-lista-espera/v1/` lleva `noindex` y queda fuera), con `lastmod`
+La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`; `/privacidad-lista-espera/v1/` y `/v2/` llevan `noindex` y quedan fuera), con `lastmod`
 (cambiarlo solo cuando cambie el contenido). Nunca una URL con `noindex` (p. ej. `404.html`), oculta o
 que redirija. `/aviso-legal/` queda fuera hasta que Lex Psi decida si lleva `noindex` (domicilio).
 

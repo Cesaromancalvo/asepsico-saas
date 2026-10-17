@@ -257,85 +257,9 @@
       li.appendChild(pct);
       legend.appendChild(li);
 
-      inputs.push({ input: input, err: err, seg: seg, li: li, pct: pct, nameEl: li.childNodes[1], name: t.label, max: MAX_H });
+      inputs.push({ input: input, err: err, seg: seg, li: li, pct: pct, name: t.label, max: MAX_H });
     });
 
-    // Filas opcionales "Otra tarea" (hasta SAVINGS.OTHER_TASKS): nombre de la actividad + horas.
-    // El nombre solo se pinta en la leyenda, con textContent y como mucho OTHER_NAME_MAX caracteres.
-    var othersBox = box.querySelector('[data-sv-others]');
-    var othersList = box.querySelector('[data-sv-others-list]');
-    var addBtn = box.querySelector('[data-sv-add]');
-    var MAX_OTHERS = typeof SAVINGS.OTHER_TASKS === 'number' ? SAVINGS.OTHER_TASKS : 3;
-    var NAME_MAX = SAVINGS.OTHER_NAME_MAX || 40;
-    var others = [];
-    function addOther() {
-      if (others.length >= MAX_OTHERS) return null;
-      var n = others.length + 1;
-      var id = 'sv-o' + n;
-      var row = el('div', 'sfield sfield--other');
-      row.setAttribute('role', 'group');
-      var title = el('p', 'sfield__title', 'Otra tarea' + (MAX_OTHERS > 1 ? ' ' + n : '') + ' (opcional)');
-      title.id = id + '-title';
-      row.setAttribute('aria-labelledby', title.id);
-      row.appendChild(title);
-      var pair = el('div', 'sfield__pair');
-      function sub(labelText, input, errId) {
-        var wrap = el('div', 'sfield__sub');
-        var lab = el('label', '', labelText);
-        lab.htmlFor = input.id;
-        wrap.appendChild(lab);
-        wrap.appendChild(input);
-        var err = el('p', 'sfield__err');
-        err.id = errId; err.hidden = true;
-        wrap.appendChild(err);
-        input.setAttribute('aria-describedby', 'sv-o-help ' + errId);
-        pair.appendChild(wrap);
-        return err;
-      }
-      var name = el('input');
-      name.id = id + '-name'; name.type = 'text'; name.maxLength = NAME_MAX; name.autocomplete = 'off';
-      name.spellcheck = false; name.placeholder = 'p. ej. redes sociales';
-      var hours = el('input');
-      hours.id = id + '-h'; hours.type = 'number'; hours.inputMode = 'decimal'; hours.min = '0';
-      hours.max = String(MAX_H); hours.step = '0.5'; hours.autocomplete = 'off';
-      var nameErr = sub('Qué tarea es', name, id + '-name-err');
-      var hoursErr = sub('Horas a la semana', hours, id + '-h-err');
-      row.appendChild(pair);
-      othersList.appendChild(row);
-
-      var seg = document.createElementNS(donut.namespaceURI, 'circle');
-      seg.setAttribute('class', 'donut__seg donut__seg--other' + n);
-      seg.setAttribute('cx', '60'); seg.setAttribute('cy', '60'); seg.setAttribute('r', '44');
-      seg.setAttribute('pathLength', '100'); seg.setAttribute('stroke-dasharray', '0 100');
-      donut.appendChild(seg);
-      var li = el('li');
-      li.hidden = true;
-      li.appendChild(el('span', 'donut__key donut__key--other' + n));
-      li.firstChild.setAttribute('aria-hidden', 'true');
-      var nameEl = el('span', 'donut__name');
-      li.appendChild(nameEl);
-      var pct = el('span', 'donut__val');
-      li.appendChild(pct);
-      legend.appendChild(li);
-
-      var f = { input: hours, err: hoursErr, nameInput: name, nameErr: nameErr, seg: seg, li: li, pct: pct,
-        nameEl: nameEl, name: '', max: MAX_H, other: true };
-      inputs.push(f);
-      others.push(f);
-      name.addEventListener('input', update);
-      hours.addEventListener('input', update);
-      if (addBtn) addBtn.hidden = others.length >= MAX_OTHERS;
-      return f;
-    }
-    if (othersBox && MAX_OTHERS > 0 && othersList) {
-      addOther();
-      if (addBtn) addBtn.addEventListener('click', function () {
-        var f = addOther();
-        if (f) { f.nameInput.focus(); update(); }
-      });
-    } else if (othersBox) {
-      othersBox.remove();
-    }
     var value = { input: box.querySelector('[data-sv-value]'), max: MAX_V };
     value.err = value.input ? value.input.parentNode.querySelector('[data-sv-err]') : null;
 
@@ -367,17 +291,6 @@
       var badInput = f.input.validity && f.input.validity.badInput;
       var v = raw === '' ? 0 : parseFloat(raw.replace(',', '.'));
       var bad = badInput || !isFinite(v) || v < 0 || v > f.max;
-      if (f.other) {
-        // Si se rellena uno de los dos campos, el otro es obligatorio; mientras falte, la fila no suma.
-        var nm = f.nameInput.value.trim().slice(0, NAME_MAX);
-        var hasHours = raw !== '' || badInput;
-        f.name = nm;
-        setErr(f.nameInput, f.nameErr, hasHours && !nm ? 'Escribe qué tarea es.' : '');
-        if (!hasHours) { setErr(f.input, f.err, nm ? 'Escribe las horas a la semana.' : ''); return 0; }
-        setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
-        if (!nm || !isFinite(v) || v <= 0) return 0;
-        return Math.min(v, f.max);
-      }
       setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
       if (!isFinite(v) || v <= 0) return 0;
       return Math.min(v, f.max);
@@ -439,7 +352,6 @@
       var start = 0;
       var parts = [];
       inputs.forEach(function (f, i) {
-        if (f.other) f.nameEl.textContent = f.name;
         var len = Math.max(shares[i] - gap, 0);
         f.seg.setAttribute('stroke-dasharray', len + ' ' + (100 - len));
         f.seg.setAttribute('stroke-dashoffset', String(-start));
@@ -451,7 +363,7 @@
       chart.hidden = false;
       out.textContent = summary + ' Reparto: ' + parts.join('; ') + '.';
     }
-    inputs.forEach(function (f) { if (f.input && !f.other) f.input.addEventListener('input', update); });
+    inputs.forEach(function (f) { f.input.addEventListener('input', update); });
     if (value.input) value.input.addEventListener('input', update);
     update();
   }
@@ -669,13 +581,16 @@
     var inName = q('#wl-name');
     var inEmail = q('#wl-email');
     var inCount = q('#wl-count');
-    var inTools = q('#wl-tools');
+    var inToolOther = q('#wl-tool-other');
+    var toolOtherWrap = form.querySelector('[data-wl-tool-other-wrap]');
     var inSource = q('#wl-source');
     var inHp = q('#wl-website');
     var inPrivacy = q('#wl-privacy');
-    var inCommercial = q('#wl-commercial');
     var situationGroup = q('[data-wl-group="situation"]');
     var radios = Array.prototype.slice.call(form.querySelectorAll('input[name="situation"]'));
+    var toolRadios = Array.prototype.slice.call(form.querySelectorAll('input[name="currentTool"]'));
+    var TOOL_OTHER = 'Otra';
+    var TOOL_OTHER_MAX = 100;
 
     function errEl(id) { return document.getElementById(id); }
     function setError(target, errId, msg) {
@@ -688,9 +603,17 @@
       });
       if (target === situationGroup) situationGroup.classList.toggle('is-invalid', !!msg);
     }
-    function situation() {
-      for (var i = 0; i < radios.length; i++) if (radios[i].checked) return radios[i].value;
+    function checkedValue(list) {
+      for (var i = 0; i < list.length; i++) if (list[i].checked) return list[i].value;
       return '';
+    }
+    function situation() { return checkedValue(radios); }
+    // "Otra" muestra una caja corta para escribir cuál; con cualquier otra opción se oculta y se vacía.
+    function syncToolOther() {
+      if (!toolOtherWrap || !inToolOther) return;
+      var show = checkedValue(toolRadios) === TOOL_OTHER;
+      toolOtherWrap.hidden = !show;
+      if (!show) { inToolOther.value = ''; setError(inToolOther, 'wl-tool-other-err', ''); }
     }
     function syncCount() {
       if (!countWrap) return;
@@ -704,7 +627,8 @@
       var name = inName.value.trim().replace(/\s+/g, ' ');
       var mail = inEmail.value.trim();
       var sit = situation();
-      var tools = inTools.value.trim();
+      var tool = checkedValue(toolRadios);
+      var toolOther = inToolOther && tool === TOOL_OTHER ? inToolOther.value.trim().replace(/\s+/g, ' ') : '';
       var countRaw = inCount && !countWrap.hidden ? inCount.value.trim() : '';
 
       var nameMsg = name.length < 2 ? 'Escribe tu nombre (al menos 2 letras).' :
@@ -726,8 +650,8 @@
       }
       if (inCount) { setError(inCount, 'wl-count-err', countMsg); if (countMsg) bad.push(inCount); }
 
-      var toolsMsg = tools.length > 500 ? 'Puedes escribir como máximo 500 caracteres.' : '';
-      setError(inTools, 'wl-tools-err', toolsMsg); if (toolsMsg) bad.push(inTools);
+      var toolMsg = toolOther.length > TOOL_OTHER_MAX ? 'Puedes escribir como máximo ' + TOOL_OTHER_MAX + ' caracteres.' : '';
+      if (inToolOther) { setError(inToolOther, 'wl-tool-other-err', toolMsg); if (toolMsg) bad.push(inToolOther); }
 
       var privMsg = inPrivacy.checked ? '' : 'Para apuntarte, marca la casilla de privacidad: es obligatoria.';
       setError(inPrivacy, 'wl-privacy-err', privMsg); if (privMsg) bad.push(inPrivacy);
@@ -740,10 +664,11 @@
         situation: sit,
         privacyAccepted: true,
         privacyPolicyVersion: version,
-        commercialConsentRequested: inCommercial.checked === true,
         website: inHp ? inHp.value : ''
       };
-      if (tools) payload.tools = tools;
+      // La API guarda "tools" como texto (cifrado, máx. 500): se manda la opción elegida y, con "Otra",
+      // lo que se escriba ("Otra: …"). Sin opción elegida, no se manda.
+      if (tool) payload.tools = toolOther ? TOOL_OTHER + ': ' + toolOther : tool;
       if (count !== null && !countMsg) payload.professionalsCount = count;
       if (inSource && inSource.value) payload.source = inSource.value;
       return payload;
@@ -759,10 +684,9 @@
       submit.setAttribute('aria-disabled', on ? 'true' : 'false');
       submit.textContent = on ? 'Enviando…' : 'Apuntarme a la lista de espera';
     }
-    function showDone(commercial) {
-      var c = done.querySelector('[data-wl-done-commercial]');
-      if (c) c.hidden = !commercial;
+    function showDone() {
       form.reset();
+      syncToolOther();
       form.hidden = true;
       done.hidden = false;
       done.focus();
@@ -778,7 +702,7 @@
       say(MSG.sending);
       var slowTimer = setTimeout(function () { if (busy) say(MSG.slow); }, 6000);
       post(payload, false).then(function (r) {
-        if (r.status === 202) { say(''); showDone(payload.commercialConsentRequested); return; }
+        if (r.status === 202) { say(''); showDone(); return; }
         if (r.status === 429) { say(MSG.tooMany, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
         say(MSG.generic, 'error');
@@ -800,7 +724,8 @@
     radios.forEach(function (r) {
       r.addEventListener('change', function () { syncCount(); setError(situationGroup, 'wl-situation-err', ''); });
     });
-    [inName, inEmail, inCount, inTools].forEach(function (el) {
+    toolRadios.forEach(function (r) { r.addEventListener('change', syncToolOther); });
+    [inName, inEmail, inCount, inToolOther].forEach(function (el) {
       if (el) el.addEventListener('input', function () {
         if (el.getAttribute('aria-invalid') === 'true') setError(el, el.getAttribute('aria-describedby').split(' ').pop(), '');
       });
@@ -821,6 +746,7 @@
 
     // Listo: se activa el formulario y se quita el aviso para navegadores sin JavaScript.
     syncCount();
+    syncToolOther();
     if (nojs) nojs.hidden = true;
     fields.disabled = false;
   }
