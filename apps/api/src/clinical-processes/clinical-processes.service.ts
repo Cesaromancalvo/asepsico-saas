@@ -331,7 +331,7 @@ export class ClinicalProcessesService {
       //    cierre al revés (proceso y luego solicitudes) -> interbloqueo.
       await lockPatientBooking(tx, workspaceId, process.patientId);
       await lockTherapistSchedule(tx, workspaceId, process.therapistId);
-      // 0) H6 (CA6.7): reactivar con procesos POSTERIORES de otros autores = apertura sobre
+      // 0b) H6 (CA6.7): reactivar con procesos POSTERIORES de otros autores = apertura sobre
       //    historia ajena. Lock por paciente y misma regla que el alta.
       let opening: OpeningDecision = { kind: 'NORMAL' };
       if (status === 'ACTIVE') {
