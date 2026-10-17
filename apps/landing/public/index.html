@@ -651,12 +651,24 @@
                 <p class="sfield__err" id="wl-count-err" hidden></p>
               </div>
 
-              <div class="sfield">
-                <label for="wl-tools">¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></label>
-                <p class="sfield__help" id="wl-tools-help">Solo herramientas o programas (agenda en papel, Excel, un software de gestión…). No incluyas datos de pacientes.</p>
-                <textarea id="wl-tools" name="tools" rows="3" maxlength="500" autocomplete="off"
-                          aria-describedby="wl-tools-help wl-tools-err" data-wl-field="tools"></textarea>
-                <p class="sfield__err" id="wl-tools-err" hidden></p>
+              <fieldset class="sfield wl-choices" data-wl-group="tool">
+                <legend>¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></legend>
+                <div class="wl-choices__grid">
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Doctoralia"> Doctoralia</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Eholo"> Eholo</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Excel / hojas de cálculo"> Excel / hojas de cálculo</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Papel / agenda"> Papel / agenda</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Nada todavía"> Nada todavía</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Otra"> Otra</label>
+                </div>
+              </fieldset>
+
+              <div class="sfield" data-wl-tool-other-wrap hidden>
+                <label for="wl-tool-other">¿Cuál? <span class="opt">(opcional)</span></label>
+                <p class="sfield__help" id="wl-tool-other-help">No incluyas datos de pacientes.</p>
+                <input id="wl-tool-other" name="currentToolOther" type="text" maxlength="100" autocomplete="off"
+                       aria-describedby="wl-tool-other-help wl-tool-other-err" data-wl-field="currentToolOther">
+                <p class="sfield__err" id="wl-tool-other-err" hidden></p>
               </div>
 
               <div class="sfield">
@@ -683,12 +695,7 @@
               </div>
               <p class="sfield__err wl-check__err" id="wl-privacy-err" hidden></p>
 
-              <div class="wl-check wl-check--sep">
-                <input id="wl-commercial" name="commercialConsentRequested" type="checkbox" data-wl-field="commercialConsentRequested">
-                <label for="wl-commercial">Quiero recibir por email novedades y ofertas de AsePsico para profesionales. Te pediremos que lo confirmes por email y podrás darte de baja en cualquier momento. <span class="opt">(Opcional)</span></label>
-              </div>
-
-              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento; y, solo si marcas la casilla opcional y lo confirmas por email, para enviarte novedades y ofertas. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
+              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
 
               <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
               <p class="wl-status" role="status" aria-live="polite" data-wl-status></p>
@@ -699,7 +706,6 @@
             <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
             <h3 class="waitlist__done-title">Gracias</h3>
             <p>Si los datos son correctos, te escribiremos a tu email.</p>
-            <p data-wl-done-commercial hidden>Si marcaste la casilla de novedades, te escribiremos para que lo confirmes. Hasta que no lo confirmes, no te enviaremos novedades ni ofertas.</p>
             <p class="small">Si quieres corregir algún dato o borrarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
           </div>
         </div>

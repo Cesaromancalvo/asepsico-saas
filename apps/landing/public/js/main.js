@@ -581,13 +581,16 @@
     var inName = q('#wl-name');
     var inEmail = q('#wl-email');
     var inCount = q('#wl-count');
-    var inTools = q('#wl-tools');
+    var inToolOther = q('#wl-tool-other');
+    var toolOtherWrap = form.querySelector('[data-wl-tool-other-wrap]');
     var inSource = q('#wl-source');
     var inHp = q('#wl-website');
     var inPrivacy = q('#wl-privacy');
-    var inCommercial = q('#wl-commercial');
     var situationGroup = q('[data-wl-group="situation"]');
     var radios = Array.prototype.slice.call(form.querySelectorAll('input[name="situation"]'));
+    var toolRadios = Array.prototype.slice.call(form.querySelectorAll('input[name="currentTool"]'));
+    var TOOL_OTHER = 'Otra';
+    var TOOL_OTHER_MAX = 100;
 
     function errEl(id) { return document.getElementById(id); }
     function setError(target, errId, msg) {
@@ -600,9 +603,17 @@
       });
       if (target === situationGroup) situationGroup.classList.toggle('is-invalid', !!msg);
     }
-    function situation() {
-      for (var i = 0; i < radios.length; i++) if (radios[i].checked) return radios[i].value;
+    function checkedValue(list) {
+      for (var i = 0; i < list.length; i++) if (list[i].checked) return list[i].value;
       return '';
+    }
+    function situation() { return checkedValue(radios); }
+    // "Otra" muestra una caja corta para escribir cuál; con cualquier otra opción se oculta y se vacía.
+    function syncToolOther() {
+      if (!toolOtherWrap || !inToolOther) return;
+      var show = checkedValue(toolRadios) === TOOL_OTHER;
+      toolOtherWrap.hidden = !show;
+      if (!show) { inToolOther.value = ''; setError(inToolOther, 'wl-tool-other-err', ''); }
     }
     function syncCount() {
       if (!countWrap) return;
@@ -616,7 +627,8 @@
       var name = inName.value.trim().replace(/\s+/g, ' ');
       var mail = inEmail.value.trim();
       var sit = situation();
-      var tools = inTools.value.trim();
+      var tool = checkedValue(toolRadios);
+      var toolOther = inToolOther && tool === TOOL_OTHER ? inToolOther.value.trim().replace(/\s+/g, ' ') : '';
       var countRaw = inCount && !countWrap.hidden ? inCount.value.trim() : '';
 
       var nameMsg = name.length < 2 ? 'Escribe tu nombre (al menos 2 letras).' :
@@ -638,8 +650,8 @@
       }
       if (inCount) { setError(inCount, 'wl-count-err', countMsg); if (countMsg) bad.push(inCount); }
 
-      var toolsMsg = tools.length > 500 ? 'Puedes escribir como máximo 500 caracteres.' : '';
-      setError(inTools, 'wl-tools-err', toolsMsg); if (toolsMsg) bad.push(inTools);
+      var toolMsg = toolOther.length > TOOL_OTHER_MAX ? 'Puedes escribir como máximo ' + TOOL_OTHER_MAX + ' caracteres.' : '';
+      if (inToolOther) { setError(inToolOther, 'wl-tool-other-err', toolMsg); if (toolMsg) bad.push(inToolOther); }
 
       var privMsg = inPrivacy.checked ? '' : 'Para apuntarte, marca la casilla de privacidad: es obligatoria.';
       setError(inPrivacy, 'wl-privacy-err', privMsg); if (privMsg) bad.push(inPrivacy);
@@ -652,10 +664,11 @@
         situation: sit,
         privacyAccepted: true,
         privacyPolicyVersion: version,
-        commercialConsentRequested: inCommercial.checked === true,
         website: inHp ? inHp.value : ''
       };
-      if (tools) payload.tools = tools;
+      // La API guarda "tools" como texto (cifrado, máx. 500): se manda la opción elegida y, con "Otra",
+      // lo que se escriba ("Otra: …"). Sin opción elegida, no se manda.
+      if (tool) payload.tools = toolOther ? TOOL_OTHER + ': ' + toolOther : tool;
       if (count !== null && !countMsg) payload.professionalsCount = count;
       if (inSource && inSource.value) payload.source = inSource.value;
       return payload;
@@ -671,10 +684,9 @@
       submit.setAttribute('aria-disabled', on ? 'true' : 'false');
       submit.textContent = on ? 'Enviando…' : 'Apuntarme a la lista de espera';
     }
-    function showDone(commercial) {
-      var c = done.querySelector('[data-wl-done-commercial]');
-      if (c) c.hidden = !commercial;
+    function showDone() {
       form.reset();
+      syncToolOther();
       form.hidden = true;
       done.hidden = false;
       done.focus();
@@ -690,7 +702,7 @@
       say(MSG.sending);
       var slowTimer = setTimeout(function () { if (busy) say(MSG.slow); }, 6000);
       post(payload, false).then(function (r) {
-        if (r.status === 202) { say(''); showDone(payload.commercialConsentRequested); return; }
+        if (r.status === 202) { say(''); showDone(); return; }
         if (r.status === 429) { say(MSG.tooMany, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
         say(MSG.generic, 'error');
@@ -712,7 +724,8 @@
     radios.forEach(function (r) {
       r.addEventListener('change', function () { syncCount(); setError(situationGroup, 'wl-situation-err', ''); });
     });
-    [inName, inEmail, inCount, inTools].forEach(function (el) {
+    toolRadios.forEach(function (r) { r.addEventListener('change', syncToolOther); });
+    [inName, inEmail, inCount, inToolOther].forEach(function (el) {
       if (el) el.addEventListener('input', function () {
         if (el.getAttribute('aria-invalid') === 'true') setError(el, el.getAttribute('aria-describedby').split(' ').pop(), '');
       });
@@ -733,6 +746,7 @@
 
     // Listo: se activa el formulario y se quita el aviso para navegadores sin JavaScript.
     syncCount();
+    syncToolOther();
     if (nojs) nojs.hidden = true;
     fields.disabled = false;
   }
