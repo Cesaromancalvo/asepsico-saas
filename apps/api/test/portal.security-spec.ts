@@ -398,3 +398,34 @@ describe('PortalGuard rejects revoked or no-longer-allowed accounts with a still
     noServiceCalled();
   });
 });
+
+describe('Portal cookies with the web on another subdomain (salida de Vercel)',()=>{
+  const prev=process.env.COOKIE_DOMAIN;
+  afterEach(()=>{ if(prev===undefined) delete process.env.COOKIE_DOMAIN; else process.env.COOKIE_DOMAIN=prev; });
+  function fakeRes(){ const cookies:any[]=[]; const cleared:any[]=[]; return { cookies, cleared, res:{ cookie:(n:string,v:string,o:any)=>cookies.push({n,v,o}), clearCookie:(n:string,o:any)=>cleared.push({n,o}) } as any }; }
+  const service:any={ login:jest.fn(async()=>({ accessToken:'token-ficticio', patient:{id:'p1'}, mustChangePassword:false })) };
+
+  it('csrf_token uses COOKIE_DOMAIN so app.<domain> can read it; portal_access_token stays host-only on the API',async()=>{
+    process.env.COOKIE_DOMAIN='.example.test';
+    const {cookies,res}=fakeRes();
+    await new PortalController(service).login({email:'p@example.com',password:'Password1234'} as any,res);
+    const csrf=cookies.find(c=>c.n==='csrf_token'); const access=cookies.find(c=>c.n==='portal_access_token');
+    expect(csrf.o).toMatchObject({ domain:'.example.test', httpOnly:false, sameSite:'lax', path:'/' });
+    expect(access.o.domain).toBeUndefined();
+    expect(access.o).toMatchObject({ httpOnly:true, path:'/api/v1/portal' });
+  });
+
+  it('logout clears csrf_token on the same domain it was set (otherwise the browser keeps it)',()=>{
+    process.env.COOKIE_DOMAIN='.example.test';
+    const {cleared,res}=fakeRes();
+    new PortalController(service).logout(res);
+    expect(cleared.find(c=>c.n==='csrf_token').o).toMatchObject({ domain:'.example.test', path:'/' });
+  });
+
+  it('without COOKIE_DOMAIN (local) csrf_token stays host-only',async()=>{
+    delete process.env.COOKIE_DOMAIN;
+    const {cookies,res}=fakeRes();
+    await new PortalController(service).login({email:'p@example.com',password:'Password1234'} as any,res);
+    expect(cookies.find(c=>c.n==='csrf_token').o.domain).toBeUndefined();
+  });
+});
