@@ -105,6 +105,8 @@ export async function purgeDemoData(tx: Prisma.TransactionClient, workspaceId: s
     await tx.availabilityBlock.deleteMany({ where: { workspaceId, therapistId: member.userId } });
     await tx.availabilityWindow.deleteMany({ where: { workspaceId, therapistId: member.userId } });
     await tx.therapistAvailability.deleteMany({ where: { workspaceId, therapistId: member.userId } });
+    // Avisos al profesional (userId, sin paciente): la solicitud de cita le avisa sin patientId y no caería con el paciente.
+    await tx.notification.deleteMany({ where: { workspaceId, audience: 'PROFESSIONAL', userId: member.userId, type: 'APPOINTMENT_REQUEST' } });
     await tx.refreshToken.updateMany({ where: { userId: member.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     if (await userIsReferenced(tx, member.userId)) {
       // Hash inválido para bcrypt: ninguna contraseña coincide. Sin MFA ni sesiones vivas.
