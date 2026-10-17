@@ -27,7 +27,9 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
   no pasa ningún dato de salud.
 - `app.` y `api.` son el mismo sitio (`asepsico.es`): las cookies `SameSite=Lax` viajan en las
   llamadas `fetch` con credenciales. `COOKIE_DOMAIN=.asepsico.es` es obligatorio para que la web
-  pueda leer `csrf_token`; sin él, ninguna mutación pasa el `CsrfGuard`.
+  pueda leer `csrf_token`; sin él, ninguna mutación pasa el `CsrfGuard`. Las cookies de sesión
+  (`access_token`, `refresh_token`, `portal_access_token`) son host-only de `api.`.
+- Los ids de la query solo se aceptan con forma de cuid (`queryId` en `apps/web/lib/routes.ts`).
 - Las pantallas con id usan query string (`/patients/view/?id=…`, `/agenda/session/?id=…`, ver
   `apps/web/lib/routes.ts`). Las URL antiguas (`/patients/<id>/…`) las redirige el 404.
 - Render documenta que el puerto del servicio **no es accesible directamente desde Internet**: todo
@@ -49,9 +51,18 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 
 - Build: `npm ci && npm --workspace @asepsico/web run build` · Publish directory: `apps/web/out`.
 - Variable: `NEXT_PUBLIC_API_URL=https://api.asepsico.es/api/v1` (pública; se incrusta en el build).
-- Cabeceras (Settings → Headers, ruta `/*`): HSTS, `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: strict-origin-when-cross-origin` (el id va en la query: no debe salir a
-  terceros), `X-Frame-Options: DENY`, `Permissions-Policy` y la CSP aprobada por Argos.
+- Cabeceras (Settings → Headers), aprobadas por Argos. Ruta `/*`:
+  ```
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.asepsico.es; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  ```
+  Ruta `/_next/static/*`: `Cache-Control: public, max-age=31536000, immutable`.
+  `no-referrer` porque el id va en la query. `'unsafe-inline'` en `script-src` es provisional
+  (Next exportado mete scripts inline sin nonce); ver "Trabajo futuro".
 - Comprobación: `curl -sI https://app.asepsico.es/ | grep -iE 'strict-transport|content-security|x-frame|referrer'`.
 
 ### Variables en el servicio web de Render
@@ -60,7 +71,7 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 |---|---|---|
 | `NODE_ENV` | `production` | Cookies `secure` y `trust proxy` por defecto. |
 | `WEB_ORIGIN` | `https://app.asepsico.es` | CORS con credenciales y enlaces de invitación. |
-| `COOKIE_DOMAIN` | `.asepsico.es` | La web lee `csrf_token`. Rompe cualquier web servida fuera de `asepsico.es`. |
+| `COOKIE_DOMAIN` | `.asepsico.es` | Solo para `csrf_token` (la web lo lee). Las cookies de sesión son host-only de la API. Rompe cualquier web servida fuera de `asepsico.es`. |
 | `TRUST_PROXY` | `1` | Explícito aunque coincide con el valor por defecto en producción. |
 | `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. **No se rota** (rompe la deduplicación y la supresión de las altas previas). Lista de espera (ver `docs/WAITLIST_API.md`). |
 | `WAITLIST_ALLOWED_ORIGINS` | vacío | = `https://asepsico.es,https://www.asepsico.es`. Solo afecta a `/public/waitlist`. |
@@ -171,6 +182,10 @@ Antes de dar por cerrado cualquier cambio de dominio o DNS de la API:
 - [ ] Actualizar `WEB_ORIGIN`/`COOKIE_DOMAIN` si cambia el dominio, y anotar el resultado (sin IPs).
 
 ### Trabajo futuro (no implementado)
+
+- **CSP sin `'unsafe-inline'` en la web (tras la salida de Vercel).** Paso `postbuild` que calcule
+  los hashes sha256 de los scripts inline de `apps/web/out/**/*.html` y genere la cabecera
+  `script-src 'self' 'sha256-…'` para el Static Site; luego quitar `'unsafe-inline'`.
 
 - **Límite por email en `/auth/login`.** El límite actual es por IP. Conviene añadir un límite por
   email (normalizado) además del de IP, para frenar el credential stuffing distribuido desde
