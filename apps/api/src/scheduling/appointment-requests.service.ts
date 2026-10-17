@@ -169,7 +169,7 @@ export class AppointmentRequestsService {
     const { workspaceId } = request;
     const startsAt = request.startsAt as Date;
     const endsAt = request.endsAt as Date;
-    const conflict = await findScheduleConflict(tx, { workspaceId, therapistId: request.therapistId, startsAt, endsAt, excludeRequestId: request.id, includeBlocks: true });
+    const conflict = await findScheduleConflict(tx, { workspaceId, therapistId: request.therapistId, startsAt, endsAt, excludeRequestId: request.id, includeBlocks: true, includeRequests: false });
     if (conflict) throw slotNotAvailable();
     const session = await tx.session.create({
       data: { workspaceId, patientId: request.patientId, therapistId: request.therapistId, clinicalProcessId: request.clinicalProcessId, startsAt, endsAt, type: 'INDIVIDUAL', status: 'SCHEDULED' },
@@ -193,7 +193,7 @@ export class AppointmentRequestsService {
       select: { id: true, startsAt: true, endsAt: true },
     });
     if (!original) throw bookingConflict('SESSION_NOT_SCHEDULED', 'La cita original ya no está programada.');
-    const conflict = await findScheduleConflict(tx, { workspaceId, therapistId: request.therapistId, startsAt, endsAt, excludeSessionId: original.id, excludeRequestId: request.id, includeBlocks: true });
+    const conflict = await findScheduleConflict(tx, { workspaceId, therapistId: request.therapistId, startsAt, endsAt, excludeSessionId: original.id, excludeRequestId: request.id, includeBlocks: true, includeRequests: false });
     if (conflict) throw slotNotAvailable();
     const { count } = await tx.session.updateMany({ where: { id: original.id, workspaceId, status: 'SCHEDULED' }, data: { startsAt, endsAt } });
     if (!count) throw bookingConflict('SESSION_NOT_SCHEDULED', 'La cita original ya no está programada.');

@@ -39,6 +39,9 @@ export async function findScheduleConflict(
     excludeSessionId?: string;
     excludeRequestId?: string;
     includeBlocks: boolean;
+    /** Por defecto true. Al aprobar se pasa false: manda la agenda real (citas y bloqueos), y una
+     * pendiente que se solape caerá por conflicto con la cita cuando se intente aprobar. */
+    includeRequests?: boolean;
     now?: Date;
   },
 ): Promise<ScheduleConflict | null> {
@@ -57,7 +60,7 @@ export async function findScheduleConflict(
   });
   if (session) return 'SESSION';
 
-  const request = await tx.appointmentRequest.findFirst({
+  const request = params.includeRequests === false ? null : await tx.appointmentRequest.findFirst({
     where: {
       workspaceId,
       therapistId,
