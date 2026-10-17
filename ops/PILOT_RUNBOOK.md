@@ -207,14 +207,15 @@ Contrato y detalles en `docs/WAITLIST_API.md`.
 
 - **Host de la API para la landing: a confirmar por Dora** (`asepsico-api.onrender.com` no está
   verificado). Es configurable en la landing y debe coincidir con `connect-src` de su CSP.
-- **Nada comercial sin doble opt-in por email.** El formulario solo guarda la solicitud
-  (`commercialConsentRequested`). Doble opt-in manual: email de confirmación de César → si la
-  persona responde "Sí", conservar ese email y ejecutar `waitlist:confirm-commercial`. Solo se
-  envía algo comercial a filas con `commercialConsent=true`. Retirada solo con
-  `waitlist:withdraw-commercial` (o el futuro enlace de baja). Un segundo envío del formulario
-  con el mismo email no cambia nada.
+- **Casilla de novedades retirada (política `lista-espera-v3`, desde el 17/10/2026).** No se envía
+  **nada comercial** (ni novedades ni ofertas) a nadie de la lista de espera: solo mensajes sobre su
+  solicitud y el piloto. La marca `commercialConsentRequested` de las altas anteriores (v2) se borra
+  por decisión de producto; anotar la fecha de ejecución en el registro del piloto (sin datos
+  personales). `waitlist:confirm-commercial` y `waitlist:withdraw-commercial` siguen existiendo por
+  compatibilidad, pero **no se ejecutan**. Un segundo envío del formulario con el mismo email no
+  cambia nada.
 - **Claves de producción solo en ejecuciones puntuales de los CLI** (`waitlist:export`,
-  `waitlist:delete`, `waitlist:purge`, `waitlist:confirm-commercial`, `waitlist:withdraw-commercial`): se pasan en la línea de la orden y se descartan al
+  `waitlist:delete`, `waitlist:purge`): se pasan en la línea de la orden y se descartan al
   terminar; nunca en un `.env` permanente, en el perfil del shell ni en el repo.
 - **`WAITLIST_SECRET` no se rota.**
 

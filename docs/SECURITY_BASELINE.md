@@ -135,9 +135,14 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.
 - Alta solo con `create` (nunca upsert): un email repetido o dos altas simultáneas chocan en el
   índice único de `emailHash` (P2002) y reciben el mismo 202 sin tocar la fila existente.
-- El formulario solo registra la solicitud comercial (`commercialConsentRequested` + fecha). El
-  consentimiento válido lo fija únicamente `waitlist:confirm-commercial` (doble opt-in manual) y
-  se retira con `waitlist:withdraw-commercial`. Nada comercial sin doble opt-in.
+- **Sin comunicaciones comerciales (política `lista-espera-v3`, 17/10/2026):** el formulario ya no
+  tiene la casilla de novedades ni de comunicaciones comerciales, y quien se apunta solo recibe
+  mensajes sobre su solicitud y el piloto. La API rechaza con 400 (`WAITLIST_COMMERCIAL_NOT_OFFERED`)
+  un alta v3 con `commercialConsentRequested=true`. Decisión de producto: se borra la marca
+  `commercialConsentRequested` de las altas anteriores (v2); las columnas `commercialConsent*` y los
+  CLI `waitlist:confirm-commercial` / `waitlist:withdraw-commercial` quedan solo por compatibilidad y
+  **no se usan**. Ofrecer comunicaciones comerciales en el futuro exigiría una política nueva con
+  consentimiento separado y doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
