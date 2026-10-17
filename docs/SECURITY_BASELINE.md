@@ -190,6 +190,16 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   implemente, debe seudonimizar en lugar de borrar, en una transacción auditada, y nunca saltarse el
   `RESTRICT`.
 
+## Reserva de citas desde el portal: límites de frecuencia
+
+- El límite de 30 peticiones/minuto va **en memoria y por instancia**: con varias instancias el
+  límite efectivo se multiplica por su número y se pierde al reiniciar.
+- El conteo de 5 solicitudes/hora por cuenta se hace **fuera de la transacción** de alta; dos
+  peticiones simultáneas pueden pasarlo a la vez y superar el límite en una o dos solicitudes. Los
+  topes de pendientes por paciente y el hueco retenido sí se aplican dentro de la transacción.
+- Vale para una sola instancia. **Antes de escalar a varias instancias hay que pasar ambos
+  contadores a Redis** (contador atómico con caducidad).
+
 ## Antes de producción (pendiente)
 
 - MFA para las cuentas de terapeutas/administradores.
