@@ -617,7 +617,8 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 .bk-with{display:flex;align-items:center;gap:8px;margin:0 0 12px;color:var(--ink);font-size:var(--fs-md);font-weight:500}
 .bk-picker{margin-top:6px}
 .bk-month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.bk-month-nav strong{color:var(--ink);font-size:var(--fs-base);font-weight:600;text-transform:capitalize}
+.bk-month-nav strong{color:var(--ink);font-size:var(--fs-base);font-weight:600}
+.bk-month-nav strong::first-letter,.bk-times-title::first-letter{text-transform:uppercase}
 .bk-icon-button{display:grid;width:44px;height:44px;place-items:center;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);color:var(--violet-ink);cursor:pointer}
 .bk-icon-button:hover:not(:disabled){border-color:var(--violet);background:var(--tint)}
 .bk-icon-button:disabled{opacity:.4;cursor:not-allowed}
@@ -629,7 +630,7 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 .bk-day.has-slots:hover{border-color:var(--violet);background:var(--tint-2)}
 .bk-day.is-selected{border-color:var(--violet);background:var(--violet);color:#fff}
 .bk-times{margin-top:16px}
-.bk-times-title{margin:0 0 10px;color:var(--ink);font-size:var(--fs-md);font-weight:600;text-transform:capitalize}
+.bk-times-title{margin:0 0 10px;color:var(--ink);font-size:var(--fs-md);font-weight:600}
 .bk-time-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
 .bk-time{min-height:44px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);color:var(--violet-ink);font:inherit;font-size:var(--fs-md);font-weight:600;cursor:pointer}
 .bk-time:hover{border-color:var(--violet);background:var(--tint)}
@@ -704,3 +705,6 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
   .bk-window select{min-width:96px}
   .bk-actions .button{flex:1 1 auto}
 }
+
+.bk-block-form>.button{display:flex;margin-top:12px}
+.bk-block-form .bk-check{display:flex}
