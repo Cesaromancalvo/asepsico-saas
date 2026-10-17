@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { patientHref } from '@/lib/routes';
+import { patientHref, queryId } from '@/lib/routes';
 
 type Category='PSYCHOEDUCATION'|'EXERCISE'|'WORKSHEET'|'AUDIO'|'VIDEO'|'READING'|'OTHER';
 type Resource={id:string;title:string;description?:string|null;type:'LINK'|'FILE';category:Category;url?:string|null;fileName?:string|null;mimeType?:string|null;_count?:{shares:number}};
@@ -14,7 +14,7 @@ type Patient={id:string;firstName:string;lastName:string;status:string};
 const CATEGORY:Record<Category,string>={PSYCHOEDUCATION:'Psicoeducación',EXERCISE:'Ejercicio',WORKSHEET:'Hoja de trabajo',AUDIO:'Audio',VIDEO:'Vídeo',READING:'Lectura',OTHER:'Otro'};
 
 export default function PatientResourcesPage(){
-  const patientId = useSearchParams().get('id') ?? '';
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null); const [library,setLibrary]=useState<Resource[]>([]); const [shares,setShares]=useState<Share[]>([]);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const [query,setQuery]=useState('');
   async function load(){try{setLoading(true);setError('');const [p,l,s]=await Promise.all([api<Patient>(`/patients/${patientId}`),api<Resource[]>('/resources'),api<Share[]>(`/patients/${patientId}/resources`)]);setPatient(p);setLibrary(l);setShares(s);}catch(e){setError(e instanceof Error?e.message:'No se pudieron cargar los recursos');}finally{setLoading(false);}}

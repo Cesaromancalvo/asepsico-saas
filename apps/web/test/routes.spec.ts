@@ -1,13 +1,30 @@
 import { describe, expect, it } from '@jest/globals';
-import { appHref, legacyToStatic, patientHref, processHref, sessionHref } from '../lib/routes';
+import { appHref, legacyToStatic, patientHref, processHref, queryId, sessionHref } from '../lib/routes';
 
 /*
  * Salida de Vercel: la web es un export estático y las rutas con id pasan a query string.
- * Los enlaces que genera la API (línea temporal, panel) y los marcadores antiguos siguen
- * usando /patients/<id>/... y /agenda/<id>: deben traducirse sin perder el id ni la query.
+ * Condiciones de Argos: los ids leídos de la URL solo se aceptan con forma de cuid (no pueden
+ * reescribir la ruta de la API) y legacyToStatic solo produce rutas internas fijas.
  */
-const P = '11111111-2222-4333-8444-555555555555';
-const S = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const P = 'cm1a2b3c4d5e6f7g8h9i0j1k2'; // cuid ficticio
+const S = 'cm9z8y7x6w5v4u3t2s1r0q9p8';
+
+const HOSTILE = ['', '/', '..', '../x', 'a/b', '?', 'a?b=c', '%2F', 'cm1a2b3c4d5e6f7g8h9i%2Fadmin', '//evil.com/x',
+  'cm1a2b3c4d5e6f7g8h9i0j1k2/../../admin', 'CM1A2B3C4D5E6F7G8H9I0J1K2', 'short1', 'a'.repeat(41),
+  '11111111-2222-4333-8444-555555555555', ' cm1a2b3c4d5e6f7g8h9i0j1k2'];
+
+describe('queryId', () => {
+  it('accepts cuid-shaped ids', () => {
+    expect(queryId(P)).toBe(P);
+    expect(queryId('a'.repeat(20))).toBe('a'.repeat(20));
+    expect(queryId('a'.repeat(40))).toBe('a'.repeat(40));
+  });
+  it('rejects /, .., ?, %2F, //evil.com/x and anything that is not a cuid', () => {
+    for (const v of [...HOSTILE, `${P}#x`, `${P}?a=b`]) expect(queryId(v)).toBe('');
+    expect(queryId(null)).toBe('');
+    expect(queryId(undefined)).toBe('');
+  });
+});
 
 describe('routes', () => {
   it('builds the new static URLs with a trailing slash and the id in the query', () => {
@@ -15,10 +32,6 @@ describe('routes', () => {
     expect(patientHref(P, 'tasks')).toBe(`/patients/view/tasks/?id=${P}`);
     expect(processHref(P, S)).toBe(`/patients/view/process/?id=${P}&processId=${S}`);
     expect(sessionHref(S)).toBe(`/agenda/session/?id=${S}`);
-  });
-
-  it('encodes ids so a crafted value cannot add query parameters', () => {
-    expect(patientHref('a&b=c')).toBe('/patients/view/?id=a%26b%3Dc');
   });
 
   it('translates every legacy URL the API and old bookmarks use', () => {
@@ -29,7 +42,28 @@ describe('routes', () => {
     }
     expect(legacyToStatic(`/patients/${P}/processes/${S}`)).toBe(processHref(P, S));
     expect(legacyToStatic(`/agenda/${S}`)).toBe(sessionHref(S));
-    expect(legacyToStatic(`/agenda/${S}?tab=notes#top`)).toBe(`${sessionHref(S)}&tab=notes#top`);
+    expect(legacyToStatic(`/agenda/${S}?tab=notes#top`)).toBe(sessionHref(S));
+  });
+
+  it('rejects legacy URLs whose ids are not cuids (/, .., ?, %2F, //evil.com/x)', () => {
+    for (const bad of HOSTILE) {
+      expect(legacyToStatic(`/patients/${bad}`)).toBeNull();
+      expect(legacyToStatic(`/agenda/${bad}`)).toBeNull();
+      expect(legacyToStatic(`/patients/${P}/processes/${bad}`)).toBeNull();
+    }
+    for (const href of ['//evil.com/x', '//evil.com/patients/' + P, 'https://evil.com/patients/' + P,
+      `/patients/${P}/../../admin`, `/patients/%2F${P}`, `/agenda/${S}/extra`]) {
+      expect(legacyToStatic(href)).toBeNull();
+    }
+  });
+
+  it('whatever the input, a non-null result always starts with /patients/view/ or /agenda/session/', () => {
+    const inputs = [...HOSTILE.flatMap((b) => [`/patients/${b}`, `/agenda/${b}`, `/patients/${P}/${b}`, `/patients/${P}/processes/${b}`]),
+      `/patients/${P}`, `/patients/${P}/plan`, `/patients/${P}/processes/${S}`, `/agenda/${S}`, '/patients/view/x', '/agenda/session/x'];
+    for (const href of inputs) {
+      const out = legacyToStatic(href);
+      if (out !== null) expect(out.startsWith('/patients/view/') || out.startsWith('/agenda/session/')).toBe(true);
+    }
   });
 
   it('leaves new and unrelated URLs alone', () => {
@@ -38,11 +72,5 @@ describe('routes', () => {
       expect(legacyToStatic(href)).toBeNull();
       expect(appHref(href)).toBe(href);
     }
-  });
-});
-
-describe('routes (robustness)', () => {
-  it('returns null instead of throwing on malformed percent-encoding (404 page must not crash)', () => {
-    expect(legacyToStatic('/patients/%E0%A4%A')).toBeNull();
   });
 });

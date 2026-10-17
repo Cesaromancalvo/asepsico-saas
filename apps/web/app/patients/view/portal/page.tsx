@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
-import { patientHref } from '@/lib/routes';
+import { patientHref, queryId } from '@/lib/routes';
 
 type AccessMode = 'PATIENT_ONLY' | 'GUARDIAN_ONLY' | 'SHARED';
 type Account = {
@@ -32,7 +32,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function PatientPortalAdminPage() {
-  const id = useSearchParams().get('id') ?? '';
+  const id = queryId(useSearchParams().get('id'));
 
   const demo = useIsDemoEnvironment();
   const [accessMode, setAccessMode] = useState<AccessMode>('PATIENT_ONLY');

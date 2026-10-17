@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { processLabel } from '@/lib/clinical';
-import { appHref, patientHref } from '@/lib/routes';
+import { appHref, patientHref, queryId } from '@/lib/routes';
 
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; achievedAt?:string|null; priority:number; createdAt:string; updatedAt:string };
@@ -25,7 +25,7 @@ function formatDate(value?: string | null, includeTime=false) {
 const TIMELINE_STATUS: Record<string, string> = { SCHEDULED: 'Programada', COMPLETED: 'Completada', CANCELLED: 'Cancelada', NO_SHOW: 'No asistió', ACTIVE: 'Activo', ACHIEVED: 'Conseguido', PAUSED: 'En pausa', DISCHARGED: 'Alta', PENDING: 'Pendiente', IN_PROGRESS: 'En curso', SUBMITTED: 'Entregada', CHANGES_REQUESTED: 'Cambios solicitados', DRAFT: 'Borrador' };
 
 export default function PatientPlanPage(){
-  const patientId = useSearchParams().get('id') ?? '';
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [goals,setGoals]=useState<Goal[]>([]);
   const [timeline,setTimeline]=useState<TimelineEvent[]>([]);

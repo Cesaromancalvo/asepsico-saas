@@ -19,7 +19,7 @@ import {
   therapistName,
   useViewer,
 } from '@/lib/clinical';
-import { patientHref, processHref, sessionHref } from '@/lib/routes';
+import { patientHref, processHref, sessionHref, queryId } from '@/lib/routes';
 
 /** GET /clinical-processes/:id (solo con acceso clínico). `internalNotes` solo llega a su autor. */
 type ProcessDetail = {
@@ -60,8 +60,8 @@ function readOnlyReason(detail: ProcessDetail, isAuthor: boolean): string {
 
 export default function ProcessPage() {
   const searchParams = useSearchParams();
-  const patientId = searchParams.get('id') ?? '';
-  const processId = searchParams.get('processId') ?? '';
+  const patientId = queryId(searchParams.get('id'));
+  const processId = queryId(searchParams.get('processId'));
   const router = useRouter();
   const viewer = useViewer();
   const [patient, setPatient] = useState<PatientHeader | null>(null);

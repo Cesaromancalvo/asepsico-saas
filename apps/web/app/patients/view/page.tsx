@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { canManageProcess, fetchConsultationReason, isStaffWithProcessAccess, modalityLabel, processLabel, processTitle, therapistName, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
-import { appHref, patientHref, processHref, sessionHref } from '@/lib/routes';
+import { appHref, patientHref, processHref, sessionHref, queryId } from '@/lib/routes';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
@@ -57,7 +57,7 @@ function calculateAge(birthDate?:string|null) {
 }
 
 export default function PatientRecordPage(){
-  const patientId = useSearchParams().get('id') ?? '';
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [history,setHistory]=useState<ClinicalHistory>(EMPTY_HISTORY);
   const [goals,setGoals]=useState<Goal[]>([]);

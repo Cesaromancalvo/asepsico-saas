@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { patientHref } from '@/lib/routes';
+import { patientHref, queryId } from '@/lib/routes';
 
 type TaskStatus='DRAFT'|'PENDING'|'IN_PROGRESS'|'SUBMITTED'|'CHANGES_REQUESTED'|'COMPLETED'|'CANCELLED';
 type Goal={id:string;title:string;status:string};
@@ -16,7 +16,7 @@ const LABEL:Record<TaskStatus,string>={DRAFT:'Borrador',PENDING:'Asignada',IN_PR
 const fmt=(v?:string|null)=>v?new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(v)):'Sin fecha';
 
 export default function PatientTasksPage(){
- const patientId = useSearchParams().get('id') ?? '';
+ const patientId = queryId(useSearchParams().get('id'));
  const [patient,setPatient]=useState<Patient|null>(null),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[templates,setTemplates]=useState<Template[]>([]);
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState<'ALL'|TaskStatus>('ALL');
  const [selectedTemplate,setSelectedTemplate]=useState('');

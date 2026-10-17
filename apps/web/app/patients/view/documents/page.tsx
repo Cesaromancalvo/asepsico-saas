@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { patientHref } from '@/lib/routes';
+import { patientHref, queryId } from '@/lib/routes';
 
 type Patient = { id:string; firstName:string; lastName:string; status:string };
 type DocumentItem = { id:string; title:string; type:string; description?:string|null; fileName?:string|null; mimeType?:string|null; storageKey?:string|null; createdAt:string };
@@ -18,7 +18,7 @@ function fmt(value?:string|null){return value?new Intl.DateTimeFormat('es-ES',{d
 function label(value:string){return value.replaceAll('_',' ').toLowerCase().replace(/^./,c=>c.toUpperCase());}
 
 export default function PatientDocumentsPage(){
-  const patientId = useSearchParams().get('id') ?? '';
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [documents,setDocuments]=useState<DocumentItem[]>([]);
   const [consents,setConsents]=useState<ConsentItem[]>([]);

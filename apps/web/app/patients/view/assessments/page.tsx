@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { patientHref } from '@/lib/routes';
+import { patientHref, queryId } from '@/lib/routes';
 
 type ScaleCode = 'PHQ9' | 'GAD7' | 'WHO5';
 type Patient = { id:string; firstName:string; lastName:string; status:string };
@@ -28,7 +28,7 @@ const OPTIONS: Record<ScaleCode,string[]> = {
 function fmt(value:string){return new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(value));}
 
 export default function AssessmentsPage(){
-  const patientId = useSearchParams().get('id') ?? '';
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [items,setItems]=useState<Assessment[]>([]);
   const [catalog,setCatalog]=useState<Scale[]>([]);

@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { isForbidden, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
-import { patientHref, processHref } from '@/lib/routes';
+import { patientHref, processHref, queryId } from '@/lib/routes';
 
 type Session = {
   id: string;
@@ -38,7 +38,7 @@ function fullName(person?: { firstName?: string | null; lastName?: string | null
 }
 
 export default function SessionDetailPage() {
-  const sessionId = useSearchParams().get("id") ?? undefined;
+  const sessionId = queryId(useSearchParams().get("id")) || undefined;
   const viewer = useViewer();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
