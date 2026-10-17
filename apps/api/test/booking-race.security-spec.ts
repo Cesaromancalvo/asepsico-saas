@@ -21,6 +21,8 @@ jest.setTimeout(120_000);
 
 const statusOf = (result: PromiseSettledResult<unknown>) => (result.status === 'rejected' ? (result.reason as any)?.getStatus?.() ?? String(result.reason) : 'ok');
 
+const describeError = (result: PromiseSettledResult<unknown>) => (/deadlock|40P01/i.test(String((result as any).reason?.message)) ? 'INTERBLOQUEO 40P01' : String((result as any).reason?.message ?? '').replace(/\s+/g, ' ').slice(0, 80));
+
 describeDb('Doble reserva (PostgreSQL real)', () => {
   let prisma: PrismaClient;
   const run = `booking-race-${Date.now()}`;
@@ -156,5 +158,42 @@ describeDb('Doble reserva (PostgreSQL real)', () => {
       expect([ 'ok', 404, 409 ]).toContain(statusOf(results[0]));
       expect(await prisma.appointmentRequest.count({ where: { workspaceId, patientId: subject.id, status: 'PENDING' } })).toBe(0);
     }
+  });
+  it('interbloqueo 3d811a9: cerrar el proceso de un paciente con una solicitud suya caducada mientras llega otra solicitud suya: sin interbloqueos ni 500', async () => {
+    const all = await slots();
+    const rounds = 24;
+    expect(all.length).toBeGreaterThan(300 + rounds);
+    const failures: string[] = [];
+    for (let round = 0; round < rounds; round += 1) {
+      const patient = await prisma.patient.create({ data: { workspaceId, firstName: 'Paciente', lastName: `Ficticio interbloqueo ${round}` } });
+      const process = await prisma.clinicalProcess.create({ data: { workspaceId, patientId: patient.id, therapistId, title: 'Proceso ficticio' } });
+      const account = `${run}-acc-ib-${round}`;
+      const user: PortalUser = { workspaceId, patientId: patient.id, portalAccountId: account, accessorType: 'PATIENT' };
+      // Solicitud PENDING del MISMO paciente y del MISMO proceso, ya caducada: tanto la nueva solicitud
+      // (expireDueRequests) como el cierre (rejectPendingRequestsOfProcess) quieren cerrar esa fila.
+      const old = new Date(Date.now() + (400 + round) * 86_400_000);
+      await prisma.appointmentRequest.create({
+        data: {
+          workspaceId, patientId: patient.id, therapistId, clinicalProcessId: process.id, type: 'NEW', status: 'PENDING',
+          startsAt: old, endsAt: new Date(old.getTime() + 3_000_000), heldStartsAt: old, requestedByAccountId: account,
+          accessorType: 'PATIENT', expiresAt: new Date(Date.now() - 60_000),
+        },
+      });
+      const slot = all[300 + round];
+      // Desfase variable entre ambas llamadas para cubrir los distintos entrelazados posibles.
+      const delay = (round % 8) * 3;
+      const results = await Promise.allSettled([
+        new PortalBookingService(prisma as any).createRequest(user, { therapistId, startsAt: slot.startsAt.toISOString() }),
+        (async () => {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          return new ClinicalProcessesService(prisma as any).changeStatus(workspaceId, therapist(), process.id, 'CLOSED', { cancelFutureSessions: true });
+        })(),
+      ]);
+      if (results[1].status !== 'fulfilled') failures.push(`ronda ${round}: cierre -> ${statusOf(results[1])} ${describeError(results[1])}`);
+      if (!['ok', 404, 409].includes(statusOf(results[0]) as any)) failures.push(`ronda ${round}: solicitud -> ${statusOf(results[0])} ${describeError(results[0])}`);
+      const pendingLeft = await prisma.appointmentRequest.count({ where: { workspaceId, patientId: patient.id, status: 'PENDING' } });
+      if (pendingLeft) failures.push(`ronda ${round}: quedan ${pendingLeft} PENDING tras cerrar el proceso`);
+    }
+    expect(failures).toEqual([]);
   });
 });
