@@ -251,7 +251,8 @@ describe('H6 · reactivación (CA6.7)', () => {
     const prisma = seed();
     await new ClinicalProcessesService(prisma).changeStatus(WS, T_A, 'proc-r2', 'PAUSED');
     expect(statusOf(prisma, 'proc-r2')).toBe('PAUSED');
-    expect(prisma.__locks).toHaveLength(0);
+    // Sin lock de apertura (los de la agenda, booking: y schedule:, los toma siempre el cierre).
+    expect(prisma.__locks.filter((k: string) => k.includes('process-opening'))).toHaveLength(0);
   });
 });
 

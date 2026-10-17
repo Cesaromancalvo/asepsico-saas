@@ -255,6 +255,16 @@ describe('Espacio demo: purge con facturas, almacenamiento y solicitudes de dere
     expect(counts.dataRightsRequests).toBe(2);
   });
 
+  it('borra los avisos al profesional de solicitud de cita del miembro demo (userId, sin paciente), acotados al workspace', async () => {
+    const tx = recordingTx({ 'patient.findMany': [{ id: 'p-1' }], 'workspaceMember.findMany': [{ id: 'm-1', userId: 'u-demo' }] });
+    await purgeDemoData(tx, 'ws-1');
+    const ops = tx.__calls.map((c: any) => c.op);
+    const call = tx.__calls.find((c: any) => c.op === 'notification.deleteMany' && c.args.where.userId);
+    expect(call.args.where).toEqual({ workspaceId: 'ws-1', audience: 'PROFESSIONAL', userId: 'u-demo', type: 'APPOINTMENT_REQUEST' });
+    // Antes de decidir si el usuario se borra o se desactiva.
+    expect(ops.indexOf('notification.deleteMany', ops.indexOf('workspaceMember.deleteMany'))).toBeGreaterThan(-1);
+  });
+
   it('sin la tabla DataRightsRequest no ejecuta SQL', async () => {
     const tx = recordingTx({ 'patient.findMany': [{ id: 'p-1' }] });
     await purgeDemoData(tx, 'ws-1');

@@ -21,6 +21,7 @@ import { PatientImportModule } from './patient-import/patient-import.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { LegalModule } from './legal/legal.module';
 import { ExceptionalAccessModule } from './exceptional-access/exceptional-access.module';
+import { SchedulingModule } from './scheduling/scheduling.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ExceptionalAccessModule } from './exceptional-access/exceptional-access
     PatientImportModule,
     WaitlistModule,
     LegalModule,
+    SchedulingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ClinicalProcessStatus, Prisma, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { rejectPendingRequestsOfProcess } from '../scheduling/appointment-request-lifecycle.util';
+import { lockPatientBooking, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
@@ -324,6 +326,11 @@ export class ClinicalProcessesService {
 
     try {
     await this.prisma.$transaction(async (tx) => {
+      // 0) Mismo orden de locks que la reserva del portal (paciente -> profesional -> proceso):
+      //    sin esto, una solicitud que caduca tomaba filas de solicitud y luego el proceso, y este
+      //    cierre al revés (proceso y luego solicitudes) -> interbloqueo.
+      await lockPatientBooking(tx, workspaceId, process.patientId);
+      await lockTherapistSchedule(tx, workspaceId, process.therapistId);
       // 0) H6 (CA6.7): reactivar con procesos POSTERIORES de otros autores = apertura sobre
       //    historia ajena. Lock por paciente y misma regla que el alta.
       let opening: OpeningDecision = { kind: 'NORMAL' };
@@ -340,6 +347,12 @@ export class ClinicalProcessesService {
       //    entre la lectura de las citas futuras y el cierre.
       const { count } = await tx.clinicalProcess.updateMany({ where: { id, workspaceId, status: process.status }, data: { status, endedAt, pausedAt } });
       if (count === 0) throw new ConflictException('El proceso ha cambiado mientras se actualizaba; recarga e inténtalo de nuevo');
+
+      // Criterio 21 de la reserva desde el portal: un proceso que deja de estar ACTIVO no deja
+      // solicitudes de cita pendientes (pasan a REJECTED, "contacta con la consulta").
+      if (status !== 'ACTIVE') {
+        await rejectPendingRequestsOfProcess(tx, workspaceId, id, actor.sub, `CLINICAL_PROCESS_${status}`);
+      }
 
       // 2) Citas futuras programadas, leídas ya con la fila bloqueada. Si las hay y no se pidió
       //    cancelarlas, el 409 revierte también el paso 1.

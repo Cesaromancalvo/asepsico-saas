@@ -74,6 +74,7 @@ function patientsPrisma() {
     auditLog: { create: jest.fn(async () => ({})) },
     patientPortalAccount: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
     exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    appointmentRequest: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
   };
   prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
   return prisma;
