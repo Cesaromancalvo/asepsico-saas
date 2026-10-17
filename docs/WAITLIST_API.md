@@ -58,12 +58,12 @@ El token caduca a las 2 horas y no se puede usar hasta pasados `minSeconds` segu
 | `name` | string | sí | 2–120 caracteres (se recortan espacios) |
 | `email` | string | sí | email válido, máx. 254 |
 | `situation` | enum | sí | `SELF_EMPLOYED` (autónomo/a) · `PRACTICE` (consulta/clínica) · `STUDENT` · `OTHER` |
-| `tools` | string | no | máx. 500. Herramientas que usa hoy |
+| `tools` | string | no | máx. 500. Herramientas que usa hoy. Sin caracteres de control (se admiten saltos de línea y tabulador) → si no, 400 |
 | `professionalsCount` | entero | no | 1–500 |
 | `source` | enum | no | `INSTAGRAM` · `COLLEAGUE` (un compañero) · `PROFESSIONAL_COLLEGE` (Colegio) · `SEARCH_ENGINE` (Google o Bing) · `OTHER` · `NOT_SAID` ("Prefiero no decirlo") |
 | `privacyAccepted` | boolean | sí | debe ser `true` |
 | `privacyPolicyVersion` | string | sí | la versión que muestra la página de privacidad: `lista-espera-v3` desde que la landing publique la nueva política (hasta entonces envía `lista-espera-v2`). Durante la transición la API acepta `lista-espera-v2` y `lista-espera-v3` (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`); cualquier otra (incluida `lista-espera-v1`) → 400. Se guarda tal cual. Al cambiar de versión: **desplegar primero la API y después la landing**, y retirar la anterior cuando la landing ya no la sirva |
-| `commercialConsentRequested` | boolean | no | casilla opcional, desmarcada por defecto (texto según la política `lista-espera-v2` de Lex Psi). Solo registra la **solicitud** con fecha; **no es un consentimiento válido** hasta el doble opt-in por email. Cualquier campo `commercialConsent*` distinto de este → 400 |
+| `commercialConsentRequested` | boolean | no | casilla opcional, desmarcada por defecto (texto según la política `lista-espera-v2` de Lex Psi). Solo registra la **solicitud** con fecha; **no es un consentimiento válido** hasta el doble opt-in por email. Cualquier campo `commercialConsent*` distinto de este → 400. **Con `lista-espera-v3`, `true` → 400 `WAITLIST_COMMERCIAL_NOT_OFFERED`** (esa política no ofrece comunicaciones comerciales; `false` o sin el campo, se acepta) |
 | `formToken` | string | sí | el del paso 1 |
 | `website` | string | no | honeypot: input de texto oculto con CSS (clase, no `style=`), `tabindex="-1"`, `autocomplete="off"`, `aria-hidden="true"`; siempre vacío |
 

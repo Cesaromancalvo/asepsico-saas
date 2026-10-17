@@ -32,6 +32,8 @@ const URL = '/api/v1/public/waitlist';
 const NAME = 'Profesional Ficticia Prueba';
 const EMAIL = 'ficticia.prueba@example.com';
 const TOOLS = 'Agenda en papel y hoja de cálculo ficticia';
+/** La casilla comercial solo existe en la política v2 (la v3 la rechaza): los tests de la casilla usan v2. */
+const V2 = 'lista-espera-v2';
 
 const validBody = (overrides: Record<string, unknown> = {}) => ({
   name: NAME,
@@ -140,8 +142,8 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(JSON.stringify(data)).not.toMatch(/127\.0\.0\.1|::1|supertest|userAgent/i);
   });
 
-  it('la casilla comercial solo registra la SOLICITUD con fecha; el formulario nunca fija el consentimiento válido', async () => {
-    await post(app, validBody({ commercialConsentRequested: true })).expect(202);
+  it('la casilla comercial (v2) solo registra la SOLICITUD con fecha; el formulario nunca fija el consentimiento válido', async () => {
+    await post(app, validBody({ privacyPolicyVersion: V2, commercialConsentRequested: true })).expect(202);
     const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
     expect(data).toMatchObject({ commercialConsentRequested: true, commercialConsentRequestedAt: expect.any(Date) });
     for (const field of ['commercialConsent', 'commercialConsentAt', 'commercialConsentWithdrawnAt']) expect(field in data).toBe(false);
@@ -217,11 +219,37 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(data.commercialConsentRequestedAt).toBeNull();
   });
 
+  it('v3 + commercialConsentRequested:true → 400 y sin create (la política v3 no ofrece comunicaciones comerciales)', async () => {
+    const res = await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v3', commercialConsentRequested: true })).expect(400);
+    expect(res.body.code).toBe('WAITLIST_COMMERCIAL_NOT_OFFERED');
+    expect(JSON.stringify(res.body)).not.toContain(EMAIL);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('v3 + commercialConsentRequested:false → 202 y se guarda false', async () => {
+    await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v3', commercialConsentRequested: false })).expect(202);
+    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.commercialConsentRequested).toBe(false);
+  });
+
+  it.each([
+    ['carácter nulo', 'Agenda\u0000ficticia'],
+    ['escape ANSI', 'Agenda \u001b[31mficticia'],
+    ['DEL', 'Agenda\u007fficticia'],
+    ['control C1', 'Agenda\u0085ficticia'],
+  ])('tools con caracteres de control (%s) → 400 y sin create', async (_label, tools) => {
+    await post(app, validBody({ tools })).expect(400);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('tools con saltos de línea y tabulador (textarea de la v2) → 202', async () => {
+    await post(app, validBody({ privacyPolicyVersion: V2, tools: 'Agenda en papel\nExcel\tficticio' })).expect(202);
+  });
+
   it('email repetido (otras mayúsculas/espacios, otros datos, casilla marcada) → mismo 202 y la fila NO cambia', async () => {
     const first = await post(app, validBody()).expect(202);
     const stored = { ...prisma.rows.get(hashWaitlistEmail(EMAIL)) };
     const second = await post(app, validBody({
-      email: `  ${EMAIL.toUpperCase()} `, name: 'Otro Nombre Ficticio', tools: 'Otra herramienta', situation: 'STUDENT', commercialConsentRequested: true,
+      email: `  ${EMAIL.toUpperCase()} `, name: 'Otro Nombre Ficticio', tools: 'Otra herramienta', situation: 'STUDENT', privacyPolicyVersion: V2, commercialConsentRequested: true,
     })).expect(202);
     expect(second.body).toEqual(first.body);
     expect(second.headers['content-length']).toBe(first.headers['content-length']);
@@ -231,11 +259,11 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
   });
 
   it('un reenvío NUNCA concede ni retira el consentimiento comercial', async () => {
-    await post(app, validBody({ commercialConsentRequested: true })).expect(202);
-    await post(app, validBody({ commercialConsentRequested: false })).expect(202);
+    await post(app, validBody({ privacyPolicyVersion: V2, commercialConsentRequested: true })).expect(202);
+    await post(app, validBody({ privacyPolicyVersion: V2, commercialConsentRequested: false })).expect(202);
     expect(prisma.rows.get(hashWaitlistEmail(EMAIL)).commercialConsentRequested).toBe(true);
     await post(app, validBody({ email: 'sin.casilla@example.com' })).expect(202);
-    await post(app, validBody({ email: 'sin.casilla@example.com', commercialConsentRequested: true })).expect(202);
+    await post(app, validBody({ email: 'sin.casilla@example.com', privacyPolicyVersion: V2, commercialConsentRequested: true })).expect(202);
     expect(prisma.rows.get(hashWaitlistEmail('sin.casilla@example.com')).commercialConsentRequested).toBe(false);
   });
 

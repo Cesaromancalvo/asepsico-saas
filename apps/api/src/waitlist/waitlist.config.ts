@@ -31,6 +31,12 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  */
 export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3'] as const;
 
+/**
+ * Versiones cuya política no ofrece comunicaciones comerciales: un alta con ellas y
+ * commercialConsentRequested=true es un 400 (no se registra una solicitud que el texto aceptado no recoge).
+ */
+export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3'];
+
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
 /** Caducidad del token de formulario. */
