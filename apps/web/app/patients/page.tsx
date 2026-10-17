@@ -9,6 +9,8 @@ import Link from 'next/link';
 import { api, apiErrorCode } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import NewProcessForm from '@/components/NewProcessForm';
+import { useOpeningReasonPrompt } from '@/components/OpeningReasonPicker';
+import { OpeningCancelled, withOpeningReason } from '@/lib/exceptional-access';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 
 // Texto revisado por Clio. 409 DEMO_MEMBERS_ACTIVE: fuera del entorno demo, el espacio aún
@@ -183,6 +185,7 @@ export default function PatientsPage() {
     useState(true);
 
   const [error, setError] = useState('');
+  const { ask: askOpeningReason, dialog: openingReasonDialog } = useOpeningReasonPrompt('Reactivar proceso');
   const [createError, setCreateError] = useState('');
 
   // El rol solo decide acciones de gestión. El contenido clínico (motivo de consulta) solo se
@@ -396,9 +399,12 @@ export default function PatientsPage() {
   async function changeProcessStatus(processId: string, next: ProcessStatus) {
     try {
       setError('');
-      await patchProcessStatus(processId, next);
+      // H6: reactivar sobre historia ajena pide motivo (OWNER/ADMIN) o lo hace la dirección (THERAPIST).
+      if (next === 'ACTIVE') await withOpeningReason((code) => patchProcessStatus(processId, next, code), askOpeningReason);
+      else await patchProcessStatus(processId, next);
       await load();
     } catch (err) {
+      if (err instanceof OpeningCancelled) return;
       setError(err instanceof Error ? err.message : 'No se pudo cambiar el estado del proceso');
     }
   }
@@ -1008,6 +1014,7 @@ export default function PatientsPage() {
           </section>
         </aside>
       </div>
+      {openingReasonDialog}
       </main>
     </div>
   );
