@@ -1,10 +1,11 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
+import { patientHref } from '@/lib/routes';
 
 type AccessMode = 'PATIENT_ONLY' | 'GUARDIAN_ONLY' | 'SHARED';
 type Account = {
@@ -31,7 +32,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function PatientPortalAdminPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useSearchParams().get('id') ?? '';
 
   const demo = useIsDemoEnvironment();
   const [accessMode, setAccessMode] = useState<AccessMode>('PATIENT_ONLY');
@@ -142,7 +143,7 @@ export default function PatientPortalAdminPage() {
     <div className="app-layout">
       <Sidebar />
       <main className="patient-record-page">
-        <Link href={`/patients/${id}`} className="patient-record-back">← Volver a la ficha</Link>
+        <Link href={patientHref(id)} className="patient-record-back">← Volver a la ficha</Link>
         <header className="patient-record-header">
           <div>
             <span className="eyebrow">Portal del paciente</span>

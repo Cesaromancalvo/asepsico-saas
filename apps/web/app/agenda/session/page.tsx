@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { isForbidden, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
+import { patientHref, processHref } from '@/lib/routes';
 
 type Session = {
   id: string;
@@ -37,8 +38,7 @@ function fullName(person?: { firstName?: string | null; lastName?: string | null
 }
 
 export default function SessionDetailPage() {
-  const params = useParams<{ sessionId: string }>();
-  const sessionId = params?.sessionId;
+  const sessionId = useSearchParams().get("id") ?? undefined;
   const viewer = useViewer();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +122,7 @@ export default function SessionDetailPage() {
           <h1>{fullName(session.patient)}</h1>
           <p className="muted">{formatDateTime(session.startsAt)}</p>
         </div>
-        {session.patient && <Link href={`/patients/${session.patient.id}`} className="button secondary">Abrir ficha del paciente</Link>}
+        {session.patient && <Link href={patientHref(session.patient.id)} className="button secondary">Abrir ficha del paciente</Link>}
       </header>
 
       {error && <div className="agenda-error" role="alert">{error}</div>}
@@ -144,7 +144,7 @@ export default function SessionDetailPage() {
           <div className="e1-actions">
             {session.videoCallUrl && <a href={session.videoCallUrl} target="_blank" rel="noreferrer noopener" className="button">Abrir videollamada</a>}
             {session.patient && session.clinicalProcess && (
-              <Link href={`/patients/${session.patient.id}/processes/${session.clinicalProcess.id}`} className="button secondary">Ver proceso</Link>
+              <Link href={processHref(session.patient.id, session.clinicalProcess.id)} className="button secondary">Ver proceso</Link>
             )}
           </div>
         </section>
@@ -169,7 +169,7 @@ export default function SessionDetailPage() {
             </div>
             {access.isAuthor && access.processInactive && session.patient && session.clinicalProcess && (processStatus === "PAUSED" || processStatus === "DISCHARGED") && (
               <div className="e1-notice-actions">
-                <Link href={`/patients/${session.patient.id}/processes/${session.clinicalProcess.id}`} className="button">Ir al proceso para reactivarlo</Link>
+                <Link href={processHref(session.patient.id, session.clinicalProcess.id)} className="button">Ir al proceso para reactivarlo</Link>
               </div>
             )}
           </div>

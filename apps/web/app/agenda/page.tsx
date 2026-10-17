@@ -11,6 +11,7 @@ import Sidebar from '../../components/Sidebar';
 import Icon from '../../components/Icon';
 import { api } from '@/lib/api';
 import { processLabel, useViewer } from '@/lib/clinical';
+import { sessionHref } from '@/lib/routes';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -60,7 +61,7 @@ type Session = {
   location?: string | null;
   videoCallUrl?: string | null;
   // GET /sessions (listado) no devuelve notes ni internalSummary: solo metadatos. Las notas
-  // se ven y editan en el detalle /agenda/[sessionId].
+  // se ven y editan en el detalle /agenda/session/?id=….
 
   patient?: {
     id: string;
@@ -948,7 +949,7 @@ export default function AgendaPage() {
                           type="button"
                           onClick={() =>
                             router.push(
-                              `/agenda/${session.id}`,
+                              sessionHref(session.id),
                             )
                           }
                           style={{

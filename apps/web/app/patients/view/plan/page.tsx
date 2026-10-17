@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { processLabel } from '@/lib/clinical';
+import { appHref, patientHref } from '@/lib/routes';
 
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; achievedAt?:string|null; priority:number; createdAt:string; updatedAt:string };
@@ -24,7 +25,7 @@ function formatDate(value?: string | null, includeTime=false) {
 const TIMELINE_STATUS: Record<string, string> = { SCHEDULED: 'Programada', COMPLETED: 'Completada', CANCELLED: 'Cancelada', NO_SHOW: 'No asistió', ACTIVE: 'Activo', ACHIEVED: 'Conseguido', PAUSED: 'En pausa', DISCHARGED: 'Alta', PENDING: 'Pendiente', IN_PROGRESS: 'En curso', SUBMITTED: 'Entregada', CHANGES_REQUESTED: 'Cambios solicitados', DRAFT: 'Borrador' };
 
 export default function PatientPlanPage(){
-  const { id: patientId } = useParams<{id:string}>();
+  const patientId = useSearchParams().get('id') ?? '';
   const [patient,setPatient]=useState<Patient|null>(null);
   const [goals,setGoals]=useState<Goal[]>([]);
   const [timeline,setTimeline]=useState<TimelineEvent[]>([]);
@@ -80,8 +81,8 @@ export default function PatientPlanPage(){
 
   return <div className="app-layout"><Sidebar syncText="Plan terapéutico actualizado"/><main className="patient-plan-page">
     <header className="patient-plan-header">
-      <div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la historia clínica</Link><div className="patient-record-kicker">Seguimiento clínico</div><h1>Plan terapéutico de {patient.firstName} {patient.lastName}</h1><p>{patient.summary.activeProcess?processLabel(patient.summary.activeProcess):'Sin proceso terapéutico activo'}</p></div>
-      <div className="patient-record-actions"><Link href={`/patients/${patient.id}/tasks`} className="button secondary">Tareas</Link><Link href={`/agenda?patientId=${patient.id}`} className="button">Programar sesión</Link></div>
+      <div><Link href={patientHref(patient.id)} className="patient-record-back">← Volver a la historia clínica</Link><div className="patient-record-kicker">Seguimiento clínico</div><h1>Plan terapéutico de {patient.firstName} {patient.lastName}</h1><p>{patient.summary.activeProcess?processLabel(patient.summary.activeProcess):'Sin proceso terapéutico activo'}</p></div>
+      <div className="patient-record-actions"><Link href={patientHref(patient.id, 'tasks')} className="button secondary">Tareas</Link><Link href={`/agenda?patientId=${patient.id}`} className="button">Programar sesión</Link></div>
     </header>
     {error&&<div className="agenda-error">{error}</div>}
 
@@ -115,7 +116,7 @@ export default function PatientPlanPage(){
         <article className="patient-record-card">
           <div className="patient-plan-section-heading"><div><span>02</span><div><h2>Línea temporal</h2><p>Actividad clínica ordenada cronológicamente.</p></div></div></div>
           <div className="timeline-filters"><button className={filter==='ALL'?'active':''} onClick={()=>setFilter('ALL')}>Todo</button><button className={filter==='SESSION'?'active':''} onClick={()=>setFilter('SESSION')}>Sesiones</button><button className={filter==='GOAL'?'active':''} onClick={()=>setFilter('GOAL')}>Objetivos</button><button className={filter==='HISTORY'?'active':''} onClick={()=>setFilter('HISTORY')}>Historia</button><button className={filter==='TASK'?'active':''} onClick={()=>setFilter('TASK')}>Tareas</button><button className={filter==='ASSESSMENT'?'active':''} onClick={()=>setFilter('ASSESSMENT')}>Escalas</button><button className={filter==='DOCUMENT'?'active':''} onClick={()=>setFilter('DOCUMENT')}>Documentos</button></div>
-          <div className="clinical-timeline">{filteredTimeline.map(item=><div className="timeline-item" key={item.id}><div className={`timeline-icon timeline-${item.type.toLowerCase()}`}>{TYPE_ICON[item.type]}</div><div><time>{formatDate(item.date,true)}</time><h3>{item.href?<Link href={item.href}>{item.title}</Link>:item.title}</h3>{item.description&&<p>{item.description}</p>}{item.status&&<span>{TIMELINE_STATUS[item.status]??item.status.replaceAll('_',' ')}</span>}</div></div>)}{filteredTimeline.length===0&&<div className="therapy-empty"><p>No hay eventos para este filtro.</p></div>}</div>
+          <div className="clinical-timeline">{filteredTimeline.map(item=><div className="timeline-item" key={item.id}><div className={`timeline-icon timeline-${item.type.toLowerCase()}`}>{TYPE_ICON[item.type]}</div><div><time>{formatDate(item.date,true)}</time><h3>{item.href?<Link href={appHref(item.href)}>{item.title}</Link>:item.title}</h3>{item.description&&<p>{item.description}</p>}{item.status&&<span>{TIMELINE_STATUS[item.status]??item.status.replaceAll('_',' ')}</span>}</div></div>)}{filteredTimeline.length===0&&<div className="therapy-empty"><p>No hay eventos para este filtro.</p></div>}</div>
         </article>
       </aside>
     </div>

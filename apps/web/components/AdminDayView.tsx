@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { ROLE_LABEL, Viewer } from '@/lib/clinical';
 import Icon, { EmptyState } from '@/components/Icon';
+import { sessionHref } from '@/lib/routes';
 
 /*
  * "Mi jornada" administrativa: recepción (ASSISTANT) y titular/administración que no atienden
@@ -183,7 +184,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                   <small className={`session-status ui-chip ${session.status === 'SCHEDULED' ? 'chip-violet' : session.status === 'COMPLETED' ? 'chip-green' : 'chip-neutral'}`}>{STATUS_LABEL[session.status] ?? session.status}</small>
                 </div>
                 <div className="session-buttons">
-                  <Link href={`/agenda/${session.id}`} className="small-primary">
+                  <Link href={sessionHref(session.id)} className="small-primary">
                     Ver cita<span className="sr-only"> de {fullName(session.patient)} a las {time(session.startsAt)}</span>
                   </Link>
                 </div>

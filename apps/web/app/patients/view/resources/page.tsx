@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { patientHref } from '@/lib/routes';
 
 type Category='PSYCHOEDUCATION'|'EXERCISE'|'WORKSHEET'|'AUDIO'|'VIDEO'|'READING'|'OTHER';
 type Resource={id:string;title:string;description?:string|null;type:'LINK'|'FILE';category:Category;url?:string|null;fileName?:string|null;mimeType?:string|null;_count?:{shares:number}};
@@ -13,7 +14,7 @@ type Patient={id:string;firstName:string;lastName:string;status:string};
 const CATEGORY:Record<Category,string>={PSYCHOEDUCATION:'Psicoeducación',EXERCISE:'Ejercicio',WORKSHEET:'Hoja de trabajo',AUDIO:'Audio',VIDEO:'Vídeo',READING:'Lectura',OTHER:'Otro'};
 
 export default function PatientResourcesPage(){
-  const {id:patientId}=useParams<{id:string}>();
+  const patientId = useSearchParams().get('id') ?? '';
   const [patient,setPatient]=useState<Patient|null>(null); const [library,setLibrary]=useState<Resource[]>([]); const [shares,setShares]=useState<Share[]>([]);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const [query,setQuery]=useState('');
   async function load(){try{setLoading(true);setError('');const [p,l,s]=await Promise.all([api<Patient>(`/patients/${patientId}`),api<Resource[]>('/resources'),api<Share[]>(`/patients/${patientId}/resources`)]);setPatient(p);setLibrary(l);setShares(s);}catch(e){setError(e instanceof Error?e.message:'No se pudieron cargar los recursos');}finally{setLoading(false);}}
@@ -27,7 +28,7 @@ export default function PatientResourcesPage(){
   if(loading)return <div className="app-layout"><Sidebar/><main className="resource-page"><div className="patient-record-loading">Cargando recursos terapéuticos…</div></main></div>;
   if(!patient)return <div className="app-layout"><Sidebar/><main className="resource-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div></main></div>;
   return <div className="app-layout"><Sidebar syncText="Material terapéutico compartido"/><main className="resource-page">
-    <header className="patient-plan-header"><div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Recursos</div><h1>Recursos de {patient.firstName} {patient.lastName}</h1><p>Crea una biblioteca reutilizable y controla exactamente qué material puede ver este paciente.</p></div><div className="patient-record-actions"><Link href={`/patients/${patient.id}/tasks`} className="button secondary">Ver tareas</Link><Link href={`/patients/${patient.id}/portal`} className="button">Portal del paciente</Link></div></header>
+    <header className="patient-plan-header"><div><Link href={patientHref(patient.id)} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Recursos</div><h1>Recursos de {patient.firstName} {patient.lastName}</h1><p>Crea una biblioteca reutilizable y controla exactamente qué material puede ver este paciente.</p></div><div className="patient-record-actions"><Link href={patientHref(patient.id, 'tasks')} className="button secondary">Ver tareas</Link><Link href={patientHref(patient.id, 'portal')} className="button">Portal del paciente</Link></div></header>
     {error&&<div className="agenda-error">{error}</div>}
     <section className="resource-summary-grid"><article><span>Biblioteca</span><strong>{library.length}</strong><small>Recursos disponibles</small></article><article><span>Compartidos</span><strong>{shares.length}</strong><small>Visibles para el paciente</small></article><article><span>Enlaces</span><strong>{library.filter(r=>r.type==='LINK').length}</strong><small>Acceso inmediato</small></article></section>
     <div className="resource-layout">

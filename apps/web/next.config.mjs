@@ -1,13 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  // Sitio estático (Render Static Site): `next build` genera apps/web/out. No hay servidor de
+  // Next: la web llama directamente a la API en NEXT_PUBLIC_API_URL (https://api.asepsico.es/api/v1
+  // en producción), sin proxy. Las rutas con id usan query string (ver lib/routes.ts).
+  output: 'export',
+  // Genera ruta/index.html en vez de ruta.html: cualquier hosting estático la sirve sin reglas.
+  trailingSlash: true,
   // @asepsico/contracts se publica como TypeScript sin compilar ("main": "src/index.ts"):
-  // Next debe transpilarlo aunque se resuelva desde node_modules (instalación de Vercel).
+  // Next debe transpilarlo aunque se resuelva desde node_modules.
   transpilePackages: ['@asepsico/contracts'],
-  async rewrites() {
-    const target = process.env.API_INTERNAL_URL;
-    if (!target) return [];
-    return [{ source: '/api/v1/:path*', destination: `${target}/api/v1/:path*` }];
-  },
 };
 export default nextConfig;
