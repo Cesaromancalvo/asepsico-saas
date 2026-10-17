@@ -28,7 +28,7 @@
 .xa-problem{margin:10px 0 0;color:var(--text-soft);font-size:var(--fs-sm);text-align:right}
 .xa-field-error{margin:8px 0 0;color:var(--danger);font-size:var(--fs-sm);font-weight:600}
 .xa-done p{margin:0 0 10px;font-size:var(--fs-md)}
-.xa-banner{position:sticky;z-index:20;top:0;display:flex;gap:16px;align-items:center;justify-content:space-between;margin:0 0 18px;padding:14px 18px;border:1px solid #ecd9a3;border-radius:var(--r-md);background:var(--warning-soft);color:#5c3d00;box-shadow:var(--shadow-sm)}
+.xa-banner{position:sticky;z-index:20;top:var(--demo-banner-height,0px);display:flex;gap:16px;align-items:center;justify-content:space-between;margin:0 0 18px;padding:14px 18px;border:1px solid #ecd9a3;border-radius:var(--r-md);background:var(--warning-soft);color:#5c3d00;box-shadow:var(--shadow-sm)}
 .xa-banner-text{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:baseline;font-size:var(--fs-md)}
 .xa-banner-text strong{color:#4a3100}
 .xa-banner-text p{flex-basis:100%;margin:0;font-size:var(--fs-sm)}
@@ -57,11 +57,14 @@
 .xa-section{margin-bottom:20px}
 @media(max-width:700px){
   .xa-record-grid{grid-template-columns:minmax(0,1fr)}
-  .xa-banner{flex-direction:column;align-items:stretch}
+  .xa-banner{flex-direction:column;align-items:stretch;padding:12px 14px}
   .xa-banner .button{width:100%}
+  .xa-banner-text{flex-direction:column;gap:4px}
+  .xa-banner-text>span[aria-hidden]{display:none}
   .xa-pending-item{grid-template-columns:minmax(0,1fr)}
   .xa-table thead{display:none}
   .xa-table tr{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid var(--border)}
   .xa-table td{padding:0 4px;border:0}
   .xa-table td[data-label]::before{content:attr(data-label) ": ";color:var(--text-soft);font-size:var(--fs-xs)}
 }
+.xa-notice-link{display:block;margin:6px 0 4px}

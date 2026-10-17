@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import type { PatientAccessHistoryResponse } from '@asepsico/contracts';
 import { api } from '@/lib/api';
 import { ROLE_LABEL } from '@/lib/clinical';
-import { durationText, exceptionalReasonLabel, formatDateTime, openingReasonLabel } from '@/lib/exceptional-access';
+import { durationText, exceptionalReasonLabel, formatDateTime, openingReasonLabel, untilText } from '@/lib/exceptional-access';
 
 type Row = { key: string; date: string; who: string; role: string; what: string; reason: string; detail: string };
 
 /** Une accesos y aperturas en una sola lista por fecha. Nunca hay texto de explicación. */
-export function accessHistoryRows(data: PatientAccessHistoryResponse): Row[] {
+export function accessHistoryRows(data: PatientAccessHistoryResponse, now: Date = new Date()): Row[] {
   const name = (value: string | null) => value || 'Un miembro de la consulta';
   const rows: Row[] = [
     ...data.accesses.map((row) => ({
@@ -19,7 +19,10 @@ export function accessHistoryRows(data: PatientAccessHistoryResponse): Row[] {
       role: ROLE_LABEL[row.actorRole] ?? row.actorRole,
       what: 'Acceso excepcional',
       reason: exceptionalReasonLabel(row.reasonCode),
-      detail: `Duración: ${durationText(row.createdAt, row.endedAt)}`,
+      // Un acceso aún abierto no tiene duración final: se dice hasta cuándo vale.
+      detail: !row.closedAt && new Date(row.expiresAt).getTime() > now.getTime()
+        ? `Vigente ${untilText(row.expiresAt, now)}`
+        : `Duración: ${durationText(row.createdAt, row.endedAt)}`,
     })),
     ...data.openings.map((row) => ({
       key: `o-${row.id}`,

@@ -195,6 +195,9 @@ describe('Registro, historial y avisos: nunca texto', () => {
     });
     expect(rows[0]).toMatchObject({ what: 'Reactivación de proceso', who: 'Un miembro de la consulta', reason: 'Derivación dentro de la consulta' });
     expect(rows[1]).toMatchObject({ who: 'Ana Prueba', role: 'Titular', reason: 'Custodia de la historia', detail: 'Duración: 1 h 30 min' });
+    // Un acceso todavía abierto no muestra una duración inventada.
+    const open = accessHistoryRows({ accesses: [{ id: 'a2', actorId: 'u1', actorName: 'Ana Prueba', actorRole: 'OWNER', reasonCode: 'CUSTODY', createdAt: '2026-10-16T08:00:00Z', expiresAt: '2026-10-16T16:00:00Z', closedAt: null, endedAt: '2026-10-16T16:00:00Z' }], openings: [] }, new Date('2026-10-16T09:00:00Z'));
+    expect(open[0].detail).toMatch(/^Vigente hasta las/);
   });
 
   it('el aviso en la app cambia la fecha ISO por una legible', () => {
