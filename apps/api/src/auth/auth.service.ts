@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
+import type { Prisma } from '@prisma/client';
 import { compare } from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -131,13 +132,16 @@ export class AuthService {
     return { success: true };
   }
 
-  /** Emite la sesión (access + refresh). La usan login, refresh y RegistrationService. */
+  /** Emite la sesión (access + refresh). La usan login, refresh, RegistrationService y PasswordService. */
   async issueSession(
     user: SessionUser,
     workspaceId: string,
     role: string,
     meta: { ip?: string; userAgent?: string },
     family?: string,
+    // Cliente de la transacción en curso (cambio de contraseña): la sesión nueva se crea en la misma
+    // transacción que revoca las anteriores.
+    db: Pick<Prisma.TransactionClient, 'refreshToken'> = this.prisma,
   ): Promise<IssuedSession> {
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
@@ -148,7 +152,7 @@ export class AuthService {
     });
     const refreshToken = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
-    await this.prisma.refreshToken.create({
+    await db.refreshToken.create({
       data: {
         userId: user.id,
         workspaceId,

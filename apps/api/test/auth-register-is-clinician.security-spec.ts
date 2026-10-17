@@ -6,6 +6,7 @@ import request = require('supertest');
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { MfaService } from '../src/auth/mfa.service';
+import { PasswordService } from '../src/auth/password.service';
 import { PrismaService } from '../src/database/prisma.service';
 import { RegistrationService } from '../src/auth/registration.service';
 import { hashInviteToken } from '../src/auth/invite-token.util';
@@ -61,6 +62,7 @@ describe('POST /auth/register valida isClinician como booleano estricto', () => 
         AuthService,
         RegistrationService,
         { provide: MfaService, useValue: {} },
+        { provide: PasswordService, useValue: {} },
         { provide: PrismaService, useValue: prismaProxy },
       ],
     }).compile();

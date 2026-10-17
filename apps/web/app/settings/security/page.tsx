@@ -1,6 +1,8 @@
 'use client';
 import { FormEvent, useRef, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import ChangePasswordForm from '@/components/ChangePasswordForm';
+import { useViewer } from '@/lib/clinical';
 import { api, ApiError, refreshSession } from '@/lib/api';
 
 type SetupResponse = { qrCodeDataUrl: string; secret: string };
@@ -26,6 +28,10 @@ export default function SecurityPage() {
   const [busy, setBusy] = useState(false);
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const confirmCodeRef = useRef<HTMLInputElement>(null);
+  const viewer = useViewer();
+  // Estado del MFA para el formulario de contraseña: sale de /auth/me y se actualiza al activarlo o desactivarlo aquí.
+  const [mfaOverride, setMfaOverride] = useState<boolean | null>(null);
+  const mfaEnabled = mfaOverride ?? viewer?.mfaEnabled === true;
 
   async function startSetup() {
     setError('');
@@ -63,6 +69,7 @@ export default function SecurityPage() {
       });
       setRecoveryCodes(result.recoveryCodes);
       setSetup(null);
+      setMfaOverride(true);
       // El access token lleva "mfaEnabled": se renueva para que el resto de la app se desbloquee ya.
       await refreshSession();
     } catch (err) {
@@ -104,6 +111,7 @@ export default function SecurityPage() {
       });
       form.reset();
       setDisableNotice('Verificación en dos pasos desactivada.');
+      setMfaOverride(false);
       await refreshSession();
     } catch (err) {
       // 401 (contraseña o código), 429 (espera por intentos fallidos) o 400: el texto de la API tal cual.
@@ -120,8 +128,8 @@ export default function SecurityPage() {
         <header className="patient-record-header">
           <div>
             <span className="eyebrow">Seguridad</span>
-            <h1>Verificación en dos pasos</h1>
-            <p>Añade una capa extra a tu cuenta: además de la contraseña, un código de tu móvil.</p>
+            <h1>Seguridad de la cuenta</h1>
+            <p>Tu contraseña y la verificación en dos pasos: además de la contraseña, un código de tu móvil.</p>
           </div>
         </header>
 
@@ -198,6 +206,15 @@ export default function SecurityPage() {
               {busy ? 'Generando…' : 'Empezar configuración'}
             </button>
           </section>
+        )}
+
+        {viewer === null ? null : viewer.mfaPending && mfaOverride !== true ? (
+          <section className="patient-card" aria-labelledby="change-password-title">
+            <h2 id="change-password-title">Cambiar contraseña</h2>
+            <p>Para cambiar la contraseña, activa primero la verificación en dos pasos.</p>
+          </section>
+        ) : (
+          <ChangePasswordForm key={mfaEnabled ? 'con-mfa' : 'sin-mfa'} mfaEnabled={mfaEnabled} />
         )}
 
         <section className="patient-card">

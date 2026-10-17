@@ -60,7 +60,7 @@ function redirectToTermsIfRequired(status: number, code: string | undefined) {
 const NO_REFRESH_PATHS = new Set(['/auth/login', '/auth/login/mfa', '/auth/refresh']);
 // En estas rutas, el 401 puede venir del guard (token caducado) o del servicio (contraseña o
 // código incorrectos). Solo se renueva y repite si el 401 es el genérico del guard.
-const BUSINESS_401_PATHS = new Set(['/auth/mfa/confirm', '/auth/mfa/disable']);
+export const BUSINESS_401_PATHS: ReadonlySet<string> = new Set(['/auth/mfa/confirm', '/auth/mfa/disable', '/auth/change-password']);
 const AUTH_LAYER_401_MESSAGES = new Set(['Unauthorized', 'Token no válido para este dominio']);
 
 async function readError(response: Response): Promise<{ message?: string; code?: string }> {
