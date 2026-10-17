@@ -33,6 +33,8 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 | Sprint 12 | Flujo completo de tareas terapéuticas | `SPRINT_12_FLUJO_COMPLETO_TAREAS.md` | Implementado | 10 suites, 52/52 pruebas; E2E manual pendiente | BETA avanzada |
 | Sprint 13 | Dashboard profesional y onboarding | `SPRINT_13_DASHBOARD_ONBOARDING.md` | Implementado | 8/8 verificaciones estructurales | BETA |
 | Sprint 14 | Exportaciones, backups y preparación para piloto | `SPRINT_14_EXPORTACIONES_BACKUPS_PILOTO.md` | Implementado | 11 suites, 58/58 tests; 12/12 verificaciones; backup/restore real ejecutado | BETA avanzada |
+| Sprint 15 | CI con PostgreSQL real y smoke HTTP | `SPRINT_15_CI_POSTGRES_SMOKE.md` | Implementado | `COMPROBACION_EJECUCION_SPRINT_15.md`, `PRUEBA_SPRINT_15_CI_POSTGRES.md` | Ver sección Sprint 15 |
+| Sprint 16 | Despliegue del piloto demo (sesión 3, 16–17/10/2026) | `SPRINT_16_DESPLIEGUE_PILOTO_DEMO.md` | Implementado (PR #19–#23 en `main`) | Revisión de Argos; PR #23: `test:security` 1174/1176 sin fallos, web 42/42, e2e Postgres 27/27; CI con 3 checks en verde en cada merge; copia previa restaurada (`pg_restore` código 0) | BETA (solo demo, sin datos reales) |
 
 ## Evidencia acumulada relevante
 
@@ -45,6 +47,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 - Sprint 11: **48/48** pruebas.
 - Sprint 12: **52/52** pruebas.
 - Sprint 14: **11 suites, 58/58 tests y 0 fallos**.
+- Sprint 16 (PR #23, cambio de contraseña): `test:security` **1174/1176 sin fallos**, web **42/42**, e2e con PostgreSQL **27/27**; tres checks del CI en verde en cada merge.
 
 ### Backup y restauración
 
@@ -157,6 +160,26 @@ Incluye:
 - job separado de calidad con typecheck, tests de seguridad, unit tests y build.
 
 El sprint solo se marcará como validado cuando ambos jobs aparezcan en verde en GitHub Actions.
+
+### Entre el Sprint 15 y el Sprint 16 (sin documento de sprint propio)
+
+Fusionados en `main` los PR #5–#18: correcciones de seguridad (escrituras acotadas por workspace, ciclo de vida de pacientes, portal, MFA, `TRUST_PROXY`, cifrado de campos clínicos, exposición de motivo de consulta y procesos), acceso clínico E1, importación de pacientes, web pública y lista de espera propia. Su detalle vive en los PR y en `docs/SECURITY_BASELINE.md`; no tienen documento `SPRINT_X_*.md` y no se marcan aquí como validados.
+
+### Sprint 16 — Despliegue del piloto demo (sesión 3)
+
+Estado: **Implementado; BETA solo para demo (sin datos de pacientes reales)**.
+
+Incluye en `main`: registro por invitación, condiciones `demo-1.1`, marcas `isDemo` con seed y purga del espacio demo, web de registro, condiciones y aviso de entorno demo, control de cobros, citas entre profesionales, login sin credenciales de ejemplo, web pública con formulario propio de lista de espera, calculadora, rediseño visual y cambio de contraseña de los profesionales (PR #23). Migraciones de 27 a 30. El CLI `users:set-password` queda fuera de `main` a propósito (se ejecuta desde un clon).
+
+Ejecutado en el entorno (16/10/2026): rotación de la contraseña del titular con 0 sesiones activas, cambio de plan de la base de datos con copia previa (31 tablas) restaurada con `pg_restore` código 0, variables `LEGAL_TITULAR_*` y `DEMO_ENVIRONMENT`, condiciones aceptadas, espacio demo con 10 pacientes ficticios, registro cerrado verificado, web estática con 6 cabeceras de seguridad y sin cookies, y C3 (logs del proveedor) cerrada por Lex Psi.
+
+Pendiente antes de invitar a nadie:
+
+- revisión operativa del espacio demo antes de la primera invitación (pendiente);
+- backlog de Argos: invalidar access tokens tras cambiar la contraseña (`tokenVersion`/`passwordChangedAt`) y `RegisterDto` con `MaxUtf8Bytes(72)`/`MinChars(12)`;
+- plan de la API: decisión pendiente;
+- salida de Vercel antes del 31/10/2026;
+- acceso excepcional: backend aprobado y verificado en rama, interfaz en curso.
 
 ### Fase B — Hardening RGPD y preparación jurídica
 
