@@ -325,6 +325,26 @@ jobs:
           fi
           node scripts/verify-mfa-concurrency.mjs
 
+      # Verificaciones "en vivo" del sprint 4 contra la API y la BD de este job (datos ficticios; cada
+      # script crea sus propios workspaces y usuarios y no toca la cuenta demo). Salen con código
+      # distinto de 0 si algo no cuadra, y timeout-minutes acota cada una para no alargar el CI.
+      # Acceso excepcional: QA_CONCURRENCY_ROUNDS=3 (por defecto 10) es el modo rápido de CI; la
+      # carrera sigue cubierta por rondas y por session-close-race. El script espera al siguiente
+      # paso TOTP de 30 s por usuario, de ahí el margen del timeout.
+      - name: Verify exceptional access end to end (real API and PostgreSQL)
+        timeout-minutes: 4
+        run: node scripts/verify-exceptional-access-live.mjs
+        env:
+          QA_CONCURRENCY_ROUNDS: '3'
+
+      # Reserva de citas del portal: usa apps/api/dist (lo deja `nest start` al arrancar la API).
+      - name: Verify portal appointment booking end to end (real API and PostgreSQL)
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          test -f apps/api/dist/legal/terms-acceptance.js || { echo "Falta apps/api/dist: la API no se compiló" >&2; exit 1; }
+          node scripts/verify-reserva-citas-live.mjs
+
       # Carrera crear cita vs. cerrar proceso con bloqueos de fila reales (no la API: instancia los
       # servicios contra la BD del servicio postgres). Crea su propio workspace ficticio y no toca
       # la cuenta demo. RACE_DATABASE_REQUIRED=1 hace que falle, en vez de omitirse, si falta la URL.

@@ -27,7 +27,9 @@ const checks = [
   // La API de CI solo confía en loopback; nunca "true" (permitiría falsear la IP del throttle).
   ['TRUST_PROXY de CI acotado a loopback', /TRUST_PROXY:\s*loopback/],
   ['verificación de concurrencia MFA (condicionada a que exista el script)', /node scripts\/verify-mfa-concurrency\.mjs/],
-  ['test de carrera session-close-race en postgres-integration', /--testPathPattern session-close-race/],
+  ['verificación en vivo del acceso excepcional (modo rápido de CI)', /node scripts\/verify-exceptional-access-live\.mjs[\s\S]*?QA_CONCURRENCY_ROUNDS:\s*'3'/],
+  ['verificación en vivo de la reserva de citas', /node scripts\/verify-reserva-citas-live\.mjs/],
+  ['test de carrera session-close-race en postgres-integration', /--testPathPattern '\(session-close-race\|booking-race\)'/],
   ['RACE_DATABASE_URL hacia el Postgres del servicio', /RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/],
   ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
 ];
@@ -88,7 +90,7 @@ if (inviteIndex < 0 || inviteIndex < smokeIndex) {
 }
 // El test de carrera necesita la BD migrada y debe vivir en postgres-integration (no en quality).
 const postgresJobIndex = workflow.indexOf('postgres-integration:');
-const raceIndex = workflow.indexOf('--testPathPattern session-close-race');
+const raceIndex = workflow.indexOf("--testPathPattern '(session-close-race|booking-race)'");
 if (raceIndex < postgresJobIndex || raceIndex < migrateIndex) {
   throw new Error('session-close-race debe ejecutarse en el job postgres-integration, después de db:migrate:ci');
 }
@@ -234,8 +236,8 @@ function requiredStep(job, name, command) {
   return step;
 }
 requiredStep('quality', 'Web unit tests', 'npm --workspace @asepsico/web run test -- --ci');
-requiredStep('postgres-integration', 'Session close race test (real PostgreSQL)',
-  'npm --workspace @asepsico/api run test:security -- --ci --testPathPattern session-close-race');
+requiredStep('postgres-integration', 'Session close and booking race tests (real PostgreSQL)',
+  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race)'");
 requiredStep('postgres-integration', 'Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)',
   'node scripts/verify-billing-assistant-live.mjs');
 const landingStep = requiredStep('quality', 'Landing build fails closed without legal holder variables',
@@ -250,7 +252,7 @@ if ((landingStep.code.match(/exit 0/g) ?? []).length !== 1 ||
     !/if \[ ! -f apps\/landing\/build\.mjs \]; then\n\s*echo "::notice[^\n]*\n\s*exit 0\n\s*fi/.test(landingStep.code)) {
   throw new Error('El paso de la landing solo puede omitirse (exit 0) cuando falta apps/landing/build.mjs');
 }
-if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(stepsOf('postgres-integration').find((step) => step.name.startsWith('Session close race')).code)) {
+if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(stepsOf('postgres-integration').find((step) => step.name.startsWith('Session close and booking race')).code)) {
   throw new Error('RACE_DATABASE_REQUIRED=1 debe ir en el propio paso session-close-race');
 }
 
