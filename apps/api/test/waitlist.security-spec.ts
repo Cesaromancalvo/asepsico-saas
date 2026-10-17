@@ -15,7 +15,7 @@ import { WaitlistOriginGuard } from '../src/waitlist/waitlist-origin.guard';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from '../src/waitlist/waitlist-crypto';
 import { confirmCommercialConsent, csvCell, deleteWaitlistEntry, withdrawCommercialConsent, purgeCutoff, purgeWaitlist, resolveExportPath, waitlistCsv } from '../src/waitlist/waitlist-admin';
-import { InvalidWaitlistConfigError, WAITLIST_PATH, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, InvalidWaitlistConfigError, WAITLIST_PATH, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 import { Prisma } from '@prisma/client';
 
@@ -41,7 +41,7 @@ const validBody = (overrides: Record<string, unknown> = {}) => ({
   professionalsCount: 3,
   source: 'COLLEAGUE',
   privacyAccepted: true,
-  privacyPolicyVersion: 'lista-espera-v2',
+  privacyPolicyVersion: 'lista-espera-v3',
   commercialConsentRequested: false,
   formToken: issueFormToken(Date.now() - 10_000),
   ...overrides,
@@ -129,7 +129,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
       expect(data[field]).not.toContain(plain);
       expect(decryptField(data[field])).toBe(plain);
     }
-    expect(data.privacyPolicyVersion).toBe('lista-espera-v2');
+    expect(data.privacyPolicyVersion).toBe('lista-espera-v3');
     expect(data.privacyAcceptedAt).toBeInstanceOf(Date);
     expect(data.commercialConsentRequested).toBe(false);
     expect(data.commercialConsentRequestedAt).toBeNull();
@@ -189,11 +189,32 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['sin aceptar la política (false)', { privacyAccepted: false }],
     ['sin el campo de aceptación', { privacyAccepted: undefined }],
     ['aceptación como texto', { privacyAccepted: 'true' }],
-    ['versión de política antigua', { privacyPolicyVersion: 'lista-espera-v1' }],
+    ['versión de política antigua (v1, Google Forms)', { privacyPolicyVersion: 'lista-espera-v1' }],
+    ['versión de política inexistente', { privacyPolicyVersion: 'lista-espera-v4' }],
+    ['versión con espacios', { privacyPolicyVersion: ' lista-espera-v3' }],
     ['sin versión de política', { privacyPolicyVersion: undefined }],
   ])('400 si no se acepta la política vigente: %s', async (_label, overrides) => {
     await post(app, validBody(overrides)).expect(400);
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('transición v2 → v3: la API acepta las dos versiones vigentes y no otras', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3']);
+  });
+
+  it.each(['lista-espera-v2', 'lista-espera-v3'])('transición: %s → 202 y se guarda la versión enviada, tal cual', async (version) => {
+    await post(app, validBody({ privacyPolicyVersion: version })).expect(202);
+    expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(1);
+    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.privacyPolicyVersion).toBe(version);
+  });
+
+  it('v3 sin el campo commercialConsentRequested (como lo envía la landing) → 202 y se guarda false', async () => {
+    const { commercialConsentRequested: _omit, ...body } = validBody();
+    await post(app, body).expect(202);
+    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
+    expect(data.privacyPolicyVersion).toBe('lista-espera-v3');
+    expect(data.commercialConsentRequested).toBe(false);
+    expect(data.commercialConsentRequestedAt).toBeNull();
   });
 
   it('email repetido (otras mayúsculas/espacios, otros datos, casilla marcada) → mismo 202 y la fila NO cambia', async () => {

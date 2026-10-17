@@ -19,8 +19,11 @@ export type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHE
 /** NOT_SAID = "Prefiero no decirlo". */
 export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 
-/** Versión de la política que muestra la landing. Debe coincidir con la que acepta la API. */
-export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v2';
+/**
+ * Versión de la política que muestra (y envía) la landing. Debe estar entre las que acepta la API
+ * (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta también lista-espera-v2).
+ */
+export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v3';
 
 export interface WaitlistFormTokenResponse {
   formToken: string;

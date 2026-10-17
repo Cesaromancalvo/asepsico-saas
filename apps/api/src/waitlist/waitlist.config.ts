@@ -23,8 +23,13 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * anterior cuando la landing ya no la sirva.
  *  - lista-espera-v1: texto del 29/09/2026 (Google Forms). No se acepta: no describe este formulario.
  *  - lista-espera-v2: formulario propio en asepsico.es (texto de Lex Psi; pendiente de revisión del abogado humano).
+ *    Altas del 16/10/2026 al 17/10/2026. Se sigue aceptando solo durante la transición a v3: retirarla
+ *    cuando la landing publicada envíe lista-espera-v3. Los registros ya guardados con v2 no cambian.
+ *  - lista-espera-v3: 17/10/2026, sin casilla de comunicaciones comerciales y con "¿Qué usas hoy?" en
+ *    opciones (texto de Lex Psi; pendiente de revisión del abogado humano). La v2 queda archivada
+ *    en /privacidad-lista-espera/v2/.
  */
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2'] as const;
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3'] as const;
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
