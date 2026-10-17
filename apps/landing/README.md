@@ -17,7 +17,7 @@ apps/landing/
     aviso-legal/index.html <- aviso legal (texto final de Argos)
     privacidad/index.html  <- política de privacidad y cookies (versión sin analítica)
     privacidad-lista-espera/index.html    <- política de la lista de espera v3 (formulario propio)
-    privacidad-lista-espera/v2/index.html <- política v2 archivada (altas del 16 al 17/10/2026; la v3 la enlaza); noindex
+    privacidad-lista-espera/v2/index.html <- política v2 archivada (altas hechas con la versión lista-espera-v2; la v3 la enlaza); noindex
     privacidad-lista-espera/v1/index.html <- política v1 (Google Forms), solo para la red de seguridad; noindex
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
