@@ -12,7 +12,8 @@
  *  5. WAITLIST_FORM_TOO_FAST reintenta una vez con el mismo token; WAITLIST_FORM_TOKEN_INVALID pide otro;
  *  6. todas las peticiones con credentials: 'omit' y sin tocar localStorage, sessionStorage ni cookies;
  *  7. mensajes: 429, fallo de red y validación sin red;
- *  8. "¿Qué usas hoy?": opciones, "Otra" con caja de máx. 100 caracteres, y sin campos commercialConsent*.
+ *  8. "¿Qué usas hoy?": opciones, "Otra" con caja de máx. 100 caracteres, y sin campos commercialConsent*;
+ *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex.
  *
  * Uso: node scripts/check-landing-form.mjs   (lo llama npm run test:landing). Sin dependencias.
  */
@@ -216,7 +217,7 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   if (p[0]) {
     check(p[0].at - tokenAt >= 1000, `2: se envió ${p[0].at - tokenAt} ms después del token (mínimo 1000)`);
     check(p[0].body.formToken === 'tok-espera', '2: no se envió el token recibido');
-    check(p[0].body.privacyPolicyVersion === 'lista-espera-v2', '2: privacyPolicyVersion distinto de lista-espera-v2');
+    check(p[0].body.privacyPolicyVersion === 'lista-espera-v3', '2: privacyPolicyVersion distinto de lista-espera-v3');
     check(!Object.keys(p[0].body).some((k) => k.startsWith('commercialConsent')), '2: se envió un campo commercialConsent* (la casilla de novedades ya no existe)');
     check(p[0].body.tools === 'Otra: Un programa propio', `8: "Otra" con texto se envió como "${p[0].body.tools}"`);
     check(p[0].init.headers['Content-Type'] === 'application/json', '2: falta Content-Type JSON');
@@ -330,9 +331,30 @@ for (const [opts, expected] of [
   check(/marca la casilla de privacidad/.test(doc.getElementById('wl-privacy-err').textContent), '7: falta el error de la casilla de privacidad');
 }
 
+{ // 9. Versión de la política: la que envía la landing = la visible = la del contrato, y la API la acepta (si no, 400).
+  const sent = (configSrc.match(/WAITLIST_POLICY_VERSION:\s*'([^']+)'/) || [])[1];
+  const page = readFileSync(join(pub, 'privacidad-lista-espera/index.html'), 'utf8');
+  const shown = (page.match(/Versión:\s*(lista-espera-v\d+)/) || [])[1];
+  const contract = (readFileSync(join(repoRoot, 'packages/contracts/src/waitlist.ts'), 'utf8').match(/WAITLIST_PRIVACY_POLICY_VERSION = '([^']+)'/) || [])[1];
+  const apiList = (readFileSync(join(repoRoot, 'apps/api/src/waitlist/waitlist.config.ts'), 'utf8').match(/ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = \[([^\]]*)\]/) || [])[1] || '';
+  const accepted = [...apiList.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  check(sent && sent === shown, `9: config.js envía "${sent}" pero la página muestra "${shown}"`);
+  check(sent === contract, `9: config.js envía "${sent}" pero packages/contracts dice "${contract}"`);
+  check(accepted.includes(sent), `9: la API no acepta "${sent}" (acepta ${accepted.join(', ')})`);
+  // Las versiones archivadas que acepta la API o enlaza la vigente tienen su página, con noindex.
+  for (const v of accepted.filter((x) => x !== sent)) {
+    const n = v.replace('lista-espera-', '');
+    check(page.includes(`href="/privacidad-lista-espera/${n}/"`), `9: la política vigente no enlaza la archivada /${n}/`);
+    let old = '';
+    try { old = readFileSync(join(pub, `privacidad-lista-espera/${n}/index.html`), 'utf8'); } catch { /* falta */ }
+    check(old.includes(`Versión: ${v}`), `9: falta la política archivada ${v} en /privacidad-lista-espera/${n}/`);
+    check(old.includes('<meta name="robots" content="noindex">'), `9: /privacidad-lista-espera/${n}/ sin noindex`);
+  }
+}
+
 if (failures.length) {
   for (const f of failures) console.error(`ERROR   ${f}`);
   console.error(`\ncheck-landing-form: ${failures.length} fallo(s).`);
   process.exit(1);
 }
-console.log('check-landing-form: OK (fetch simulado: token solo al enfocar, minSeconds, 202, 400/413/415/429, reintentos, red, validación, herramienta actual, sin casilla comercial, sin almacenamiento).');
+console.log('check-landing-form: OK (fetch simulado: token solo al enfocar, minSeconds, 202, 400/413/415/429, reintentos, red, validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política).');
