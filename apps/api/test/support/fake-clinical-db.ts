@@ -21,6 +21,7 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     patient: [], workspaceMember: [], clinicalProcess: [], session: [], clinicalHistory: [], therapyGoal: [],
     therapeuticTask: [], clinicalAssessment: [], patientDocument: [], consentRecord: [], clinicalReport: [],
     conversation: [], message: [], auditLog: [], resourceShare: [], invoice: [], notification: [], user: [],
+    appointmentRequest: [], availabilityBlock: [],
     ...seed,
   } as Store;
 
@@ -135,6 +136,13 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       for (const key of Object.keys(snapshot)) store[key] = snapshot[key];
       throw error;
     }
+  });
+  // Advisory locks de la agenda (pg_advisory_xact_lock): se registran las claves para poder
+  // comprobar que se toman dentro de la transacción.
+  prisma.__locks = [] as string[];
+  prisma.$executeRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    prisma.__locks.push(String(values[0]));
+    return 1;
   });
   prisma.__store = store;
   return prisma;
