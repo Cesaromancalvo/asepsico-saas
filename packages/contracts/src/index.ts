@@ -132,3 +132,114 @@ export type InvoiceLineConcept = (typeof INVOICE_LINE_CONCEPTS)[number];
 export interface BillingFreeTextFlagsContract { notesHidden?: true; voidReasonHidden?: true; referenceHidden?: true; reversalReasonHidden?: true; legacyDescriptionHidden?: true; }
 /** GET /billing/invoices: resumen sin líneas ni notas; `concept` es el de la primera línea. */
 export interface InvoiceListItemContract { id: string; patientId: string; invoiceNumber: string; status: string; currency: string; issueDate: string | null; dueDate: string | null; subtotalCents: number; taxCents: number; totalCents: number; paidCents: number; createdAt: string; updatedAt: string; concept: InvoiceLineConcept | null; patient: { id: string; firstName: string; lastName: string }; payments: { id: string; amountCents: number; method: string; paidAt: string }[]; }
+
+/* ------------------------------------------------------------------------------------------ */
+/* Reserva de citas desde el portal (apps/api/src/scheduling). Fechas en ISO 8601 (UTC).        */
+/* ------------------------------------------------------------------------------------------ */
+
+/** Motivos de bloqueo: lista cerrada, sin texto libre. */
+export const BLOCK_REASONS = ['VACATION', 'TRAINING', 'PERSONAL', 'OTHER'] as const;
+export type BlockReason = (typeof BLOCK_REASONS)[number];
+/** Motivos de rechazo de una solicitud: lista cerrada, visible para el paciente. */
+export const REJECTION_REASONS = ['SLOT_UNAVAILABLE', 'DISCUSS_IN_SESSION', 'CONTACT_PRACTICE'] as const;
+export type RejectionReason = (typeof REJECTION_REASONS)[number];
+export const APPOINTMENT_REQUEST_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'WITHDRAWN'] as const;
+export type AppointmentRequestStatus = (typeof APPOINTMENT_REQUEST_STATUSES)[number];
+export type AppointmentRequestType = 'NEW' | 'RESCHEDULE' | 'CANCEL';
+
+/** Códigos estables de los 409 de la reserva (campo `code` del cuerpo del error). */
+export type BookingErrorCode =
+  | 'SLOT_NOT_AVAILABLE' | 'TOO_MANY_PENDING_REQUESTS' | 'REQUEST_ALREADY_PENDING'
+  | 'WITHIN_CANCELLATION_WINDOW' | 'BOOKING_UNAVAILABLE' | 'REQUEST_NOT_PENDING' | 'PATIENT_NOT_ACTIVE';
+
+/** Franja semanal: 1 = lunes … 7 = domingo; minutos desde las 00:00 en hora local del espacio (múltiplos de 15). */
+export interface AvailabilityWindowContract { weekday: number; startMinute: number; endMinute: number; }
+
+export interface AvailabilitySettingsContract {
+  portalBookingEnabled: boolean;
+  sessionMinutes: number;
+  breakMinutes: number;
+  minNoticeHours: number;
+  maxHorizonDays: number;
+  cancelNoticeHours: number;
+  maxPendingPerPatient: number;
+  updatedAt: string | null;
+}
+
+export interface AvailabilityBlockContract { id: string; startsAt: string; endsAt: string; reason: BlockReason; }
+
+/** GET /scheduling/availability/:therapistId */
+export interface AvailabilityViewContract {
+  therapistId: string;
+  timeZone: string;
+  settings: AvailabilitySettingsContract;
+  windows: AvailabilityWindowContract[];
+  blocks: AvailabilityBlockContract[];
+}
+
+/** PUT /scheduling/availability/:therapistId (la activación de la reserva va aparte, en PATCH .../portal-booking). */
+export type UpdateAvailabilityRequestContract = Omit<AvailabilitySettingsContract, 'portalBookingEnabled' | 'updatedAt'> & { windows: AvailabilityWindowContract[] };
+
+/** POST /scheduling/availability/:therapistId/blocks */
+export interface CreateBlockResponseContract { block: AvailabilityBlockContract; overlappingSessions: number; warning: string | null; }
+
+export interface RequestPersonContract { id: string; firstName: string; lastName: string; }
+
+/** Fila de GET /scheduling/requests: vista administrativa, nunca contenido clínico. */
+export interface StaffAppointmentRequestContract {
+  id: string;
+  type: AppointmentRequestType;
+  status: AppointmentRequestStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  sessionId: string | null;
+  accessorType: 'PATIENT' | 'GUARDIAN';
+  rejectionReason: RejectionReason | null;
+  expiresAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  patient: RequestPersonContract;
+  therapist: RequestPersonContract;
+  /** Cita afectada por un cambio o una cancelación (solo inicio, fin y estado). */
+  session: { id: string; startsAt: string; endsAt: string; status: string } | null;
+}
+
+/** Hueco libre del portal: solo inicio y fin. */
+export interface PortalSlotContract { startsAt: string; endsAt: string; }
+
+/** GET /portal/booking/slots?therapistId= */
+export interface PortalSlotsContract { therapist: RequestPersonContract; timeZone: string; slots: PortalSlotContract[]; }
+
+export interface PortalBookingAppointmentContract {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  therapist: RequestPersonContract;
+  /** Falta más que el plazo de cancelación y no hay otra solicitud en curso sobre esta cita. */
+  changeAllowed: boolean;
+  hasPendingRequest: boolean;
+}
+
+/** GET /portal/booking/options. Con `canBook: false` la web no muestra nada. */
+export interface PortalBookingOptionsContract {
+  canBook: boolean;
+  message: string | null;
+  emergencyNotice: string;
+  therapists: RequestPersonContract[];
+  appointments: PortalBookingAppointmentContract[];
+}
+
+/** Solicitud tal y como la ve el paciente (GET /portal/booking/requests y respuestas de escritura). */
+export interface PortalAppointmentRequestContract {
+  id: string;
+  type: AppointmentRequestType;
+  status: AppointmentRequestStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  sessionId: string | null;
+  rejectionReason: RejectionReason | null;
+  expiresAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  therapist: RequestPersonContract;
+}
