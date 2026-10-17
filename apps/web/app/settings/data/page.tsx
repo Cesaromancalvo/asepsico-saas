@@ -57,7 +57,7 @@ export default function DataSettingsPage() {
     } catch (e) {
       // 403: OWNER/ADMIN que no trata al paciente (la exportación lleva contenido clínico).
       setPatientExportError(isForbidden(e)
-        ? 'No puedes exportar el expediente de este paciente: contiene información clínica y solo puede exportarlo el profesional que le atiende (o, de lo suyo, quien le atendió). Si el paciente ha pedido una copia de sus datos, pide al profesional responsable que la genere.'
+        ? 'No puedes exportar el expediente de este paciente: contiene información clínica y solo puede exportarlo el profesional que le atiende (o, de lo suyo, quien le atendió). Si el paciente ha pedido una copia de sus datos, pide al profesional responsable que la genere o, si eres de la dirección, registra un acceso excepcional por petición del paciente desde su ficha y exporta desde allí.'
         : e instanceof Error ? e.message : 'No se pudo exportar');
     } finally { setBusy(false); }
   }

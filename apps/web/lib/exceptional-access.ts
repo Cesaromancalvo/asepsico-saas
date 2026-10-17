@@ -9,6 +9,7 @@ import {
   PROCESS_OPENING_REASON_LABELS,
   type CreateExceptionalAccessRequest,
   type ExceptionalAccessReasonCode,
+  type ExceptionalAccessRegisterResponse,
   type ExceptionalAccessStatus,
   type JustificationReadPurpose,
   type ProcessOpeningReasonCode,
@@ -243,6 +244,71 @@ export function readPurposesFor(blocked: boolean): readonly JustificationReadPur
 export function reviewDueText(dueAt: string | null, now: Date = new Date()): string | null {
   if (!dueAt) return null;
   return new Date(dueAt).getTime() < now.getTime() ? `Revisión vencida (${formatDateTime(dueAt)})` : `Revisar antes del ${formatDateTime(dueAt)}`;
+}
+
+export type RegisterAccess = ExceptionalAccessRegisterResponse['accesses'][number];
+export type RegisterOpening = ExceptionalAccessRegisterResponse['openings'][number];
+
+/** Fila del registro del OWNER: solo códigos, fechas y personas; nunca texto. */
+export type RegisterRow = {
+  kind: 'ACCESS' | 'OPENING';
+  id: string;
+  createdAt: string;
+  actorId: string;
+  actorRole: 'OWNER' | 'ADMIN';
+  patientInitials: string;
+  typeLabel: string;
+  reasonLabel: string;
+  statusLabel: string;
+  statusTone: string;
+  pendingReview: boolean;
+  reviewDueAt: string | null;
+  noticeDeferred: boolean;
+  blocked: boolean;
+};
+
+function openingStatus(row: RegisterOpening): { label: string; tone: string } {
+  if (row.pendingReview) return { label: 'Pendiente de revisión', tone: 'warning' };
+  if (row.reviewedAt) return { label: row.reviewOutcome === 'INCIDENT' ? 'Revisado, incidencia' : 'Revisado, correcto', tone: row.reviewOutcome === 'INCIDENT' ? 'blocked' : 'ready' };
+  return { label: 'Registrada', tone: 'manual' };
+}
+
+function accessStatusDisplay(row: RegisterAccess): { label: string; tone: string } {
+  if (row.status === 'CLOSED' && row.reviewedAt) {
+    return { label: row.reviewOutcome === 'INCIDENT' ? 'Cerrado · revisado, incidencia' : 'Cerrado · revisado, correcto', tone: row.reviewOutcome === 'INCIDENT' ? 'blocked' : 'manual' };
+  }
+  return { label: ACCESS_STATUS_LABEL[row.status] ?? row.status, tone: ACCESS_STATUS_TONE[row.status] ?? 'manual' };
+}
+
+/** Accesos y aperturas en una sola lista, de más reciente a más antiguo. */
+export function registerRows(data: ExceptionalAccessRegisterResponse): RegisterRow[] {
+  const rows: RegisterRow[] = [
+    ...data.accesses.map((row) => {
+      const status = accessStatusDisplay(row);
+      return {
+        kind: 'ACCESS' as const, id: row.id, createdAt: row.createdAt, actorId: row.actorId, actorRole: row.actorRole,
+        patientInitials: row.patientInitials ?? '—', typeLabel: row.migratedFromAuditLogId ? 'Acceso excepcional (migrado)' : 'Acceso excepcional',
+        reasonLabel: exceptionalReasonLabel(row.reasonCode), statusLabel: status.label, statusTone: status.tone,
+        pendingReview: Boolean(row.ownerReviewDueAt && !row.reviewedAt && !row.blockedAt), reviewDueAt: row.ownerReviewDueAt,
+        noticeDeferred: Boolean(row.notificationDeferredAt && !row.notificationReleasedAt), blocked: Boolean(row.blockedAt),
+      };
+    }),
+    ...data.openings.map((row) => {
+      const status = openingStatus(row);
+      return {
+        kind: 'OPENING' as const, id: row.id, createdAt: row.createdAt, actorId: row.actorId, actorRole: row.actorRole,
+        patientInitials: row.patientInitials ?? '—', typeLabel: row.kind === 'REACTIVATED' ? 'Reactivación de proceso sobre historia ajena' : 'Apertura de proceso sobre historia ajena',
+        reasonLabel: openingReasonLabel(row.reasonCode), statusLabel: status.label, statusTone: status.tone,
+        pendingReview: row.pendingReview, reviewDueAt: row.ownerReviewDueAt, noticeDeferred: false, blocked: false,
+      };
+    }),
+  ];
+  return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+/** Revisiones de 72 h pendientes, las que vencen antes primero. */
+export function pendingReviews(rows: RegisterRow[]): RegisterRow[] {
+  return rows.filter((row) => row.pendingReview).sort((a, b) => new Date(a.reviewDueAt ?? 0).getTime() - new Date(b.reviewDueAt ?? 0).getTime());
 }
 
 /* ------------------------------------------------------------------------------------------ */
