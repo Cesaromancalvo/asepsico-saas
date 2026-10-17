@@ -2,8 +2,9 @@
 // Datos 100 % ficticios. Solo para BD DESECHABLES: crea dos espacios de trabajo, sus usuarios y
 // pacientes de prueba (no los borra) y activa el MFA de las cuentas que crea.
 //
-// Requisitos: migraciones aplicadas, `npm run build` hecho (usa apps/api/dist para registrar la
-// aceptación de condiciones) y la API arrancada.
+// Requisitos: migraciones aplicadas y la API arrancada. Las condiciones vigentes se piden a la API en
+// marcha (GET /legal/terms), no se calculan en este proceso: su hash depende del entorno con el que
+// arrancó la API (p. ej. LEGAL_TITULAR_* en CI), que este script no tiene por qué compartir.
 //
 //   DATABASE_URL        BD de la API (obligatoria; debe ser local).
 //   ASEPSICO_API_URL    URL base de la API (por defecto http://127.0.0.1:4000/api/v1; debe ser local).
@@ -28,7 +29,6 @@ const requireFromApi = createRequire(new URL('../apps/api/package.json', import.
 const { PrismaClient } = requireFromApi('@prisma/client');
 const { hash } = requireFromApi('bcryptjs');
 const { generate } = requireFromApi('otplib');
-const { pendingLegalDocuments, recordTermsAcceptances } = requireFromApi('./dist/legal/terms-acceptance.js');
 const prisma = new PrismaClient({ datasourceUrl: DATABASE_URL });
 
 const stamp = Date.now();
@@ -62,14 +62,20 @@ async function call(jar, path, { method = 'GET', body, csrf = true } = {}) {
 async function ok(jar, path, options) { const r = await call(jar, path, options); if (!r.ok) throw new Error(`${options?.method ?? 'GET'} ${path}: ${r.status} ${JSON.stringify(r.data).slice(0, 300)}`); return r.data; }
 
 // ---------- Alta de cuentas ficticias (BD) y sesión con MFA ----------
+// Condiciones vigentes según la API que se está probando (la misma fuente que usa su guard del 428).
+let currentTerms;
+async function loadCurrentTerms() {
+  const res = await fetch(`${API}/legal/terms`);
+  if (!res.ok) throw new Error(`GET /legal/terms: ${res.status}`);
+  currentTerms = (await res.json()).map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
+  assert(currentTerms.length > 0, 'la API publica condiciones vigentes');
+}
+
 async function createMember(workspaceId, label, role, isClinician) {
   const password = strong();
   const user = await prisma.user.create({ data: { email: `reserva-${label}-${stamp}@example.test`, passwordHash: await hash(password, 4), firstName: label.toUpperCase(), lastName: 'Ficticio' } });
   await prisma.workspaceMember.create({ data: { workspaceId, userId: user.id, role, isClinician } });
-  await prisma.$transaction(async (tx) => {
-    const pending = await pendingLegalDocuments(tx, workspaceId, user.id);
-    if (pending.length) await recordTermsAcceptances(tx, { workspaceId, userId: user.id, docs: pending, meta: { userAgent: 'verify-reserva-citas-live' } });
-  });
+  await prisma.termsAcceptance.createMany({ data: currentTerms.map((t) => ({ workspaceId, userId: user.id, ...t, userAgent: 'verify-reserva-citas-live' })) });
   return { id: user.id, email: user.email, password, role, workspaceId, jar: newJar() };
 }
 
@@ -81,6 +87,8 @@ async function staffLogin(member) {
     await ok(member.jar, '/auth/mfa/confirm', { method: 'POST', body: { password: member.password, code: await generate({ secret: setup.secret }) } });
     await ok(member.jar, '/auth/refresh', { method: 'POST' });
   }
+  const terms = await ok(member.jar, '/legal/terms/status');
+  assert(terms.acceptanceRequired === false && terms.pending.length === 0, `${member.role}: la API no debe pedir condiciones pendientes (${terms.pending.length})`);
   return member;
 }
 
@@ -109,6 +117,7 @@ const iso = (d) => new Date(d).toISOString();
 
 async function main() {
   console.log('0/9 Preparar dos espacios de trabajo ficticios, sus cuentas y pacientes');
+  await loadCurrentTerms();
   const wsA = await prisma.workspace.create({ data: { name: `Consulta ficticia A ${stamp}` } });
   const wsB = await prisma.workspace.create({ data: { name: `Consulta ficticia B ${stamp}` } });
   const owner = await createMember(wsA.id, 'owner', 'OWNER', false);

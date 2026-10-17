@@ -337,13 +337,12 @@ jobs:
         env:
           QA_CONCURRENCY_ROUNDS: '3'
 
-      # Reserva de citas del portal: usa apps/api/dist (lo deja `nest start` al arrancar la API).
+      # Reserva de citas del portal. Las condiciones que aceptan sus cuentas se piden a la API en
+      # marcha (GET /legal/terms): desde el reinicio de arriba su hash incluye LEGAL_TITULAR_*, que
+      # este paso no tiene; calcularlas en el proceso del script daba un hash viejo y 428 en POST /patients.
       - name: Verify portal appointment booking end to end (real API and PostgreSQL)
         timeout-minutes: 3
-        shell: bash
-        run: |
-          test -f apps/api/dist/legal/terms-acceptance.js || { echo "Falta apps/api/dist: la API no se compiló" >&2; exit 1; }
-          node scripts/verify-reserva-citas-live.mjs
+        run: node scripts/verify-reserva-citas-live.mjs
 
       # Carrera crear cita vs. cerrar proceso con bloqueos de fila reales (no la API: instancia los
       # servicios contra la BD del servicio postgres). Crea su propio workspace ficticio y no toca
