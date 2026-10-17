@@ -227,6 +227,29 @@ describe('Qué ve el paciente (criterios 9–12)', () => {
     expect(rows(prisma, 'appointmentRequest')).toHaveLength(0);
   });
 
+  it('9b: terapeuta ajeno, desactivado, sin ser miembro o inexistente → exactamente el mismo 404 (mensaje y respuesta)', async () => {
+    const prisma = seed();
+    rows(prisma, 'clinicalProcess').push({ id: 'proc-b', workspaceId: WS, patientId: 'p1', therapistId: 't-b', status: 'CLOSED', title: 'Proceso ficticio', updatedAt: new Date() });
+    const outcomes: string[] = [];
+    // t-b: tiene (tuvo) proceso pero no está activo; t-x: de otro espacio; no-existe: inexistente.
+    const disabled = seed();
+    rows(disabled, 'therapistAvailability').find((r) => r.therapistId === 't-a').portalBookingEnabled = false;
+    const notMember = seed();
+    notMember.__store.workspaceMember = rows(notMember, 'workspaceMember').filter((m) => m.userId !== 't-a');
+    const cases: [any, string][] = [[prisma, 't-b'], [prisma, 't-x'], [prisma, 'no-existe'], [disabled, 't-a'], [notMember, 't-a']];
+    for (const [db, therapistId] of cases) {
+      for (const call of [
+        () => booking(db).slots(portal(), { therapistId }),
+        () => booking(db).createRequest(portal(), { therapistId, startsAt: new Date(Date.now() + 86_400_000).toISOString() }),
+      ]) {
+        const error: any = await call().catch((e) => e);
+        expect(error).toBeInstanceOf(NotFoundException);
+        outcomes.push(JSON.stringify(error.getResponse()));
+      }
+    }
+    expect(new Set(outcomes).size).toBe(1);
+  });
+
   it.each([
     ['proceso en PAUSED', (p: any) => { rows(p, 'clinicalProcess').find((r) => r.id === 'proc-1').status = 'PAUSED'; }],
     ['proceso DISCHARGED', (p: any) => { rows(p, 'clinicalProcess').find((r) => r.id === 'proc-1').status = 'DISCHARGED'; }],
@@ -485,6 +508,30 @@ describe('Seguridad, auditoría y límites (criterios 23–26)', () => {
     const prisma = seed();
     expect(await booking(prisma).listRequests(portal('p-x', 'PATIENT', 'acc-x', 'ws-2'))).toEqual([]);
     for (const call of prisma.appointmentRequest.findMany.mock.calls) expect(call[0].where.workspaceId).toBeDefined();
+  });
+
+  it('16d: al aprobar, las otras pendientes que se solapan con el hueco se rechazan (SLOT_UNAVAILABLE) con auditoría y aviso genérico', async () => {
+    const prisma = seed();
+    const slot = await firstSlot(prisma);
+    const req: any = await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    const overlapping = (id: string, patientId: string, offsetMin: number) => ({
+      id, workspaceId: WS, patientId, therapistId: 't-a', clinicalProcessId: 'proc-2', type: 'NEW', status: 'PENDING',
+      startsAt: new Date(slot.startsAt.getTime() + offsetMin * 60_000), endsAt: new Date(slot.endsAt.getTime() + offsetMin * 60_000),
+      heldStartsAt: new Date(slot.startsAt.getTime() + offsetMin * 60_000), expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    rows(prisma, 'appointmentRequest').push(
+      overlapping('solapada', 'p2', 20),
+      { ...overlapping('lejana', 'p2', 24 * 60 * 3), id: 'lejana' },
+    );
+    await requests(prisma).approve(owner, req.id);
+    const byId = (id: string) => rows(prisma, 'appointmentRequest').find((r) => r.id === id);
+    expect(byId(req.id).status).toBe('APPROVED');
+    expect(byId('solapada')).toMatchObject({ status: 'REJECTED', rejectionReason: 'SLOT_UNAVAILABLE', heldStartsAt: null, resolvedById: 'owner-1' });
+    expect(byId('lejana').status).toBe('PENDING');
+    expect(audits(prisma, 'APPOINTMENT_REQUEST_REJECTED').filter((a) => a.entityId === 'solapada')).toHaveLength(1);
+    const notice = rows(prisma, 'notification').find((n) => n.dedupeKey === 'appointment-request:solapada:patient:REJECTED');
+    expect(notice).toMatchObject({ audience: 'PATIENT', patientId: 'p2', body: 'Tu solicitud de cita ha sido respondida. Consúltala en tu portal.' });
+    expect(`${notice.title} ${notice.body}`).not.toMatch(/Paciente|Uno|Dos|\d{1,2}:\d{2}/);
   });
 
   it('24: solicitud, aprobación, rechazo y retirada se auditan con ids, inicio, actor y tipo de acceso, sin texto libre', async () => {

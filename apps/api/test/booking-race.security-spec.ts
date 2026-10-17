@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PortalBookingService, PortalUser } from '../src/scheduling/portal-booking.service';
 import { AppointmentRequestsService } from '../src/scheduling/appointment-requests.service';
+import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
 import { SessionsService } from '../src/sessions/sessions.service';
 
 /**
@@ -124,5 +125,36 @@ describeDb('Doble reserva (PostgreSQL real)', () => {
     await prisma.appointmentRequest.create({ data: { ...data(3), status: 'EXPIRED', heldStartsAt: null } });
     // Una fila resuelta que retenga hueco viola el CHECK.
     await expect(prisma.appointmentRequest.create({ data: { ...data(4), status: 'REJECTED', heldStartsAt: new Date(start.getTime() + 1) } })).rejects.toThrow();
+  });
+  it('cerrar un proceso a la vez que llega una solicitud, con una pendiente caducada de otro paciente: sin interbloqueos ni 500', async () => {
+    const all = await slots();
+    const mk = async (label: string) => {
+      const patient = await prisma.patient.create({ data: { workspaceId, firstName: 'Paciente', lastName: `Ficticio ${label}` } });
+      const process = await prisma.clinicalProcess.create({ data: { workspaceId, patientId: patient.id, therapistId, title: 'Proceso ficticio' } });
+      return { id: patient.id, processId: process.id, account: `${run}-acc-${label}` };
+    };
+    const other = await mk('caducada');
+    for (let round = 0; round < 10; round += 1) {
+      const subject = await mk(`cierre-${round}`);
+      const old = new Date(Date.now() + (300 + round) * 86_400_000);
+      // Pendiente ya caducada: la creación y la aprobación la cierran de forma perezosa (expireDueRequests).
+      await prisma.appointmentRequest.create({
+        data: {
+          workspaceId, patientId: other.id, therapistId, clinicalProcessId: other.processId, type: 'NEW', status: 'PENDING',
+          startsAt: old, endsAt: new Date(old.getTime() + 3_000_000), heldStartsAt: old, requestedByAccountId: other.account,
+          accessorType: 'PATIENT', expiresAt: new Date(Date.now() - 60_000),
+        },
+      });
+      const slot = all[100 + round * 2];
+      const user: PortalUser = { workspaceId, patientId: subject.id, portalAccountId: subject.account, accessorType: 'PATIENT' };
+      const results = await Promise.allSettled([
+        new PortalBookingService(prisma as any).createRequest(user, { therapistId, startsAt: slot.startsAt.toISOString() }),
+        new ClinicalProcessesService(prisma as any).changeStatus(workspaceId, therapist(), subject.processId, 'CLOSED', { cancelFutureSessions: true }),
+      ]);
+      // El cierre siempre prospera; la solicitud o entra (y el cierre la rechaza) o se corta con 404/409.
+      expect(results[1].status).toBe('fulfilled');
+      expect([ 'ok', 404, 409 ]).toContain(statusOf(results[0]));
+      expect(await prisma.appointmentRequest.count({ where: { workspaceId, patientId: subject.id, status: 'PENDING' } })).toBe(0);
+    }
   });
 });

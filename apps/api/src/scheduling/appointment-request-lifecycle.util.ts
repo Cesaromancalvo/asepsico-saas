@@ -116,6 +116,36 @@ export async function rejectPendingRequestsOfProcess(tx: Tx, workspaceId: string
 }
 
 /**
+ * Al aprobar una solicitud el hueco queda ocupado: las demás pendientes del mismo profesional que
+ * se solapan con él ya no se podrán aprobar, así que se rechazan con SLOT_UNAVAILABLE en la misma
+ * transacción (auditoría y aviso genérico al paciente).
+ */
+export async function rejectOverlappingPendingRequests(
+  tx: Tx,
+  workspaceId: string,
+  params: { therapistId: string; startsAt: Date; endsAt: Date; excludeRequestId: string; actorId: string },
+) {
+  const overlapping = await tx.appointmentRequest.findMany({
+    where: {
+      workspaceId, therapistId: params.therapistId, status: 'PENDING', type: { in: ['NEW', 'RESCHEDULE'] },
+      id: { not: params.excludeRequestId }, startsAt: { lt: params.endsAt }, endsAt: { gt: params.startsAt },
+    },
+    select: PENDING_SELECT,
+  });
+  const changed = await closeRows(tx, workspaceId, overlapping, { status: 'REJECTED', rejectionReason: 'SLOT_UNAVAILABLE', resolvedById: params.actorId });
+  if (changed.length) {
+    await tx.auditLog.createMany({
+      data: changed.map((row) => ({
+        workspaceId, actorId: params.actorId, action: 'APPOINTMENT_REQUEST_REJECTED', entityType: 'AppointmentRequest', entityId: row.id,
+        metadata: { patientId: row.patientId, therapistId: row.therapistId, type: row.type, reason: 'SLOT_UNAVAILABLE', cause: 'SLOT_TAKEN_BY_APPROVAL', approvedRequestId: params.excludeRequestId },
+      })),
+    });
+    await notifyPatientOfRequestUpdates(tx, workspaceId, changed, 'REJECTED');
+  }
+  return changed.map((row) => row.id);
+}
+
+/**
  * Criterio 22: archivar o bloquear al paciente, o desactivar su cuenta de portal, retira sus
  * solicitudes pendientes. Con `accountIds`, solo las hechas desde esas cuentas (cambio de modo de
  * acceso que revoca la cuenta del tutor, por ejemplo). Sin aviso al paciente: ya no tiene portal.

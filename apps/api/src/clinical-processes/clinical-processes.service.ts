@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ClinicalProcessStatus, Prisma, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { rejectPendingRequestsOfProcess } from '../scheduling/appointment-request-lifecycle.util';
+import { lockPatientBooking, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
@@ -306,6 +307,11 @@ export class ClinicalProcessesService {
     const closing = status === 'DISCHARGED' || status === 'CLOSED';
 
     await this.prisma.$transaction(async (tx) => {
+      // 0) Mismo orden de locks que la reserva del portal (paciente -> profesional -> proceso):
+      //    sin esto, una solicitud que caduca tomaba filas de solicitud y luego el proceso, y este
+      //    cierre al revés (proceso y luego solicitudes) -> interbloqueo.
+      await lockPatientBooking(tx, workspaceId, process.patientId);
+      await lockTherapistSchedule(tx, workspaceId, process.therapistId);
       // 1) Compare-and-set del estado, acotado al workspace (nunca solo por id). Va PRIMERO: el
       //    UPDATE bloquea la fila del proceso hasta el commit, y la creación/reprogramación de
       //    citas toca esa misma fila exigiendo ACTIVE, así que no puede colarse una cita nueva

@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { ListAppointmentRequestsQueryDto, RejectAppointmentRequestDto } from './dto/scheduling.dto';
-import { expireDueRequests, notifyPatientOfRequestUpdates } from './appointment-request-lifecycle.util';
+import { expireDueRequests, notifyPatientOfRequestUpdates, rejectOverlappingPendingRequests } from './appointment-request-lifecycle.util';
 import { findScheduleConflict, lockTherapistSchedule } from './schedule-lock.util';
 import { bookingConflict, slotNotAvailable } from './booking-config.util';
 
@@ -107,6 +107,9 @@ export class AppointmentRequestsService {
         },
       });
       await notifyPatientOfRequestUpdates(tx, workspaceId, [{ id, patientId: request.patientId }], 'APPROVED');
+      if (request.type !== 'CANCEL' && request.startsAt && request.endsAt) {
+        await rejectOverlappingPendingRequests(tx, workspaceId, { therapistId: request.therapistId, startsAt: request.startsAt, endsAt: request.endsAt, excludeRequestId: id, actorId: actor.sub });
+      }
     });
     return this.getView(workspaceId, id);
   }
