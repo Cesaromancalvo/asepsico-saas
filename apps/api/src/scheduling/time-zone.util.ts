@@ -64,21 +64,20 @@ function offsetMs(instant: number, timeZone: string): number {
 
 /**
  * Instante UTC de una hora local (año, mes 1-12, día, minutos desde las 00:00) en la zona.
- * Devuelve null si esa hora local no existe en la zona (salto del horario de verano).
+ * Prueba los desfases de 12 h antes y después (cubren cualquier cambio de hora) y se queda con
+ * los candidatos que de verdad caen en esa hora local:
+ *  - ninguno → la hora no existe (salto de marzo) → null;
+ *  - dos → hora repetida (octubre) → el primero, como `disambiguation: 'compatible'` de Temporal.
  */
 export function localToUtc(year: number, month: number, day: number, minuteOfDay: number, timeZone: string): Date | null {
   const naive = Date.UTC(year, month - 1, day, 0, minuteOfDay);
-  let guess = naive - offsetMs(naive, timeZone);
-  guess = naive - offsetMs(guess, timeZone);
-  const check = zonedParts(new Date(guess), timeZone);
   const expected = new Date(naive);
-  if (
-    check.year !== expected.getUTCFullYear() ||
-    check.month !== expected.getUTCMonth() + 1 ||
-    check.day !== expected.getUTCDate() ||
-    check.hour * 60 + check.minute !== expected.getUTCHours() * 60 + expected.getUTCMinutes()
-  ) {
-    return null;
-  }
-  return new Date(guess);
+  const candidates = [...new Set([naive - offsetMs(naive - 12 * 3_600_000, timeZone), naive - offsetMs(naive + 12 * 3_600_000, timeZone)])]
+    .filter((instant) => {
+      const p = zonedParts(new Date(instant), timeZone);
+      return p.year === expected.getUTCFullYear() && p.month === expected.getUTCMonth() + 1 && p.day === expected.getUTCDate()
+        && p.hour * 60 + p.minute === expected.getUTCHours() * 60 + expected.getUTCMinutes();
+    })
+    .sort((a, b) => a - b);
+  return candidates.length ? new Date(candidates[0]) : null;
 }

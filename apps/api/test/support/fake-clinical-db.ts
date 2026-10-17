@@ -89,6 +89,11 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       const row = find(name, args.where)[0];
       return row ? hydrate(name, row, args) : null;
     }),
+    findFirstOrThrow: jest.fn(async (args: Row = {}) => {
+      const row = find(name, args.where)[0];
+      if (!row) throw new Error(`${name}: no encontrado`);
+      return hydrate(name, row, args);
+    }),
     findUnique: jest.fn(async (args: Row = {}) => {
       const row = find(name, args.where)[0];
       return row ? hydrate(name, row, args) : null;

@@ -206,7 +206,7 @@ export class PortalBookingService {
 
         const created = await tx.appointmentRequest.create({
           data: {
-            workspaceId, patientId, therapistId, clinicalProcessId, type: input.type,
+            workspaceId, patientId, therapistId, clinicalProcessId, type: input.type, status: 'PENDING',
             sessionId: input.session?.id ?? null,
             startsAt: slot?.startsAt ?? null, endsAt: slot?.endsAt ?? null, heldStartsAt: slot?.startsAt ?? null,
             requestedByAccountId: portal.portalAccountId, accessorType: portal.accessorType, expiresAt,

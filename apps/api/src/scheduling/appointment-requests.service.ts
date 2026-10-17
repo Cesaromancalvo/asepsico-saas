@@ -172,7 +172,7 @@ export class AppointmentRequestsService {
     const conflict = await findScheduleConflict(tx, { workspaceId, therapistId: request.therapistId, startsAt, endsAt, excludeRequestId: request.id, includeBlocks: true });
     if (conflict) throw slotNotAvailable();
     const session = await tx.session.create({
-      data: { workspaceId, patientId: request.patientId, therapistId: request.therapistId, clinicalProcessId: request.clinicalProcessId, startsAt, endsAt, type: 'INDIVIDUAL' },
+      data: { workspaceId, patientId: request.patientId, therapistId: request.therapistId, clinicalProcessId: request.clinicalProcessId, startsAt, endsAt, type: 'INDIVIDUAL', status: 'SCHEDULED' },
       select: { id: true },
     });
     await tx.auditLog.create({
