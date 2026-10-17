@@ -257,85 +257,9 @@
       li.appendChild(pct);
       legend.appendChild(li);
 
-      inputs.push({ input: input, err: err, seg: seg, li: li, pct: pct, nameEl: li.childNodes[1], name: t.label, max: MAX_H });
+      inputs.push({ input: input, err: err, seg: seg, li: li, pct: pct, name: t.label, max: MAX_H });
     });
 
-    // Filas opcionales "Otra tarea" (hasta SAVINGS.OTHER_TASKS): nombre de la actividad + horas.
-    // El nombre solo se pinta en la leyenda, con textContent y como mucho OTHER_NAME_MAX caracteres.
-    var othersBox = box.querySelector('[data-sv-others]');
-    var othersList = box.querySelector('[data-sv-others-list]');
-    var addBtn = box.querySelector('[data-sv-add]');
-    var MAX_OTHERS = typeof SAVINGS.OTHER_TASKS === 'number' ? SAVINGS.OTHER_TASKS : 3;
-    var NAME_MAX = SAVINGS.OTHER_NAME_MAX || 40;
-    var others = [];
-    function addOther() {
-      if (others.length >= MAX_OTHERS) return null;
-      var n = others.length + 1;
-      var id = 'sv-o' + n;
-      var row = el('div', 'sfield sfield--other');
-      row.setAttribute('role', 'group');
-      var title = el('p', 'sfield__title', 'Otra tarea' + (MAX_OTHERS > 1 ? ' ' + n : '') + ' (opcional)');
-      title.id = id + '-title';
-      row.setAttribute('aria-labelledby', title.id);
-      row.appendChild(title);
-      var pair = el('div', 'sfield__pair');
-      function sub(labelText, input, errId) {
-        var wrap = el('div', 'sfield__sub');
-        var lab = el('label', '', labelText);
-        lab.htmlFor = input.id;
-        wrap.appendChild(lab);
-        wrap.appendChild(input);
-        var err = el('p', 'sfield__err');
-        err.id = errId; err.hidden = true;
-        wrap.appendChild(err);
-        input.setAttribute('aria-describedby', 'sv-o-help ' + errId);
-        pair.appendChild(wrap);
-        return err;
-      }
-      var name = el('input');
-      name.id = id + '-name'; name.type = 'text'; name.maxLength = NAME_MAX; name.autocomplete = 'off';
-      name.spellcheck = false; name.placeholder = 'p. ej. redes sociales';
-      var hours = el('input');
-      hours.id = id + '-h'; hours.type = 'number'; hours.inputMode = 'decimal'; hours.min = '0';
-      hours.max = String(MAX_H); hours.step = '0.5'; hours.autocomplete = 'off';
-      var nameErr = sub('Qué tarea es', name, id + '-name-err');
-      var hoursErr = sub('Horas a la semana', hours, id + '-h-err');
-      row.appendChild(pair);
-      othersList.appendChild(row);
-
-      var seg = document.createElementNS(donut.namespaceURI, 'circle');
-      seg.setAttribute('class', 'donut__seg donut__seg--other' + n);
-      seg.setAttribute('cx', '60'); seg.setAttribute('cy', '60'); seg.setAttribute('r', '44');
-      seg.setAttribute('pathLength', '100'); seg.setAttribute('stroke-dasharray', '0 100');
-      donut.appendChild(seg);
-      var li = el('li');
-      li.hidden = true;
-      li.appendChild(el('span', 'donut__key donut__key--other' + n));
-      li.firstChild.setAttribute('aria-hidden', 'true');
-      var nameEl = el('span', 'donut__name');
-      li.appendChild(nameEl);
-      var pct = el('span', 'donut__val');
-      li.appendChild(pct);
-      legend.appendChild(li);
-
-      var f = { input: hours, err: hoursErr, nameInput: name, nameErr: nameErr, seg: seg, li: li, pct: pct,
-        nameEl: nameEl, name: '', max: MAX_H, other: true };
-      inputs.push(f);
-      others.push(f);
-      name.addEventListener('input', update);
-      hours.addEventListener('input', update);
-      if (addBtn) addBtn.hidden = others.length >= MAX_OTHERS;
-      return f;
-    }
-    if (othersBox && MAX_OTHERS > 0 && othersList) {
-      addOther();
-      if (addBtn) addBtn.addEventListener('click', function () {
-        var f = addOther();
-        if (f) { f.nameInput.focus(); update(); }
-      });
-    } else if (othersBox) {
-      othersBox.remove();
-    }
     var value = { input: box.querySelector('[data-sv-value]'), max: MAX_V };
     value.err = value.input ? value.input.parentNode.querySelector('[data-sv-err]') : null;
 
@@ -367,17 +291,6 @@
       var badInput = f.input.validity && f.input.validity.badInput;
       var v = raw === '' ? 0 : parseFloat(raw.replace(',', '.'));
       var bad = badInput || !isFinite(v) || v < 0 || v > f.max;
-      if (f.other) {
-        // Si se rellena uno de los dos campos, el otro es obligatorio; mientras falte, la fila no suma.
-        var nm = f.nameInput.value.trim().slice(0, NAME_MAX);
-        var hasHours = raw !== '' || badInput;
-        f.name = nm;
-        setErr(f.nameInput, f.nameErr, hasHours && !nm ? 'Escribe qué tarea es.' : '');
-        if (!hasHours) { setErr(f.input, f.err, nm ? 'Escribe las horas a la semana.' : ''); return 0; }
-        setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
-        if (!nm || !isFinite(v) || v <= 0) return 0;
-        return Math.min(v, f.max);
-      }
       setErr(f.input, f.err, bad ? 'Escribe un número entre 0 y ' + f.max + '.' : '');
       if (!isFinite(v) || v <= 0) return 0;
       return Math.min(v, f.max);
@@ -439,7 +352,6 @@
       var start = 0;
       var parts = [];
       inputs.forEach(function (f, i) {
-        if (f.other) f.nameEl.textContent = f.name;
         var len = Math.max(shares[i] - gap, 0);
         f.seg.setAttribute('stroke-dasharray', len + ' ' + (100 - len));
         f.seg.setAttribute('stroke-dashoffset', String(-start));
@@ -451,7 +363,7 @@
       chart.hidden = false;
       out.textContent = summary + ' Reparto: ' + parts.join('; ') + '.';
     }
-    inputs.forEach(function (f) { if (f.input && !f.other) f.input.addEventListener('input', update); });
+    inputs.forEach(function (f) { f.input.addEventListener('input', update); });
     if (value.input) value.input.addEventListener('input', update);
     update();
   }

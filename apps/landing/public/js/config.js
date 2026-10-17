@@ -55,27 +55,13 @@ window.ASEPSICO_CONFIG = Object.freeze({
     TASKS: Object.freeze([
       Object.freeze({ id: 'agenda', label: 'Agenda, citas y recordatorios', placeholder: '1,5',
         help: 'Dar y cambiar citas, gestionar cancelaciones y huecos, recordar citas por WhatsApp o por teléfono.' }),
-      Object.freeze({ id: 'altas', label: 'Altas, consentimientos y papeleo legal', placeholder: '0,5',
-        help: 'Recoger los datos de pacientes nuevos, consentimientos, protección de datos, archivo y peticiones de copia.' }),
-      Object.freeze({ id: 'preparar', label: 'Preparar las sesiones', placeholder: '2',
-        help: 'Antes de la sesión: releer notas, decidir qué trabajar, buscar técnicas. Las notas van en la tarea siguiente.' }),
-      Object.freeze({ id: 'notas', label: 'Notas de sesión e historia clínica', placeholder: '3',
-        help: 'Después de la sesión: escribir o pasar a limpio las notas, actualizar la historia clínica, pasar del papel al ordenador.' }),
-      Object.freeze({ id: 'material', label: 'Crear material para pacientes', placeholder: '1,5',
-        help: 'Hacer o adaptar fichas, autorregistros, tareas o psicoeducación. Enviarlos va en el seguimiento.' }),
-      Object.freeze({ id: 'seguimiento', label: 'Seguimiento entre sesiones', placeholder: '1,5',
-        help: 'Enviar y recoger tareas y cuestionarios, corregir escalas, contestar mensajes por WhatsApp o email.' }),
-      Object.freeze({ id: 'informes', label: 'Informes', placeholder: '1',
-        help: 'Informes para el paciente, el centro escolar, el médico, el juzgado o la mutua; buscar los datos para hacerlos.' }),
-      Object.freeze({ id: 'coordinacion', label: 'Coordinación con otros profesionales', placeholder: '0,5',
-        help: 'Hablar con psiquiatría, el médico o el centro escolar, derivaciones; si trabajas en un centro, también reuniones de casos.' }),
-      Object.freeze({ id: 'facturas', label: 'Facturas, cobros y gestoría', placeholder: '1,5',
-        help: 'Hacer facturas, reclamar pagos, cuadrar ingresos, papeles para la gestoría, volantes de mutuas.' }),
+      Object.freeze({ id: 'sesiones', label: 'Preparar sesiones, notas e informes', placeholder: '6',
+        help: 'Antes y después de la sesión: releer y escribir notas, actualizar la historia clínica y hacer informes.' }),
+      Object.freeze({ id: 'material', label: 'Material y seguimiento entre sesiones', placeholder: '3',
+        help: 'Hacer o adaptar fichas y tareas, enviarlas y recogerlas, corregir escalas y contestar mensajes.' }),
+      Object.freeze({ id: 'papeleo', label: 'Papeleo, facturas y gestoría', placeholder: '2',
+        help: 'Altas, consentimientos y protección de datos; facturas, cobros, gestoría y volantes de mutuas.' }),
     ]),
-    // Filas opcionales "Otra tarea" (nombre de la actividad + horas), hasta este número, con el botón
-    // "+ Añadir otra tarea". 0 las quita. Suman en el cálculo y no salen del navegador.
-    OTHER_TASKS: 3,
-    OTHER_NAME_MAX: 40,
     }),
 
   // El NIF y el domicilio del titular NO están en el código: aviso-legal/ y privacidad/ llevan

@@ -443,11 +443,6 @@
                   <input id="sv-v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="p. ej. 40" aria-describedby="sv-v-help sv-v-err" data-sv-value>
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
                 </div>
-                <div class="savings__others" data-sv-others>
-                  <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. Escribe solo el tipo de tarea, nunca datos de pacientes.</p>
-                  <div class="savings__others-list" data-sv-others-list></div>
-                  <button type="button" class="btn btn--ghost btn--sm savings__add" data-sv-add>+ Añadir otra tarea</button>
-                </div>
               </fieldset>
             </form>
 
@@ -502,7 +497,7 @@
             <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
               <ul class="legal-list">
-                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada tarea (y en "Otra tarea", si la usas). Los números en gris de los campos son ejemplos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
+                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada una de las cuatro tareas. Los números en gris de los campos son ejemplos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
                 <li><strong>Al mes:</strong> multiplicamos las horas a la semana por 46 semanas de trabajo al año (dejamos 6 para vacaciones y festivos) y dividimos entre 12 meses, unas 3,83 semanas por mes. Redondeamos hacia abajo a la media hora.</li>
                 <li><strong>En euros:</strong> solo si escribes el valor de tu hora, multiplicamos las horas a la semana y al mes por ese valor y redondeamos hacia abajo al euro. Es lo que vale ese tiempo, no dinero que vayas a ganar ni a ahorrar.</li>
                 <li><strong>El gráfico:</strong> qué parte de tus horas a la semana va a cada tarea, en porcentaje.</li>
