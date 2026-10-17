@@ -14,14 +14,22 @@
 ## Topología de producción y IP del cliente
 
 ```
-navegador ──HTTPS──> Vercel (apps/web, Next.js)
+navegador ──HTTPS──> Render Static Site (apps/web exportada, app.asepsico.es): solo HTML/JS
+navegador ──HTTPS──> api.asepsico.es
 navegador ──HTTPS──> Cloudflare ──> balanceador de Render (termina TLS) ──HTTP──> API NestJS
                                                                    (servicio web asepsico-api, Frankfurt)
 API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 ```
 
-- El frontend en Vercel llama a la API desde el navegador (CORS limitado a `WEB_ORIGIN`), así que
-  la IP que ve la API es la del navegador del usuario, no la de Vercel.
+- La web es un export estático de Next (`output: 'export'`, sin servidor ni proxy `/api/v1`):
+  el navegador llama directamente a `NEXT_PUBLIC_API_URL` (CORS limitado a `WEB_ORIGIN`, con
+  credenciales), así que la IP que ve la API es la del navegador del usuario. Por el Static Site
+  no pasa ningún dato de salud.
+- `app.` y `api.` son el mismo sitio (`asepsico.es`): las cookies `SameSite=Lax` viajan en las
+  llamadas `fetch` con credenciales. `COOKIE_DOMAIN=.asepsico.es` es obligatorio para que la web
+  pueda leer `csrf_token`; sin él, ninguna mutación pasa el `CsrfGuard`.
+- Las pantallas con id usan query string (`/patients/view/?id=…`, `/agenda/session/?id=…`, ver
+  `apps/web/lib/routes.ts`). Las URL antiguas (`/patients/<id>/…`) las redirige el 404.
 - Render documenta que el puerto del servicio **no es accesible directamente desde Internet**: todo
   el tráfico entra por su balanceador, que termina TLS y reenvía por HTTP. La IP real se lee de
   `X-Forwarded-For`; Render **añade** a esa cabecera, no la reinicia, de modo que las entradas de
@@ -37,11 +45,22 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
   añade la cadena Cloudflare → balanceador de Render: por eso `TRUST_PROXY=1` se confirma con la
   comprobación directa de abajo, no se da por supuesto.
 
+### Web (Render Static Site)
+
+- Build: `npm ci && npm --workspace @asepsico/web run build` · Publish directory: `apps/web/out`.
+- Variable: `NEXT_PUBLIC_API_URL=https://api.asepsico.es/api/v1` (pública; se incrusta en el build).
+- Cabeceras (Settings → Headers, ruta `/*`): HSTS, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin` (el id va en la query: no debe salir a
+  terceros), `X-Frame-Options: DENY`, `Permissions-Policy` y la CSP aprobada por Argos.
+- Comprobación: `curl -sI https://app.asepsico.es/ | grep -iE 'strict-transport|content-security|x-frame|referrer'`.
+
 ### Variables en el servicio web de Render
 
 | Variable | Valor en producción | Nota |
 |---|---|---|
 | `NODE_ENV` | `production` | Cookies `secure` y `trust proxy` por defecto. |
+| `WEB_ORIGIN` | `https://app.asepsico.es` | CORS con credenciales y enlaces de invitación. |
+| `COOKIE_DOMAIN` | `.asepsico.es` | La web lee `csrf_token`. Rompe cualquier web servida fuera de `asepsico.es`. |
 | `TRUST_PROXY` | `1` | Explícito aunque coincide con el valor por defecto en producción. |
 | `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. **No se rota** (rompe la deduplicación y la supresión de las altas previas). Lista de espera (ver `docs/WAITLIST_API.md`). |
 | `WAITLIST_ALLOWED_ORIGINS` | vacío | = `https://asepsico.es,https://www.asepsico.es`. Solo afecta a `/public/waitlist`. |
