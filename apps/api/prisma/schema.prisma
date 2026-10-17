@@ -152,6 +152,13 @@ model Workspace {
   termsAcceptances     TermsAcceptance[]
   workspaceInvites     WorkspaceInvite[]
   registrationInvite   RegistrationInvite?
+  /// Zona horaria IANA del espacio: los huecos de la reserva desde el portal se calculan en hora
+  /// local (con cambios de horario de verano e invierno).
+  timeZone             String                 @default("Europe/Madrid")
+  therapistAvailabilities TherapistAvailability[]
+  availabilityWindows  AvailabilityWindow[]
+  availabilityBlocks   AvailabilityBlock[]
+  appointmentRequests  AppointmentRequest[]
 }
 
 model User {
@@ -188,6 +195,10 @@ model User {
   workspaceInvitesSent         WorkspaceInvite[]     @relation("WorkspaceInviteInvitedBy")
   workspaceInvitesAccepted     WorkspaceInvite[]     @relation("WorkspaceInviteAcceptedUser")
   registrationInviteUsed       RegistrationInvite?   @relation("RegistrationInviteUsedBy")
+  availabilitySettings         TherapistAvailability[]
+  availabilityWindows          AvailabilityWindow[]
+  availabilityBlocks           AvailabilityBlock[]
+  appointmentRequests          AppointmentRequest[]
   /// Usuario ficticio creado por db:seed-demo-workspace (Recepción Demo, Terapeuta Demo). Solo lo
   /// borra db:purge-demo-workspace. Nunca se marca a un usuario real.
   isDemo                       Boolean               @default(false)
@@ -318,6 +329,7 @@ model Patient {
   resourceShares      ResourceShare[]
   conversations       Conversation[]
   importItem          PatientImportItem?
+  appointmentRequests AppointmentRequest[]
 
   @@index([workspaceId, status])
   @@index([workspaceId, lastName, firstName])
@@ -759,6 +771,8 @@ enum NotificationType {
   CONSENT_EXPIRING
   INVOICE_DUE
   SYSTEM
+  APPOINTMENT_REQUEST
+  APPOINTMENT_REQUEST_UPDATE
 }
 
 enum PortalAccessMode {
@@ -1001,4 +1015,126 @@ model WaitlistEntry {
   deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reserva de citas desde el portal (docs/producto/reserva-citas-portal.md)
+// ---------------------------------------------------------------------------------------------
+
+enum AvailabilityBlockReason {
+  VACATION
+  TRAINING
+  PERSONAL
+  OTHER
+}
+
+enum AppointmentRequestType {
+  NEW
+  RESCHEDULE
+  CANCEL
+}
+
+enum AppointmentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum AppointmentRejectionReason {
+  SLOT_UNAVAILABLE
+  DISCUSS_IN_SESSION
+  CONTACT_PRACTICE
+}
+
+/// Ajustes de reserva desde el portal de un profesional clínico dentro de un espacio.
+model TherapistAvailability {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  therapistId          String
+  /// Desactivada por defecto: solo la activan el propio profesional, OWNER o ADMIN.
+  portalBookingEnabled Boolean   @default(false)
+  sessionMinutes       Int       @default(50)
+  breakMinutes         Int       @default(10)
+  minNoticeHours       Int       @default(24)
+  maxHorizonDays       Int       @default(28)
+  cancelNoticeHours    Int       @default(24)
+  maxPendingPerPatient Int       @default(1)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist            User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, therapistId])
+}
+
+/// Franja semanal de consulta en hora local del espacio. weekday: 1 = lunes … 7 = domingo.
+/// startMinute/endMinute: minutos desde las 00:00 (múltiplos de 15).
+model AvailabilityWindow {
+  id          String    @id @default(cuid())
+  workspaceId String
+  therapistId String
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist   User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, therapistId])
+}
+
+/// Bloqueo puntual (vacaciones, formación…). Motivo de lista cerrada, sin texto libre. El portal
+/// nunca lo ve ni lo distingue de una cita.
+model AvailabilityBlock {
+  id          String                  @id @default(cuid())
+  workspaceId String
+  therapistId String
+  startsAt    DateTime
+  endsAt      DateTime
+  reason      AvailabilityBlockReason
+  createdById String?
+  createdAt   DateTime                @default(now())
+  workspace   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist   User                    @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, therapistId, startsAt])
+}
+
+/// Solicitud de cita (nueva, cambio o cancelación) hecha desde el portal. Sin texto libre.
+model AppointmentRequest {
+  id                   String                      @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  therapistId          String
+  clinicalProcessId    String?
+  /// RESCHEDULE/CANCEL: cita afectada. NEW: cita creada al aprobar.
+  sessionId            String?
+  type                 AppointmentRequestType
+  status               AppointmentRequestStatus    @default(PENDING)
+  /// Hueco pedido (NEW/RESCHEDULE). Nulo en CANCEL.
+  startsAt             DateTime?
+  endsAt               DateTime?
+  /// Igual a startsAt mientras la solicitud está PENDING; nulo en cuanto se resuelve. Con el índice
+  /// único de abajo impide en base de datos dos solicitudes pendientes del mismo hueco (PostgreSQL
+  /// trata los NULL como distintos, así que las resueltas no chocan).
+  heldStartsAt         DateTime?
+  requestedByAccountId String
+  accessorType         PortalAccessorType
+  rejectionReason      AppointmentRejectionReason?
+  expiresAt            DateTime
+  resolvedAt           DateTime?
+  resolvedById         String?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  workspace            Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient              Patient                     @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist            User                        @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, therapistId, heldStartsAt])
+  @@index([workspaceId, status, expiresAt])
+  @@index([workspaceId, patientId, status])
+  @@index([workspaceId, therapistId, status])
+  @@index([requestedByAccountId, createdAt])
 }
