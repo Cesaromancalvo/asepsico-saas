@@ -4,6 +4,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { ASSESSMENT_RESULT_SELECT, decryptAssessment, decryptTask, decryptTaskTemplate, decryptTherapyGoal } from '../common/crypto/clinical-crypto';
 import { PatientAccessService } from './patient-access.service';
+import { readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { assertScopedWrite, patientChildScope } from './patient-write.util';
 import { CreateTherapeuticTaskDto } from './dto/create-therapeutic-task.dto';
 import { UpdateTherapeuticTaskDto, TherapeuticTaskStatusValue } from './dto/update-therapeutic-task.dto';
@@ -85,8 +86,10 @@ export class PatientTasksService {
 
   async getTherapeuticTasks(workspaceId: string, actor: AuthUser, patientId: string) {
     const { scope } = await this.access.assertCanRead(workspaceId, actor, patientId, 'therapeutic-tasks');
-    if (scope.level === 'TREATING') {
+    if (readsWholeRecord(scope)) {
       const tasks = await this.prisma.therapeuticTask.findMany({ where: patientChildScope(workspaceId, patientId), orderBy:[{updatedAt:'desc'}], include:{therapyGoal:{select:{id:true,title:true,status:true}},session:{select:{id:true,startsAt:true,status:true,type:true}}} });
+      // Acceso excepcional: sin las notas del profesional (clinicianNotes) (CA2.2).
+      if (scope.level === 'EXCEPTIONAL') return tasks.map((task) => ({ ...decryptTask(task), clinicianNotes: null }));
       return tasks.map(decryptTask);
     }
     // Autor de un proceso cerrado: solo tareas enlazadas a SUS sesiones y sin el objetivo
@@ -144,7 +147,7 @@ export class PatientTasksService {
 
   async getTimeline(workspaceId: string, actor: AuthUser, patientId: string) {
     // Resumen de TODO el contenido del paciente: solo quien le trata (proceso ACTIVO).
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId, 'patient-timeline');
+    await this.access.assertCanReadWholeRecord(workspaceId, actor, patientId, 'patient-timeline');
     // Los modelos hijos sin workspaceId propio se acotan por la relación patient (defensa en
     // profundidad: nunca solo por patientId).
     const childScope = patientChildScope(workspaceId, patientId);

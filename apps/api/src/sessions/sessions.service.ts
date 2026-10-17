@@ -22,7 +22,7 @@ import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
 import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view.util';
 import { projectSelect } from '../patients/patient-view.util';
-import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -235,8 +235,8 @@ export class SessionsService {
     // Contenido clínico de la sesión: su autor (clínico, lo suyo aunque el proceso se cerrara) o
     // un clínico que trata al paciente (sin el resumen interno, que es nota interna del autor).
     const isAuthor = session.therapistId === actor.sub;
-    const scope = await this.access.resolveScope(workspaceId, actor, session.patientId);
-    if (scope && (isAuthor || scope.level === 'TREATING')) {
+    const scope = await this.access.resolveScope(workspaceId, actor, session.patientId, 'session');
+    if (scope && (isAuthor || readsWholeRecord(scope))) {
       const decrypted = decryptSession(session);
       if (isAuthor) return decrypted;
       const { internalSummary: _hidden, ...visible } = decrypted;

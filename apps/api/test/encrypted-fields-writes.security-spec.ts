@@ -12,6 +12,7 @@ import { PortalService } from '../src/portal/portal.service';
 import { MfaService } from '../src/auth/mfa.service';
 import { treatingAccessStub } from './support/clinical-access-fixture';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
+import { ExceptionalAccessService } from '../src/exceptional-access/exceptional-access.service';
 import { issueFormToken } from '../src/waitlist/waitlist-crypto';
 
 /**
@@ -58,6 +59,8 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
   };
   const prisma: any = new Proxy({}, {
     get: (_t, prop: string) => {
+      // Advisory lock de H6 (apertura de procesos): no escribe nada.
+      if (prop === '$executeRawUnsafe') return async () => 1;
       if (prop === '$transaction') return async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg));
       if (prop === 'then' || typeof prop !== 'string') return undefined;
       return model(prop);
@@ -90,8 +93,12 @@ const CASES: Case[] = [
     run: (p) => new PatientTasksService(p, access).createTaskTemplate('ws-1', owner, { title: 'Plantilla', instructions: text('instrucciones') } as any) },
   { name: 'PatientTasks.updateTaskTemplate', writes: { therapeuticTaskTemplate: ['instructions'] },
     run: (p) => new PatientTasksService(p, access).updateTaskTemplate('ws-1', owner, 'tpl-1', { instructions: text('instrucciones') } as any) },
+  { name: 'ExceptionalAccess.create (explicación y motivo de diferimiento)', writes: { exceptionalAccessJustification: ['justification', 'notificationDeferredReason'] },
+    // Sin acceso vigente previo (el doble devuelve siempre una fila en findFirst).
+    run: (p) => (p.exceptionalAccessJustification.findFirst = jest.fn(async () => null), new ExceptionalAccessService(p, { getMemberProfile: async () => ({ role: 'OWNER', isClinician: false }), resolveScope: async () => null, auditDenied: jest.fn() } as any)
+      .create('ws-1', { ...owner, sid: 'sesion-ficticia' }, 'patient-1', { reasonCode: 'LEGAL_REQUIREMENT', justification: text('explicación administrativa'), confirmed: true, deferNotice: true, deferReason: text('motivo de diferimiento') } as any)) },
   { name: 'ClinicalProcesses.create', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
-    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
+    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', openingReasonCode: 'SUBSTITUTION', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'ClinicalProcesses.update', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
     run: (p) => new ClinicalProcessesService(p).update('ws-1', owner, 'proc-1', { consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'Sessions.updateNotes', writes: { session: ['notes', 'internalSummary'] },

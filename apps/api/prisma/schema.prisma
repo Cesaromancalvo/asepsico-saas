@@ -129,29 +129,32 @@ enum SessionType {
 }
 
 model Workspace {
-  id                   String                 @id @default(cuid())
-  name                 String
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  members              WorkspaceMember[]
-  patients             Patient[]
-  sessions             Session[]
-  auditLogs            AuditLog[]
-  clinicalProcesses    ClinicalProcess[]
-  patientDocuments     PatientDocument[]
-  consentRecords       ConsentRecord[]
-  clinicalReports      ClinicalReport[]
-  invoices             Invoice[]
-  payments             Payment[]
-  portalAccounts       PatientPortalAccount[]
-  therapeuticResources TherapeuticResource[]
-  resourceShares       ResourceShare[]
-  conversations        Conversation[]
-  patientImportJobs    PatientImportJob[]
-  patientImportItems   PatientImportItem[]
-  termsAcceptances     TermsAcceptance[]
-  workspaceInvites     WorkspaceInvite[]
-  registrationInvite   RegistrationInvite?
+  id                      String                           @id @default(cuid())
+  name                    String
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+  members                 WorkspaceMember[]
+  patients                Patient[]
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  clinicalProcesses       ClinicalProcess[]
+  patientDocuments        PatientDocument[]
+  consentRecords          ConsentRecord[]
+  clinicalReports         ClinicalReport[]
+  invoices                Invoice[]
+  payments                Payment[]
+  portalAccounts          PatientPortalAccount[]
+  therapeuticResources    TherapeuticResource[]
+  resourceShares          ResourceShare[]
+  conversations           Conversation[]
+  patientImportJobs       PatientImportJob[]
+  patientImportItems      PatientImportItem[]
+  termsAcceptances        TermsAcceptance[]
+  workspaceInvites        WorkspaceInvite[]
+  registrationInvite      RegistrationInvite?
+  clinicalProcessOpenings ClinicalProcessOpening[]
+  exceptionalAccesses     ExceptionalAccessJustification[]
+  exceptionalAccessMisses ExceptionalAccessReasonMiss?
 }
 
 model User {
@@ -489,6 +492,9 @@ model ClinicalProcess {
   endedAt            DateTime?
   /// Momento en que pasó a PAUSED (fin de la ventana de mensajes mientras está en pausa).
   pausedAt           DateTime?
+  /// Motivo de apertura cuando el proceso se abrió sobre historia ajena (H6, acceso excepcional).
+  /// null en las altas normales y en los procesos anteriores a esta columna.
+  openingReasonCode  ProcessOpeningReason?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -759,6 +765,9 @@ enum NotificationType {
   CONSENT_EXPIRING
   INVOICE_DUE
   SYSTEM
+  /// Aviso al terapeuta titular: acceso excepcional o apertura de proceso sobre su historia.
+  /// Sin texto clínico ni explicación: persona, rol, iniciales del paciente y motivo.
+  CLINICAL_ACCESS_NOTICE
 }
 
 enum PortalAccessMode {
@@ -1001,4 +1010,120 @@ model WaitlistEntry {
   deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
+}
+
+// --- Acceso excepcional (docs/producto/acceso-excepcional.md) -------------------------------
+
+/// Motivo cerrado para abrir o reactivar un proceso sobre historia ajena (H6). Sin "Otro".
+enum ProcessOpeningReason {
+  SUBSTITUTION
+  TRANSFER_ON_LEAVE
+  PATIENT_REQUESTED_CHANGE
+  REFERRAL
+}
+
+enum ProcessOpeningKind {
+  OPENED
+  REACTIVATED
+}
+
+/// Resultado de la revisión posterior del OWNER (sin texto).
+enum OwnerReviewOutcome {
+  CORRECT
+  INCIDENT
+}
+
+/// Apertura o reactivación de un proceso sobre historia ajena (H6). Solo ids y códigos, nunca
+/// texto. Sin claves ajenas a paciente/proceso a propósito: el registro sobrevive a su borrado.
+model ClinicalProcessOpening {
+  id                   String               @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  clinicalProcessId    String
+  actorId              String
+  actorRole            WorkspaceRole
+  targetTherapistId    String
+  kind                 ProcessOpeningKind
+  reasonCode           ProcessOpeningReason
+  /// El OWNER/ADMIN se lo abrió a sí mismo: entra en la revisión de 72 h.
+  selfAssigned         Boolean
+  /// Número de OWNER del workspace al crearse (C4: decide quién puede revisar).
+  ownerCountAtCreation Int
+  ownerReviewDueAt     DateTime?
+  reviewedAt           DateTime?
+  reviewedById         String?
+  reviewOutcome        OwnerReviewOutcome?
+  selfReview           Boolean?
+  createdAt            DateTime             @default(now())
+  workspace            Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId])
+  @@index([workspaceId, ownerReviewDueAt])
+}
+
+/// Motivo cerrado del acceso excepcional (7 códigos, sin "Otro"). Ver exceptional-access.policy.ts.
+enum ExceptionalAccessReason {
+  CONTINUITY_OF_CARE
+  VITAL_URGENCY
+  PATIENT_RIGHTS_REQUEST
+  LEGAL_REQUIREMENT
+  CLAIM_DEFENCE
+  CUSTODY
+  DATA_INCIDENT
+}
+
+/// Acceso excepcional a la historia de un paciente (H1–H5). La explicación va CIFRADA y nunca
+/// sale en AuditLog, logs ni exportación ordinaria. Concede EXCEPTIONAL (solo lectura, sin notas
+/// internas) mientras: no esté cerrado ni bloqueado, no haya vencido `expiresAt`, la sesión
+/// `authSessionId` siga viva y sea la de la petición, el paciente no esté borrado y el actor siga
+/// siendo OWNER/ADMIN. Sin claves ajenas a paciente/usuario a propósito: sobrevive a su borrado.
+model ExceptionalAccessJustification {
+  id                         String                  @id @default(cuid())
+  workspaceId                String
+  patientId                  String
+  actorId                    String
+  actorRole                  WorkspaceRole
+  actorIsClinician           Boolean
+  reasonCode                 ExceptionalAccessReason
+  /// Explicación administrativa (20–300 caracteres), cifrada con el cifrado de campos.
+  justification              String
+  clinicalTermWarningIgnored Boolean                 @default(false)
+  /// Familia del refresh token (claim `sid` del access token). null = no concede (migrados).
+  authSessionId              String?
+  createdAt                  DateTime                @default(now())
+  expiresAt                  DateTime
+  closedAt                   DateTime?
+  /// MANUAL, LOGOUT, PATIENT_ARCHIVED (paciente archivado/borrado), PATIENT_BLOCKED, MIGRATED.
+  closeReason                String?
+  retentionUntil             DateTime
+  legalHold                  Boolean                 @default(false)
+  ownerCountAtCreation       Int
+  ownerReviewDueAt           DateTime?
+  reviewedAt                 DateTime?
+  reviewedById               String?
+  reviewOutcome              OwnerReviewOutcome?
+  selfReview                 Boolean?
+  /// Aviso al titular diferido por un OWNER (§3.6). El motivo va cifrado.
+  notificationDeferredAt     DateTime?
+  notificationDeferredReason String?
+  notificationReleasedAt     DateTime?
+  lastDeferralReminderAt     DateTime?
+  blockedAt                  DateTime?
+  /// H5: creado a partir de un AuditLog antiguo con el motivo en claro. Nunca concede acceso.
+  migratedFromAuditLogId     String?                 @unique
+  workspace                  Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId, actorId])
+  @@index([workspaceId, ownerReviewDueAt])
+  @@index([authSessionId])
+}
+
+/// CA1.11: contador agregado del enlace "Mi motivo no está en la lista". Sin paciente, usuario ni texto.
+model ExceptionalAccessReasonMiss {
+  workspaceId String    @id
+  count       Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 }

@@ -20,6 +20,7 @@ import { WorkspaceMembersModule } from './workspace-members/workspace-members.mo
 import { PatientImportModule } from './patient-import/patient-import.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { LegalModule } from './legal/legal.module';
+import { ExceptionalAccessModule } from './exceptional-access/exceptional-access.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { LegalModule } from './legal/legal.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     DatabaseModule,
     ClinicalAccessModule,
+    ExceptionalAccessModule,
     AuthModule,
     PatientsModule,
     SessionsModule,

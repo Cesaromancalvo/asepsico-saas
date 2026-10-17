@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { FormEvent, useRef, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
@@ -132,6 +133,16 @@ export default function SecurityPage() {
             <p>Tu contraseña y la verificación en dos pasos: además de la contraseña, un código de tu móvil.</p>
           </div>
         </header>
+
+        {(viewer?.role === 'OWNER' || viewer?.role === 'ADMIN') && (
+          <section className="patient-card" aria-labelledby="xa-link-title">
+            <h2 id="xa-link-title">Accesos excepcionales</h2>
+            <p>{viewer.role === 'OWNER'
+              ? 'Revisa quién ha abierto la historia de un paciente sin atenderle, las urgencias pendientes de revisar en 72 horas y los avisos diferidos.'
+              : 'Consulta los accesos excepcionales y las aperturas de proceso que has registrado.'}</p>
+            <Link href="/settings/exceptional-access" className="button secondary">Ver accesos excepcionales</Link>
+          </section>
+        )}
 
         {recoveryCodes ? (
           <section className="patient-card">

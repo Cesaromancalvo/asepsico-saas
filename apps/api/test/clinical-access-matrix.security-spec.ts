@@ -482,20 +482,16 @@ describe('Reasignación de procesos (bloqueada hasta la reasignación controlada
 });
 
 describe('Apertura de un proceso propio: auditoría de la autoasignación', () => {
-  it('registra selfAssigned y si el paciente ya tenía otro profesional activo', async () => {
-    const prisma = seedDb();
-    await new ClinicalProcessesService(prisma).create(WS, actor('t-none'), { patientId: 'pat-1', title: 'Proceso ficticio' } as any);
-    const audit = prisma.__store.auditLog.find((a: any) => a.action === 'CLINICAL_PROCESS_CREATED');
-    expect(audit.metadata).toEqual(expect.objectContaining({ therapistId: 't-none', selfAssigned: true, hadOtherActiveClinician: true }));
-  });
-
-  it('sin otro profesional activo → hadOtherActiveClinician: false', async () => {
+  // Con H6, abrirse un proceso sobre un paciente con historia ajena ya no es posible para un
+  // THERAPIST (test/process-opening-over-history.security-spec.ts). Aquí, el alta normal.
+  it('registra selfAssigned y overHistory: false en un alta sin historia ajena', async () => {
     const prisma = seedDb();
     prisma.__store.clinicalProcess = prisma.__store.clinicalProcess.filter((p: any) => p.patientId !== 'pat-2');
     await new ClinicalProcessesService(prisma).create(WS, actor('t-none'), { patientId: 'pat-2', title: 'Proceso ficticio' } as any);
     const audit = prisma.__store.auditLog.find((a: any) => a.action === 'CLINICAL_PROCESS_CREATED');
-    expect(audit.metadata).toEqual(expect.objectContaining({ selfAssigned: true, hadOtherActiveClinician: false }));
+    expect(audit.metadata).toEqual(expect.objectContaining({ therapistId: 't-none', selfAssigned: true, overHistory: false }));
   });
+});
 });
 
 describe('Proceso en pausa: la ventana de mensajes termina en pausedAt, no en updatedAt', () => {

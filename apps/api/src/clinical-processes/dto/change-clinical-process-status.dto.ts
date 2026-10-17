@@ -1,3 +1,4 @@
+import { PROCESS_OPENING_REASONS, ProcessOpeningReasonCode } from '../../exceptional-access/exceptional-access.policy';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsOptional } from 'class-validator';
 
@@ -25,4 +26,14 @@ export class ChangeClinicalProcessStatusDto {
   @IsOptional()
   @IsBoolean()
   cancelFutureSessions?: boolean;
+
+  /**
+   * H6: obligatorio solo si el paciente tiene historia con otro profesional (si no, se ignora).
+   * Sin él, la API responde 400 OPENING_REASON_REQUIRED y la web muestra el selector. Solo
+   * OWNER/ADMIN pueden abrir o reactivar sobre historia ajena (THERAPIST: 403).
+   */
+  @ApiPropertyOptional({ enum: PROCESS_OPENING_REASONS })
+  @IsOptional()
+  @IsIn(PROCESS_OPENING_REASONS)
+  openingReasonCode?: ProcessOpeningReasonCode;
 }

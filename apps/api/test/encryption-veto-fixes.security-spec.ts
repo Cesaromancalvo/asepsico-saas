@@ -173,6 +173,7 @@ describe('Recomendables: dashboard y notificaciones no exponen contenido clínic
       invoice: { findMany: jest.fn(async () => []) },
       notificationPreference: { findMany: jest.fn(async () => []) },
       notification: { createMany: jest.fn(async ({ data }: any) => { created.push(...data); return { count: data.length }; }) },
+      exceptionalAccessJustification: { findMany: jest.fn(async () => []) },
       auditLog: { create: jest.fn(async () => ({})) },
     };
     await new NotificationsService(prisma).processDue(owner);

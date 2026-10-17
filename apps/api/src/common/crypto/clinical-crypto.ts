@@ -44,6 +44,9 @@ export const ENCRYPTED_TEXT_FIELDS = {
   consentRecord: ['notes'],
   message: ['body', 'attachmentName'],
   user: ['totpSecret'],
+  // Acceso excepcional: explicación administrativa y motivo de diferimiento (no clínicos, pero el
+  // paciente puede pedirlos y no deben estar en claro en la BD).
+  exceptionalAccessJustification: ['justification', 'notificationDeferredReason'],
   // Lista de espera pública (no clínica, sin workspace): datos de contacto de profesionales.
   waitlistEntry: ['name', 'email', 'tools'],
 } as const;

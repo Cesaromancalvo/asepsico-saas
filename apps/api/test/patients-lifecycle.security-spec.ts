@@ -87,6 +87,8 @@ function prismaMock(seed: FakePatient[], portalSeed: FakePortalAccount[] = []) {
         return { count };
       }),
     },
+    // Acceso excepcional: archivar/bloquear cierra y bloquea los accesos del paciente.
+    exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
     auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })) },
     // Gancho para simular otra petición concurrente que cambia el estado justo antes de escribir.
     __beforeTx: null as null | ((patch: (id: string, data: Partial<FakePatient>) => void) => void),
