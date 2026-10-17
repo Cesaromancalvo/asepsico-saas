@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { WaitlistSituation, WaitlistSource } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { Equals, IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Equals, IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS } from '../waitlist.config';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+/** Sin caracteres de control (C0, DEL y C1) salvo tabulador y saltos de línea (la v2 usaba un textarea). */
+const NO_CONTROL_CHARS = /^[^\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]*$/;
 
 /**
  * Alta pública en la lista de espera. La ValidationPipe global usa whitelist +
@@ -26,6 +29,7 @@ export class CreateWaitlistEntryDto {
 
   @ApiPropertyOptional({ maxLength: 500, description: 'Herramientas que usa hoy (texto libre, sin datos de pacientes)' })
   @IsOptional() @Transform(trim) @IsString() @MaxLength(500)
+  @Matches(NO_CONTROL_CHARS, { message: 'tools contiene caracteres no permitidos' })
   tools?: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 500 })

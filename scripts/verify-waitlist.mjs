@@ -49,7 +49,7 @@ async function formToken(ip) {
 function payload(token, extra = {}) {
   return {
     name: NAME, email: EMAIL, situation: 'SELF_EMPLOYED', tools: 'Agenda ficticia de CI', professionalsCount: 1,
-    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v2', formToken: token, ...extra,
+    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: token, ...extra,
   };
 }
 

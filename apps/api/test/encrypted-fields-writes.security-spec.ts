@@ -115,7 +115,7 @@ const CASES: Case[] = [
   { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
   { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
-    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v2', formToken: issueFormToken(Date.now() - 10_000) } as any) },
+    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any) },
 ];
 
 function registeredFields(): string[] {
