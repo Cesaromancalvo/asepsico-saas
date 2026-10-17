@@ -156,7 +156,8 @@ export default function ProcessPage() {
 
   const meta = detail ?? summary;
   const isAuthor = Boolean(detail && (viewer?.userId ? detail.therapistId === viewer.userId : Object.prototype.hasOwnProperty.call(detail, 'internalNotes')));
-  const readOnly = detail ? detail.readOnly || detail.status !== 'ACTIVE' : true;
+  // Con acceso excepcional, siempre solo lectura, diga lo que diga la respuesta (revisión de Argos).
+  const readOnly = exceptional || !detail || detail.readOnly || detail.status !== 'ACTIVE';
   const canManage = meta ? canManageProcess(viewer, meta) : false;
 
   async function changeStatus(next: ProcessStatus, message: string) {

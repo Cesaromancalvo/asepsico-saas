@@ -384,3 +384,9 @@ export function formatClinicalAccessNotice(body: string): string {
   const day = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
   return body.replace(`${match[1]},`, `${day} a las ${formatHour(date)},`).replace(match[1], `${day} a las ${formatHour(date)}`);
 }
+
+/** Enlace interno de un aviso: solo rutas de la propia web ("/..."), nunca "//host" ni URLs absolutas. */
+export function safeInternalPath(url: string | null | undefined): string | null {
+  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//') || url.startsWith('/\\')) return null;
+  return url;
+}

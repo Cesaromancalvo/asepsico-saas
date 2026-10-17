@@ -24,6 +24,14 @@ import ExceptionalAccessDialog from '@/components/ExceptionalAccessDialog';
 import ExceptionalAccessBanner from '@/components/ExceptionalAccessBanner';
 import { OpeningReasonFieldset } from '@/components/OpeningReasonPicker';
 import { accessHistoryRows } from '@/components/PatientAccessHistory';
+import { ClinicalSubpageView, subpageMode } from '@/components/ClinicalSubpageGate';
+import { initialDialogState } from '@/components/ExceptionalAccessDialog';
+import { safeInternalPath } from '@/lib/exceptional-access';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// La barra lateral usa el router de Next: fuera de la app se simula la ruta.
+jest.mock('next/navigation', () => ({ usePathname: () => '/patients/p1', useRouter: () => ({ push: () => undefined }), useParams: () => ({ id: 'p1' }) }));
 
 const ADMIN_REASONS = ['PATIENT_RIGHTS_REQUEST', 'LEGAL_REQUIREMENT', 'CLAIM_DEFENCE', 'CUSTODY', 'DATA_INCIDENT'];
 const valid: ExceptionalAccessForm = { ...EMPTY_EXCEPTIONAL_FORM, reasonCode: 'LEGAL_REQUIREMENT', justification: 'Requerimiento del Juzgado n.º 3, procedimiento 123/2026.', confirmed: true };
@@ -205,5 +213,56 @@ describe('Registro, historial y avisos: nunca texto', () => {
     expect(text).not.toContain('2026-10-16T');
     expect(text).toMatch(/^El 16\/10\/2026 a las \d{2}:\d{2}, Ana Prueba/);
     expect(formatClinicalAccessNotice('Sin fecha')).toBe('Sin fecha');
+  });
+});
+
+describe('Condiciones de Argos', () => {
+  const source = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
+  const owner = { userId: 'u1', role: 'OWNER' as const, isClinician: false, firstName: 'Ana', lastName: 'Prueba', workspaceName: null };
+  const ready = (treating: boolean) => ({ state: 'ready' as const, processes: [], treating, readable: treating, readOnly: false });
+
+  it('tareas y escalas con acceso excepcional (sin TREATING): ni notas internas ni controles de escritura', () => {
+    // EXCEPTIONAL no da TREATING: canReadClinical llega a false en el listado de procesos.
+    expect(subpageMode(owner, ready(false))).toBe('blocked');
+    expect(subpageMode({ ...owner, role: 'ASSISTANT' }, ready(false))).toBe('blocked');
+    expect(subpageMode(owner, { ...ready(false), state: 'loading' })).toBe('loading');
+    expect(subpageMode({ ...owner, role: 'THERAPIST', isClinician: true }, ready(true))).toBe('treating');
+    const protectedContent = createElement('div', null, 'NOTA CLÍNICA PRIVADA', createElement('button', null, 'Editar'), createElement('button', null, 'Eliminar'));
+    for (const section of ['Tareas', 'Escalas']) {
+      const html = renderToStaticMarkup(createElement(ClinicalSubpageView, { mode: 'blocked', patientId: 'p1', section, children: protectedContent }));
+      expect(html).not.toContain('NOTA CLÍNICA PRIVADA');
+      expect(html).not.toMatch(/Editar|Eliminar|<textarea|<form/);
+      expect(html).toContain('href="/patients/p1"');
+      expect(html).toContain(`${section}: solo para quien atiende al paciente`);
+    }
+    // Solo con TREATING se monta el contenido.
+    expect(renderToStaticMarkup(createElement(ClinicalSubpageView, { mode: 'treating', patientId: 'p1', section: 'Tareas', children: protectedContent }))).toContain('NOTA CLÍNICA PRIVADA');
+  });
+
+  it('las dos subpáginas pasan por la puerta antes de montar su contenido', () => {
+    for (const page of ['app/patients/[id]/tasks/page.tsx', 'app/patients/[id]/assessments/page.tsx']) {
+      expect(source(page)).toMatch(/export default function \w+\(\)\{\s*const \{id:patientId\}=useParams<\{id:string\}>\(\);\s*return <ClinicalSubpageGate/);
+    }
+  });
+
+  it('el proceso queda en solo lectura siempre que el acceso sea excepcional', () => {
+    expect(source('app/patients/[id]/processes/[processId]/page.tsx')).toContain('const readOnly = exceptional || !detail || detail.readOnly');
+  });
+
+  it('el enlace de un aviso solo acepta rutas internas: nunca "//host" ni URLs absolutas', () => {
+    expect(safeInternalPath('/patients/p1')).toBe('/patients/p1');
+    expect(safeInternalPath('//evil.example/patients')).toBeNull();
+    expect(safeInternalPath('/\\evil.example')).toBeNull();
+    expect(safeInternalPath('https://evil.example')).toBeNull();
+    expect(safeInternalPath('javascript:alert(1)')).toBeNull();
+    expect(safeInternalPath(undefined)).toBeNull();
+    expect(source('app/notifications/page.tsx')).toContain('safeInternalPath(n.actionUrl)');
+  });
+
+  it('al cerrar el modal el formulario queda vacío', () => {
+    expect(initialDialogState()).toEqual({ form: EMPTY_EXCEPTIONAL_FORM, busy: false, error: '', clinicalWarning: false, reasonMiss: false, created: null });
+    // Copia nueva cada vez: no se comparte el objeto entre aperturas.
+    expect(initialDialogState().form).not.toBe(EMPTY_EXCEPTIONAL_FORM);
+    expect(source('components/ExceptionalAccessDialog.tsx')).toMatch(/function handleClosed\(\) \{[\s\S]*?resetDialog\(\);[\s\S]*?\n  \}/);
   });
 });

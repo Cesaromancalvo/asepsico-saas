@@ -26,6 +26,11 @@ import {
   type ExceptionalAccessReasonCode,
 } from '@/lib/exceptional-access';
 
+/** Estado del modal al abrirlo y tras cerrarlo: nada escrito, nada registrado. */
+export function initialDialogState() {
+  return { form: { ...EMPTY_EXCEPTIONAL_FORM }, busy: false, error: '', clinicalWarning: false, reasonMiss: false, created: null as CreateExceptionalAccessResponse | null };
+}
+
 type Props = {
   open: boolean;
   patientId: string;
@@ -62,13 +67,18 @@ export default function ExceptionalAccessDialog({ open, patientId, role, allowed
   const problem = validateExceptionalForm(form, reasons, role);
   const deferAllowed = canDeferNotice(role, form.reasonCode);
 
+  function resetDialog() {
+    const initial = initialDialogState();
+    setForm(initial.form); setBusy(initial.busy); setError(initial.error);
+    setClinicalWarning(initial.clinicalWarning); setReasonMiss(initial.reasonMiss); setCreated(initial.created);
+  }
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) {
       returnFocusRef.current = document.activeElement as HTMLElement | null;
-      setForm(EMPTY_EXCEPTIONAL_FORM);
-      setBusy(false); setError(''); setClinicalWarning(false); setReasonMiss(false); setCreated(null);
+      resetDialog();
       dialog.showModal();
       requestAnimationFrame(() => firstReasonRef.current?.focus());
     } else if (!open && dialog.open) {
@@ -78,6 +88,8 @@ export default function ExceptionalAccessDialog({ open, patientId, role, allowed
 
   function handleClosed() {
     if (created) onRegistered();
+    // Al cerrar no queda nada escrito en memoria (explicación incluida) para la próxima apertura.
+    resetDialog();
     onClose();
     const target = returnFocusRef.current;
     returnFocusRef.current = null;
