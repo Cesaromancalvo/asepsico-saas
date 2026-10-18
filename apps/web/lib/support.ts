@@ -11,11 +11,11 @@ export const SUPPORT_NO_PATIENT_DATA_DETAIL =
   'Ni nombres, ni motivos de consulta, ni capturas de pantalla con datos reales. Tampoco nos envíes nunca tu contraseña ni un código de verificación.';
 
 export const SUPPORT_COMMITMENT = [
-  'Primera respuesta en 1 día laborable (de lunes a viernes, sin festivos nacionales).',
-  'Si no puedes trabajar (no puedes entrar, has perdido datos o la agenda no funciona), respondemos en 4 horas laborables.',
+  'Te respondemos en 1 día laborable (de lunes a viernes, sin festivos nacionales). Es un plazo de primera respuesta, no de solución del problema.',
+  'Si no puedes trabajar (no puedes entrar o la agenda no funciona), usa el botón «No puedo trabajar»: lo vemos antes que el resto.',
 ];
 export const SUPPORT_DISCLAIMER =
-  'Estos plazos son informativos: es lo que nos proponemos cumplir, no una garantía ni una condición del servicio.';
+  'Este plazo es el de las condiciones de la prueba del piloto; no se aplica a otros casos.';
 
 export const SUPPORT_SUBJECT = 'Consulta sobre AsePsico';
 export const SUPPORT_SUBJECT_BLOCKED = 'No puedo trabajar con AsePsico';

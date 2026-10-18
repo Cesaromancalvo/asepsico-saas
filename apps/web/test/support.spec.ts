@@ -10,12 +10,12 @@ import {
 } from '../lib/support';
 
 describe('Soporte, fase 0', () => {
-  it('el compromiso recoge 1 día laborable y 4 horas laborables, y se presenta como informativo', () => {
+  it('el compromiso recoge 1 día laborable como primera respuesta y no promete otro plazo', () => {
     const text = SUPPORT_COMMITMENT.join(' ');
     expect(text).toMatch(/1 día laborable/);
-    expect(text).toMatch(/4 horas laborables/);
-    expect(SUPPORT_DISCLAIMER).toMatch(/informativos/);
-    expect(SUPPORT_DISCLAIMER).toMatch(/no una garantía/);
+    expect(text).toMatch(/primera respuesta, no de solución/);
+    expect(text).not.toMatch(/horas/);
+    expect(SUPPORT_DISCLAIMER).toMatch(/condiciones de la prueba/);
   });
 
   it('avisa de no incluir datos de pacientes ni contraseñas o códigos', () => {
