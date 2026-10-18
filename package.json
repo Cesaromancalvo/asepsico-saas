@@ -20,6 +20,7 @@
     "waitlist:export": "npm --workspace @asepsico/api run waitlist:export --",
     "waitlist:delete": "npm --workspace @asepsico/api run waitlist:delete --",
     "waitlist:purge": "npm --workspace @asepsico/api run waitlist:purge --",
+    "portal-signup:purge": "npm --workspace @asepsico/api run portal-signup:purge --",
     "waitlist:confirm-commercial": "npm --workspace @asepsico/api run waitlist:confirm-commercial --",
     "waitlist:withdraw-commercial": "npm --workspace @asepsico/api run waitlist:withdraw-commercial --",
     "invites:create": "npm --workspace @asepsico/api run invites:create --",
