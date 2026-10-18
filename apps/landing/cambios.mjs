@@ -11,7 +11,7 @@
  */
 
 export const NIVELES = {
-  ok: { etiqueta: 'Todo funciona', clase: 'ok' },
+  ok: { etiqueta: 'Sin incidencias conocidas', clase: 'ok' },
   degradado: { etiqueta: 'Funcionamos con problemas', clase: 'warn' },
   interrumpido: { etiqueta: 'Servicio interrumpido', clase: 'down' },
 };

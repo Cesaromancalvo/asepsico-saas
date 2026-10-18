@@ -75,7 +75,7 @@ peligro.cambios[1].titulo = 'A & B "c"';
 const html = `${renderEstado(peligro)}${renderCambios(peligro)}`;
 espera(html.includes('Aviso previo') && html.includes('Ya disponible'), 'faltan las etiquetas de los cambios');
 espera(html.includes('A &amp; B &quot;c&quot;'), 'el render no escapa el texto');
-espera(html.includes('Todo funciona') && html.includes('25 de octubre de 2026'), 'faltan el estado o la fecha en español');
+espera(html.includes('Sin incidencias conocidas') && html.includes('25 de octubre de 2026'), 'faltan el estado o la fecha en español');
 espera(renderCambios({ cambios: [] }).includes('Todavía no hay cambios'), 'falta el estado vacío');
 
 for (const pagina of ['estado/index.html', 'cambios/index.html']) {
