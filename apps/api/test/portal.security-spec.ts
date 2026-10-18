@@ -12,6 +12,7 @@ import { PrismaService } from '../src/database/prisma.service';
 import { PatientCoreService } from '../src/patients/patient-core.service';
 
 function prismaMock(){const p:any={
+  portalActivationToken:{updateMany:jest.fn().mockResolvedValue({count:0})},
   patient:{findFirst:jest.fn(),updateMany:jest.fn().mockResolvedValue({count:1})}, patientPortalAccount:{findFirst:jest.fn(),findUnique:jest.fn(),create:jest.fn(),upsert:jest.fn(),update:jest.fn(async()=>{throw new Error('update solo por id no permitido');}),updateMany:jest.fn().mockResolvedValue({count:1})},
   auditLog:{create:jest.fn()}, session:{findMany:jest.fn()}, therapeuticTask:{findMany:jest.fn()}, consentRecord:{findMany:jest.fn()}, invoice:{findMany:jest.fn()}, resourceShare:{findMany:jest.fn().mockResolvedValue([])}
 }; p.$transaction=jest.fn(async(cb:any)=>cb(p)); return p;}

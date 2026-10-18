@@ -73,6 +73,7 @@ function patientsPrisma() {
     clinicalProcess: { findFirst: jest.fn(async () => ({ id: 'proc-1' })) },
     auditLog: { create: jest.fn(async () => ({})) },
     patientPortalAccount: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
+    portalActivationToken: { updateMany: jest.fn(async () => ({ count: 0 })) },
     exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
     appointmentRequest: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
   };
