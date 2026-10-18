@@ -168,7 +168,7 @@ export class ExportsService {
   async getPilotReadiness(user: AuthUser) {
     this.assertAdmin(user);
     const [members, patients, futureSessions, portalAccounts, pendingConsents, overdueInvoices] = await Promise.all([
-      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId } }),
+      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE' } }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, deletedAt: null } }),
       this.prisma.session.count({ where: { workspaceId: user.workspaceId, startsAt: { gt: new Date() }, status: 'SCHEDULED' } }),
       this.prisma.patientPortalAccount.count({ where: { workspaceId: user.workspaceId, isActive: true } }),

@@ -9,7 +9,7 @@
  *  - auditLog.create (si no existía) para registrar las denegaciones.
  */
 
-export type FakeMember = { userId: string; role: string; isClinician: boolean; workspaceId?: string };
+export type FakeMember = { userId: string; role: string; isClinician: boolean; workspaceId?: string; status?: string };
 export type FakeProcess = {
   id: string; patientId: string; therapistId: string; status: string; workspaceId?: string;
   createdAt?: Date; endedAt?: Date | null; updatedAt?: Date;
@@ -58,7 +58,7 @@ const DEFAULT_DATE = new Date('2026-01-01T00:00:00Z');
 
 export function withClinicalAccess<T extends Record<string, any>>(prisma: T, fixture: { members: FakeMember[]; processes?: FakeProcess[]; workspaceId?: string }): T {
   const ws = fixture.workspaceId ?? 'ws-1';
-  const members = fixture.members.map((member) => ({ workspaceId: ws, ...member }));
+  const members = fixture.members.map((member) => ({ workspaceId: ws, status: 'ACTIVE', ...member }));
   const processes = (fixture.processes ?? []).map((process) => ({
     workspaceId: ws, createdAt: DEFAULT_DATE, endedAt: null, updatedAt: DEFAULT_DATE, ...process,
   }));

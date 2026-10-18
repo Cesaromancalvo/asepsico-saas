@@ -75,7 +75,7 @@ export async function decideOpening(
   openingReasonCode: unknown,
 ): Promise<OpeningDecision> {
   if (!foreignHistory) return { kind: 'NORMAL' };
-  const member = await tx.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub }, select: { role: true } });
+  const member = await tx.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub, status: 'ACTIVE' }, select: { role: true } });
   const role = member?.role;
   if (role !== 'OWNER' && role !== 'ADMIN') return { kind: 'DENIED' };
   if (openingReasonCode === undefined || openingReasonCode === null) {
@@ -113,7 +113,7 @@ export async function recordOpeningOverHistory(
 ) {
   const { workspaceId, actor, patientId, targetTherapistId, reasonCode, now } = params;
   const selfAssigned = targetTherapistId === actor.sub;
-  const ownerCountAtCreation = await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } });
+  const ownerCountAtCreation = await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER', status: 'ACTIVE' } });
   const opening = await tx.clinicalProcessOpening.create({
     data: {
       workspaceId,

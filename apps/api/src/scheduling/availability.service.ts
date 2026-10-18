@@ -46,7 +46,7 @@ export class AvailabilityService {
     assertStaffRole(actor);
     const workspaceId = actor.workspaceId;
     const members = await this.prisma.workspaceMember.findMany({
-      where: { workspaceId, ...(actor.role === 'THERAPIST' ? { userId: actor.sub } : {}) },
+      where: { workspaceId, status: 'ACTIVE', ...(actor.role === 'THERAPIST' ? { userId: actor.sub } : {}) },
       orderBy: { userId: 'asc' },
       select: { userId: true, role: true, isClinician: true },
     });
@@ -227,7 +227,7 @@ export class AvailabilityService {
   }
 
   private async assertClinicianMember(workspaceId: string, therapistId: string) {
-    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: therapistId }, select: { role: true, isClinician: true } });
+    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: therapistId, status: 'ACTIVE' }, select: { role: true, isClinician: true } });
     if (!member || !isClinicalProfile(member)) throw new NotFoundException('Profesional no encontrado');
   }
 

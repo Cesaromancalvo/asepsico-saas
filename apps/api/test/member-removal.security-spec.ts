@@ -5,6 +5,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { hashToken } from '../src/auth/token.util';
 import { assertActiveSession } from '../src/common/auth/active-session';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { AvailabilityService } from '../src/scheduling/availability.service';
 import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 import { WorkspaceMembersService } from '../src/workspace-members/workspace-members.service';
 import { fakeClinicalDb } from './support/fake-clinical-db';
@@ -357,6 +358,23 @@ describe('GET /workspace-members/:userId/removal-preview y listado', () => {
     const prisma = db();
     await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'admin-2', {});
     await expect(new WorkspaceMembersService(prisma).setClinician(WS, actor('owner-1', 'OWNER'), 'admin-2', { isClinician: false })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('Un miembro dado de baja no aparece en los selectores de profesional', () => {
+  it('la agenda (selector de profesionales) deja de listarlo', async () => {
+    const prisma = fakeClinicalDb({
+      workspace: [{ id: WS, timeZone: 'Europe/Madrid' }],
+      user: [{ id: 'ther-1', firstName: 'Uno', lastName: 'Ficticio' }, { id: 'ther-2', firstName: 'Dos', lastName: 'Ficticio' }],
+      workspaceMember: [
+        { id: 'm-owner', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
+        { id: 'm-ther1', workspaceId: WS, userId: 'ther-1', role: 'THERAPIST', isClinician: true, status: 'REMOVED', removedAt: new Date() },
+        { id: 'm-ther2', workspaceId: WS, userId: 'ther-2', role: 'THERAPIST', isClinician: true },
+      ],
+      therapistAvailability: [],
+    });
+    const { professionals } = await new AvailabilityService(prisma).listProfessionals(actor('owner-1', 'OWNER'));
+    expect(professionals.map((p: any) => p.id)).toEqual(['ther-2']);
   });
 });
 

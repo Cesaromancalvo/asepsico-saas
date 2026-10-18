@@ -435,7 +435,7 @@ export class ClinicalProcessesService {
 
   /** El profesional responsable de un proceso debe ser miembro clínico del workspace. */
   private async assertClinicianMember(workspaceId: string, userId: string) {
-    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { role: true, isClinician: true } });
+    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId, status: 'ACTIVE' }, select: { role: true, isClinician: true } });
     if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
     if (!isClinicalProfile(membership)) {
       throw new BadRequestException('El profesional indicado no está marcado como profesional clínico');

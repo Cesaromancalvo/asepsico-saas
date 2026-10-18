@@ -234,7 +234,7 @@ export class PortalService {
       // Destinatarios: OWNER/ADMIN del workspace + terapeutas con proceso ACTIVO del paciente.
       // listProfessional filtra por userId, así que cada aviso va dirigido a un usuario concreto.
       const [managers, processes] = await Promise.all([
-        tx.workspaceMember.findMany({ where:{ workspaceId:portal.workspaceId, role:{ in:['OWNER','ADMIN'] } }, select:{ userId:true } }),
+        tx.workspaceMember.findMany({ where:{ workspaceId:portal.workspaceId, role:{ in:['OWNER','ADMIN'] }, status:'ACTIVE' }, select:{ userId:true } }),
         tx.clinicalProcess.findMany({ where:{ workspaceId:portal.workspaceId, patientId:portal.patientId, status:'ACTIVE' }, select:{ therapistId:true } }),
       ]);
       const recipients = [...new Set<string>([

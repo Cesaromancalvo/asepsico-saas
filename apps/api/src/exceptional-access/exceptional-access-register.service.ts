@@ -167,7 +167,7 @@ export class ExceptionalAccessRegisterService {
     if (outcome !== 'CORRECT' && outcome !== 'INCIDENT') throw new BadRequestException('Resultado no válido');
     if (!row.ownerReviewDueAt) throw new BadRequestException('Este registro no requiere revisión');
     if (row.reviewedAt) throw new BadRequestException('Ya está revisado');
-    const owners = await this.prisma.workspaceMember.findMany({ where: { workspaceId, role: 'OWNER' }, select: { userId: true } });
+    const owners = await this.prisma.workspaceMember.findMany({ where: { workspaceId, role: 'OWNER', status: 'ACTIVE' }, select: { userId: true } });
     const permission = reviewPermission(row, actor.sub, owners.map((owner) => owner.userId));
     if (!permission.allowed) {
       await this.access.auditDenied(workspaceId, actor, `${entityType}-review`, 'ROLE');
@@ -229,7 +229,7 @@ export async function sendDeferredNoticeReminders(prisma: PrismaService, workspa
     select: { id: true },
   });
   if (!due.length) return 0;
-  const owners = await prisma.workspaceMember.findMany({ where: { workspaceId, role: 'OWNER' }, select: { userId: true } });
+  const owners = await prisma.workspaceMember.findMany({ where: { workspaceId, role: 'OWNER', status: 'ACTIVE' }, select: { userId: true } });
   const stamp = now.toISOString().slice(0, 10);
   await prisma.notification.createMany({
     data: due.flatMap((row) => owners.map((owner) => ({

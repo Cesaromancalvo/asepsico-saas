@@ -110,7 +110,7 @@ export class ExceptionalAccessService {
       if (live) {
         throw new ConflictException({ statusCode: 409, error: 'Conflict', code: EXCEPTIONAL_ACCESS_NOT_NEEDED, message: 'Ya tienes un acceso excepcional vigente a este paciente' });
       }
-      const ownerCountAtCreation = await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } });
+      const ownerCountAtCreation = await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER', status: 'ACTIVE' } });
       const record = await tx.exceptionalAccessJustification.create({
         data: {
           workspaceId,

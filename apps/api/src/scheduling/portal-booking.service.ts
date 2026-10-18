@@ -298,7 +298,7 @@ export class PortalBookingService {
     if (!therapistIds.length) return [];
     const [settings, members, users] = await Promise.all([
       this.prisma.therapistAvailability.findMany({ where: { workspaceId, therapistId: { in: therapistIds }, portalBookingEnabled: true } }),
-      this.prisma.workspaceMember.findMany({ where: { workspaceId, userId: { in: therapistIds } }, select: { userId: true, role: true, isClinician: true } }),
+      this.prisma.workspaceMember.findMany({ where: { workspaceId, userId: { in: therapistIds }, status: 'ACTIVE' }, select: { userId: true, role: true, isClinician: true } }),
       this.prisma.user.findMany({ where: { id: { in: therapistIds } }, select: { id: true, firstName: true, lastName: true } }),
     ]);
     const result: Bookable[] = [];
