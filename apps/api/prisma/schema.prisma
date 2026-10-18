@@ -162,6 +162,9 @@ model Workspace {
   availabilityWindows     AvailabilityWindow[]
   availabilityBlocks      AvailabilityBlock[]
   appointmentRequests     AppointmentRequest[]
+  portalIntakeLinks       PortalIntakeLink[]
+  portalSignupRequests    PortalSignupRequest[]
+  portalActivationTokens  PortalActivationToken[]
 }
 
 model User {
@@ -202,6 +205,8 @@ model User {
   availabilityWindows          AvailabilityWindow[]
   availabilityBlocks           AvailabilityBlock[]
   appointmentRequests          AppointmentRequest[]
+  portalIntakeLinks            PortalIntakeLink[]      @relation("PortalIntakeLinkProfessional")
+  portalSignupRequests         PortalSignupRequest[]   @relation("PortalSignupRequestProfessional")
   /// Usuario ficticio creado por db:seed-demo-workspace (Recepción Demo, Terapeuta Demo). Solo lo
   /// borra db:purge-demo-workspace. Nunca se marca a un usuario real.
   isDemo                       Boolean                 @default(false)
@@ -298,41 +303,42 @@ model WorkspaceMember {
 }
 
 model Patient {
-  id                  String                 @id @default(cuid())
-  workspaceId         String
-  firstName           String
-  lastName            String
-  email               String?
-  phone               String?
-  birthDate           DateTime?
-  consultationReason  String?
-  status              PatientStatus          @default(ACTIVE)
-  portalAccessMode    PortalAccessMode       @default(PATIENT_ONLY)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  deletedAt           DateTime?
-  blockedAt           DateTime?
-  retentionUntil      DateTime?
+  id                     String                  @id @default(cuid())
+  workspaceId            String
+  firstName              String
+  lastName               String
+  email                  String?
+  phone                  String?
+  birthDate              DateTime?
+  consultationReason     String?
+  status                 PatientStatus           @default(ACTIVE)
+  portalAccessMode       PortalAccessMode        @default(PATIENT_ONLY)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  deletedAt              DateTime?
+  blockedAt              DateTime?
+  retentionUntil         DateTime?
   /// Paciente inventado sembrado por db:seed-demo-workspace. db:purge-demo-workspace borra SOLO
   /// pacientes con isDemo=true (y todo lo que cuelga de ellos). Nunca se marca a un paciente real.
-  isDemo              Boolean                @default(false)
-  workspace           Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  sessions            Session[]
-  clinicalProcesses   ClinicalProcess[]
-  clinicalHistory     ClinicalHistory?
-  therapyGoals        TherapyGoal[]
-  therapeuticTasks    TherapeuticTask[]
-  clinicalAssessments ClinicalAssessment[]
-  patientDocuments    PatientDocument[]
-  consentRecords      ConsentRecord[]
-  clinicalReports     ClinicalReport[]
-  invoices            Invoice[]
-  payments            Payment[]
-  portalAccounts      PatientPortalAccount[]
-  resourceShares      ResourceShare[]
-  conversations       Conversation[]
-  importItem          PatientImportItem?
-  appointmentRequests AppointmentRequest[]
+  isDemo                 Boolean                 @default(false)
+  workspace              Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  sessions               Session[]
+  clinicalProcesses      ClinicalProcess[]
+  clinicalHistory        ClinicalHistory?
+  therapyGoals           TherapyGoal[]
+  therapeuticTasks       TherapeuticTask[]
+  clinicalAssessments    ClinicalAssessment[]
+  patientDocuments       PatientDocument[]
+  consentRecords         ConsentRecord[]
+  clinicalReports        ClinicalReport[]
+  invoices               Invoice[]
+  payments               Payment[]
+  portalAccounts         PatientPortalAccount[]
+  resourceShares         ResourceShare[]
+  conversations          Conversation[]
+  importItem             PatientImportItem?
+  appointmentRequests    AppointmentRequest[]
+  portalActivationTokens PortalActivationToken[]
 
   @@index([workspaceId, status])
   @@index([workspaceId, lastName, firstName])
@@ -729,23 +735,33 @@ model Payment {
 }
 
 model PatientPortalAccount {
-  id                   String             @id @default(cuid())
-  workspaceId          String
-  patientId            String
-  accessorType         PortalAccessorType @default(PATIENT)
-  guardianName         String?
-  guardianRelationship String?
-  email                String
-  passwordHash         String
-  isActive             Boolean            @default(true)
-  mustChangePassword   Boolean            @default(true)
-  failedLoginAttempts  Int                @default(0)
-  lockedUntil          DateTime?
-  lastLoginAt          DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient              Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id                          String                  @id @default(cuid())
+  workspaceId                 String
+  patientId                   String
+  accessorType                PortalAccessorType      @default(PATIENT)
+  guardianName                String?
+  guardianRelationship        String?
+  email                       String
+  passwordHash                String
+  isActive                    Boolean                 @default(true)
+  mustChangePassword          Boolean                 @default(true)
+  failedLoginAttempts         Int                     @default(0)
+  lockedUntil                 DateTime?
+  lastLoginAt                 DateTime?
+  /// Cuenta creada al aceptar una solicitud de alta por QR: inactiva hasta que el paciente pone su
+  /// contraseña con el enlace de activación (PortalActivationToken). Nunca es true con isActive.
+  pendingActivation           Boolean                 @default(false)
+  /// Acuse de lectura de la información art. 13 (NO es consentimiento ni base jurídica) y
+  /// aceptación de las normas de uso del portal, con la versión del texto mostrado.
+  privacyNoticeVersion        String?
+  privacyNoticeAcknowledgedAt DateTime?
+  portalTermsVersion          String?
+  portalTermsAcceptedAt       DateTime?
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+  workspace                   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient                     Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  activationTokens            PortalActivationToken[]
 
   @@unique([email])
   @@index([workspaceId, isActive])
@@ -1262,4 +1278,75 @@ model AppointmentRequest {
   @@index([workspaceId, patientId, status])
   @@index([workspaceId, therapistId, status])
   @@index([requestedByAccountId, createdAt])
+}
+
+/// QR o enlace de alta FIJO de un profesional clínico (se imprime en la consulta). Uno por
+/// profesional y workspace. Rotar cambia el token (el anterior deja de valer al instante);
+/// desactivar lo apaga sin borrarlo. El token se guarda como hash (búsqueda) y cifrado (para
+/// volver a mostrarlo e imprimirlo). Escanearlo NO da acceso a nada: solo deja una solicitud.
+model PortalIntakeLink {
+  id             String                @id @default(cuid())
+  workspaceId    String
+  professionalId String
+  /// SHA-256 (hex) del token de 256 bits.
+  tokenHash      String                @unique
+  /// Token cifrado con la clave de campos (encryptField), para volver a mostrar el QR.
+  tokenEncrypted String
+  isActive       Boolean               @default(true)
+  createdById    String
+  rotatedAt      DateTime              @default(now())
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  workspace      Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  professional   User                  @relation("PortalIntakeLinkProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  requests       PortalSignupRequest[]
+
+  @@unique([workspaceId, professionalId])
+}
+
+/// Solicitud de alta en el portal hecha desde el QR fijo de un profesional. Solo existe mientras
+/// está PENDIENTE: al aceptarse, rechazarse o caducar se BORRA (queda solo la auditoría, sin datos
+/// personales). Los datos personales van cifrados. No da acceso a nada.
+model PortalSignupRequest {
+  id                   String           @id @default(cuid())
+  workspaceId          String
+  intakeLinkId         String
+  professionalId       String
+  /// Cifrados (ENCRYPTED_TEXT_FIELDS.portalSignupRequest). birthDate como AAAA-MM-DD cifrado.
+  firstName            String
+  lastName             String
+  email                String
+  phone                String?
+  birthDate            String
+  privacyNoticeVersion String
+  portalTermsVersion   String
+  acknowledgedAt       DateTime         @default(now())
+  expiresAt            DateTime
+  createdAt            DateTime         @default(now())
+  workspace            Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  intakeLink           PortalIntakeLink @relation(fields: [intakeLinkId], references: [id], onDelete: Cascade)
+  professional         User             @relation("PortalSignupRequestProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, professionalId, expiresAt])
+  @@index([expiresAt])
+}
+
+/// Enlace de activación de un solo uso para que el paciente ponga su contraseña tras aceptar su
+/// solicitud. Solo se guarda el hash. Caduca; emitir otro revoca los anteriores de la cuenta.
+model PortalActivationToken {
+  id              String               @id @default(cuid())
+  workspaceId     String
+  patientId       String
+  portalAccountId String
+  tokenHash       String               @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  revokedAt       DateTime?
+  createdById     String
+  createdAt       DateTime             @default(now())
+  workspace       Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient         Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  portalAccount   PatientPortalAccount @relation(fields: [portalAccountId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, portalAccountId])
 }
