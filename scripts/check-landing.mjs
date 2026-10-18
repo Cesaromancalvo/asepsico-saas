@@ -38,7 +38,7 @@ const TEXT_EXTENSIONS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.xml',
 const MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.svg', '.xml']);
 
 // Marcadores que apps/landing/build.mjs sustituye al publicar (NIF y domicilio del titular).
-const KNOWN_MARKERS = new Set(['[[NIF]]', '[[DOMICILIO]]']);
+const KNOWN_MARKERS = new Set(['[[NIF]]', '[[DOMICILIO]]', '[[ESTADO]]', '[[CAMBIOS]]']);
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const args = process.argv.slice(2);

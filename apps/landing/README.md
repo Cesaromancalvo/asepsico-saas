@@ -10,6 +10,8 @@ del titular desde variables de entorno (ver "Datos del titular").
 
 ```
 apps/landing/
+  cambios.mjs              <- valida data/cambios.json y genera el HTML de /estado/ y /cambios/
+  data/cambios.json        <- estado, incidencias y novedades (lo único que se edita para publicar un aviso)
   build.mjs                <- build de publicación: public/ → dist/ rellenando [[NIF]] y [[DOMICILIO]]
   borradores/              <- bloques NO publicados (p. ej. la calculadora); fuera de public/
   public/                  <- directorio que se publica
@@ -22,6 +24,8 @@ apps/landing/
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
     js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, "lo que te cuesta hoy", formulario de la lista de espera
+    estado/index.html      <- estado del servicio e incidencias (marcador [[ESTADO]], lo rellena build.mjs)
+    cambios/index.html     <- cambios y avisos previos (marcador [[CAMBIOS]], lo rellena build.mjs)
     404.html               <- página de error propia (noindex, fuera del sitemap)
     fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
     img/                   <- logo y og-image.png (1200x630)
@@ -78,6 +82,16 @@ npm run test:landing
 
 Si se añade un dominio nuevo (por ejemplo, el de la política del formulario), hay que añadirlo a
 `ALLOWED_HOSTS` en ese script.
+
+## Estado y cambios (`data/cambios.json`)
+
+`/estado/` y `/cambios/` salen de `data/cambios.json`; `build.mjs` los genera al publicar (sin JavaScript en la página).
+Para publicar un aviso o una incidencia basta editar ese archivo y desplegar. El build falla (y Render mantiene la
+versión anterior) si el archivo no es válido. Reglas que valida `cambios.mjs`: texto llano sin HTML; nada de IP,
+URL, versiones ni nombres de proveedores o componentes; ni porcentajes ni promesas de disponibilidad; un cambio
+`aviso` lleva `fechaPrevista` al menos 7 días después de `publicado`; con estado distinto de `ok` el `mensaje` es obligatorio.
+Mientras no exista la comprobación externa (Dora) el nivel de estado se cambia a mano; poner `actualizado` al día. Las
+incidencias de seguridad que afecten a datos siguen el protocolo de brechas (Lex Psi) y no se publican aquí.
 
 ## Configuración (`public/js/config.js`)
 
