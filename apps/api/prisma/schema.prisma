@@ -1136,7 +1136,8 @@ model ExceptionalAccessJustification {
   createdAt                  DateTime                @default(now())
   expiresAt                  DateTime
   closedAt                   DateTime?
-  /// MANUAL, LOGOUT, PATIENT_ARCHIVED (paciente archivado/borrado), PATIENT_BLOCKED, MIGRATED.
+  /// MANUAL, LOGOUT, PATIENT_ARCHIVED (paciente archivado/borrado), PATIENT_BLOCKED, MIGRATED,
+  /// MEMBER_REMOVED (baja del miembro que lo abrió).
   closeReason                String?
   retentionUntil             DateTime
   legalHold                  Boolean                 @default(false)

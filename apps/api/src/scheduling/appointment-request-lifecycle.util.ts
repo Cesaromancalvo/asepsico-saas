@@ -118,6 +118,26 @@ export async function rejectPendingRequestsOfProcess(tx: Tx, workspaceId: string
 }
 
 /**
+ * Baja de un miembro (historia B): sus solicitudes pendientes pasan a REJECTED con "contacta con la
+ * consulta" (el hueco pedido era de su agenda, no se traslada a otro profesional). Misma
+ * transacción que la baja, auditoría por solicitud y aviso genérico al paciente.
+ */
+export async function rejectPendingRequestsOfTherapist(tx: Tx, workspaceId: string, therapistId: string, actorId: string, cause: string) {
+  const pending = await tx.appointmentRequest.findMany({ where: { workspaceId, therapistId, status: 'PENDING' }, orderBy: { id: 'asc' }, select: PENDING_SELECT });
+  const changed = await closeRows(tx, workspaceId, pending, { status: 'REJECTED', rejectionReason: 'CONTACT_PRACTICE', resolvedById: actorId });
+  if (changed.length) {
+    await tx.auditLog.createMany({
+      data: changed.map((row) => ({
+        workspaceId, actorId, action: 'APPOINTMENT_REQUEST_REJECTED', entityType: 'AppointmentRequest', entityId: row.id,
+        metadata: { patientId: row.patientId, therapistId: row.therapistId, type: row.type, reason: 'CONTACT_PRACTICE', cause },
+      })),
+    });
+    await notifyPatientOfRequestUpdates(tx, workspaceId, changed, 'REJECTED');
+  }
+  return changed.map((row) => row.id);
+}
+
+/**
  * Al aprobar una solicitud el hueco queda ocupado: las demás pendientes del mismo profesional que
  * se solapan con él ya no se podrán aprobar, así que se rechazan con SLOT_UNAVAILABLE en la misma
  * transacción (auditoría y aviso genérico al paciente).
