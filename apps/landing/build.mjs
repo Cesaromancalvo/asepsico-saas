@@ -25,6 +25,7 @@
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderCambios, renderEstado, validar } from './cambios.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, 'public');
@@ -76,6 +77,20 @@ if (!existsSync(src)) fail('no existe apps/landing/public');
 if (out === src || out === here || src.startsWith(`${out}/`)) fail('directorio de salida no válido');
 rmSync(out, { recursive: true, force: true });
 cpSync(src, out, { recursive: true });
+
+// 2b. Estado y cambios: data/cambios.json (validado) → /estado/ y /cambios/.
+const cambiosDatos = JSON.parse(readFileSync(join(here, 'data/cambios.json'), 'utf8'));
+const cambiosErrores = validar(cambiosDatos);
+if (cambiosErrores.length) fail(`data/cambios.json no es válido: ${cambiosErrores.join('; ')}`);
+for (const [pagina, marcador, html] of [
+  ['estado/index.html', '[[ESTADO]]', renderEstado(cambiosDatos)],
+  ['cambios/index.html', '[[CAMBIOS]]', renderCambios(cambiosDatos)],
+]) {
+  const ruta = join(out, pagina);
+  const texto = readFileSync(ruta, 'utf8');
+  if (!texto.includes(marcador)) fail(`${pagina} no tiene el marcador ${marcador}`);
+  writeFileSync(ruta, texto.split(marcador).join(html));
+}
 
 // 3. Sustituir en los HTML y comprobar que no queda ningún marcador en ningún archivo de texto.
 function walk(dir) {
