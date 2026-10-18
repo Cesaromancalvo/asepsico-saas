@@ -76,6 +76,11 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     label: 'Datos y piloto',
     icon: 'database',
   },
+  {
+    href: '/settings/support',
+    label: 'Ayuda y soporte',
+    icon: 'info',
+  },
 ];
 export default function Sidebar({
   syncText = 'Conectado con AsePsico',
