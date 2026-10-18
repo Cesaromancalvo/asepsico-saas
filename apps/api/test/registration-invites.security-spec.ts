@@ -288,9 +288,11 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
   it('JwtAuthGuard aplica el bloqueo tras autenticar (y falla cerrado sin BD)', async () => {
     jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockResolvedValue(true);
     const ctx = { switchToHttp: () => ({ getRequest: () => ({ originalUrl: '/api/v1/patients', user: owner }) }) } as unknown as ExecutionContext;
-    const pendingDb = fakeRegistrationDb({ termsAcceptance: [] });
+    // El guard revalida antes la sesión: membresía ACTIVE en el workspace del token y tokenVersion.
+    const session = { workspaceMember: [{ id: 'm-owner', workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false }], user: [{ id: 'owner-1', email: 'owner@example.com' }] };
+    const pendingDb = fakeRegistrationDb({ termsAcceptance: [], ...session });
     await expect(new JwtAuthGuard(pendingDb).canActivate(ctx)).rejects.toMatchObject({ status: 428 });
-    await expect(new JwtAuthGuard(fakeRegistrationDb({ termsAcceptance: acceptedRows() })).canActivate(ctx)).resolves.toBe(true);
+    await expect(new JwtAuthGuard(fakeRegistrationDb({ termsAcceptance: acceptedRows(), ...session })).canActivate(ctx)).resolves.toBe(true);
     await expect(new JwtAuthGuard(undefined).canActivate(ctx)).rejects.toMatchObject({ status: 500 });
   });
 

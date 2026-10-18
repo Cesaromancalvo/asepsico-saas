@@ -33,6 +33,8 @@ function checkConstraints(model: string, row: Row) {
 
 export function fakeRegistrationDb(seed: Partial<Record<(typeof MODELS)[number], Row[]>> = {}) {
   let store: Record<string, Row[]> = Object.fromEntries(MODELS.map((m) => [m, (seed[m] ?? []).map((r) => ({ ...r }))]));
+  // Defaults de columna que importan para la seguridad (solo al filtrar): membresía ACTIVE, tokenVersion 0.
+  const COLUMN_DEFAULTS: Record<string, Row> = { workspaceMember: { status: 'ACTIVE' }, user: { tokenVersion: 0 } };
 
   const matches = (model: string, row: Row, where: Row | undefined): boolean => {
     if (!where) return true;
@@ -43,7 +45,7 @@ export function fakeRegistrationDb(seed: Partial<Record<(typeof MODELS)[number],
         const user = store.user.find((u) => u.id === row.userId);
         return !!user && matches('user', user, cond);
       }
-      const value = row[key];
+      const value = row[key] ?? COLUMN_DEFAULTS[model]?.[key];
       if (cond === null) return value === null || value === undefined;
       if (cond instanceof Date) return value instanceof Date && value.getTime() === cond.getTime();
       if (typeof cond === 'object') {

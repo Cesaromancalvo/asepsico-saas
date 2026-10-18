@@ -45,7 +45,7 @@ const BASE_NOW = Date.UTC(2026, 0, 15, 10, 0, 15);
 type FakeUser = {
   id: string; email: string; passwordHash: string; firstName: string; lastName: string;
   totpSecret: string | null; totpEnabled: boolean; totpLastUsedStep: number | null; mfaRecoveryCodes: string[];
-  mfaFailedAttempts: number; mfaLockedUntil: Date | null;
+  mfaFailedAttempts: number; mfaLockedUntil: Date | null; tokenVersion: number; passwordChangedAt?: Date | null;
 };
 type FakeToken = { id: string; userId: string; workspaceId: string; tokenHash: string; family: string; revokedAt: Date | null; expiresAt: Date };
 
@@ -63,7 +63,8 @@ function matches(row: any, where: any): boolean {
 /** Prisma en memoria con transacciones que revierten usuarios, tokens y auditoría si el callback lanza. */
 class FakePrisma {
   users = new Map<string, FakeUser>();
-  members: Array<{ userId: string; workspaceId: string; role: string }> = [];
+  /** status ausente = ACTIVE (valor por defecto de la columna). */
+  members: Array<{ userId: string; workspaceId: string; role: string; status?: string }> = [];
   refreshTokens: FakeToken[] = [];
   auditLogs: any[] = [];
   failAuditAction: string | null = null;
@@ -93,7 +94,7 @@ class FakePrisma {
   workspaceMember = {
     findFirst: async ({ where }: any) => {
       this.memberQueries.push(structuredClone(where));
-      const m = this.members.find((x) => matches(x, where));
+      const m = this.members.find((x) => matches({ status: 'ACTIVE', ...x }, where));
       return m ? { role: m.role } : null;
     },
   };
@@ -210,7 +211,7 @@ describe('POST /auth/change-password', () => {
     db.users.set(USER_ID, {
       id: USER_ID, email: EMAIL, passwordHash, firstName: 'Ana', lastName: 'Ficticia',
       totpSecret: null, totpEnabled: false, totpLastUsedStep: null, mfaRecoveryCodes: [],
-      mfaFailedAttempts: 0, mfaLockedUntil: null, ...overrides,
+      mfaFailedAttempts: 0, mfaLockedUntil: null, tokenVersion: 0, ...overrides,
     });
   }
   const seedUserWithMfa = () => seedUser({ totpSecret: encryptField(SECRET), totpEnabled: true });
@@ -241,8 +242,8 @@ describe('POST /auth/change-password', () => {
     db.failAuditAction = null;
     db.heldLocks.clear();
     db.members = [
-      { userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'THERAPIST' },
-      { userId: USER_ID, workspaceId: OTHER_WORKSPACE_ID, role: 'OWNER' },
+      { userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'THERAPIST', status: 'ACTIVE' },
+      { userId: USER_ID, workspaceId: OTHER_WORKSPACE_ID, role: 'OWNER', status: 'ACTIVE' },
     ];
     currentActor = { sub: USER_ID, workspaceId: WORKSPACE_ID, role: 'THERAPIST', email: EMAIL };
   });
@@ -397,7 +398,7 @@ describe('POST /auth/change-password', () => {
       seedUser();
       currentActor = { sub: USER_ID, workspaceId: OTHER_WORKSPACE_ID, role: 'OWNER', email: EMAIL };
       await post({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(200);
-      expect(db.memberQueries).toEqual([{ userId: USER_ID, workspaceId: OTHER_WORKSPACE_ID }]);
+      expect(db.memberQueries).toEqual([{ userId: USER_ID, workspaceId: OTHER_WORKSPACE_ID, status: 'ACTIVE' }]);
       expect(db.auditLogs.find((a) => a.action === 'USER_PASSWORD_CHANGED').workspaceId).toBe(OTHER_WORKSPACE_ID);
       expect(db.refreshTokens.find((t) => t.revokedAt === null)!.workspaceId).toBe(OTHER_WORKSPACE_ID);
     });
@@ -544,6 +545,33 @@ describe('POST /auth/change-password', () => {
       const cookies = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
       const access = cookies.find((c) => c.startsWith('access_token='))!.split(';')[0].slice('access_token='.length);
       expect(signer.verify(decodeURIComponent(access))).toMatchObject({ role: 'ASSISTANT', mfaEnabled: false });
+    });
+
+    it('tras cambiar la contraseña, el access token anterior deja de valer al momento (tokenVersion); el nuevo sí vale', async () => {
+      seedUser();
+      db.members = [{ userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT' }];
+      const oldToken = staffToken('ASSISTANT', false);
+      const res = await postWith(oldToken, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(200);
+      expect(user().tokenVersion).toBe(1);
+      expect(Object.prototype.toString.call(user().passwordChangedAt)).toBe('[object Date]');
+      const cookies = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
+      const fresh = decodeURIComponent(cookies.find((c) => c.startsWith('access_token='))!.split(';')[0].slice('access_token='.length));
+      expect(signer.verify(fresh)).toMatchObject({ tv: 1 });
+
+      const denied = await postWith(oldToken, { currentPassword: NEW_PASSWORD, newPassword: 'tercera-contrasena-ficticia-789' }).expect(401);
+      expect(denied.body.code).toBe('SESSION_REVOKED');
+      expect(await compare(NEW_PASSWORD, user().passwordHash)).toBe(true);
+
+      await postWith(fresh, { currentPassword: NEW_PASSWORD, newPassword: 'tercera-contrasena-ficticia-789' }).expect(200);
+      expect(user().tokenVersion).toBe(2);
+    });
+
+    it('un miembro dado de baja (REMOVED) con token vivo → 401 y no cambia nada', async () => {
+      seedUser();
+      db.members = [{ userId: USER_ID, workspaceId: WORKSPACE_ID, role: 'ASSISTANT', status: 'REMOVED' }];
+      const res = await postWith(staffToken('ASSISTANT', false), { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }).expect(401);
+      expect(res.body.code).toBe('SESSION_REVOKED');
+      expect(user().passwordHash).toBe(passwordHash);
     });
 
     it('(c) THERAPIST con MFA activo y token mfaEnabled=true pasa el guard (control positivo)', async () => {
