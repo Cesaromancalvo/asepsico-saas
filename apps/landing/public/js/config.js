@@ -87,7 +87,7 @@ window.ASEPSICO_CONFIG = Object.freeze({
 
     // Cuenta "Lo que te cuesta hoy": horas a la semana y al mes de tareas administrativas, su valor en
     // euros si se escribe el valor de la hora y el reparto en %. Sin ahorro ni precios. Todo en el navegador.
-    // APAGADA.
+    // ENCENDIDA.
     savingsCalculator: true,
 
     // Aviso de la lista de espera (título en POPUP_TITLE). Sale solo al pasar el 50 % del scroll (sin
