@@ -4,6 +4,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptMessage } from '../common/crypto/clinical-crypto';
 import { SendMessageDto, UpdateConversationDto } from './dto/message.dto';
+import { routeToActiveMembers } from '../workspace-members/notification-recipients.util';
 import { ClinicalAccessService, ClinicalScope, messageWindowFilter } from '../clinical-access/clinical-access.service';
 
 /**
@@ -207,7 +208,9 @@ export class MessagesService {
     const message = await this.p().message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body: encryptField(body)!, attachmentName: encryptField(dto.attachmentName), attachmentKey: dto.attachmentKey, mimeType: dto.mimeType, readByPatientAt: new Date() } });
     await this.p().conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
     const processes = await this.prisma.clinicalProcess.findMany({ where: { workspaceId: portal.workspaceId, patientId: portal.patientId, status: 'ACTIVE' }, select: { therapistId: true } });
-    const recipients = [...new Set(processes.map((process: any) => process.therapistId).filter(Boolean))];
+    // Profesional dado de baja sin reasignar ("decidir después") → el aviso va a OWNER/ADMIN activos.
+    const routes = await routeToActiveMembers(this.p(), portal.workspaceId, processes.map((process: any) => process.therapistId));
+    const recipients: string[] = [...new Set([...routes.values()].flat())];
     if (recipients.length) await this.p().notification.createMany({ data: recipients.map((userId: string) => ({ workspaceId: portal.workspaceId, audience: 'PROFESSIONAL', userId, type: 'SYSTEM', title: 'Nuevo mensaje de paciente', body: 'Un paciente ha enviado un mensaje.', actionUrl: `/messages?patientId=${portal.patientId}`, status: 'SENT', scheduledAt: new Date(), sentAt: new Date(), dedupeKey: `message:${message.id}:professional:${userId}` })), skipDuplicates: true });
     await this.prisma.auditLog.create({ data: { workspaceId: portal.workspaceId, actorId: null, action: 'PATIENT_MESSAGE_SENT', entityType: 'Message', entityId: message.id, metadata: { conversationId: conversation.id, patientId: portal.patientId, hasAttachment: Boolean(dto.attachmentKey) } } });
     return this.decryptMessage(message);
