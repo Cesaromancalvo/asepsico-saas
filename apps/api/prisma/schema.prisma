@@ -751,6 +751,9 @@ model PatientPortalAccount {
   /// Cuenta creada al aceptar una solicitud de alta por QR: inactiva hasta que el paciente pone su
   /// contraseña con el enlace de activación (PortalActivationToken). Nunca es true con isActive.
   pendingActivation           Boolean                 @default(false)
+  /// Nulo = correo SIN verificar (hoy todos: no hay envío de email). Mientras sea nulo el correo
+  /// no se usa para notificaciones ni para recuperar la contraseña (portalEmailUsableForDelivery).
+  emailVerifiedAt             DateTime?
   /// Acuse de lectura de la información art. 13 (NO es consentimiento ni base jurídica) y
   /// aceptación de las normas de uso del portal, con la versión del texto mostrado.
   privacyNoticeVersion        String?
