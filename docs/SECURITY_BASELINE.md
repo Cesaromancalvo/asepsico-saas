@@ -46,12 +46,15 @@ datos clínicos reales en producción.
   Las notas internas de un proceso tienen autor: al reasignarlo, sus `internalNotes` pasan
   cifradas tal cual a `ClinicalProcessPrivateNote` (con `authorId`) y el campo vivo queda vacío
   para el nuevo profesional, que solo ve el indicador `hasPreviousAuthorNotes`; nunca las lee ni
-  las pisa (auditado como `CLINICAL_PROCESS_PRIVATE_NOTES_ARCHIVED`, solo ids). Ningún endpoint
-  devuelve su contenido: se incluyen, descifradas y con autor y proceso, **solo** en la
-  exportación completa del workspace (OWNER/ADMIN, con contraseña, auditada) y se excluyen a
-  propósito de la exportación del paciente y del portal (art. 18.3 Ley 41/2002: anotaciones
-  subjetivas del profesional) y de la de un THERAPIST. Hasta que exista la vía de acceso
-  excepcional para leerlas (pendiente, Vega/Lex), nadie las lee consultando la BD directamente. La lectura de un
+  las pisa (auditado como `CLINICAL_PROCESS_PRIVATE_NOTES_ARCHIVED`, solo ids). Las notas
+  archivadas **no tienen hoy ninguna vía de lectura**: ningún endpoint ni exportación devuelve su
+  contenido (la exportación administrativa del workspace solo da el recuento agregado
+  `archivedPrivateNotes`), y nadie las lee consultando la BD directamente. Su devolución a la
+  consulta depende de la futura exportación clínica completa **H1**, que deberá incluir en el
+  mismo apartado las `internalNotes` vivas y `ClinicalProcessPrivateNote` con su autor, solo para
+  el OWNER con reautenticación, con auditoría por proceso (ids) y excluidas siempre de la
+  exportación del paciente (art. 18.3 Ley 41/2002) y de la de un THERAPIST. **H1 es requisito
+  antes de que un cliente real se dé de baja o pida la devolución de sus datos.** La lectura de un
   proceso ajeno por un co-terapeuta queda auditada (`CLINICAL_PROCESS_READ_NOT_AUTHOR`).
   Mientras no se reasigne ("decidir después"), los avisos de mensajes del portal y los
   recordatorios dirigidos al miembro dado de baja se reenvían a los OWNER/ADMIN activos del

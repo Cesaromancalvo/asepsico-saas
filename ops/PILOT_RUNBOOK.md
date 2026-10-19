@@ -188,11 +188,15 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
 ## Baja de un miembro: notas internas del profesional anterior
 
 - Al reasignar los procesos de un profesional dado de baja, sus notas internas se archivan en
-  `ClinicalProcessPrivateNote` (cifradas, con su autor). Ningún endpoint las devuelve: solo salen
-  en la exportación completa del workspace (OWNER/ADMIN, con contraseña) y se excluyen a propósito
-  de la exportación del paciente y del portal (art. 18.3 Ley 41/2002). Hasta que exista la vía de
-  acceso excepcional para leerlas, **nadie las lee consultando la BD directamente** (tampoco el
+  `ClinicalProcessPrivateNote` (cifradas, con su autor). **Hoy no tienen ninguna vía de lectura**:
+  ningún endpoint ni exportación devuelve su contenido (la exportación del workspace solo da el
+  recuento `archivedPrivateNotes`) y **nadie las lee consultando la BD directamente** (tampoco el
   operador de la plataforma).
+- Su devolución a la consulta depende de la futura exportación clínica completa **H1**: mismo
+  apartado que las `internalNotes` vivas, con autor, solo OWNER con reautenticación, auditoría por
+  proceso (ids) y siempre excluidas de la exportación del paciente (art. 18.3 Ley 41/2002) y de la
+  de un THERAPIST. **H1 es requisito antes de que un cliente real se dé de baja o pida la
+  devolución de sus datos.**
 
 ## Backups
 
