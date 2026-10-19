@@ -67,8 +67,9 @@ export class SignupRequestsService {
     });
     if (!link) return SIGNUP_ACCEPTED_RESPONSE;
 
+    // Profesional dado de baja (status REMOVED): misma respuesta genérica, sin crear nada.
     const member = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId: link.workspaceId, userId: link.professionalId },
+      where: { workspaceId: link.workspaceId, userId: link.professionalId, status: 'ACTIVE' },
       select: { role: true, isClinician: true },
     });
     if (!member || !isClinicalProfile({ role: member.role, isClinician: member.isClinician === true })) return SIGNUP_ACCEPTED_RESPONSE;
@@ -126,7 +127,21 @@ export class SignupRequestsService {
       orderBy: { createdAt: 'asc' },
       select: { id: true, professionalId: true, firstName: true, lastName: true, email: true, phone: true, birthDate: true, createdAt: true, expiresAt: true },
     });
-    return rows.map((row) => decryptModel('portalSignupRequest', row));
+    // Solicitudes de un profesional dado de baja: se conservan (y caducan a los 14 días como las
+    // demás), pero solo OWNER/ADMIN las ven y resuelven. professionalRemoved lo indica en la bandeja.
+    const active = await this.activeProfessionalIds(workspaceId, rows.map((row) => row.professionalId));
+    return rows
+      .filter((row) => active.has(row.professionalId) || ['OWNER', 'ADMIN'].includes(actor.role))
+      .map((row) => ({ ...decryptModel('portalSignupRequest', row), professionalRemoved: !active.has(row.professionalId) }));
+  }
+
+  private async activeProfessionalIds(workspaceId: string, ids: string[]): Promise<Set<string>> {
+    if (!ids.length) return new Set();
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId, userId: { in: [...new Set(ids)] }, status: 'ACTIVE' },
+      select: { userId: true },
+    });
+    return new Set(members.map((m) => m.userId));
   }
 
   async reject(workspaceId: string, actor: AuthUser, requestId: string) {
@@ -155,9 +170,10 @@ export class SignupRequestsService {
     return this.prisma.$transaction(async (tx) => {
       const found = await tx.portalSignupRequest.findMany({
         where: { id: { in: requested }, workspaceId, expiresAt: { gt: new Date() }, ...(actor.role === 'THERAPIST' ? { professionalId: actor.sub } : {}) },
-        select: { id: true },
+        select: { id: true, professionalId: true },
       });
-      const ids = found.map((row) => row.id);
+      const active = ['OWNER', 'ADMIN'].includes(actor.role) ? null : await this.activeProfessionalIds(workspaceId, found.map((row) => row.professionalId));
+      const ids = found.filter((row) => !active || active.has(row.professionalId)).map((row) => row.id);
       const { count } = ids.length ? await tx.portalSignupRequest.deleteMany({ where: { id: { in: ids }, workspaceId } }) : { count: 0 };
       await tx.auditLog.create({
         data: {
@@ -334,6 +350,9 @@ export class SignupRequestsService {
     this.assertReviewer(actor);
     const row = await this.prisma.portalSignupRequest.findFirst({ where: { id: requestId, workspaceId, expiresAt: { gt: new Date() } } });
     if (!row || (actor.role === 'THERAPIST' && row.professionalId !== actor.sub)) throw new NotFoundException('Solicitud no encontrada');
+    if (!['OWNER', 'ADMIN'].includes(actor.role) && !(await this.activeProfessionalIds(workspaceId, [row.professionalId])).has(row.professionalId)) {
+      throw new NotFoundException('Solicitud no encontrada');
+    }
     const request = decryptModel('portalSignupRequest', row) as unknown as DecryptedRequest;
     // Defensa: el envío ya lo exige, pero la regla se repite al aceptar (la fecha no cambia; la ley sí podría).
     if (ageInYears(request.birthDate) < MIN_SIGNUP_AGE_YEARS) throw new BadRequestException({ statusCode: 400, code: 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN', message: 'Alta por QR no permitida para menores de 16 años.' });

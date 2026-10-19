@@ -31,8 +31,9 @@ export class IntakeLinksService {
     assertStaffRole(actor);
     if (!['OWNER', 'ADMIN', 'THERAPIST'].includes(actor.role)) throw new ForbiddenException('No autorizado');
     if (actor.role === 'THERAPIST' && actor.sub !== professionalId) throw new NotFoundException('Profesional no encontrado');
+    // Dado de baja (REMOVED) → 404: nadie rota ni reactiva su QR impreso.
     const target = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId, userId: professionalId },
+      where: { workspaceId, userId: professionalId, status: 'ACTIVE' },
       select: { role: true, isClinician: true },
     });
     if (!target || !isClinicalProfile({ role: target.role, isClinician: target.isClinician === true })) {

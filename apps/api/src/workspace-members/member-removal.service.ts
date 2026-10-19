@@ -122,6 +122,14 @@ export class MemberRemovalService {
         data: { portalBookingEnabled: false },
       });
       const rejectedRequests = await rejectPendingRequestsOfTherapist(tx, workspaceId, userId, actor.sub, 'MEMBER_REMOVED');
+      // Alta por QR: su QR impreso deja de crear solicitudes. Las solicitudes pendientes NO se
+      // borran: quedan para OWNER/ADMIN (aceptar o rechazar) y caducan a los 14 días como las demás.
+      const intakeLinks = await tx.portalIntakeLink.findMany({ where: { workspaceId, professionalId: userId, isActive: true }, select: { id: true } });
+      const disabledIntakeLinkIds = intakeLinks.map((link) => link.id);
+      if (disabledIntakeLinkIds.length) {
+        await tx.portalIntakeLink.updateMany({ where: { workspaceId, professionalId: userId, id: { in: disabledIntakeLinkIds } }, data: { isActive: false } });
+      }
+      const keptSignupRequests = await tx.portalSignupRequest.count({ where: { workspaceId, professionalId: userId, expiresAt: { gt: now } } });
 
       await tx.auditLog.create({
         data: {
@@ -135,6 +143,7 @@ export class MemberRemovalService {
             revokedSessions: revoked.count, closedExceptionalAccesses: closedAccesses.count,
             portalBookingDisabled: bookingDisabled.count > 0, rejectedAppointmentRequests: rejectedRequests.length,
             reassignToUserId: dto.reassignToUserId ?? null,
+            disabledIntakeLinkIds, keptSignupRequests,
           },
         },
       });
