@@ -50,7 +50,7 @@ function seed(overrides: Record<string, any[]> = {}) {
       { workspaceId: 'ws-2', userId: 't-x', role: 'THERAPIST', isClinician: true },
     ],
     patient: [
-      { id: 'p1', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
+      { id: 'p1', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', email: 'Lucia.Ficticia@example.com', phone: '+34 600000000', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-nobirth', workspaceId: WS, firstName: 'Sin', lastName: 'Fecha', birthDate: null, status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-minor', workspaceId: WS, firstName: 'Menor', lastName: 'Ficticio', birthDate: new Date(`${yearsAgo(14)}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-blocked', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'BLOCKED', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },

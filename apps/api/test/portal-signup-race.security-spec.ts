@@ -57,7 +57,12 @@ describeDb('Alta por QR (PostgreSQL real)', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(await prisma.portalSignupRequest.count({ where: { id: request.id } })).toBe(0);
     const accepted = results.find((r) => r.status === 'fulfilled' && (r.value as any)?.patientId) as PromiseFulfilledResult<any> | undefined;
-    if (accepted) expect(await prisma.patientPortalAccount.count({ where: { workspaceId, patientId: accepted.value.patientId } })).toBe(1);
+    if (accepted) {
+      expect(await prisma.patientPortalAccount.count({ where: { workspaceId, patientId: accepted.value.patientId } })).toBe(1);
+      // Condición de Argos: el THERAPIST que crea al paciente queda con un proceso ACTIVO propio.
+      const processes = await prisma.clinicalProcess.findMany({ where: { workspaceId, patientId: accepted.value.patientId } });
+      expect(processes.map((p) => [p.therapistId, p.status])).toEqual([[therapistId, 'ACTIVE']]);
+    }
   });
 
   it('el mismo enlace de activación canjeado 5 veces a la vez: exactamente 1 éxito', async () => {
