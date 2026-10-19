@@ -20,10 +20,33 @@ datos clínicos reales en producción.
   `MFA_SETUP_REQUIRED` y los tokens del portal, 401. Política: 12 caracteres mínimo y 72 bytes
   UTF-8 máximo, bcrypt coste 12. En una sola transacción guarda el nuevo hash, revoca **todos**
   los refresh tokens del usuario, audita `USER_PASSWORD_CHANGED` (sin correo, IP ni user agent)
-  y emite una sesión nueva para el navegador actual. **Limitación conocida (aceptada por Argos):**
-  los access tokens ya emitidos en otros dispositivos siguen siendo válidos hasta caducar, como
-  máximo **15 minutos** después del cambio. Pendiente: invalidarlos con `tokenVersion` o
-  `passwordChangedAt` comprobado en el guard.
+  y emite una sesión nueva para el navegador actual. En la misma transacción sube
+  `User.tokenVersion` y guarda `passwordChangedAt`: los access tokens ya emitidos en otros
+  dispositivos dejan de valer en su siguiente petición (ver el punto siguiente).
+- Revalidación del access token en **cada** petición (`JwtAuthGuard` → `assertActiveSession`):
+  además de firma y caducidad, exige contra la BD que la membresía del workspace del token siga
+  `ACTIVE` y que el claim `tv` del token coincida con `User.tokenVersion`. Si no, 401 con código
+  estable `SESSION_REVOKED` (la web renueva con el refresh token o vuelve al login). Suben
+  `tokenVersion`: el cambio de contraseña y desactivar el MFA (el token vivo decía
+  `mfaEnabled=true`). Los tokens emitidos antes de existir `tv` cuentan como versión 0. Login,
+  refresh y `/auth/me` ignoran membresías que no estén `ACTIVE`.
+- Baja de un miembro del equipo (`POST /workspace-members/:userId/remove`, OWNER/ADMIN; ADMIN solo
+  sobre THERAPIST/ASSISTANT; nadie a sí mismo ni al último OWNER): la membresía pasa a `REMOVED`
+  con fecha, autor y motivo de lista cerrada (CHECK `REMOVED ⇔ removedAt`); **no se borra** ni la
+  fila ni el `User`, así que la autoría y la auditoría se conservan. En una transacción, serializada
+  por workspace y con el lock de la agenda del profesional: revoca sus refresh tokens de ese
+  workspace, cierra sus accesos excepcionales (`MEMBER_REMOVED`), rechaza sus solicitudes de cita
+  pendientes, desactiva su reserva desde el portal y audita `MEMBER_REMOVED` con recuentos. La
+  reserva del portal revalida bajo ese mismo lock (409 `BOOKING_UNAVAILABLE`). Con destino (o más
+  tarde con `POST :userId/reassign`), sus procesos ACTIVE/PAUSED y las citas futuras sin proceso o
+  de esos procesos pasan a otro profesional clínico activo, con 409 si choca con su agenda
+  (`REASSIGN_SCHEDULE_CONFLICT`) o si ya tiene un proceso abierto con el paciente
+  (`REASSIGN_PROCESS_CONFLICT`); una cita con resumen interno del que se va no se mueve (no se
+  expone ni se borra). `MEMBER_WORK_REASSIGNED` guarda ids de procesos y citas, sin nombres.
+  Mientras no se reasigne ("decidir después"), los avisos de mensajes del portal y los
+  recordatorios dirigidos al miembro dado de baja se reenvían a los OWNER/ADMIN activos del
+  espacio; los selectores de profesional, la reserva y los destinatarios de avisos solo usan
+  membresías `ACTIVE`.
 - Protección CSRF con patrón *double-submit cookie* en los endpoints que modifican estado.
 - Rate limiting: 5 intentos/minuto en login y registro; 10/minuto en refresh; 100/minuto global.
 - Aislamiento por `workspaceId` aplicado tanto en lectura como en las propias operaciones de
