@@ -185,6 +185,15 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
   devolverle `isClinician` de forma temporal y auditada para deshacer); no hay un deshacer
   administrativo.
 
+## Baja de un miembro: notas internas del profesional anterior
+
+- Al reasignar los procesos de un profesional dado de baja, sus notas internas se archivan en
+  `ClinicalProcessPrivateNote` (cifradas, con su autor). Ningún endpoint las devuelve: solo salen
+  en la exportación completa del workspace (OWNER/ADMIN, con contraseña) y se excluyen a propósito
+  de la exportación del paciente y del portal (art. 18.3 Ley 41/2002). Hasta que exista la vía de
+  acceso excepcional para leerlas, **nadie las lee consultando la BD directamente** (tampoco el
+  operador de la plataforma).
+
 ## Backups
 
 - Frecuencia recomendada para piloto: diaria.
