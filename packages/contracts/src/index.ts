@@ -131,8 +131,8 @@ export interface ReassignMemberWorkRequestContract { toUserId: string; }
 export interface MemberWorkReassignmentContract { toUserId: string; processes: number; futureSessions: number; }
 export interface MemberRemovalResultContract { userId: string; status: 'REMOVED'; removedAt: string; revokedSessions: number; closedExceptionalAccesses: number; rejectedAppointmentRequests: number; reassignment: MemberWorkReassignmentContract | null; pending: MemberPendingWorkContract; }
 export interface MemberReassignResultContract { userId: string; reassignment: MemberWorkReassignmentContract; pending: MemberPendingWorkContract; }
-/** 400/409 de la baja: { statusCode, code, message } (+ conflicts en REASSIGN_SCHEDULE_CONFLICT). */
-export type MemberRemovalErrorCode = 'SELF_REMOVAL_NOT_ALLOWED' | 'LAST_OWNER' | 'MEMBER_ALREADY_REMOVED' | 'MEMBER_STILL_ACTIVE' | 'MEMBER_CHANGED' | 'NOTHING_TO_REASSIGN' | 'INVALID_REASSIGN_TARGET' | 'REASSIGN_SCHEDULE_CONFLICT';
+/** 400/409 de la baja: { statusCode, code, message } (+ conflicts en REASSIGN_SCHEDULE_CONFLICT y REASSIGN_PROCESS_CONFLICT). La reserva del portal responde 409 BOOKING_UNAVAILABLE si el profesional ya no la ofrece. */
+export type MemberRemovalErrorCode = 'SELF_REMOVAL_NOT_ALLOWED' | 'LAST_OWNER' | 'MEMBER_ALREADY_REMOVED' | 'MEMBER_STILL_ACTIVE' | 'MEMBER_CHANGED' | 'NOTHING_TO_REASSIGN' | 'INVALID_REASSIGN_TARGET' | 'REASSIGN_SCHEDULE_CONFLICT' | 'REASSIGN_PROCESS_CONFLICT';
 /**
  * POST /auth/change-password (JWT + CSRF, 5/min). `newPassword`: mínimo 12 caracteres y máximo 72 bytes UTF-8
  * (límite de bcrypt; copia en apps/api/src/auth/password-policy.ts y apps/web/lib/password-change.ts).
