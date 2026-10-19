@@ -22,7 +22,7 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     therapeuticTask: [], clinicalAssessment: [], patientDocument: [], consentRecord: [], clinicalReport: [],
     conversation: [], message: [], auditLog: [], resourceShare: [], invoice: [], notification: [], user: [],
     clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
-    appointmentRequest: [], availabilityBlock: [], therapistAvailability: [],
+    appointmentRequest: [], availabilityBlock: [], therapistAvailability: [], clinicalProcessPrivateNote: [],
     ...seed,
   } as Store;
 

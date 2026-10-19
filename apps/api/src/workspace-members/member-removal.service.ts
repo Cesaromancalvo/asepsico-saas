@@ -15,6 +15,7 @@ const OPEN_PROCESS_STATUSES = ['ACTIVE', 'PAUSED'] as const;
 
 export const MEMBER_REMOVED_ACTION = 'MEMBER_REMOVED';
 export const MEMBER_WORK_REASSIGNED_ACTION = 'MEMBER_WORK_REASSIGNED';
+export const PRIVATE_NOTES_ARCHIVED_ACTION = 'CLINICAL_PROCESS_PRIVATE_NOTES_ARCHIVED';
 
 function conflict(code: string, message: string, extra: Record<string, unknown> = {}) {
   return new ConflictException({ statusCode: 409, code, message, ...extra });
@@ -204,7 +205,7 @@ export class MemberRemovalService {
     const processesToMove = await tx.clinicalProcess.findMany({
       where: { workspaceId, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
       orderBy: { id: 'asc' },
-      select: { id: true, patientId: true },
+      select: { id: true, patientId: true, internalNotes: true },
     });
     // El destino no puede quedar con dos procesos abiertos con el mismo paciente: 409 y no se toca nada.
     const patientIds = [...new Set(processesToMove.map((p) => p.patientId))];
@@ -247,13 +248,38 @@ export class MemberRemovalService {
       throw conflict('REASSIGN_SCHEDULE_CONFLICT', 'Algunas citas se solapan con la agenda del profesional elegido', { conflicts });
     }
 
-    const processes = processIds.length
-      ? await tx.clinicalProcess.updateMany({
-          where: { workspaceId, id: { in: processIds }, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
-          data: { therapistId: toUserId },
-        })
-      : { count: 0 };
-    if (processes.count !== processIds.length) throw conflict('MEMBER_CHANGED', 'Los procesos cambiaron mientras se reasignaban; vuelve a intentarlo');
+    // Notas internas: tienen autor. Las del que se va se archivan (cifradas tal cual, sin descifrar)
+    // con su autor y el campo vivo queda vacío para el destino, que nunca las lee ni las pisa.
+    // Proceso a proceso con compare-and-set de las notas leídas: si cambiaron entretanto, 409.
+    const archived: { processId: string; privateNoteId: string }[] = [];
+    for (const p of processesToMove) {
+      if (p.internalNotes) {
+        const note = await tx.clinicalProcessPrivateNote.create({
+          data: { workspaceId, processId: p.id, authorId: from.userId, notes: p.internalNotes, reason: 'REASSIGNED' },
+          select: { id: true },
+        });
+        archived.push({ processId: p.id, privateNoteId: note.id });
+      }
+      const { count } = await tx.clinicalProcess.updateMany({
+        where: { workspaceId, id: p.id, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] }, internalNotes: p.internalNotes ?? null },
+        data: { therapistId: toUserId, internalNotes: null },
+      });
+      if (count !== 1) throw conflict('MEMBER_CHANGED', 'Los procesos cambiaron mientras se reasignaban; vuelve a intentarlo');
+    }
+    const processes = { count: processesToMove.length };
+    if (archived.length) {
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actorId: actor.sub,
+          action: PRIVATE_NOTES_ARCHIVED_ACTION,
+          entityType: 'ClinicalProcessPrivateNote',
+          entityId: null,
+          // Solo ids: nunca el contenido de las notas.
+          metadata: { authorId: from.userId, toUserId, notes: archived },
+        },
+      });
+    }
     const moved = sessions.length
       ? await tx.session.updateMany({
           where: { workspaceId, id: { in: sessions.map((s) => s.id) }, therapistId: from.userId, status: 'SCHEDULED', internalSummary: null },
@@ -277,7 +303,10 @@ export class MemberRemovalService {
         },
       },
     });
-    return { toUserId, processes: processes.count, futureSessions: moved.count, keptSessionsWithPrivateNotes: withPrivateNotes.length };
+    return {
+      toUserId, processes: processes.count, futureSessions: moved.count,
+      keptSessionsWithPrivateNotes: withPrivateNotes.length, archivedProcessNotes: archived.length,
+    };
   }
 
   /** Recuentos de lo que sigue a nombre del miembro (sin pacientes ni contenido). */
