@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { withdrawPendingRequestsOfPatient } from '../scheduling/appointment-request-lifecycle.util';
 
 // Reglas de convivencia entre el modo de acceso al portal que decide el profesional para el
 // paciente (Patient.portalAccessMode) y el tipo de cuenta de portal (accessorType).
@@ -34,7 +35,7 @@ export function incompatibleAccessorTypes(mode: string | null | undefined): Port
   return ALL_ACCESSORS.filter((type) => !isAccessorAllowed(mode, type));
 }
 
-type PortalModeTx = Pick<Prisma.TransactionClient, 'patientPortalAccount' | 'auditLog'>;
+type PortalModeTx = Pick<Prisma.TransactionClient, 'patientPortalAccount' | 'auditLog' | 'appointmentRequest' | 'notification'>;
 
 // Estados del paciente en los que el portal queda cerrado (art. 32 LOPDGDD para BLOCKED).
 export const PORTAL_CLOSED_PATIENT_STATUSES = ['ARCHIVED', 'BLOCKED'] as const;
@@ -91,6 +92,8 @@ export async function applyPortalAccessModeChange(
         where: { ...where, id: { in: revokedAccountIds } },
         data: { isActive: false },
       });
+      // Las solicitudes de cita pendientes hechas desde las cuentas revocadas se retiran.
+      await withdrawPendingRequestsOfPatient(tx as Prisma.TransactionClient, workspaceId, patientId, actorId, 'PORTAL_ACCESS_MODE_CHANGED', revokedAccountIds);
     }
   }
 

@@ -125,10 +125,21 @@ export class AuthService {
     return session;
   }
 
-  async logout(rawToken?: string) {
-    if (!rawToken) return { success: true };
-    const tokenHash = hashToken(rawToken);
-    await this.prisma.refreshToken.updateMany({ where: { tokenHash, revokedAt: null }, data: { revokedAt: new Date() } });
+  async logout(rawToken?: string, actor?: AuthUser) {
+    const now = new Date();
+    if (rawToken) {
+      const tokenHash = hashToken(rawToken);
+      await this.prisma.refreshToken.updateMany({ where: { tokenHash, revokedAt: null }, data: { revokedAt: now } });
+    }
+    // Cierra también la sesión del access token (aunque no llegue la cookie de refresco): así el
+    // acceso excepcional ligado a ella muere en el servidor (CA2.4), no solo en la pantalla.
+    if (actor?.sid && actor.sub && actor.workspaceId) {
+      await this.prisma.refreshToken.updateMany({ where: { family: actor.sid, userId: actor.sub, workspaceId: actor.workspaceId, revokedAt: null }, data: { revokedAt: now } });
+      await this.prisma.exceptionalAccessJustification.updateMany({
+        where: { workspaceId: actor.workspaceId, actorId: actor.sub, authSessionId: actor.sid, closedAt: null },
+        data: { closedAt: now, closeReason: 'LOGOUT' },
+      });
+    }
     return { success: true };
   }
 
@@ -143,12 +154,17 @@ export class AuthService {
     // transacción que revoca las anteriores.
     db: Pick<Prisma.TransactionClient, 'refreshToken'> = this.prisma,
   ): Promise<IssuedSession> {
+    // sid = familia del refresh token: identifica la sesión de autenticación y se conserva al
+    // refrescar. El acceso excepcional se liga a ella (ClinicalAccessService comprueba en cada
+    // petición que siga viva: familia con algún refresh token no revocado y no caducado).
+    const sessionFamily = family ?? randomUUID();
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
       email: user.email,
       workspaceId,
       role,
       mfaEnabled: user.totpEnabled,
+      sid: sessionFamily,
     });
     const refreshToken = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -157,7 +173,7 @@ export class AuthService {
         userId: user.id,
         workspaceId,
         tokenHash: hashToken(refreshToken),
-        family: family ?? randomUUID(),
+        family: sessionFamily,
         expiresAt,
         ipAddress: meta.ip,
         userAgent: meta.userAgent,

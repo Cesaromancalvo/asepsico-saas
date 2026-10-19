@@ -8,10 +8,9 @@ import { PatientCareService } from './patient-care.service';
 import { PatientTasksService } from './patient-tasks.service';
 import { PatientAssessmentsService } from './patient-assessments.service';
 import { PatientRecordsService } from './patient-records.service';
-import { ExceptionalAccessController } from './exceptional-access.controller';
 
 @Module({
-  controllers: [PatientsController, ExceptionalAccessController],
+  controllers: [PatientsController],
   providers: [
     PatientAccessService,
     PatientCareService,

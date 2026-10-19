@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useId, useState } from 'react';
+import { FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { isAdminRole, Viewer } from '@/lib/clinical';
+import { FOREIGN_HISTORY_MESSAGE, isForeignHistoryDenied, isOpeningReasonRequired, type ProcessOpeningReasonCode } from '@/lib/exceptional-access';
+import { OpeningReasonFieldset } from './OpeningReasonPicker';
 
 type Clinician = { userId: string; firstName: string | null; lastName: string | null; email: string | null; isClinician: boolean };
 
@@ -34,6 +36,10 @@ function clinicianName(member: Clinician) {
  * pacientes; un terapeuta solo puede abrirlo a su nombre. El contenido clínico (motivo y
  * objetivos) solo se pide cuando el proceso es del propio usuario y atiende pacientes: abrirlo a
  * nombre de otro es una operación administrativa y la API rechazaría ese contenido (403).
+ *
+ * H6 (historia ajena): el alta se envía siempre primero SIN motivo. Si la API responde 400
+ * OPENING_REASON_REQUIRED (OWNER/ADMIN), aparece el selector de motivo y se reenvía con él; si
+ * responde 403 PATIENT_HAS_FOREIGN_HISTORY (THERAPIST), se explica que lo abre la dirección.
  */
 export default function NewProcessForm({ patientId, viewer, heading = 'Abrir proceso clínico', submitLabel = 'Crear proceso', initialReason, confirm, afterCreate, onCreated, onCancel }: Props) {
   const ids = useId();
@@ -42,6 +48,12 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
   const [therapistId, setTherapistId] = useState<string>(viewer.userId ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // H6: la API ha pedido el motivo de apertura (paciente con historia de otro profesional).
+  const [needsOpeningReason, setNeedsOpeningReason] = useState(false);
+  const [openingReason, setOpeningReason] = useState<ProcessOpeningReasonCode | ''>('');
+  const [openingError, setOpeningError] = useState('');
+  const [foreignDenied, setForeignDenied] = useState(false);
+  const openingFirstRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -76,9 +88,16 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
       setError('Elige el profesional responsable del proceso.');
       return;
     }
+    if (needsOpeningReason && !openingReason) {
+      setOpeningError('Elige el motivo de apertura.');
+      openingFirstRef.current?.focus();
+      return;
+    }
     if (confirm && !confirm()) return;
     setBusy(true);
     setError('');
+    setOpeningError('');
+    setForeignDenied(false);
     try {
       const reason = canWriteClinical ? String(data.get('consultationReason') ?? '').trim() : '';
       const goals = canWriteClinical ? String(data.get('goals') ?? '').trim() : '';
@@ -92,6 +111,7 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
           ...(goals ? { goals } : {}),
           modality: data.get('modality') || 'IN_PERSON',
           frequency: String(data.get('frequency') ?? '').trim() || undefined,
+          ...(needsOpeningReason && openingReason ? { openingReasonCode: openingReason } : {}),
         }),
       });
       if (afterCreate) {
@@ -103,8 +123,20 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
         }
       }
       form.reset();
+      setNeedsOpeningReason(false);
+      setOpeningReason('');
       await onCreated(created);
     } catch (err) {
+      if (isOpeningReasonRequired(err)) {
+        // No se ha creado nada: se muestra el selector y se espera a que elija y vuelva a enviar.
+        setNeedsOpeningReason(true);
+        requestAnimationFrame(() => openingFirstRef.current?.focus());
+        return;
+      }
+      if (isForeignHistoryDenied(err)) {
+        setForeignDenied(true);
+        return;
+      }
       setError(err instanceof Error ? err.message : 'No se pudo crear el proceso');
     } finally {
       setBusy(false);
@@ -169,9 +201,26 @@ export default function NewProcessForm({ patientId, viewer, heading = 'Abrir pro
         Frecuencia
         <input name="frequency" maxLength={120} placeholder="Ej. Semanal" />
       </label>
+      {needsOpeningReason && (
+        <OpeningReasonFieldset
+          value={openingReason}
+          onChange={(value) => { setOpeningReason(value); setOpeningError(''); }}
+          error={openingError}
+          disabled={busy}
+          firstOptionRef={openingFirstRef}
+        />
+      )}
+      {foreignDenied && (
+        <div className="e1-notice" role="alert">
+          <div>
+            <strong>No puedes abrir este proceso</strong>
+            <p>{FOREIGN_HISTORY_MESSAGE}</p>
+          </div>
+        </div>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="e1-actions">
-        <button className="button" type="submit" disabled={busy || (isAdmin && clinicians === null)}>{busy ? 'Guardando…' : submitLabel}</button>
+        <button className="button" type="submit" disabled={busy || foreignDenied || (isAdmin && clinicians === null)}>{busy ? 'Guardando…' : needsOpeningReason ? `${submitLabel} con este motivo` : submitLabel}</button>
         {onCancel && <button className="button secondary" type="button" onClick={onCancel} disabled={busy}>Cancelar</button>}
       </div>
     </form>

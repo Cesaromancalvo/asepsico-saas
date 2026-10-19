@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import Icon from '../../components/Icon';
@@ -604,6 +605,11 @@ export default function AgendaPage() {
             </button>
           </div>
         </header>
+
+        <nav className="bk-agenda-links" aria-label="Reserva de citas desde el portal">
+          <Link href="/agenda/solicitudes"><Icon name="inbox" size={16} />Solicitudes de cita</Link>
+          <Link href="/agenda/disponibilidad"><Icon name="clock" size={16} />Mi disponibilidad</Link>
+        </nav>
 
         {error && (
           <div

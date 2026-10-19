@@ -1,7 +1,7 @@
 {
   "rootDir": "..",
   "testEnvironment": "node",
-  "testRegex": "test/.*\\.spec\\.ts$",
+  "testRegex": "test/.*\\.spec\\.tsx?$",
   "moduleFileExtensions": ["ts", "tsx", "js", "json"],
   "moduleNameMapper": { "^@/(.*)$": "<rootDir>/$1" },
   "transform": {

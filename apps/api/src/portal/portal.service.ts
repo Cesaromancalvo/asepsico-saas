@@ -17,6 +17,7 @@ function portalTask<T extends Record<string, any>>(task: T): Omit<T, 'clinicianN
 }
 import { ChangePortalPasswordDto, EnablePortalDto, PortalLoginDto } from './dto/portal.dto';
 import { SaveTaskProgressDto } from './dto/task-response.dto';
+import { withdrawPendingRequestsOfPatient } from '../scheduling/appointment-request-lifecycle.util';
 import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from './portal-access-mode.util';
 
 @Injectable()
@@ -125,6 +126,8 @@ export class PortalService {
     await this.prisma.$transaction(async (tx: any) => {
       const result = await tx.patientPortalAccount.updateMany({ where:{ patientId, workspaceId }, data:{ isActive:false } });
       if (!result.count) throw new NotFoundException();
+      // Criterio 22 de la reserva desde el portal: sin portal no quedan solicitudes pendientes.
+      await withdrawPendingRequestsOfPatient(tx, workspaceId, patientId, actor.sub, 'PORTAL_ACCOUNT_DISABLED');
       await tx.auditLog.create({ data:{ workspaceId, actorId:actor.sub, action:'PORTAL_ACCOUNT_DISABLED', entityType:'PatientPortalAccount', entityId:patientId, metadata:{ patientId } } });
     });
     return { ok:true };

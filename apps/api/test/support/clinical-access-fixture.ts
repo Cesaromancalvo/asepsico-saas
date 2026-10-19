@@ -22,10 +22,12 @@ export function matchesWhere(row: Record<string, any>, where: Record<string, any
     if (key === 'OR') return (condition as any[]).some((sub) => matchesWhere(row, sub));
     if (key === 'AND') return (condition as any[]).every((sub) => matchesWhere(row, sub));
     const value = row[key];
+    // Como Prisma: una columna sin valor es NULL (las filas creadas por el doble no llevan defaults).
+    if (condition === null) return value === null || value === undefined;
     if (condition !== null && typeof condition === 'object' && !(condition instanceof Date)) {
       if ('in' in condition) return (condition.in as unknown[]).includes(value);
       if ('not' in condition) return condition.not && typeof condition.not === 'object' && 'in' in condition.not
-        ? !(condition.not.in as unknown[]).includes(value) : value !== condition.not;
+        ? !(condition.not.in as unknown[]).includes(value) : (value ?? null) !== condition.not;
       if ('notIn' in condition) return !(condition.notIn as unknown[]).includes(value);
       if ('contains' in condition) {
         if (typeof value !== 'string') return false;
@@ -107,6 +109,8 @@ export function treatingAccessStub(patient: Record<string, any> = { id: 'patient
     assertPatientClinicalAccess: jest.fn(async () => patient),
     assertTreating: jest.fn(async () => ({ patient, scope })),
     assertCanRead: jest.fn(async () => ({ patient, scope })),
+    assertCanReadWholeRecord: jest.fn(async () => ({ patient, scope })),
+    auditExceptionalRead: jest.fn(async () => undefined),
     assertClinician: jest.fn(async () => undefined),
     resolveScope: jest.fn(async () => scope),
     getMemberProfile: jest.fn(async () => ({ role: 'OWNER', isClinician: true })),

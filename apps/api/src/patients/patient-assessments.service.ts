@@ -31,12 +31,14 @@ export class PatientAssessmentsService {
   }
 
   async getClinicalAssessments(workspaceId: string, actor: AuthUser, patientId: string) {
-    await this.access.assertPatientClinicalAccess(workspaceId, actor, patientId);
+    const { scope } = await this.access.assertCanReadWholeRecord(workspaceId, actor, patientId, 'clinical-assessments');
     // Acotado también al workspace por la relación patient (defensa en profundidad).
     const assessments = await this.prisma.clinicalAssessment.findMany({
       where: patientChildScope(workspaceId, patientId),
       orderBy: [{ administeredAt: 'desc' }, { createdAt: 'desc' }],
     });
+    // Acceso excepcional: sin las notas del profesional (CA2.2, criterio conservador).
+    if (scope.level === 'EXCEPTIONAL') return assessments.map((row) => ({ ...decryptAssessment(row), clinicalNotes: null }));
     return assessments.map(decryptAssessment);
   }
 

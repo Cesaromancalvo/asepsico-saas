@@ -87,7 +87,12 @@ function prismaMock(seed: FakePatient[], portalSeed: FakePortalAccount[] = []) {
         return { count };
       }),
     },
-    auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })) },
+    // Acceso excepcional: archivar/bloquear cierra y bloquea los accesos del paciente.
+    exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })), createMany: jest.fn(async () => ({ count: 0 })) },
+    // Sin solicitudes de cita pendientes en estos escenarios (reserva desde el portal).
+    appointmentRequest: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
+    notification: { createMany: jest.fn(async () => ({ count: 0 })) },
     // Gancho para simular otra petición concurrente que cambia el estado justo antes de escribir.
     __beforeTx: null as null | ((patch: (id: string, data: Partial<FakePatient>) => void) => void),
     $transaction: jest.fn(async (cb: any) => {
