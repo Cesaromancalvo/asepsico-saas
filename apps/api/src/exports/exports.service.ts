@@ -3,6 +3,7 @@ import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
+import { decryptField } from '../common/crypto/field-encryption';
 import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { EXPORT_ALLOWED_REASONS } from '../exceptional-access/exceptional-access.policy';
 
@@ -143,15 +144,27 @@ export class ExportsService {
     });
     if (!workspace) throw new NotFoundException('Workspace no encontrado');
 
-    const [sessions, invoices, resources, conversations, auditLogs] = await Promise.all([
+    const [sessions, invoices, resources, conversations, auditLogs, previousAuthorNotes] = await Promise.all([
       this.prisma.session.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.invoice.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.therapeuticResource.count({ where: { workspaceId: user.workspaceId, archivedAt: null } }),
       this.prisma.conversation.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.auditLog.findMany({ where: { workspaceId: user.workspaceId }, orderBy: { createdAt: 'desc' }, take: 1000 }),
+      // Notas internas de profesionales anteriores (archivadas al reasignar un proceso, historia B):
+      // la exportación completa del workspace es el único sitio donde salen, descifradas, con su
+      // autor y su proceso. Nunca en la exportación del paciente ni en la de un THERAPIST.
+      this.prisma.clinicalProcessPrivateNote.findMany({
+        where: { workspaceId: user.workspaceId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true, processId: true, notes: true, reason: true, createdAt: true,
+          author: { select: { id: true, firstName: true, lastName: true } },
+          process: { select: { id: true, patientId: true, title: true, status: true } },
+        },
+      }),
     ]);
     const generatedAt = new Date().toISOString();
-    await this.audit(user, 'WORKSPACE_DATA_EXPORTED', 'Workspace', user.workspaceId, { generatedAt, format: 'JSON' });
+    await this.audit(user, 'WORKSPACE_DATA_EXPORTED', 'Workspace', user.workspaceId, { generatedAt, format: 'JSON', previousAuthorNotes: previousAuthorNotes.length });
     return {
       schemaVersion: '1.0', exportType: 'WORKSPACE_ADMIN_EXPORT', generatedAt,
       workspace: { id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt },
@@ -160,6 +173,14 @@ export class ExportsService {
       members: this.decryptForExport(workspace.members, 'WORKSPACE_ADMIN_EXPORT'),
       patients: this.decryptForExport(workspace.patients, 'WORKSPACE_ADMIN_EXPORT'),
       inventory: { sessions, invoices, resources, conversations },
+      clinicalProcessInternalNotes: {
+        previousAuthors: this.decryptForExport(previousAuthorNotes.map((note) => ({
+          id: note.id, processId: note.processId, patientId: note.process?.patientId ?? null, processTitle: note.process?.title ?? null,
+          processStatus: note.process?.status ?? null, authorId: note.author?.id ?? null,
+          authorName: [note.author?.firstName, note.author?.lastName].filter(Boolean).join(' ') || null,
+          internalNotes: decryptField(note.notes), reason: note.reason, archivedAt: note.createdAt,
+        })), 'WORKSPACE_ADMIN_EXPORT'),
+      },
       recentAuditLogs: this.decryptForExport(auditLogs, 'WORKSPACE_ADMIN_EXPORT'),
       notice: 'Esta exportación administrativa no sustituye a una copia de seguridad de PostgreSQL.',
     };
