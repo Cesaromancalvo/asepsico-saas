@@ -135,7 +135,8 @@ describe('Argos 3: aceptar en el workspace A no sirve en el workspace B', () => 
   });
 
   it('también a través de JwtAuthGuard: el token de B recibe 428 aunque A esté aceptado', async () => {
-    const prisma = fakeRegistrationDb({ workspaceMember: members });
+    // El guard revalida la sesión (membresía ACTIVE y tokenVersion): el usuario existe en la BD.
+    const prisma = fakeRegistrationDb({ workspaceMember: members, user: [{ id: USER, email: 'doble@example.com' }] });
     await new LegalService(prisma).accept(inA, { acceptedTerms: currentTerms() } as any, META);
     jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockResolvedValue(true);
     const ctx = (user: any) => ({ switchToHttp: () => ({ getRequest: () => ({ originalUrl: '/api/v1/patients', user }) }) }) as unknown as ExecutionContext;

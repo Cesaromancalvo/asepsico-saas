@@ -27,8 +27,8 @@ export class DashboardService {
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
-    const member = await this.prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId: user.workspaceId, userId: user.sub } },
+    const member = await this.prisma.workspaceMember.findFirst({
+      where: { workspaceId: user.workspaceId, userId: user.sub, status: 'ACTIVE' },
       include: { user: { select: { firstName: true, lastName: true } }, workspace: { select: { name: true } } },
     });
     if (!member) throw new NotFoundException('Miembro no encontrado');

@@ -36,9 +36,9 @@ function prismaMock(seed: Partial<Stores> = {}) {
     patientDocument: [], consentRecord: [], clinicalReport: [], patientPortalAccount: [], portalActivationToken: [], auditLog: [], notification: [], appointmentRequest: [],
     session: [], invoice: [], resourceShare: [],
     workspaceMember: [
-      { id: 'm-owner', workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: true },
-      { id: 'm-assistant', workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false },
-      { id: 'm-therapist', workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true },
+      { id: 'm-owner', workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: true, status: 'ACTIVE' },
+      { id: 'm-assistant', workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false, status: 'ACTIVE' },
+      { id: 'm-therapist', workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
     ],
     ...seed,
   } as Stores;

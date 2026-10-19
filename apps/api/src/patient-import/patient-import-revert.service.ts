@@ -42,6 +42,8 @@ export function noActivityWhere(workspaceId: string, actor: AuthUser, item: Pick
         goals: null,
         internalNotes: null,
         frequency: null,
+        // Notas de un profesional anterior archivadas al reasignar: ya hay actividad clínica.
+        privateNotes: { none: {} },
       },
     },
   };

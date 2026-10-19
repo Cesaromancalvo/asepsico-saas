@@ -37,7 +37,8 @@ function invalidCredentials(mfaEnabled: boolean) {
  * - Con MFA activo exige además un TOTP no usado todavía (anti-reutilización, igual que el login).
  *   No acepta códigos de recuperación: esos son para entrar sin el móvil, no para cambiar credenciales.
  * - En UNA transacción: nuevo hash (condicionado al hash leído, sin pisar un cambio concurrente),
- *   revocación de TODOS los refresh tokens del usuario (en todos sus workspaces), AuditLog
+ *   subida de User.tokenVersion (mata los access tokens vivos al momento), revocación de TODOS
+ *   los refresh tokens del usuario (en todos sus workspaces), AuditLog
  *   USER_PASSWORD_CHANGED en el workspace del token y emisión de una sesión nueva para este navegador.
  *   Si algo falla, no cambia nada.
  * - La auditoría de éxito no lleva datos personales: ni correo, ni IP, ni user-agent, ni contraseñas.
@@ -73,19 +74,27 @@ export class PasswordService {
 
         // Rol actual de la BD, acotado al workspace del token (no se fía del rol del JWT).
         const member = await tx.workspaceMember.findFirst({
-          where: { userId: user.id, workspaceId: actor.workspaceId },
+          where: { userId: user.id, workspaceId: actor.workspaceId, status: 'ACTIVE' },
           select: { role: true },
         });
         if (!member) return reject(null, new UnauthorizedException());
 
         const passwordHash = await hash(dto.newPassword, STAFF_BCRYPT_COST);
+        // Sube tokenVersion (compare-and-set sobre la leída): todos los access tokens vivos del
+        // usuario, en cualquier navegador, dejan de valer en la siguiente petición (JwtAuthGuard).
+        const currentTokenVersion = user.tokenVersion ?? 0;
+        const tokenVersion = currentTokenVersion + 1;
         const claim = await tx.user.updateMany({
           where: {
             id: user.id,
             passwordHash: user.passwordHash,
+            tokenVersion: currentTokenVersion,
             ...(step !== null ? { totpEnabled: true, totpSecret: user.totpSecret, ...stepNotYetUsed(step) } : { totpEnabled: false }),
           },
-          data: { passwordHash, ...(step !== null ? { totpLastUsedStep: step } : {}), ...RESET_FAILURES },
+          data: {
+            passwordHash, tokenVersion, passwordChangedAt: new Date(),
+            ...(step !== null ? { totpLastUsedStep: step } : {}), ...RESET_FAILURES,
+          },
         });
         if (claim.count !== 1) return fail('state_changed_or_code_reused', invalidCredentials(mfaEnabled));
 
@@ -104,7 +113,7 @@ export class PasswordService {
           },
         });
         const session = await this.auth.issueSession(
-          { ...user, totpEnabled: mfaEnabled },
+          { ...user, totpEnabled: mfaEnabled, tokenVersion },
           actor.workspaceId,
           member.role,
           meta,

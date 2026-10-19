@@ -90,6 +90,8 @@ export async function purgeDemoData(tx: Prisma.TransactionClient, workspaceId: s
   const payments = await tx.payment.deleteMany({ where: inPatients });
   const invoices = await tx.invoice.deleteMany({ where: { ...inPatients, status: 'DRAFT' } });
   const sessions = await tx.session.deleteMany({ where: inPatients });
+  // Notas archivadas de procesos demo (FK RESTRICT hacia el proceso), acotadas igual.
+  await tx.clinicalProcessPrivateNote.deleteMany({ where: { workspaceId, process: { is: inPatients } } });
   const processes = await tx.clinicalProcess.deleteMany({ where: inPatients });
   const notifications = await tx.notification.deleteMany({ where: inPatients });
   await tx.notificationPreference.deleteMany({ where: inPatients });

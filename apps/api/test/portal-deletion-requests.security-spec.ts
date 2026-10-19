@@ -11,12 +11,14 @@ type Row = Record<string, any>;
 function prismaMock(seed: Record<string, Row[]> = {}) {
   let stores: Record<string, Row[]> = {
     workspaceMember: [
-      { workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER' },
-      { workspaceId: 'ws-1', userId: 'admin-1', role: 'ADMIN' },
-      { workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT' },
-      { workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST' },
-      { workspaceId: 'ws-1', userId: 'therapist-2', role: 'THERAPIST' },
-      { workspaceId: 'ws-2', userId: 'owner-ws2', role: 'OWNER' },
+      { workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', status: 'ACTIVE' },
+      { workspaceId: 'ws-1', userId: 'admin-1', role: 'ADMIN', status: 'ACTIVE' },
+      // Dado de baja (historia B): ya no recibe avisos del espacio.
+      { workspaceId: 'ws-1', userId: 'admin-removed', role: 'ADMIN', status: 'REMOVED' },
+      { workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', status: 'ACTIVE' },
+      { workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', status: 'ACTIVE' },
+      { workspaceId: 'ws-1', userId: 'therapist-2', role: 'THERAPIST', status: 'ACTIVE' },
+      { workspaceId: 'ws-2', userId: 'owner-ws2', role: 'OWNER', status: 'ACTIVE' },
     ],
     clinicalProcess: [
       { workspaceId: 'ws-1', patientId: 'patient-1', therapistId: 'therapist-1', status: 'ACTIVE' },
@@ -79,13 +81,14 @@ describe('Portal: solicitud de baja/borrado (art. 17 y 12.3 RGPD)', () => {
     }
   });
 
-  it('no la reciben el asistente, terapeutas sin proceso activo ni usuarios de otro workspace', async () => {
+  it('no la reciben el asistente, terapeutas sin proceso activo, miembros dados de baja ni usuarios de otro workspace', async () => {
     const prisma = prismaMock();
     await new PortalService(prisma, {} as any).requestDeletion(portal, REASON);
     const notifications = new NotificationsService(prisma);
     expect(await notifications.listProfessional(staff('assistant-1', 'ASSISTANT'))).toHaveLength(0);
     expect(await notifications.listProfessional(staff('therapist-2', 'THERAPIST'))).toHaveLength(0);
     expect(await notifications.listProfessional(staff('owner-ws2', 'OWNER', 'ws-2'))).toHaveLength(0);
+    expect(prisma.__rows('notification').some((n: Row) => n.userId === 'admin-removed')).toBe(false);
     expect(prisma.__rows('notification').every((n: Row) => n.workspaceId === 'ws-1' && n.userId)).toBe(true);
     expect(prisma.__rows('notification')).toHaveLength(3);
   });

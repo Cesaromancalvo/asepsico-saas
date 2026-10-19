@@ -10,6 +10,7 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { PortalService } from '../src/portal/portal.service';
 import { MfaService } from '../src/auth/mfa.service';
+import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 import { treatingAccessStub } from './support/clinical-access-fixture';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { ExceptionalAccessService } from '../src/exceptional-access/exceptional-access.service';
@@ -122,6 +123,10 @@ const CASES: Case[] = [
     run: (p) => new MessagesService(p).send('ws-1', owner, 'conv-1', { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
   { name: 'Messages.portalSend', writes: { message: ['body', 'attachmentName'] }, rows: { conversation: { status: 'OPEN', patientCanReply: true } },
     run: (p) => new MessagesService(p).portalSend(portal, { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
+  // Baja de un miembro: sus notas internas se archivan copiando el texto YA cifrado (nunca en claro).
+  { name: 'MemberRemoval.reassignWork (archivo de notas internas)', writes: { clinicalProcessPrivateNote: ['notes'] },
+    rows: { workspaceMember: { userId: 'ther-old', role: 'OWNER', status: 'REMOVED' }, clinicalProcess: { internalNotes: encryptField(text('nota interna')) } },
+    run: (p) => new MemberRemovalService(p).reassignWork('ws-1', owner, 'ther-old', { toUserId: 'owner-1' }) },
   { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
   { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
