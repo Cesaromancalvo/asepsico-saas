@@ -144,60 +144,61 @@ enum SessionType {
 }
 
 model Workspace {
-  id                      String                           @id @default(cuid())
-  name                    String
-  createdAt               DateTime                         @default(now())
-  updatedAt               DateTime                         @updatedAt
-  members                 WorkspaceMember[]
-  patients                Patient[]
-  sessions                Session[]
-  auditLogs               AuditLog[]
-  clinicalProcesses       ClinicalProcess[]
-  patientDocuments        PatientDocument[]
-  consentRecords          ConsentRecord[]
-  clinicalReports         ClinicalReport[]
-  invoices                Invoice[]
-  payments                Payment[]
-  portalAccounts          PatientPortalAccount[]
-  therapeuticResources    TherapeuticResource[]
-  resourceShares          ResourceShare[]
-  conversations           Conversation[]
-  patientImportJobs       PatientImportJob[]
-  patientImportItems      PatientImportItem[]
-  termsAcceptances        TermsAcceptance[]
-  workspaceInvites        WorkspaceInvite[]
-  registrationInvite      RegistrationInvite?
-  clinicalProcessOpenings ClinicalProcessOpening[]
-  exceptionalAccesses     ExceptionalAccessJustification[]
-  exceptionalAccessMisses ExceptionalAccessReasonMiss?
+  id                          String                           @id @default(cuid())
+  name                        String
+  createdAt                   DateTime                         @default(now())
+  updatedAt                   DateTime                         @updatedAt
+  members                     WorkspaceMember[]
+  patients                    Patient[]
+  sessions                    Session[]
+  auditLogs                   AuditLog[]
+  clinicalProcesses           ClinicalProcess[]
+  patientDocuments            PatientDocument[]
+  consentRecords              ConsentRecord[]
+  clinicalReports             ClinicalReport[]
+  invoices                    Invoice[]
+  payments                    Payment[]
+  portalAccounts              PatientPortalAccount[]
+  therapeuticResources        TherapeuticResource[]
+  resourceShares              ResourceShare[]
+  conversations               Conversation[]
+  patientImportJobs           PatientImportJob[]
+  patientImportItems          PatientImportItem[]
+  termsAcceptances            TermsAcceptance[]
+  workspaceInvites            WorkspaceInvite[]
+  registrationInvite          RegistrationInvite?
+  clinicalProcessOpenings     ClinicalProcessOpening[]
+  exceptionalAccesses         ExceptionalAccessJustification[]
+  exceptionalAccessMisses     ExceptionalAccessReasonMiss?
   /// Zona horaria IANA del espacio: los huecos de la reserva desde el portal se calculan en hora
   /// local (con cambios de horario de verano e invierno).
-  timeZone                String                           @default("Europe/Madrid")
-  therapistAvailabilities TherapistAvailability[]
-  availabilityWindows     AvailabilityWindow[]
-  availabilityBlocks      AvailabilityBlock[]
-  appointmentRequests     AppointmentRequest[]
+  timeZone                    String                           @default("Europe/Madrid")
+  therapistAvailabilities     TherapistAvailability[]
+  availabilityWindows         AvailabilityWindow[]
+  availabilityBlocks          AvailabilityBlock[]
+  appointmentRequests         AppointmentRequest[]
+  clinicalProcessPrivateNotes ClinicalProcessPrivateNote[]
 }
 
 model User {
-  id                           String                  @id @default(cuid())
-  email                        String                  @unique
+  id                           String                       @id @default(cuid())
+  email                        String                       @unique
   passwordHash                 String
   firstName                    String
   lastName                     String
   totpSecret                   String?
-  totpEnabled                  Boolean                 @default(false)
-  mfaRecoveryCodes             String[]                @default([])
+  totpEnabled                  Boolean                      @default(false)
+  mfaRecoveryCodes             String[]                     @default([])
   /// Último paso TOTP (floor(epoch/30)) aceptado; impide reutilizar un código (RFC 6238 §5.2).
   totpLastUsedStep             Int?
   /// Fallos de segundo factor seguidos (se pone a 0 con cualquier verificación correcta).
-  mfaFailedAttempts            Int                     @default(0)
+  mfaFailedAttempts            Int                          @default(0)
   /// Espera temporal tras varios fallos seguidos. Nunca es un bloqueo permanente.
   mfaLockedUntil               DateTime?
-  createdAt                    DateTime                @default(now())
-  updatedAt                    DateTime                @updatedAt
+  createdAt                    DateTime                     @default(now())
+  updatedAt                    DateTime                     @updatedAt
   memberships                  WorkspaceMember[]
-  auditLogs                    AuditLog[]              @relation("AuditActor")
+  auditLogs                    AuditLog[]                   @relation("AuditActor")
   refreshTokens                RefreshToken[]
   sessionsAsTherapist          Session[]
   clinicalProcessesAsTherapist ClinicalProcess[]
@@ -210,19 +211,20 @@ model User {
   messagesSent                 Message[]
   patientImportJobs            PatientImportJob[]
   termsAcceptances             TermsAcceptance[]
-  workspaceInvitesSent         WorkspaceInvite[]       @relation("WorkspaceInviteInvitedBy")
-  workspaceInvitesAccepted     WorkspaceInvite[]       @relation("WorkspaceInviteAcceptedUser")
-  registrationInviteUsed       RegistrationInvite?     @relation("RegistrationInviteUsedBy")
+  workspaceInvitesSent         WorkspaceInvite[]            @relation("WorkspaceInviteInvitedBy")
+  workspaceInvitesAccepted     WorkspaceInvite[]            @relation("WorkspaceInviteAcceptedUser")
+  registrationInviteUsed       RegistrationInvite?          @relation("RegistrationInviteUsedBy")
   availabilitySettings         TherapistAvailability[]
   availabilityWindows          AvailabilityWindow[]
   availabilityBlocks           AvailabilityBlock[]
   appointmentRequests          AppointmentRequest[]
+  clinicalProcessPrivateNotes  ClinicalProcessPrivateNote[]
   /// Usuario ficticio creado por db:seed-demo-workspace (Recepción Demo, Terapeuta Demo). Solo lo
   /// borra db:purge-demo-workspace. Nunca se marca a un usuario real.
-  isDemo                       Boolean                 @default(false)
+  isDemo                       Boolean                      @default(false)
   /// Versión de las credenciales. Va en el access token (claim `tv`) y JwtAuthGuard la compara en
   /// cada petición: subirla (cambio de contraseña) invalida al momento todos los access tokens vivos.
-  tokenVersion                 Int                     @default(0)
+  tokenVersion                 Int                          @default(0)
   /// Último cambio de contraseña (constancia; la invalidación la hace tokenVersion).
   passwordChangedAt            DateTime?
 }
@@ -538,11 +540,12 @@ model ClinicalProcess {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
-  workspace  Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient    Patient            @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  therapist  User               @relation(fields: [therapistId], references: [id], onDelete: Restrict)
-  sessions   Session[]
-  importItem PatientImportItem?
+  workspace    Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient      Patient                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist    User                         @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+  sessions     Session[]
+  importItem   PatientImportItem?
+  privateNotes ClinicalProcessPrivateNote[]
 
   @@index([workspaceId, status])
   @@index([patientId, status])
@@ -1291,4 +1294,26 @@ model AppointmentRequest {
   @@index([workspaceId, patientId, status])
   @@index([workspaceId, therapistId, status])
   @@index([requestedByAccountId, createdAt])
+}
+
+/// Notas internas de un profesional ANTERIOR de un proceso (historia B, veto de Argos). Al reasignar
+/// un proceso, sus `internalNotes` (cifradas, sin descifrar) se trasladan aquí con su autor y el
+/// campo vivo queda vacío para el nuevo profesional: ClinicalProcess.internalNotes siempre es del
+/// therapistId actual. Nunca se borra; solo su autor podría leerla (hoy no hay endpoint de lectura).
+model ClinicalProcessPrivateNote {
+  id          String          @id @default(cuid())
+  workspaceId String
+  processId   String
+  authorId    String
+  /// Texto cifrado con el cifrado de campos (igual que internalNotes).
+  notes       String
+  /// Por qué se archivó (hoy solo REASSIGNED).
+  reason      String          @default("REASSIGNED")
+  createdAt   DateTime        @default(now())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  process     ClinicalProcess @relation(fields: [processId], references: [id], onDelete: Restrict)
+  author      User            @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, processId])
+  @@index([authorId])
 }
