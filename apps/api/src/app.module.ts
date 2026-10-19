@@ -22,6 +22,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
 import { LegalModule } from './legal/legal.module';
 import { ExceptionalAccessModule } from './exceptional-access/exceptional-access.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
+import { PortalSignupModule } from './portal-signup/portal-signup.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
     WaitlistModule,
     LegalModule,
     SchedulingModule,
+    PortalSignupModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

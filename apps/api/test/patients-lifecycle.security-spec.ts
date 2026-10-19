@@ -87,6 +87,7 @@ function prismaMock(seed: FakePatient[], portalSeed: FakePortalAccount[] = []) {
         return { count };
       }),
     },
+    portalActivationToken: { updateMany: jest.fn(async () => ({ count: 0 })) },
     // Acceso excepcional: archivar/bloquear cierra y bloquea los accesos del paciente.
     exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
     auditLog: { create: jest.fn(async ({ data }: any) => ({ id: 'audit-1', ...data })), createMany: jest.fn(async () => ({ count: 0 })) },

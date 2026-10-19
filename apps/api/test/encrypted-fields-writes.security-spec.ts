@@ -14,6 +14,9 @@ import { treatingAccessStub } from './support/clinical-access-fixture';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { ExceptionalAccessService } from '../src/exceptional-access/exceptional-access.service';
 import { issueFormToken } from '../src/waitlist/waitlist-crypto';
+import { SignupRequestsService } from '../src/portal-signup/signup-requests.service';
+import { IntakeLinksService } from '../src/portal-signup/intake-links.service';
+import { PORTAL_SIGNUP_NOTICE_VERSIONS } from '../src/portal-signup/portal-signup.config';
 
 /**
  * Test tabla-driven: por CADA campo marcado como cifrado en common/crypto/clinical-crypto.ts,
@@ -60,7 +63,7 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
   const prisma: any = new Proxy({}, {
     get: (_t, prop: string) => {
       // Advisory lock de H6 (apertura de procesos): no escribe nada.
-      if (prop === '$executeRawUnsafe') return async () => 1;
+      if (prop === '$executeRawUnsafe' || prop === '$executeRaw') return async () => 1;
       if (prop === '$transaction') return async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg));
       if (prop === 'then' || typeof prop !== 'string') return undefined;
       return model(prop);
@@ -123,6 +126,10 @@ const CASES: Case[] = [
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
   { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
     run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any) },
+  { name: 'PortalSignup.submit', writes: { portalSignupRequest: ['firstName', 'lastName', 'email', 'phone', 'birthDate'] },
+    run: (p) => new SignupRequestsService(p).submit({ token: 'A'.repeat(43), firstName: 'Nombre', lastName: 'Ficticio', email: 'alta@example.com', phone: '600000000', birthDate: '1990-01-01', privacyNoticeAcknowledged: true, portalTermsAccepted: true, privacyNoticeVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.privacyNotice, portalTermsVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms } as any) },
+  { name: 'PortalIntakeLinks.rotate', writes: { portalIntakeLink: ['tokenEncrypted'] },
+    run: (p) => new IntakeLinksService(p).rotate('ws-1', owner, 'me') },
 ];
 
 function registeredFields(): string[] {

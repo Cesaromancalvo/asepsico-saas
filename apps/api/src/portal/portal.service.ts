@@ -35,7 +35,7 @@ export class PortalService {
     return (this.prisma as any).patientPortalAccount.findMany({
       where: { patientId, workspaceId },
       orderBy: [{ accessorType: 'asc' }, { createdAt: 'asc' }],
-      select: { id:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, mustChangePassword:true, lastLoginAt:true, createdAt:true },
+      select: { id:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, pendingActivation:true, emailVerifiedAt:true, mustChangePassword:true, lastLoginAt:true, createdAt:true },
     });
   }
 
@@ -80,6 +80,9 @@ export class PortalService {
       passwordHash,
       isActive: true,
       mustChangePassword: true,
+      // Activación manual de una cuenta que venía del alta por QR: deja de estar pendiente y sus
+      // enlaces de activación se revocan abajo (la contraseña temporal sustituye al enlace).
+      pendingActivation: false,
       failedLoginAttempts: 0,
       lockedUntil: null,
       accessorType,
@@ -101,12 +104,33 @@ export class PortalService {
         throw new ConflictException('El modo de acceso al portal del paciente ha cambiado; recarga y vuelve a intentarlo');
       }
 
+      // Argos M1: la activación manual de la cuenta del paciente SUSTITUYE a una cuenta pendiente
+      // de un alta por QR (otro correo). Esa cuenta queda inactiva y no pendiente, y sus enlaces
+      // de activación se revocan, en esta misma transacción: así nunca hay dos cuentas del
+      // paciente activables sobre el mismo historial. Se prefiere a un 409 porque quien activa a
+      // mano está con el paciente y es la decisión más reciente; queda auditado (sin correos).
+      if (accessorType === 'PATIENT') {
+        const notExisting = existing ? { id: { not: existing.id } } : {};
+        const superseded = await tx.patientPortalAccount.updateMany({
+          where: { workspaceId, patientId, accessorType: 'PATIENT', pendingActivation: true, ...notExisting },
+          data: { pendingActivation: false, isActive: false },
+        });
+        await tx.portalActivationToken.updateMany({
+          where: { workspaceId, patientId, usedAt: null, revokedAt: null, ...(existing ? { portalAccountId: { not: existing.id } } : {}) },
+          data: { revokedAt: new Date() },
+        });
+        if (superseded.count) {
+          await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action:'PORTAL_PENDING_ACTIVATION_SUPERSEDED', entityType:'Patient', entityId:patientId, metadata:{ patientId, supersededAccounts: superseded.count, origin:'MANUAL_ENABLE' } } });
+        }
+      }
+
       let account: any;
       if (existing) {
         // Reactivación: acotada al workspace y al paciente, nunca solo por id.
         const scope = { id: existing.id, workspaceId, patientId };
         const { count } = await tx.patientPortalAccount.updateMany({ where: scope, data: accountData });
         if (!count) throw new NotFoundException('Cuenta de portal no encontrada');
+        await tx.portalActivationToken.updateMany({ where: { workspaceId, portalAccountId: existing.id, usedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
         account = await tx.patientPortalAccount.findFirst({ where: scope, select });
       } else {
         account = await tx.patientPortalAccount.create({ data: { workspaceId, patientId, email, ...accountData }, select });
@@ -124,8 +148,10 @@ export class PortalService {
   async disable(workspaceId: string, actor: any, patientId: string) {
     this.assertStaff(actor);
     await this.prisma.$transaction(async (tx: any) => {
-      const result = await tx.patientPortalAccount.updateMany({ where:{ patientId, workspaceId }, data:{ isActive:false } });
+      const result = await tx.patientPortalAccount.updateMany({ where:{ patientId, workspaceId }, data:{ isActive:false, pendingActivation:false } });
       if (!result.count) throw new NotFoundException();
+      // Alta por QR: un enlace de activación pendiente tampoco puede seguir sirviendo.
+      await tx.portalActivationToken.updateMany({ where:{ workspaceId, patientId, usedAt:null, revokedAt:null }, data:{ revokedAt:new Date() } });
       // Criterio 22 de la reserva desde el portal: sin portal no quedan solicitudes pendientes.
       await withdrawPendingRequestsOfPatient(tx, workspaceId, patientId, actor.sub, 'PORTAL_ACCOUNT_DISABLED');
       await tx.auditLog.create({ data:{ workspaceId, actorId:actor.sub, action:'PORTAL_ACCOUNT_DISABLED', entityType:'PatientPortalAccount', entityId:patientId, metadata:{ patientId } } });
