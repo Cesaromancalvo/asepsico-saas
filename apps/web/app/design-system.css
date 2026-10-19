@@ -666,8 +666,8 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 .bk-section h2{margin:0 0 6px;font-size:var(--fs-lg)}
 .bk-section h3{margin:20px 0 10px;font-size:var(--fs-base)}
 .bk-picker-select{max-width:420px}
-.bk-switch{display:flex;align-items:center;gap:12px;min-height:44px;color:var(--ink);font-size:var(--fs-base);font-weight:500}
-.bk-switch input{width:22px;height:22px;accent-color:var(--violet)}
+/* El aspecto del interruptor lo da .e1-switch (globals.css), igual que en Ajustes > Equipo: aquí solo el hueco táctil. */
+.bk-switch{display:flex;min-height:44px;line-height:1.4}
 .bk-warn{margin:14px 0 0}
 .bk-week{display:grid;gap:12px;margin-top:14px}
 .bk-day-row{display:grid;gap:10px;margin:0;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--surface-soft)}
