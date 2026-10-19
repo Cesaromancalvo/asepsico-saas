@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { hash } from 'bcryptjs';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { AuthService } from '../src/auth/auth.service';
@@ -130,7 +131,7 @@ describe('POST /workspace-members/:userId/remove — baja con reasignación', ()
       expect.objectContaining({ workspaceId: WS, actorId: 'owner-1', action: 'MEMBER_REMOVED', entityType: 'WorkspaceMember', entityId: 'm-ther1',
         metadata: expect.objectContaining({ userId: 'ther-1', role: 'THERAPIST', reason: 'LEFT_PRACTICE', revokedSessions: 1, closedExceptionalAccesses: 1, rejectedAppointmentRequests: 1 }) }),
       expect.objectContaining({ workspaceId: WS, actorId: 'owner-1', action: 'MEMBER_WORK_REASSIGNED', entityId: 'm-ther1',
-        metadata: { fromUserId: 'ther-1', toUserId: 'ther-2', processes: 2, futureSessions: 1 } }),
+        metadata: { fromUserId: 'ther-1', toUserId: 'ther-2', processes: 2, futureSessions: 1, processIds: ['p-active', 'p-paused'], sessionIds: ['s-future'] } }),
     ]);
     // Sin nombres de pacientes ni contenido clínico en la auditoría ni en la respuesta.
     const text = JSON.stringify([audit, result]);
@@ -213,6 +214,29 @@ describe('POST /workspace-members/:userId/remove — baja con reasignación', ()
     expect(memberOf(prisma, WS, 'ther-1').status).toBeUndefined();
     expect(row(prisma, 'session', 's-future').therapistId).toBe('ther-1');
     expect(prisma.__store.auditLog).toEqual([]);
+  });
+
+  it('si el destino ya tiene un proceso abierto con alguno de esos pacientes → 409 REASSIGN_PROCESS_CONFLICT y nada cambia', async () => {
+    const prisma = db();
+    prisma.__store.clinicalProcess.push({ id: 'p-dest', workspaceId: WS, patientId: 'pat-2', therapistId: 'ther-2', status: 'PAUSED' });
+    const error = await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' }).catch((e) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.getResponse()).toMatchObject({ code: 'REASSIGN_PROCESS_CONFLICT', conflicts: 1 });
+    expect(memberOf(prisma, WS, 'ther-1').status).toBeUndefined();
+    expect(row(prisma, 'clinicalProcess', 'p-active').therapistId).toBe('ther-1');
+    expect(row(prisma, 'session', 's-future').therapistId).toBe('ther-1');
+    expect(prisma.__store.auditLog).toEqual([]);
+    // Un proceso CERRADO del destino con el mismo paciente no impide la reasignación.
+    row(prisma, 'clinicalProcess', 'p-dest').status = 'CLOSED';
+    await expect(svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' })).resolves.toMatchObject({ reassignment: { processes: 2 } });
+  });
+
+  it('la baja toma el lock de la agenda del que se va (y del destino) antes de rechazar sus solicitudes', async () => {
+    const prisma = db();
+    await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' });
+    const locks: string[] = prisma.__locks;
+    expect(locks).toEqual(expect.arrayContaining([`asepsico:member-removal:${WS}`, `schedule:${WS}:ther-1`, `schedule:${WS}:ther-2`]));
+    expect(locks.indexOf(`schedule:${WS}:ther-1`)).toBeGreaterThan(locks.indexOf(`asepsico:member-removal:${WS}`));
   });
 
   it('un ASSISTANT que se va: solo corte de acceso; pedir reasignación → 400', async () => {
@@ -319,6 +343,25 @@ describe('Corte de acceso inmediato del miembro dado de baja', () => {
     await expect(assertActiveSession(prisma, t2)).rejects.toMatchObject({ status: 401 });
     await expect(assertActiveSession(prisma, { ...t2, tv: '3' })).rejects.toMatchObject({ status: 401 });
     await expect(assertActiveSession(prisma, { ...t2, tv: 3 })).resolves.toBeUndefined();
+  });
+
+  it('no puede iniciar sesión en ese espacio: el login solo usa membresías ACTIVE → 401 genérico', async () => {
+    const passwordHash = await hash('contrasena-ficticia-123', 4);
+    const memberships = [{ workspaceId: WS, role: 'THERAPIST', status: 'REMOVED', createdAt: new Date('2026-01-01') }];
+    const findUnique = jest.fn(async (args: any) => ({
+      id: 'ther-1', email: 'ther-1@example.test', passwordHash, firstName: 'Nombre', lastName: 'Ficticio', totpEnabled: false, tokenVersion: 0,
+      memberships: memberships.filter((m) => !args.include.memberships.where || m.status === args.include.memberships.where.status),
+    }));
+    const signAsync = jest.fn(async () => 'token-ficticio');
+    const create = jest.fn(async () => ({}));
+    const auth = new AuthService({ user: { findUnique }, refreshToken: { create } } as any, { signAsync } as any, {} as any);
+    await expect(auth.login({ email: 'ther-1@example.test', password: 'contrasena-ficticia-123' } as any, {})).rejects.toMatchObject({ status: 401 });
+    expect(findUnique.mock.calls[0][0].include.memberships.where).toEqual({ status: 'ACTIVE' });
+    expect(signAsync).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    // Control: con la membresía activa sí entra.
+    memberships[0].status = 'ACTIVE';
+    await expect(auth.login({ email: 'ther-1@example.test', password: 'contrasena-ficticia-123' } as any, {})).resolves.toMatchObject({ mfaRequired: false, workspaceId: WS });
   });
 
   it('no puede renovar la sesión con su refresh token (revocado en la baja)', async () => {

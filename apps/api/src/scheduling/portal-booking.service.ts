@@ -182,6 +182,16 @@ export class PortalBookingService {
       const id = await this.prisma.$transaction(async (tx) => {
         await lockPatientBooking(tx, workspaceId, patientId);
         await lockTherapistSchedule(tx, workspaceId, therapistId);
+        // Revalidación bajo el lock de la agenda (carrera con la baja del profesional, historia B):
+        // la baja toma este mismo lock, así que aquí se ve ya la membresía REMOVED y la reserva
+        // desactivada si la baja confirmó antes.
+        const [stillMember, stillBookable] = await Promise.all([
+          tx.workspaceMember.count({ where: { workspaceId, userId: therapistId, status: 'ACTIVE' } }),
+          tx.therapistAvailability.count({ where: { workspaceId, therapistId, portalBookingEnabled: true } }),
+        ]);
+        if (!stillMember || !stillBookable) {
+          throw bookingConflict('BOOKING_UNAVAILABLE', 'La reserva desde el portal no está disponible con este profesional. Contacta con la consulta.');
+        }
         await expireDueRequests(tx, workspaceId, { therapistId });
         await expireDueRequests(tx, workspaceId, { patientId });
         await this.lockActiveProcess(tx, workspaceId, patientId, therapistId, clinicalProcessId);

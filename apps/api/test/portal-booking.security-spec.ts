@@ -10,6 +10,7 @@ import { PortalRateLimitGuard } from '../src/scheduling/portal-rate-limit.guard'
 import { SessionsService } from '../src/sessions/sessions.service';
 import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
 import { PortalService } from '../src/portal/portal.service';
+import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 import { CreateAvailabilityBlockDto, PortalCreateRequestDto, RejectAppointmentRequestDto } from '../src/scheduling/dto/scheduling.dto';
 
 /**
@@ -621,5 +622,48 @@ describe('Seguridad, auditoría y límites (criterios 23–26)', () => {
       expect(text).not.toMatch(/\d{1,2}:\d{2}/);
       expect(n.metadata).toBeUndefined();
     }
+  });
+});
+
+// -----------------------------------------------------------------------------------------------
+describe('Carrera con la baja del profesional (historia B, condición de Argos)', () => {
+  it('la baja confirma mientras la solicitud espera el lock de la agenda: se revalida dentro de la transacción → 409 sin crear nada', async () => {
+    const prisma = seed();
+    const slot = await firstSlot(prisma);
+    // Entrelazado simulado: las comprobaciones previas vieron al profesional activo y, al entrar en la
+    // transacción (tras el lock), la baja ya ha confirmado.
+    const original = prisma.$transaction;
+    prisma.$transaction = jest.fn(async (cb: any) => {
+      const member = rows(prisma, 'workspaceMember').find((m) => m.workspaceId === WS && m.userId === 't-a');
+      Object.assign(member, { status: 'REMOVED', removedAt: new Date() });
+      return original(cb);
+    });
+    const error = await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() }).catch((e) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(codeOf(error)).toBe('BOOKING_UNAVAILABLE');
+    expect(rows(prisma, 'appointmentRequest')).toEqual([]);
+    expect(audits(prisma, 'APPOINTMENT_REQUEST_CREATED')).toEqual([]);
+  });
+
+  it('igual si lo que cambió es la reserva desactivada (portalBookingEnabled=false) → 409', async () => {
+    const prisma = seed();
+    const slot = await firstSlot(prisma);
+    const original = prisma.$transaction;
+    prisma.$transaction = jest.fn(async (cb: any) => {
+      rows(prisma, 'therapistAvailability').find((s) => s.therapistId === 't-a').portalBookingEnabled = false;
+      return original(cb);
+    });
+    expect(codeOf(await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() }).catch((e) => e))).toBe('BOOKING_UNAVAILABLE');
+    expect(rows(prisma, 'appointmentRequest')).toEqual([]);
+  });
+
+  it('si la solicitud entra antes, la baja (que toma el lock de su agenda) la rechaza: no queda ninguna PENDING suya', async () => {
+    const prisma = seed();
+    const slot = await firstSlot(prisma);
+    await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    prisma.__locks.length = 0;
+    await new MemberRemovalService(prisma).remove(WS, owner, 't-a', {});
+    expect(rows(prisma, 'appointmentRequest').filter((r) => r.therapistId === 't-a' && r.status === 'PENDING')).toEqual([]);
+    expect(prisma.__locks).toContain(`schedule:${WS}:t-a`);
   });
 });

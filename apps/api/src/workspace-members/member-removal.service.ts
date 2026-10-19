@@ -98,6 +98,11 @@ export class MemberRemovalService {
         throw new BadRequestException({ statusCode: 400, code: 'NOTHING_TO_REASSIGN', message: 'Este miembro no tiene pacientes que reasignar' });
       }
 
+      // Agenda del que se va (y del destino), en orden fijo, ANTES de escribir: una solicitud del
+      // portal en curso o termina antes (y se rechaza abajo) o espera y ve la membresía REMOVED.
+      const scheduleOwners = dto.reassignToUserId && dto.reassignToUserId !== userId ? [userId, dto.reassignToUserId] : [userId];
+      for (const therapistId of scheduleOwners.sort()) await lockTherapistSchedule(tx, workspaceId, therapistId);
+
       const now = new Date();
       const { count } = await tx.workspaceMember.updateMany({
         where: { id: member.id, workspaceId, userId, status: 'ACTIVE' },
@@ -174,7 +179,7 @@ export class MemberRemovalService {
   /**
    * Mueve procesos ACTIVE/PAUSED y citas futuras SCHEDULED de `from` a `toUserId`. Exige un destino
    * clínico ACTIVE del mismo workspace y sin solapes en su agenda (409 con el número de choques).
-   * Un único evento de auditoría con recuentos.
+   * Un único evento de auditoría con recuentos e ids (sin nombres ni contenido).
    */
   private async reassignInTx(
     tx: Tx,
@@ -191,8 +196,25 @@ export class MemberRemovalService {
     });
     if (!target || !isClinicalProfile(target)) throw invalidTarget();
 
-    // Mismo orden fijo en las dos agendas para no interbloquear con otra reasignación.
+    // Mismo orden fijo en las dos agendas para no interbloquear con otra reasignación (en la baja ya
+    // están tomados: los advisory locks de transacción son reentrantes).
     for (const therapistId of [from.userId, toUserId].sort()) await lockTherapistSchedule(tx, workspaceId, therapistId);
+
+    const processesToMove = await tx.clinicalProcess.findMany({
+      where: { workspaceId, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
+      orderBy: { id: 'asc' },
+      select: { id: true, patientId: true },
+    });
+    // El destino no puede quedar con dos procesos abiertos con el mismo paciente: 409 y no se toca nada.
+    const patientIds = [...new Set(processesToMove.map((p) => p.patientId))];
+    const duplicated = patientIds.length
+      ? await tx.clinicalProcess.count({
+          where: { workspaceId, therapistId: toUserId, status: { in: [...OPEN_PROCESS_STATUSES] }, patientId: { in: patientIds } },
+        })
+      : 0;
+    if (duplicated > 0) {
+      throw conflict('REASSIGN_PROCESS_CONFLICT', 'El profesional elegido ya tiene un proceso abierto con alguno de estos pacientes', { conflicts: duplicated });
+    }
 
     const sessions = await tx.session.findMany({
       where: { workspaceId, therapistId: from.userId, status: 'SCHEDULED', startsAt: { gte: now } },
@@ -210,10 +232,14 @@ export class MemberRemovalService {
       throw conflict('REASSIGN_SCHEDULE_CONFLICT', 'Algunas citas se solapan con la agenda del profesional elegido', { conflicts });
     }
 
-    const processes = await tx.clinicalProcess.updateMany({
-      where: { workspaceId, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
-      data: { therapistId: toUserId },
-    });
+    const processIds = processesToMove.map((p) => p.id);
+    const processes = processIds.length
+      ? await tx.clinicalProcess.updateMany({
+          where: { workspaceId, id: { in: processIds }, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
+          data: { therapistId: toUserId },
+        })
+      : { count: 0 };
+    if (processes.count !== processIds.length) throw conflict('MEMBER_CHANGED', 'Los procesos cambiaron mientras se reasignaban; vuelve a intentarlo');
     const moved = sessions.length
       ? await tx.session.updateMany({
           where: { workspaceId, id: { in: sessions.map((s) => s.id) }, therapistId: from.userId, status: 'SCHEDULED' },
@@ -229,7 +255,11 @@ export class MemberRemovalService {
         action: MEMBER_WORK_REASSIGNED_ACTION,
         entityType: 'WorkspaceMember',
         entityId: from.id,
-        metadata: { fromUserId: from.userId, toUserId, processes: processes.count, futureSessions: moved.count },
+        // Ids (sin nombres ni contenido) para poder responder a un art. 15 RGPD: qué pasó a quién.
+        metadata: {
+          fromUserId: from.userId, toUserId, processes: processes.count, futureSessions: moved.count,
+          processIds, sessionIds: sessions.map((s) => s.id),
+        },
       },
     });
     return { toUserId, processes: processes.count, futureSessions: moved.count };
