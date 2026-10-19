@@ -35,7 +35,7 @@ export class PortalService {
     return (this.prisma as any).patientPortalAccount.findMany({
       where: { patientId, workspaceId },
       orderBy: [{ accessorType: 'asc' }, { createdAt: 'asc' }],
-      select: { id:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, pendingActivation:true, mustChangePassword:true, lastLoginAt:true, createdAt:true },
+      select: { id:true, email:true, accessorType:true, guardianName:true, guardianRelationship:true, isActive:true, pendingActivation:true, emailVerifiedAt:true, mustChangePassword:true, lastLoginAt:true, createdAt:true },
     });
   }
 

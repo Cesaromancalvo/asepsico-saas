@@ -1,4 +1,4 @@
-import { Equals, IsDateString, IsEmail, IsIn, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, Equals, IsArray, IsDateString, IsEmail, IsIn, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import { IsPlausibleBirthDate } from '../../common/validators/plausible-birth-date.validator';
 import { PORTAL_SIGNUP_NOTICE_VERSIONS } from '../portal-signup.config';
 
@@ -41,10 +41,23 @@ export class SubmitSignupRequestDto {
   portalTermsVersion!: string;
 }
 
+export const LINK_WARNINGS = ['EMAIL_MISMATCH', 'PHONE_MISMATCH', 'PORTAL_PREVIOUSLY_DISABLED'] as const;
+export type LinkWarning = (typeof LINK_WARNINGS)[number];
+
 /** Vincular la solicitud a un paciente que ya existe (mismo workspace). */
 export class LinkSignupRequestDto {
   @IsString() @Length(1, 64)
   patientId!: string;
+
+  /** Avisos que la consulta confirma tras comprobar la identidad en persona (los devuelve el 409). */
+  @IsOptional() @IsArray() @ArrayMaxSize(LINK_WARNINGS.length) @IsIn([...LINK_WARNINGS], { each: true })
+  confirmWarnings?: LinkWarning[];
+}
+
+/** Rechazo masivo de solicitudes pendientes. */
+export class BulkRejectSignupRequestsDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsString({ each: true }) @Length(1, 64, { each: true })
+  requestIds!: string[];
 }
 
 /** Activación pública: el paciente elige su contraseña (misma política que el cambio de contraseña). */

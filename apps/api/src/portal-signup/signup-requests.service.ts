@@ -9,7 +9,7 @@ import { decryptModel, encryptModelData } from '../common/crypto/clinical-crypto
 import { isClinicalProfile } from '../clinical-access/clinical-access.service';
 import { assertNoActiveDemoMembers } from '../patients/demo-workspace.util';
 import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from '../portal/portal-access-mode.util';
-import { LinkSignupRequestDto, SubmitSignupRequestDto } from './dto/portal-signup.dto';
+import { BulkRejectSignupRequestsDto, LinkSignupRequestDto, LinkWarning, SubmitSignupRequestDto } from './dto/portal-signup.dto';
 import { PortalActivationService } from './portal-activation.service';
 import {
   ageInYears, hashToken, isoDay, MAX_PENDING_REQUESTS_PER_PROFESSIONAL, MAX_REQUESTS_PER_LINK_PER_HOUR, MIN_SIGNUP_AGE_YEARS,
@@ -24,10 +24,14 @@ type DecryptedRequest = {
 };
 
 /** Mismo texto que la activación manual: no revela que el correo es de otro paciente u otra consulta. */
+/** Solo dígitos, sin prefijo de España, para comparar teléfonos escritos de distinta forma. */
+const digits = (value: string | null | undefined) => (value ?? '').replace(/\D/g, '').replace(/^0034|^34(?=\d{9}$)/, '');
+const sameEmail = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+
 const EMAIL_UNAVAILABLE = 'Ese correo no puede usarse para esta cuenta de portal; indica otro correo';
 
 /** Motivos de rechazo al vincular (lista cerrada, van a la auditoría sin datos personales). */
-type LinkRejection = 'PATIENT_CLOSED' | 'ACCESS_MODE_NOT_ALLOWED' | 'PATIENT_UNDER_16_OR_NO_BIRTHDATE' | 'IDENTITY_MISMATCH' | 'PATIENT_ALREADY_HAS_ACCOUNT' | 'EMAIL_UNAVAILABLE';
+type LinkRejection = 'CONFIRMATION_REQUIRED' | 'PATIENT_CLOSED' | 'ACCESS_MODE_NOT_ALLOWED' | 'PATIENT_UNDER_16_OR_NO_BIRTHDATE' | 'IDENTITY_MISMATCH' | 'PATIENT_ALREADY_HAS_ACCOUNT' | 'EMAIL_UNAVAILABLE';
 
 /**
  * Solicitudes de alta en el portal hechas desde el QR fijo de un profesional.
@@ -140,12 +144,37 @@ export class SignupRequestsService {
     return { ok: true };
   }
 
+  /**
+   * Rechazo masivo (p. ej. alguien llenó el cupo de pendientes con spam). THERAPIST solo las suyas.
+   * Una auditoría con recuentos e ids (sin datos personales). Los ids inexistentes, ya resueltos o
+   * ajenos se cuentan como no encontrados, sin distinguir.
+   */
+  async rejectMany(workspaceId: string, actor: AuthUser, dto: BulkRejectSignupRequestsDto) {
+    this.assertReviewer(actor);
+    const requested = [...new Set(dto.requestIds)];
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.portalSignupRequest.findMany({
+        where: { id: { in: requested }, workspaceId, expiresAt: { gt: new Date() }, ...(actor.role === 'THERAPIST' ? { professionalId: actor.sub } : {}) },
+        select: { id: true },
+      });
+      const ids = found.map((row) => row.id);
+      const { count } = ids.length ? await tx.portalSignupRequest.deleteMany({ where: { id: { in: ids }, workspaceId } }) : { count: 0 };
+      await tx.auditLog.create({
+        data: {
+          workspaceId, actorId: actor.sub, action: 'PORTAL_SIGNUP_REQUESTS_BULK_REJECTED', entityType: 'PortalSignupRequest', entityId: null,
+          metadata: { requested: requested.length, rejected: count, notFound: requested.length - count, requestIds: ids },
+        },
+      });
+      return { rejected: count, notFound: requested.length - count };
+    });
+  }
+
   /** Aceptar vinculando a un paciente existente: nombre, apellidos y fecha de nacimiento deben coincidir. */
   async acceptLinkingPatient(workspaceId: string, actor: AuthUser, requestId: string, dto: LinkSignupRequestDto) {
     const request = await this.loadForDecision(workspaceId, actor, requestId);
     const patient = await this.prisma.patient.findFirst({
       where: { id: dto.patientId, workspaceId, deletedAt: null },
-      select: { id: true, firstName: true, lastName: true, birthDate: true, status: true, portalAccessMode: true },
+      select: { id: true, firstName: true, lastName: true, birthDate: true, status: true, portalAccessMode: true, email: true, phone: true },
     });
     if (!patient) throw new NotFoundException('Paciente no encontrado');
     if (actor.role === 'THERAPIST') {
@@ -153,9 +182,9 @@ export class SignupRequestsService {
       if (!treats) throw new NotFoundException('Paciente no encontrado');
     }
 
-    const reject = async (reason: LinkRejection, error: Error): Promise<never> => {
+    const reject = async (reason: LinkRejection, error: Error, extra: Record<string, unknown> = {}): Promise<never> => {
       await this.prisma.auditLog.create({
-        data: { workspaceId, actorId: actor.sub, action: 'PORTAL_SIGNUP_REQUEST_LINK_REJECTED', entityType: 'PortalSignupRequest', entityId: request.id, metadata: { patientId: patient.id, reason } },
+        data: { workspaceId, actorId: actor.sub, action: 'PORTAL_SIGNUP_REQUEST_LINK_REJECTED', entityType: 'PortalSignupRequest', entityId: request.id, metadata: { patientId: patient.id, reason, ...extra } },
       });
       throw error;
     };
@@ -190,9 +219,38 @@ export class SignupRequestsService {
         statusCode: 409, code: 'PORTAL_ACCOUNT_ALREADY_EXISTS', message: 'Este paciente ya tiene cuenta de portal (o una pendiente de activar). Rechaza la solicitud.',
       }));
     }
+
+    // Condición de Argos (suplantación): diferencias con la ficha y un portal desactivado antes
+    // exigen confirmación explícita, que queda auditada. Sin confirmarlas → 409 con la lista.
+    const warnings: LinkWarning[] = [];
+    if (!sameEmail(patient.email, request.email)) warnings.push('EMAIL_MISMATCH');
+    if (request.phone && digits(patient.phone) !== digits(request.phone)) warnings.push('PHONE_MISMATCH');
+    const disabledBefore = await this.prisma.patientPortalAccount.findFirst({
+      where: { workspaceId, patientId: patient.id, accessorType: 'PATIENT', isActive: false, pendingActivation: false },
+      select: { id: true },
+    });
+    if (disabledBefore) warnings.push('PORTAL_PREVIOUSLY_DISABLED');
+    const confirmed = new Set(dto.confirmWarnings ?? []);
+    if (warnings.some((w) => !confirmed.has(w))) {
+      return reject('CONFIRMATION_REQUIRED', new ConflictException({
+        statusCode: 409, code: 'PORTAL_SIGNUP_CONFIRMATION_REQUIRED', warnings,
+        message: 'Comprueba en persona la identidad del paciente: hay diferencias con la ficha o tuvo el portal desactivado. Confírmalo para continuar.',
+      }), { warnings });
+    }
+
     if (await this.emailTaken(request.email)) return reject('EMAIL_UNAVAILABLE', new BadRequestException(EMAIL_UNAVAILABLE));
 
-    return this.withEmailRace(() => this.prisma.$transaction((tx) => this.finalize(tx, actor, request, patient.id, 'LINKED')));
+    return this.withEmailRace(() => this.prisma.$transaction(async (tx) => {
+      if (warnings.length) {
+        await tx.auditLog.create({
+          data: {
+            workspaceId, actorId: actor.sub, action: 'PORTAL_SIGNUP_WARNINGS_CONFIRMED', entityType: 'PortalSignupRequest', entityId: request.id,
+            metadata: { patientId: patient.id, warnings, previousAccountId: disabledBefore?.id ?? null },
+          },
+        });
+      }
+      return this.finalize(tx, actor, request, patient.id, 'LINKED');
+    }));
   }
 
   /** Aceptar creando un paciente nuevo con los datos de la solicitud. */
@@ -220,6 +278,21 @@ export class SignupRequestsService {
           metadata: { portalAccessMode: patient.portalAccessMode, origin: 'QR_SIGNUP', signupRequestId: request.id },
         },
       });
+      // Condición de Argos: el THERAPIST que crea el paciente abre su proceso ACTIVO en la misma
+      // transacción (si no, no lo vería en su listado ni podría volver a emitir el enlace).
+      // Título administrativo neutro; sin motivo ni objetivos (los escribe él después).
+      if (actor.role === 'THERAPIST') {
+        const process = await tx.clinicalProcess.create({
+          data: { workspaceId, patientId: patient.id, therapistId: actor.sub, title: 'Proceso iniciado desde el alta del portal', status: 'ACTIVE' },
+          select: { id: true },
+        });
+        await tx.auditLog.create({
+          data: {
+            workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id,
+            metadata: { patientId: patient.id, therapistId: actor.sub, selfAssigned: true, overHistory: false, origin: 'QR_SIGNUP' },
+          },
+        });
+      }
       return this.finalize(tx, actor, request, patient.id, 'CREATED');
     }));
   }
@@ -318,6 +391,8 @@ export class SignupRequestsService {
         metadata: { mode, patientId, professionalId: request.professionalId, intakeLinkId: request.intakeLinkId, activationTokenId: activation.activationTokenId },
       },
     });
-    return { patientId, portalAccountId: account.id, activation: { token: activation.token, expiresAt: activation.expiresAt } };
+    // Condición de Argos: el enlace se entrega SOLO en persona (QR o código en la pantalla de la
+    // consulta). Nunca se envía al correo ni al teléfono de la solicitud: aquí no hay envío alguno.
+    return { patientId, portalAccountId: account.id, activation: { token: activation.token, expiresAt: activation.expiresAt, delivery: 'IN_PERSON_ONLY' as const } };
   }
 }

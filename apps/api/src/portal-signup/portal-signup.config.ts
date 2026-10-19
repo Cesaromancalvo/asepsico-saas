@@ -7,6 +7,9 @@ import { createHash, randomBytes } from 'crypto';
  * Valores fijos en el servidor: el cliente nunca los elige.
  */
 
+/** Prefijo de las rutas públicas (main.ts les aplica el límite de cuerpo de 16 KB). */
+export const PORTAL_SIGNUP_PUBLIC_PATH = '/api/v1/public/portal-signup';
+
 /** Las solicitudes sin respuesta se borran a los 14 días. */
 export const SIGNUP_REQUEST_TTL_MS = 14 * 24 * 60 * 60_000;
 /** Solicitudes pendientes como máximo por profesional (las siguientes se descartan en silencio). */

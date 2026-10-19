@@ -49,8 +49,16 @@ export interface PortalSignupAcceptedContract {
   patientId?: string;
   portalAccountId: string;
   /** Se muestra UNA vez a la consulta (QR o enlace) para que el paciente ponga su contraseña. Caduca a las 72 h. */
-  activation: { token: string; expiresAt: string };
+  activation: { token: string; expiresAt: string; delivery: 'IN_PERSON_ONLY' };
 }
+
+/** Avisos al vincular (409 PORTAL_SIGNUP_CONFIRMATION_REQUIRED con warnings). Se reenvían en confirmWarnings tras comprobar la identidad en persona. */
+export type PortalSignupLinkWarning = 'EMAIL_MISMATCH' | 'PHONE_MISMATCH' | 'PORTAL_PREVIOUSLY_DISABLED';
+export interface PortalSignupLinkBody { patientId: string; confirmWarnings?: PortalSignupLinkWarning[] }
+
+/** POST /portal-signup-requests/bulk-reject (1 a 100 ids). */
+export interface PortalSignupBulkRejectBody { requestIds: string[] }
+export interface PortalSignupBulkRejectResult { rejected: number; notFound: number }
 
 /** POST /public/portal-signup/activate (público). Error genérico: 400 PORTAL_ACTIVATION_INVALID. */
 export interface PortalActivationBody { token: string; password: string }
@@ -59,5 +67,6 @@ export type PortalSignupErrorCode =
   | 'PORTAL_SIGNUP_MIN_AGE'
   | 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN'
   | 'PORTAL_SIGNUP_IDENTITY_MISMATCH'
+  | 'PORTAL_SIGNUP_CONFIRMATION_REQUIRED'
   | 'PORTAL_ACCOUNT_ALREADY_EXISTS'
   | 'PORTAL_ACTIVATION_INVALID';

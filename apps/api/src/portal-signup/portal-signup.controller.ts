@@ -4,7 +4,8 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator';
 import { CsrfGuard } from '../common/guards/csrf.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { ActivatePortalAccountDto, LinkSignupRequestDto, SubmitSignupRequestDto } from './dto/portal-signup.dto';
+import { ActivatePortalAccountDto, BulkRejectSignupRequestsDto, LinkSignupRequestDto, SubmitSignupRequestDto } from './dto/portal-signup.dto';
+import { PortalAccountEmailService } from './portal-account-email.service';
 import { IntakeLinksService } from './intake-links.service';
 import { PortalActivationService } from './portal-activation.service';
 import { ACTIVATION_THROTTLE, SIGNUP_SUBMIT_THROTTLE } from './portal-signup.config';
@@ -20,6 +21,7 @@ export class PortalSignupController {
     private readonly links: IntakeLinksService,
     private readonly requests: SignupRequestsService,
     private readonly activation: PortalActivationService,
+    private readonly accountEmail: PortalAccountEmailService,
   ) {}
 
   /** :professionalId puede ser "me". El token solo se devuelve a quien gestiona ese QR. */
@@ -43,6 +45,11 @@ export class PortalSignupController {
     return this.requests.list(user.workspaceId, user, typeof professionalId === 'string' ? professionalId : undefined);
   }
 
+  @Post('portal-signup-requests/bulk-reject') @UseGuards(CsrfGuard)
+  rejectMany(@CurrentUser() user: AuthUser, @Body() dto: BulkRejectSignupRequestsDto) {
+    return this.requests.rejectMany(user.workspaceId, user, dto);
+  }
+
   @Post('portal-signup-requests/:requestId/link') @UseGuards(CsrfGuard) @Header('Cache-Control', 'no-store')
   link(@CurrentUser() user: AuthUser, @Param('requestId') requestId: string, @Body() dto: LinkSignupRequestDto) {
     return this.requests.acceptLinkingPatient(user.workspaceId, user, requestId, dto);
@@ -56,6 +63,12 @@ export class PortalSignupController {
   @Post('portal-signup-requests/:requestId/reject') @UseGuards(CsrfGuard)
   reject(@CurrentUser() user: AuthUser, @Param('requestId') requestId: string) {
     return this.requests.reject(user.workspaceId, user, requestId);
+  }
+
+  /** Libera un correo sin verificar de una cuenta ya desactivada (OWNER/ADMIN). Ver portal-email.util.ts. */
+  @Post('patients/:patientId/portal-accounts/:accountId/release-email') @UseGuards(CsrfGuard)
+  releaseEmail(@CurrentUser() user: AuthUser, @Param('patientId') patientId: string, @Param('accountId') accountId: string) {
+    return this.accountEmail.release(user.workspaceId, user, patientId, accountId);
   }
 
   /** Nuevo enlace de activación para una cuenta aún pendiente (revoca el anterior). */

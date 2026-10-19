@@ -75,7 +75,8 @@ export class PortalActivationService {
           metadata: { patientId, activationTokenId: issued.activationTokenId, expiresAt: issued.expiresAt.toISOString() },
         },
       });
-      return { portalAccountId: account.id, activation: { token: issued.token, expiresAt: issued.expiresAt } };
+      // Solo en persona (QR o código en la pantalla de la consulta); nunca por correo ni teléfono.
+      return { portalAccountId: account.id, activation: { token: issued.token, expiresAt: issued.expiresAt, delivery: 'IN_PERSON_ONLY' as const } };
     });
   }
 

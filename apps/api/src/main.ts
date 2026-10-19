@@ -8,6 +8,7 @@ import { describeTrustProxy, parseTrustProxy } from './config/trust-proxy';
 import { buildCorsDelegate } from './config/cors';
 import { WAITLIST_PATH, assertWaitlistConfig } from './waitlist/waitlist.config';
 import { waitlistBodyParser } from './waitlist/waitlist-body.middleware';
+import { PORTAL_SIGNUP_PUBLIC_PATH } from './portal-signup/portal-signup.config';
 
 async function bootstrap() {
   // Se valida ANTES de crear la app: un TRUST_PROXY mal escrito debe impedir el arranque, no
@@ -48,6 +49,8 @@ async function bootstrap() {
   app.enableCors(buildCorsDelegate());
   // Límite de 16 KB en la ruta pública (después de CORS, antes de los parsers globales de 100 KB).
   app.use(WAITLIST_PATH, waitlistBodyParser());
+  // Mismo límite de 16 KB (y JSON obligatorio) en el alta pública del portal por QR.
+  app.use(PORTAL_SIGNUP_PUBLIC_PATH, waitlistBodyParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
   const config = new DocumentBuilder()
