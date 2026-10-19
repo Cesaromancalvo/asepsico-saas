@@ -177,7 +177,8 @@ export class MemberRemovalService {
   }
 
   /**
-   * Mueve procesos ACTIVE/PAUSED y citas futuras SCHEDULED de `from` a `toUserId`. Exige un destino
+   * Mueve procesos ACTIVE/PAUSED y sus citas futuras SCHEDULED (o sin proceso, y sin resumen
+   * interno) de `from` a `toUserId`. Exige un destino
    * clínico ACTIVE del mismo workspace y sin solapes en su agenda (409 con el número de choques).
    * Un único evento de auditoría con recuentos e ids (sin nombres ni contenido).
    */
@@ -216,11 +217,25 @@ export class MemberRemovalService {
       throw conflict('REASSIGN_PROCESS_CONFLICT', 'El profesional elegido ya tiene un proceso abierto con alguno de estos pacientes', { conflicts: duplicated });
     }
 
-    const sessions = await tx.session.findMany({
-      where: { workspaceId, therapistId: from.userId, status: 'SCHEDULED', startsAt: { gte: now } },
-      orderBy: { startsAt: 'asc' },
-      select: { id: true, startsAt: true, endsAt: true },
-    });
+    const processIds = processesToMove.map((p) => p.id);
+    // Citas futuras que se mueven: solo las sin proceso o de un proceso que se reasigna ahora (las de
+    // un proceso cerrado o ajeno conservan su profesional). Y nunca una con resumen interno: en
+    // sessions.service el internalSummary solo lo lee el profesional de la cita (session.therapistId),
+    // así que moverla se lo enseñaría al destino, y vaciarlo borraría una nota clínica de su autor.
+    // Esas se quedan a nombre de quien se fue (pendientes, visibles en los recuentos) y se auditan.
+    const movable = { workspaceId, therapistId: from.userId, status: 'SCHEDULED' as const, startsAt: { gte: now } };
+    const [sessions, withPrivateNotes] = await Promise.all([
+      tx.session.findMany({
+        where: { ...movable, internalSummary: null, OR: [{ clinicalProcessId: null }, { clinicalProcessId: { in: processIds } }] },
+        orderBy: { startsAt: 'asc' },
+        select: { id: true, startsAt: true, endsAt: true },
+      }),
+      tx.session.findMany({
+        where: { ...movable, internalSummary: { not: null }, OR: [{ clinicalProcessId: null }, { clinicalProcessId: { in: processIds } }] },
+        orderBy: { startsAt: 'asc' },
+        select: { id: true },
+      }),
+    ]);
     let conflicts = 0;
     for (const s of sessions) {
       const clash = await findScheduleConflict(tx, {
@@ -232,7 +247,6 @@ export class MemberRemovalService {
       throw conflict('REASSIGN_SCHEDULE_CONFLICT', 'Algunas citas se solapan con la agenda del profesional elegido', { conflicts });
     }
 
-    const processIds = processesToMove.map((p) => p.id);
     const processes = processIds.length
       ? await tx.clinicalProcess.updateMany({
           where: { workspaceId, id: { in: processIds }, therapistId: from.userId, status: { in: [...OPEN_PROCESS_STATUSES] } },
@@ -242,7 +256,7 @@ export class MemberRemovalService {
     if (processes.count !== processIds.length) throw conflict('MEMBER_CHANGED', 'Los procesos cambiaron mientras se reasignaban; vuelve a intentarlo');
     const moved = sessions.length
       ? await tx.session.updateMany({
-          where: { workspaceId, id: { in: sessions.map((s) => s.id) }, therapistId: from.userId, status: 'SCHEDULED' },
+          where: { workspaceId, id: { in: sessions.map((s) => s.id) }, therapistId: from.userId, status: 'SCHEDULED', internalSummary: null },
           data: { therapistId: toUserId },
         })
       : { count: 0 };
@@ -259,10 +273,11 @@ export class MemberRemovalService {
         metadata: {
           fromUserId: from.userId, toUserId, processes: processes.count, futureSessions: moved.count,
           processIds, sessionIds: sessions.map((s) => s.id),
+          keptSessionIdsWithPrivateNotes: withPrivateNotes.map((s) => s.id),
         },
       },
     });
-    return { toUserId, processes: processes.count, futureSessions: moved.count };
+    return { toUserId, processes: processes.count, futureSessions: moved.count, keptSessionsWithPrivateNotes: withPrivateNotes.length };
   }
 
   /** Recuentos de lo que sigue a nombre del miembro (sin pacientes ni contenido). */

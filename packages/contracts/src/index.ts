@@ -128,7 +128,7 @@ export interface MemberRemovalPreviewContract extends MemberPendingWorkContract 
 export interface RemoveMemberRequestContract { reassignToUserId?: string; reason?: MemberRemovalReason; }
 /** POST /workspace-members/:userId/reassign (solo miembros ya dados de baja). */
 export interface ReassignMemberWorkRequestContract { toUserId: string; }
-export interface MemberWorkReassignmentContract { toUserId: string; processes: number; futureSessions: number; }
+export interface MemberWorkReassignmentContract { toUserId: string; processes: number; futureSessions: number; keptSessionsWithPrivateNotes: number; }
 export interface MemberRemovalResultContract { userId: string; status: 'REMOVED'; removedAt: string; revokedSessions: number; closedExceptionalAccesses: number; rejectedAppointmentRequests: number; reassignment: MemberWorkReassignmentContract | null; pending: MemberPendingWorkContract; }
 export interface MemberReassignResultContract { userId: string; reassignment: MemberWorkReassignmentContract; pending: MemberPendingWorkContract; }
 /** 400/409 de la baja: { statusCode, code, message } (+ conflicts en REASSIGN_SCHEDULE_CONFLICT y REASSIGN_PROCESS_CONFLICT). La reserva del portal responde 409 BOOKING_UNAVAILABLE si el profesional ya no la ofrece. */

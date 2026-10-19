@@ -7,6 +7,9 @@ import { hashToken } from '../src/auth/token.util';
 import { assertActiveSession } from '../src/common/auth/active-session';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
 import { AvailabilityService } from '../src/scheduling/availability.service';
+import { SessionsService } from '../src/sessions/sessions.service';
+import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
+import { encryptField } from '../src/common/crypto/field-encryption';
 import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 import { WorkspaceMembersService } from '../src/workspace-members/workspace-members.service';
 import { fakeClinicalDb } from './support/fake-clinical-db';
@@ -131,7 +134,7 @@ describe('POST /workspace-members/:userId/remove — baja con reasignación', ()
       expect.objectContaining({ workspaceId: WS, actorId: 'owner-1', action: 'MEMBER_REMOVED', entityType: 'WorkspaceMember', entityId: 'm-ther1',
         metadata: expect.objectContaining({ userId: 'ther-1', role: 'THERAPIST', reason: 'LEFT_PRACTICE', revokedSessions: 1, closedExceptionalAccesses: 1, rejectedAppointmentRequests: 1 }) }),
       expect.objectContaining({ workspaceId: WS, actorId: 'owner-1', action: 'MEMBER_WORK_REASSIGNED', entityId: 'm-ther1',
-        metadata: { fromUserId: 'ther-1', toUserId: 'ther-2', processes: 2, futureSessions: 1, processIds: ['p-active', 'p-paused'], sessionIds: ['s-future'] } }),
+        metadata: { fromUserId: 'ther-1', toUserId: 'ther-2', processes: 2, futureSessions: 1, processIds: ['p-active', 'p-paused'], sessionIds: ['s-future'], keptSessionIdsWithPrivateNotes: [] } }),
     ]);
     // Sin nombres de pacientes ni contenido clínico en la auditoría ni en la respuesta.
     const text = JSON.stringify([audit, result]);
@@ -170,7 +173,7 @@ describe('POST /workspace-members/:userId/remove — baja con reasignación', ()
     expect(row(prisma, 'clinicalProcess', 'p-active').therapistId).toBe('ther-1');
 
     const later = await svc(prisma).reassignWork(WS, actor('owner-1', 'OWNER'), 'ther-1', { toUserId: 'admin-2' });
-    expect(later.reassignment).toEqual({ toUserId: 'admin-2', processes: 2, futureSessions: 1 });
+    expect(later.reassignment).toEqual({ toUserId: 'admin-2', processes: 2, futureSessions: 1, keptSessionsWithPrivateNotes: 0 });
     expect(later.pending).toEqual({ activeProcesses: 0, pausedProcesses: 0, futureSessions: 0, pendingAppointmentRequests: 0 });
     expect(row(prisma, 'clinicalProcess', 'p-active').therapistId).toBe('admin-2');
     expect(row(prisma, 'clinicalProcess', 'p-closed').therapistId).toBe('ther-1');
@@ -401,6 +404,58 @@ describe('GET /workspace-members/:userId/removal-preview y listado', () => {
     const prisma = db();
     await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'admin-2', {});
     await expect(new WorkspaceMembersService(prisma).setClinician(WS, actor('owner-1', 'OWNER'), 'admin-2', { isClinician: false })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('Qué citas se mueven y qué no lee el destino (condición de Argos)', () => {
+  const extraSessions = () => [
+    // Cita futura de un proceso CERRADO del que se va: no se mueve.
+    { id: 's-closed-future', workspaceId: WS, patientId: 'pat-3', therapistId: 'ther-1', clinicalProcessId: 'p-closed', status: 'SCHEDULED', startsAt: new Date(FUTURE.getTime() + 2 * 3_600_000), endsAt: new Date(FUTURE.getTime() + 3 * 3_600_000) },
+    // Cita futura suya enlazada a un proceso de OTRO profesional: no se mueve.
+    { id: 's-foreign-process', workspaceId: WS, patientId: 'pat-3', therapistId: 'ther-1', clinicalProcessId: 'p-foreign', status: 'SCHEDULED', startsAt: new Date(FUTURE.getTime() + 4 * 3_600_000), endsAt: new Date(FUTURE.getTime() + 5 * 3_600_000) },
+    // Cita futura sin proceso: se mueve.
+    { id: 's-noproc', workspaceId: WS, patientId: 'pat-2', clinicalProcessId: null, therapistId: 'ther-1', status: 'SCHEDULED', startsAt: new Date(FUTURE.getTime() + 6 * 3_600_000), endsAt: new Date(FUTURE.getTime() + 7 * 3_600_000) },
+    // Cita futura de un proceso reasignado CON resumen interno del que se va: no se mueve ni se vacía.
+    { id: 's-private', workspaceId: WS, patientId: 'pat-1', therapistId: 'ther-1', clinicalProcessId: 'p-active', status: 'SCHEDULED', startsAt: new Date(FUTURE.getTime() + 8 * 3_600_000), endsAt: new Date(FUTURE.getTime() + 9 * 3_600_000), internalSummary: encryptField('Resumen interno ficticio de quien se fue') },
+  ];
+  const setup = () => {
+    const prisma = db({ session: extraSessions() });
+    prisma.__store.clinicalProcess.push({ id: 'p-foreign', workspaceId: WS, patientId: 'pat-3', therapistId: 'admin-2', status: 'ACTIVE' });
+    return prisma;
+  };
+
+  it('solo se mueven las citas sin proceso o de un proceso reasignado, y nunca una con resumen interno (se queda, intacta y auditada)', async () => {
+    const prisma = setup();
+    const result = await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' });
+    expect(row(prisma, 'session', 's-future').therapistId).toBe('ther-2');
+    expect(row(prisma, 'session', 's-noproc').therapistId).toBe('ther-2');
+    expect(row(prisma, 'session', 's-closed-future').therapistId).toBe('ther-1');
+    expect(row(prisma, 'session', 's-foreign-process').therapistId).toBe('ther-1');
+    expect(row(prisma, 'session', 's-private').therapistId).toBe('ther-1');
+    expect(row(prisma, 'session', 's-private').internalSummary).toBeTruthy();
+    expect(result.reassignment).toEqual({ toUserId: 'ther-2', processes: 2, futureSessions: 2, keptSessionsWithPrivateNotes: 1 });
+    const audit = prisma.__store.auditLog.find((a: any) => a.action === 'MEMBER_WORK_REASSIGNED');
+    expect(audit.metadata).toMatchObject({ sessionIds: ['s-future', 's-noproc'], keptSessionIdsWithPrivateNotes: ['s-private'] });
+    expect(JSON.stringify(audit)).not.toContain('Resumen interno');
+  });
+
+  it('el destino no lee el resumen interno escrito por el que se fue', async () => {
+    const prisma = setup();
+    await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' });
+    const seen = await new SessionsService(prisma).get(WS, actor('ther-2', 'THERAPIST'), 's-private');
+    expect(seen).not.toHaveProperty('internalSummary');
+    expect(JSON.stringify(seen)).not.toContain('Resumen interno ficticio');
+  });
+
+  it('el destino no pasa a ser autor de los procesos CERRADOS del que se fue con el mismo paciente (sin notas internas, solo lectura)', async () => {
+    const prisma = db();
+    prisma.__store.clinicalProcess.push({ id: 'p-closed-same', workspaceId: WS, patientId: 'pat-1', therapistId: 'ther-1', status: 'CLOSED', title: 'Proceso ficticio', internalNotes: encryptField('Nota interna ficticia de quien se fue') });
+    await svc(prisma).remove(WS, actor('owner-1', 'OWNER'), 'ther-1', { reassignToUserId: 'ther-2' });
+    expect(row(prisma, 'clinicalProcess', 'p-closed-same').therapistId).toBe('ther-1');
+    const seen: any = await new ClinicalProcessesService(prisma).get(WS, actor('ther-2', 'THERAPIST'), 'p-closed-same');
+    expect(seen).not.toHaveProperty('internalNotes');
+    expect(seen.readOnly).toBe(true);
+    expect(JSON.stringify(seen)).not.toContain('Nota interna ficticia');
   });
 });
 
