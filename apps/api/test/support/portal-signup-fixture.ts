@@ -19,12 +19,12 @@ export function seed(overrides: Record<string, any[]> = {}) {
     workspace: [{ id: WS }, { id: 'ws-2' }],
     user: [{ id: 't-a', isDemo: false }, { id: 't-b', isDemo: false }, { id: 't-x', isDemo: false }],
     workspaceMember: [
-      { workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
-      { workspaceId: WS, userId: 'assistant-1', role: 'ASSISTANT', isClinician: false },
-      { workspaceId: WS, userId: 't-a', role: 'THERAPIST', isClinician: true },
-      { workspaceId: WS, userId: 't-b', role: 'THERAPIST', isClinician: true },
-      { workspaceId: 'ws-2', userId: 'owner-2', role: 'OWNER', isClinician: true },
-      { workspaceId: 'ws-2', userId: 't-x', role: 'THERAPIST', isClinician: true },
+      { workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false, status: 'ACTIVE' },
+      { workspaceId: WS, userId: 'assistant-1', role: 'ASSISTANT', isClinician: false, status: 'ACTIVE' },
+      { workspaceId: WS, userId: 't-a', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
+      { workspaceId: WS, userId: 't-b', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
+      { workspaceId: 'ws-2', userId: 'owner-2', role: 'OWNER', isClinician: true, status: 'ACTIVE' },
+      { workspaceId: 'ws-2', userId: 't-x', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
     ],
     patient: [
       { id: 'p1', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', email: 'Lucia.Ficticia@example.com', phone: '+34 600000000', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
