@@ -280,10 +280,12 @@ export class SignupRequestsService {
       });
       // Condición de Argos: el THERAPIST que crea el paciente abre su proceso ACTIVO en la misma
       // transacción (si no, no lo vería en su listado ni podría volver a emitir el enlace).
-      // Título administrativo neutro; sin motivo ni objetivos (los escribe él después).
+      // Título administrativo neutro; sin motivo ni objetivos (los escribe él después). Estado ACTIVE por
+      // defecto del esquema. Paciente NUEVO, sin historia previa: no aplica la apertura sobre historia
+      // ajena (H6), igual que el alta de pacientes nuevos de la importación.
       if (actor.role === 'THERAPIST') {
         const process = await tx.clinicalProcess.create({
-          data: { workspaceId, patientId: patient.id, therapistId: actor.sub, title: 'Proceso iniciado desde el alta del portal', status: 'ACTIVE' },
+          data: { workspaceId, patientId: patient.id, therapistId: actor.sub, title: 'Proceso iniciado desde el alta del portal' },
           select: { id: true },
         });
         await tx.auditLog.create({
