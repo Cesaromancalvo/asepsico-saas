@@ -104,6 +104,26 @@ export class PortalService {
         throw new ConflictException('El modo de acceso al portal del paciente ha cambiado; recarga y vuelve a intentarlo');
       }
 
+      // Argos M1: la activación manual de la cuenta del paciente SUSTITUYE a una cuenta pendiente
+      // de un alta por QR (otro correo). Esa cuenta queda inactiva y no pendiente, y sus enlaces
+      // de activación se revocan, en esta misma transacción: así nunca hay dos cuentas del
+      // paciente activables sobre el mismo historial. Se prefiere a un 409 porque quien activa a
+      // mano está con el paciente y es la decisión más reciente; queda auditado (sin correos).
+      if (accessorType === 'PATIENT') {
+        const notExisting = existing ? { id: { not: existing.id } } : {};
+        const superseded = await tx.patientPortalAccount.updateMany({
+          where: { workspaceId, patientId, accessorType: 'PATIENT', pendingActivation: true, ...notExisting },
+          data: { pendingActivation: false, isActive: false },
+        });
+        await tx.portalActivationToken.updateMany({
+          where: { workspaceId, patientId, usedAt: null, revokedAt: null, ...(existing ? { portalAccountId: { not: existing.id } } : {}) },
+          data: { revokedAt: new Date() },
+        });
+        if (superseded.count) {
+          await tx.auditLog.create({ data: { workspaceId, actorId: actor.sub, action:'PORTAL_PENDING_ACTIVATION_SUPERSEDED', entityType:'Patient', entityId:patientId, metadata:{ patientId, supersededAccounts: superseded.count, origin:'MANUAL_ENABLE' } } });
+        }
+      }
+
       let account: any;
       if (existing) {
         // Reactivación: acotada al workspace y al paciente, nunca solo por id.

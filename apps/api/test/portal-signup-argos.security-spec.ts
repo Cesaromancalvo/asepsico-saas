@@ -10,6 +10,7 @@ import { SignupRequestsService } from '../src/portal-signup/signup-requests.serv
 import { PortalActivationService } from '../src/portal-signup/portal-activation.service';
 import { portalEmailUsableForDelivery } from '../src/portal/portal-email.util';
 import { PatientsService } from '../src/patients/patients.service';
+import { PortalService } from '../src/portal/portal.service';
 import {
   WS, assistant, audits, body, codeOf, owner, ownerWs2, pendingRequest, rows, seed, services, therapistA, therapistB, withLink,
 } from './support/portal-signup-fixture';
@@ -187,6 +188,35 @@ describe('Argos: el enlace de activación queda revocado al archivar y restaurar
     const error = await services(prisma).activation.redeem({ token, password: 'ClaveValida2026' }).catch((e) => e);
     expect(codeOf(error)).toBe('PORTAL_ACTIVATION_INVALID');
     expect(rows(prisma, 'patientPortalAccount')[0].isActive).toBe(false);
+  });
+});
+
+describe('Argos M1: activación manual con otro correo sobre una cuenta QR pendiente', () => {
+  it('la cuenta pendiente queda inactiva, su enlace devuelve 400 y solo hay una cuenta PATIENT activa o pendiente', async () => {
+    const prisma = seed();
+    const { requestId } = await pendingRequest(prisma);
+    const { token } = (await services(prisma).requests.acceptLinkingPatient(WS, owner, requestId, { patientId: 'p1' })).activation;
+
+    await new PortalService(prisma, {} as any).enable(WS, owner, 'p1', { email: 'manual.distinto@example.com', temporaryPassword: 'Temporal12345A' } as any);
+
+    const error = await services(prisma).activation.redeem({ token, password: 'ClaveValida2026' }).catch((e) => e);
+    expect(codeOf(error)).toBe('PORTAL_ACTIVATION_INVALID');
+    const live = rows(prisma, 'patientPortalAccount').filter((a: any) => a.patientId === 'p1' && a.accessorType === 'PATIENT' && (a.isActive || a.pendingActivation));
+    expect(live.map((a: any) => a.email)).toEqual(['manual.distinto@example.com']);
+    expect(rows(prisma, 'portalActivationToken').every((t: any) => t.revokedAt instanceof Date)).toBe(true);
+    const [audit] = audits(prisma, 'PORTAL_PENDING_ACTIVATION_SUPERSEDED');
+    expect(audit).toMatchObject({ workspaceId: WS, actorId: 'owner-1', entityId: 'p1', metadata: { patientId: 'p1', supersededAccounts: 1 } });
+    expect(JSON.stringify(audit)).not.toContain('example.com');
+  });
+
+  it('activar a mano el MISMO correo de la cuenta pendiente la reutiliza (activa, ya no pendiente, enlace revocado)', async () => {
+    const prisma = seed();
+    const { requestId } = await pendingRequest(prisma);
+    const { token } = (await services(prisma).requests.acceptLinkingPatient(WS, owner, requestId, { patientId: 'p1' })).activation;
+    await new PortalService(prisma, {} as any).enable(WS, owner, 'p1', { email: 'lucia.ficticia@example.com', temporaryPassword: 'Temporal12345A' } as any);
+    expect(rows(prisma, 'patientPortalAccount')).toHaveLength(1);
+    expect(rows(prisma, 'patientPortalAccount')[0]).toMatchObject({ isActive: true, pendingActivation: false, mustChangePassword: true });
+    expect(codeOf(await services(prisma).activation.redeem({ token, password: 'ClaveValida2026' }).catch((e) => e))).toBe('PORTAL_ACTIVATION_INVALID');
   });
 });
 
