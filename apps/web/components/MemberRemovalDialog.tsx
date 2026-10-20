@@ -64,7 +64,10 @@ export default function MemberRemovalDialog({ target, onClose, onDone }: Props) 
     }
   }, [target]);
 
+  const errorRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (phase === 'done') doneRef.current?.focus(); }, [phase]);
+  // La ventana puede ser más alta que la pantalla: el error se trae a la vista.
+  useEffect(() => { if (error && phase === 'form') errorRef.current?.scrollIntoView({ block: 'center' }); }, [error, phase]);
 
   function handleClosed() {
     onClose();
@@ -217,7 +220,7 @@ export default function MemberRemovalDialog({ target, onClose, onDone }: Props) 
             {!isReassign && preview.role === 'THERAPIST' && <> Si necesita una copia de lo suyo, haz antes la <Link href="/settings/data">exportación</Link>.</>}
           </p>
 
-          {error && <p className="agenda-error reason-dialog-error" role="alert">{error}</p>}
+          {error && <p ref={errorRef} className="agenda-error reason-dialog-error" role="alert">{error}</p>}
 
           <div className="agenda-modal-actions">
             <button type="button" className="agenda-cancel-button" disabled={busy} onClick={() => dialogRef.current?.close()}>Cancelar</button>

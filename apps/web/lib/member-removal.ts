@@ -113,8 +113,10 @@ export function removalSummaryLines(
       lines.push(`Sus notas internas de ${plural(r.archivedProcessNotes, 'proceso', 'procesos')} se conservan con su autoría y no las verá ${targetName ?? 'el nuevo profesional'}.`);
     }
   }
-  if (hasPendingWork(result.pending)) {
-    lines.push(`Siguen a nombre de ${memberName}: ${pendingSummary(result.pending)}. Puedes pasarlos a otra persona desde Equipo cuando lo decidas.`);
+  // Las citas con notas internas ya se han contado arriba y no se reasignan nunca: no se repiten aquí.
+  const remaining = { ...result.pending, futureSessions: Math.max(0, result.pending.futureSessions - (r?.keptSessionsWithPrivateNotes ?? 0)) };
+  if (hasPendingWork(remaining)) {
+    lines.push(`Siguen a nombre de ${memberName}: ${pendingSummary(remaining)}. Puedes pasarlo a otra persona desde Equipo cuando lo decidas.`);
   }
   return lines;
 }
