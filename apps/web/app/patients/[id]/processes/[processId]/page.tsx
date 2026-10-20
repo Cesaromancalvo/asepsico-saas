@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import Icon from '@/components/Icon';
 import NewProcessForm from '@/components/NewProcessForm';
 import { useOpeningReasonPrompt } from '@/components/OpeningReasonPicker';
 import { api } from '@/lib/api';
@@ -38,6 +39,8 @@ type ProcessDetail = {
   consultationReason?: string | null;
   goals?: string | null;
   internalNotes?: string | null;
+  /** Hay notas internas de un profesional anterior (archivadas al reasignar). Solo el indicador, nunca el contenido. */
+  hasPreviousAuthorNotes?: boolean;
   readOnly: boolean;
   therapist?: { id: string; firstName: string; lastName: string } | null;
   patient?: { id: string; firstName: string; lastName: string } | null;
@@ -313,6 +316,7 @@ export default function ProcessPage() {
             <h3>Objetivos</h3>
             <p className="e1-readonly-text">{detail.goals || 'Sin registrar'}</p>
             {isAuthor && !exceptional && <><h3>Notas internas</h3><p className="e1-readonly-text">{detail.internalNotes || 'Sin registrar'}</p></>}
+            {detail.hasPreviousAuthorNotes && <p className="ps-prev-notes" role="note"><Icon name="lock" size={16} />Hay notas internas del profesional anterior, no visibles.</p>}
           </section>
         ) : (
           <form className="patient-record-card e1-form" style={{ maxWidth: 'none' }} onSubmit={save}>
@@ -321,6 +325,7 @@ export default function ProcessPage() {
             <label className="field">Motivo de consulta<textarea name="consultationReason" defaultValue={detail.consultationReason ?? ''} maxLength={4000} rows={4} /></label>
             <label className="field">Objetivos<textarea name="goals" defaultValue={detail.goals ?? ''} maxLength={6000} rows={4} /></label>
             {isAuthor && <label className="field">Notas internas (solo tú)<textarea name="internalNotes" defaultValue={detail.internalNotes ?? ''} maxLength={6000} rows={4} /></label>}
+            {detail.hasPreviousAuthorNotes && <p className="ps-prev-notes" role="note"><Icon name="lock" size={16} />Hay notas internas del profesional anterior, no visibles.</p>}
             <div className="e1-actions"><button className="button" type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button></div>
           </form>
         ))}
