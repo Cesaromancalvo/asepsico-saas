@@ -1,6 +1,7 @@
 import './globals.css';
 import './design-system.css';
 import './exceptional-access.css';
+import './portal-signup.css';
 import DemoBanner from '@/components/DemoBanner';
 
 export const metadata = { title: 'AsePsico', description: 'Sistema operativo para la práctica psicológica' };

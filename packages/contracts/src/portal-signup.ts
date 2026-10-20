@@ -42,6 +42,8 @@ export interface PortalSignupRequestContract {
   birthDate: string;
   createdAt: string;
   expiresAt: string;
+  /** El profesional destinatario ya no está en la consulta (baja). Solo OWNER/ADMIN reciben estas solicitudes. */
+  professionalRemoved?: boolean;
 }
 
 /** POST /portal-signup-requests/:id/link | /create-patient y POST /patients/:id/portal-account/activation-link. */

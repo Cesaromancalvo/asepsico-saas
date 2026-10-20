@@ -3,7 +3,10 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
+import type { PortalSignupAcceptedContract } from '@asepsico/contracts';
+import ActivationDialog from '@/components/ActivationDialog';
 import { api } from '@/lib/api';
+import { reissueActivation } from '@/lib/portal-signup';
 import { DEMO_HINT, useIsDemoEnvironment } from '@/lib/environment';
 
 type AccessMode = 'PATIENT_ONLY' | 'GUARDIAN_ONLY' | 'SHARED';
@@ -14,6 +17,8 @@ type Account = {
   guardianName?: string | null;
   guardianRelationship?: string | null;
   isActive: boolean;
+  /** Creada al aceptar una solicitud de alta por QR y aún sin contraseña elegida. */
+  pendingActivation?: boolean;
   mustChangePassword: boolean;
   lastLoginAt?: string | null;
   createdAt: string;
@@ -40,6 +45,7 @@ export default function PatientPortalAdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [activation, setActivation] = useState<PortalSignupAcceptedContract | null>(null);
 
   // Formulario: cuenta del propio paciente
   const [patientEmail, setPatientEmail] = useState('');
@@ -124,6 +130,19 @@ export default function PatientPortalAdminPage() {
     }
   }
 
+  async function newActivationLink() {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await reissueActivation(id);
+      setActivation({ ...result, patientId: undefined });
+      setMessage('Nuevo código de activación generado. El anterior ya no sirve.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo generar el código de activación');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function disableAll() {
     if (!confirm('Esto desactiva TODO el acceso al portal de este paciente: su propia cuenta y la de cualquier tutor que tenga. ¿Continuar?')) return;
     setBusy(true); setError(''); setMessage('');
@@ -182,7 +201,14 @@ export default function PatientPortalAdminPage() {
                     </strong>
                     <small>{account.email} · último acceso: {formatDate(account.lastLoginAt)}</small>
                   </div>
-                  <span className={`status-pill ${account.isActive ? 'ready' : 'blocked'}`}>{account.isActive ? 'Activa' : 'Desactivada'}</span>
+                  {account.pendingActivation ? (
+                    <div className="ps-pending-account">
+                      <span className="status-pill pending">Pendiente de activar</span>
+                      <button type="button" className="button secondary small-secondary" onClick={newActivationLink} disabled={busy}>Nuevo código de activación</button>
+                    </div>
+                  ) : (
+                    <span className={`status-pill ${account.isActive ? 'ready' : 'blocked'}`}>{account.isActive ? 'Activa' : 'Desactivada'}</span>
+                  )}
                 </article>
               ))}
             </div>
@@ -214,6 +240,7 @@ export default function PatientPortalAdminPage() {
           <p>Apaga a la vez la cuenta del paciente y la de cualquier tutor. Para quitar solo a una persona concreta sin tocar al resto, habla con soporte técnico — todavía no hay un botón individual para eso.</p>
           <button type="button" className="button secondary" onClick={disableAll} disabled={busy}>Desactivar todo el acceso</button>
         </section>
+        <ActivationDialog result={activation} context="Cuenta pendiente de activar" onClose={() => setActivation(null)} />
       </main>
     </div>
   );
