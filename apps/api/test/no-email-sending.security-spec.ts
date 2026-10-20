@@ -12,7 +12,16 @@ import { join, relative } from 'node:path';
  *  - la lista permitida explícita de abajo (p. ej. el futuro aviso de la lista de espera, que solo
  *    enviará al Jefe y nunca a pacientes). Añadir algo aquí exige revisión de Argos.
  */
-const ALLOWED_WITHOUT_GATE: string[] = [];
+const ALLOWED_WITHOUT_GATE: string[] = [
+  // Aviso interno al Jefe de la lista de espera (20/10/2026, pendiente de revisión de Argos).
+  // MailService solo admite los destinatarios internos de WAITLIST_NOTIFY_TO (403 con cualquier
+  // otro): escribir a pacientes queda fuera de alcance y bloqueado.
+  'src/mail/mail.config.ts',
+  'src/mail/mail.service.ts',
+  'src/waitlist/waitlist-notifier.ts',
+];
+/** Dependencias de envío permitidas (versión exacta fijada en package.json). */
+const ALLOWED_MAIL_DEPENDENCIES = ['nodemailer'];
 
 const ROOT = join(__dirname, '..');
 const SCAN_DIRS = ['src', 'prisma'];
@@ -36,10 +45,13 @@ describe('Sin envío de email fuera de la puerta de correos verificados (Argos B
     expect(offenders).toEqual([]);
   });
 
-  it('package.json de la API no declara librerías de envío de email sin revisión', () => {
+  it('package.json de la API no declara librerías de envío de email sin revisión, y las permitidas van fijadas', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
-    expect(deps.filter((d) => EMAIL_SENDING.test(d))).toEqual([]);
+    expect(deps.filter((d) => EMAIL_SENDING.test(d) && !ALLOWED_MAIL_DEPENDENCIES.includes(d))).toEqual([]);
+    for (const dep of ALLOWED_MAIL_DEPENDENCIES.filter((d) => d in (pkg.dependencies ?? {}))) {
+      expect(pkg.dependencies[dep]).toMatch(/^\d+\.\d+\.\d+$/); // versión exacta, sin ^ ni ~
+    }
   });
 
   it('el detector reconoce los patrones prohibidos (control del propio test)', () => {
