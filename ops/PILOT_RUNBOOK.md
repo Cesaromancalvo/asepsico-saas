@@ -250,6 +250,46 @@ Contrato y detalles en `docs/WAITLIST_API.md`.
   terminar; nunca en un `.env` permanente, en el perfil del shell ni en el repo.
 - **`WAITLIST_SECRET` no se rota.**
 
+### Aviso por correo de altas nuevas (Scaleway Transactional Email)
+
+Cuando alguien se apunta, la API envía al Jefe un correo **sin datos del apuntado** con asunto
+«Nuevo apunte en la lista de espera»: cuántas altas nuevas hay, el total activo, la fecha y cómo
+consultarlas (`waitlist:export`). Como mucho **1 aviso cada 10 minutos** con el recuento acumulado.
+Las altas repetidas y el honeypot no avisan. Está **apagado por defecto**.
+
+**Activarlo (una vez):**
+1. En Scaleway (región fr-par), comprobar que el dominio `notificaciones.asepsico.es` aparece como
+   verificado en Transactional Email. Mientras no lo esté, los envíos fallan (solo queda un aviso en el log).
+2. Crear una **API key** asociada a una aplicación IAM con una política que dé solo
+   `TransactionalEmailFullAccess` (o el permiso de envío equivalente) y **solo** sobre el proyecto
+   `asepsico-prod`. Ningún otro permiso. Anotar en el registro del piloto la fecha y el ID de la clave
+   (nunca la clave secreta).
+3. En Render → servicio de la API → Environment:
+   - `MAIL_SMTP_HOST=smtp.tem.scaleway.com`
+   - `MAIL_SMTP_PORT=587`
+   - `MAIL_SMTP_USER=` ID del proyecto `asepsico-prod`
+   - `MAIL_SMTP_PASSWORD=` clave secreta de la API key (se pega una vez y no se vuelve a mostrar)
+   - `MAIL_FROM=AsePsico <avisos@notificaciones.asepsico.es>`
+   - `WAITLIST_NOTIFY_TO=` el correo del Jefe
+   - `WAITLIST_NOTIFY_ENABLED=true`
+4. Guardar y dejar que Render redespliegue. Si falta algo, la API **no arranca** y el log dice qué
+   variable falta (sin mostrar valores): corregir y volver a guardar.
+
+**Probarlo:** apuntarse en la landing con un correo de prueba propio. En menos de un minuto llega el
+aviso. Después, borrar esa alta con `npm run waitlist:delete -- --email <correo de prueba>`. Si no
+llega: buscar en el log de Render `Aviso de lista de espera no enviado (...)` (solo trae el tipo de
+error) y revisar el panel de Scaleway (dominio verificado, cuota, clave).
+
+**Rotar la clave** (cada 6–12 meses, o ya si se sospecha una fuga): crear una API key nueva con la
+misma política → cambiar `MAIL_SMTP_PASSWORD` en Render → probar con un alta de prueba → **borrar la
+clave antigua** en Scaleway → anotar la fecha en el registro del piloto.
+
+**Apagarlo:** `WAITLIST_NOTIFY_ENABLED=false` en Render (el resto de variables puede quedarse).
+
+**Límites conocidos:** el agrupado vive en memoria. En el plan gratuito la API se duerme: un aviso
+pendiente puede perderse al dormir o al reiniciar (aceptado: las altas siguen en la base de datos
+y `waitlist:export` las muestra todas). Un fallo de envío se reintenta una sola vez; nunca afecta al alta.
+
 ### Tarea programada: purga por plazo de conservación
 
 | Cuándo | Qué |
