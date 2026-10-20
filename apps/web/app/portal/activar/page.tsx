@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { activatePortalAccount, PublicRequestError, tokenFromHash } from '@/lib/portal-signup';
+import { activatePortalAccount, PublicRequestError, takeTokenFromLocation } from '@/lib/portal-signup';
 
 type Step = 'loading' | 'no-token' | 'form' | 'done';
 
@@ -30,7 +30,8 @@ export default function PortalActivationPage() {
   const doneRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    const value = tokenFromHash(window.location.hash);
+    // El token sale de la URL en cuanto se lee: si la red falla o se abandona, no queda en el historial.
+    const value = takeTokenFromLocation(window);
     setToken(value);
     setStep(value ? 'form' : 'no-token');
   }, []);
@@ -53,11 +54,9 @@ export default function PortalActivationPage() {
       await activatePortalAccount({ token, password });
       form.reset();
       setStep('done');
-      window.history.replaceState(null, '', window.location.pathname);
     } catch (err) {
       if (err instanceof PublicRequestError && err.code === 'PORTAL_ACTIVATION_INVALID') {
         setInvalid(true);
-        window.history.replaceState(null, '', window.location.pathname);
       } else {
         setError(err instanceof Error && err.message ? err.message : 'No se ha podido activar. Vuelve a intentarlo.');
       }

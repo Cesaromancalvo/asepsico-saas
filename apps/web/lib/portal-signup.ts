@@ -37,9 +37,23 @@ export const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 /** Lee `t` del fragmento (#t=...). El fragmento nunca llega al servidor ni a los registros. */
 export function tokenFromHash(hash: string): string | null {
-  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  // Solo el fragmento: un ?t= (que sí llega al servidor y a los registros) no vale.
+  if (!hash.startsWith('#')) return null;
+  const params = new URLSearchParams(hash.slice(1));
   const token = params.get('t');
   return token && TOKEN_RE.test(token) ? token : null;
+}
+
+type LocationLike = { location: { hash: string; pathname: string }; history: { replaceState(data: unknown, unused: string, url?: string): void } };
+
+/**
+ * Lee el token del fragmento y lo quita EN EL ACTO de la URL (condición de Argos): así no queda en
+ * el historial ni en pestañas sincronizadas aunque la persona abandone la página o falle la red.
+ */
+export function takeTokenFromLocation(win: LocationLike): string | null {
+  const token = tokenFromHash(win.location.hash);
+  if (win.location.hash) win.history.replaceState(null, '', win.location.pathname);
+  return token;
 }
 
 /** Enlace que codifica el QR fijo del profesional. */
@@ -151,6 +165,38 @@ export const submitSignupRequest = (body: PortalSignupRequestBody) =>
 
 export const activatePortalAccount = (body: PortalActivationBody) =>
   publicPost<{ ok: true }>('/public/portal-signup/activate', body);
+
+export type SignupFormInput = { firstName: string; lastName: string; email: string; phone: string; birthDate: string };
+export type SignupOutcome = { step: 'sent'; message: string } | { step: 'minor' } | { step: 'error'; message: string };
+
+/**
+ * Envío de la solicitud desde el formulario público. Por debajo de la edad mínima devuelve
+ * 'minor' SIN llamar a la API: ningún dato de un menor sale del navegador.
+ */
+export async function sendSignupRequest(token: string, input: SignupFormInput, send = submitSignupRequest): Promise<SignupOutcome> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.birthDate)) return { step: 'error', message: 'Indica tu fecha de nacimiento.' };
+  if (ageInYears(input.birthDate) < MIN_SIGNUP_AGE) return { step: 'minor' };
+  const phone = input.phone.trim();
+  try {
+    const result = await send({
+      token,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName.trim(),
+      email: input.email.trim(),
+      ...(phone ? { phone } : {}),
+      birthDate: input.birthDate,
+      privacyNoticeAcknowledged: true,
+      portalTermsAccepted: true,
+      privacyNoticeVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.privacyNotice,
+      portalTermsVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms,
+    });
+    return { step: 'sent', message: result.message };
+  } catch (err) {
+    if (err instanceof PublicRequestError && err.code === 'PORTAL_SIGNUP_MIN_AGE') return { step: 'minor' };
+    if (err instanceof PublicRequestError && err.status === 400) return { step: 'error', message: 'Revisa los datos: hay algún campo con un formato no válido.' };
+    return { step: 'error', message: err instanceof Error && err.message ? err.message : 'No se ha podido enviar. Vuelve a intentarlo.' };
+  }
+}
 
 /* ----------------------------- Formato ----------------------------- */
 

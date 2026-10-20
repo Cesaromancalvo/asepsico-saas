@@ -2,9 +2,7 @@
 
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
 import NoticeText from '@/components/NoticeText';
-import {
-  ageInYears, MIN_SIGNUP_AGE, MINOR_SIGNUP_MESSAGE, PORTAL_SIGNUP_NOTICE_VERSIONS, PublicRequestError, submitSignupRequest, tokenFromHash,
-} from '@/lib/portal-signup';
+import { MIN_SIGNUP_AGE, MINOR_SIGNUP_MESSAGE, sendSignupRequest, takeTokenFromLocation } from '@/lib/portal-signup';
 import {
   DRAFT_NOTICE, EMERGENCY_TEXT, EMERGENCY_TITLE, LAYER1, PORTAL_TERMS_LABEL, PORTAL_TERMS_LABEL_BEFORE, PORTAL_TERMS_LINK, PRIVACY_ACK_LABEL,
 } from '@/lib/portal-signup-texts';
@@ -36,7 +34,8 @@ export default function PortalSignupPage() {
   const resultRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    const value = tokenFromHash(window.location.hash);
+    // El token sale de la URL en cuanto se lee (no queda en el historial).
+    const value = takeTokenFromLocation(window);
     setToken(value);
     setStep(value ? 'form' : 'no-token');
   }, []);
@@ -50,39 +49,15 @@ export default function PortalSignupPage() {
     if (!token || !privacyAck || !termsAccepted) return;
     setError('');
     const data = new FormData(event.currentTarget);
-    const birthDate = String(data.get('birthDate') ?? '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) { setError('Indica tu fecha de nacimiento.'); return; }
-    // Por debajo de la edad mínima no se envía ningún dato.
-    if (ageInYears(birthDate) < MIN_SIGNUP_AGE) { setStep('minor'); return; }
-    const phone = String(data.get('phone') ?? '').trim();
+    const field = (name: string) => String(data.get(name) ?? '');
     setBusy(true);
-    try {
-      const result = await submitSignupRequest({
-        token,
-        firstName: String(data.get('firstName') ?? '').trim(),
-        lastName: String(data.get('lastName') ?? '').trim(),
-        email: String(data.get('email') ?? '').trim(),
-        ...(phone ? { phone } : {}),
-        birthDate,
-        privacyNoticeAcknowledged: true,
-        portalTermsAccepted: true,
-        privacyNoticeVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.privacyNotice,
-        portalTermsVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms,
-      });
-      setSentMessage(result.message);
-      setStep('sent');
-      // El enlace ya no hace falta: fuera del historial y de la barra de direcciones.
-      window.history.replaceState(null, '', window.location.pathname);
-    } catch (err) {
-      if (err instanceof PublicRequestError && err.code === 'PORTAL_SIGNUP_MIN_AGE') { setStep('minor'); return; }
-      if (err instanceof PublicRequestError && err.status === 400) {
-        setError('Revisa los datos: hay algún campo con un formato no válido.');
-      } else {
-        setError(err instanceof Error && err.message ? err.message : 'No se ha podido enviar. Vuelve a intentarlo.');
-      }
-    } finally {
-      setBusy(false);
-    }
+    const outcome = await sendSignupRequest(token, {
+      firstName: field('firstName'), lastName: field('lastName'), email: field('email'), phone: field('phone'), birthDate: field('birthDate'),
+    });
+    setBusy(false);
+    if (outcome.step === 'error') { setError(outcome.message); return; }
+    if (outcome.step === 'sent') setSentMessage(outcome.message);
+    setStep(outcome.step);
   }
 
   const ready = privacyAck && termsAccepted;
