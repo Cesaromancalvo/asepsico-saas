@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PortalIntakeLinkContract, SchedulingProfessionalContract } from '@asepsico/contracts';
 import Sidebar from '@/components/Sidebar';
 import Icon, { EmptyState } from '@/components/Icon';
-import QrCode from '@/components/QrCode';
+import QrPoster from '@/components/QrPoster';
 import { ApiError } from '@/lib/api';
 import { listProfessionals } from '@/lib/booking-client';
 import { isAdminRole, useViewer } from '@/lib/clinical';
@@ -195,14 +195,7 @@ export default function PortalQrPage() {
 
             {link.isActive && url ? (
               <div className="ps-qr-body">
-                <div className="ps-print-area">
-                  <div className="ps-poster">
-                    <p className="ps-poster-kicker">Portal del paciente</p>
-                    <QrCode value={url} label="Código QR de alta en el portal" size={232} className="ps-qr-svg" />
-                    <p className="ps-poster-title">Escanéalo con la cámara de tu móvil</p>
-                    <p className="ps-poster-text">para pedir tu acceso al portal. Tu consulta lo revisará contigo.</p>
-                  </div>
-                </div>
+                <QrPoster value={url} />
                 <div className="ps-qr-actions">
                   <div className="ps-action-group">
                     <button type="button" className="button" onClick={() => window.print()}><Icon name="file" size={18} />Imprimir</button>
@@ -214,7 +207,11 @@ export default function PortalQrPage() {
                       <input id="intake-url" ref={urlRef} readOnly value={url} onFocus={(event) => event.currentTarget.select()} />
                       <button type="button" className="button secondary" onClick={copy}>Copiar</button>
                     </div>
-                    <small className="muted" role="status" aria-live="polite">{copyState || 'Sirve para ponerlo en la web de tu consulta. Quien lo use solo puede pedir acceso.'}</small>
+                    <small className="muted" role="status" aria-live="polite">{copyState}</small>
+                    <p className="ps-copy-warning" role="note">
+                      Si publicas este enlace (por ejemplo, en la web de tu consulta), cualquiera podrá enviar solicitudes, también falsas.
+                      Si empiezan a llegar, usa «Cambiar por uno nuevo».
+                    </p>
                   </div>
 
                   <div className="ps-danger-zone">
