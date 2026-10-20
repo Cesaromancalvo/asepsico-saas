@@ -30,6 +30,7 @@ con `NODE_ENV=production` o contra una BD que no sea local (salvo `--allow-produ
 siempre, si la BD tiene usuarios que no son demo o workspaces distintos de "Consulta Demo".
 
 ## Estado
-Implementados Identity, Workspace, Patients, Sessions (Agenda), Clinical Processes y Audit.
+Implementados Identity, Workspace, Patients, Sessions (Agenda), Clinical Processes y Audit, más los
+módulos posteriores que recoge `ROADMAP_ASEPSICO.md` (estado real de cada sprint).
 Los procesos clínicos y las notas de sesión están restringidos por rol (ver docs/ARCHITECTURE.md).
 No introducir datos clínicos reales todavía sin completar el checklist de docs/SECURITY_BASELINE.md.

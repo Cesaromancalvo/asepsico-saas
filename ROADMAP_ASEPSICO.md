@@ -35,6 +35,8 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 | Sprint 14 | Exportaciones, backups y preparación para piloto | `SPRINT_14_EXPORTACIONES_BACKUPS_PILOTO.md` | Implementado | 11 suites, 58/58 tests; 12/12 verificaciones; backup/restore real ejecutado | BETA avanzada |
 | Sprint 15 | CI con PostgreSQL real y smoke HTTP | `SPRINT_15_CI_POSTGRES_SMOKE.md` | Implementado | `COMPROBACION_EJECUCION_SPRINT_15.md`, `PRUEBA_SPRINT_15_CI_POSTGRES.md` | Ver sección Sprint 15 |
 | Sprint 16 | Despliegue del piloto demo (sesión 3, 16–17/10/2026) | `SPRINT_16_DESPLIEGUE_PILOTO_DEMO.md` | Implementado (PR #19–#23 en `main`) | Revisión de Argos; PR #23: `test:security` 1174/1176 sin fallos, web 42/42, e2e Postgres 27/27; CI con 3 checks en verde en cada merge; copia previa restaurada (`pg_restore` código 0) | BETA (solo demo, sin datos reales) |
+| Sprint 17 | Acceso excepcional y reserva de citas desde el portal (entrega S4) | Sin documento propio (PR #28) | Implementado (PR #28 en `main`, 19/10/2026); desplegado el 19/10/2026 | Evidencia en el PR #28 (cifras de tests no recogidas en este roadmap); verificaciones en vivo en `postgres-integration`; migraciones de 30 a 33 | BETA (solo demo, sin datos reales) |
+| Sprint 18 | Alta en el portal con QR y baja de miembros del equipo (entrega S5) | `SPRINT_18_ALTA_PORTAL_QR_Y_BAJA_MIEMBRO.md` | Implementado en rama (`feat/s5-web`, `9e08ba1`); **lista para desplegar**, sin fusionar en `main` | Argos aprobado; `test:security` 1448/1448 con PostgreSQL real, web 136/136, smoke y verificaciones en vivo del CI en verde, prueba manual HTTP 21/21; migraciones de 33 a 37 | Ejecución confirmada en rama; no validado para pacientes reales |
 
 ## Evidencia acumulada relevante
 
@@ -48,6 +50,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 - Sprint 12: **52/52** pruebas.
 - Sprint 14: **11 suites, 58/58 tests y 0 fallos**.
 - Sprint 16 (PR #23, cambio de contraseña): `test:security` **1174/1176 sin fallos**, web **42/42**, e2e con PostgreSQL **27/27**; tres checks del CI en verde en cada merge.
+- Sprint 18 (entrega S5, en rama): `test:security` con PostgreSQL real **1448/1448**, web **136/136**, smoke HTTP y verificaciones en vivo del CI en verde, prueba manual HTTP **21/21**.
 
 ### Backup y restauración
 
@@ -176,10 +179,28 @@ Ejecutado en el entorno (16/10/2026): rotación de la contraseña del titular co
 Pendiente antes de invitar a nadie:
 
 - revisión operativa del espacio demo antes de la primera invitación (pendiente);
-- backlog de Argos: invalidar access tokens tras cambiar la contraseña (`tokenVersion`/`passwordChangedAt`) y `RegisterDto` con `MaxUtf8Bytes(72)`/`MinChars(12)`;
+- backlog de Argos: invalidar access tokens tras cambiar la contraseña (`tokenVersion`/`passwordChangedAt`; **resuelto en el Sprint 18, pendiente de desplegar**) y `RegisterDto` con `MaxUtf8Bytes(72)`/`MinChars(12)`;
 - plan de la API: decisión pendiente;
 - salida de Vercel antes del 31/10/2026;
-- acceso excepcional: backend aprobado y verificado en rama, interfaz en curso.
+- acceso excepcional: **en `main` y desplegado con el Sprint 17** (19/10/2026).
+
+### Sprint 17 — Acceso excepcional y reserva de citas desde el portal (entrega S4)
+
+Estado: **Implementado y desplegado el 19/10/2026; BETA solo para demo (sin datos de pacientes reales)**.
+
+Fusionado en `main` con el PR #28 (`feat/s4-integracion`): acceso excepcional a la historia clínica (API y web, con registro y avisos) y reserva de citas desde el portal del paciente (disponibilidad del profesional, huecos, solicitudes, bandeja y "Pedir cita"), más las verificaciones en vivo de ambas en el job `postgres-integration` del CI. Migraciones de 30 a 33. No tiene documento `SPRINT_X_*.md` propio: el detalle vive en el PR y en `docs/SECURITY_BASELINE.md`, y las cifras de tests de esta entrega no se recogen aquí.
+
+### Sprint 18 — Alta en el portal con QR y baja de miembros del equipo (entrega S5)
+
+Estado: **Implementado en rama, lista para desplegar; ejecución de pruebas confirmada; no validado para pacientes reales**. Documento: `SPRINT_18_ALTA_PORTAL_QR_Y_BAJA_MIEMBRO.md`.
+
+Incluye: alta del paciente en el portal con el QR fijo de cada profesional (solicitud pendiente cifrada, bandeja «Altas del portal», vincular/crear/rechazar/rechazo masivo, confirmación 409 con `confirmWarnings`, enlace de activación de 72 h entregado solo en persona, 18 años mínimo con QR y purga automática a los 14 días); baja de miembros (`REMOVED`, `tokenVersion` y 401 `SESSION_REVOKED`, reasignación o «decidir después», avisos a OWNER/ADMIN y notas internas del anterior archivadas sin vía de lectura); pantallas web y cabeceras `no-referrer`/`noindex`. Migraciones de 33 a 37, todas aditivas.
+
+Pendiente:
+
+- **antes de pacientes reales:** endpoint público con los datos del responsable (H1) y revisión por abogado de los textos v1.0 del alta;
+- **antes de que un cliente real se dé de baja:** exportación clínica completa (H1), con las notas internas archivadas;
+- producto: lectura de notas archivadas por acceso excepcional, reincorporación de miembros y aviso «Próxima cita» en citas sin reasignar.
 
 ### Fase B — Hardening RGPD y preparación jurídica
 
@@ -190,7 +211,7 @@ Pendiente de definición y revisión especializada:
 - conservación y bloqueo;
 - derechos de acceso, rectificación y portabilidad;
 - MFA;
-- sesiones revocables;
+- sesiones revocables (revalidación en cada petición con `tokenVersion` y membresía activa implementada en el Sprint 18, pendiente de desplegar);
 - inventario de tratamientos;
 - procedimiento de brechas.
 

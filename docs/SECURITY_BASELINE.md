@@ -231,6 +231,26 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   implemente, debe seudonimizar en lugar de borrar, en una transacción auditada, y nunca saltarse el
   `RESTRICT`.
 
+## Alta en el portal con el QR del profesional (`/api/v1/public/portal-signup`)
+
+- **QR fijo por profesional** con token aleatorio de 256 bits, guardado como hash SHA-256 y cifrado;
+  solo lo ve, rota o desactiva quien lo gestiona (`ASSISTANT` no gestiona QR ajenos). El QR de un
+  profesional dado de baja deja de funcionar.
+- **Envío público sin enumeración:** la respuesta es idéntica con token válido, inválido, rotado o
+  desactivado y con solicitudes descartadas por límites (10 por IP y hora, 10 por QR y hora, 20
+  pendientes por profesional). Cuerpo limitado a 16 KB. Alta con QR solo para mayores de 18; el
+  resto, activación manual en persona.
+- **Solicitud pendiente cifrada y sin acceso a nada.** Aceptarla, rechazarla o que caduque (14
+  días, purga automática cada hora en la API) la borra; la auditoría guarda solo ids y motivos.
+- **Vincular a una ficha** con diferencias de correo o teléfono, o con un portal desactivado antes,
+  exige confirmación explícita y auditada (409 `PORTAL_SIGNUP_CONFIRMATION_REQUIRED`).
+- **Activación** con enlace de un solo uso de 72 h, entregado en persona y nunca por correo. La
+  cuenta queda inactiva hasta poner la contraseña. Las páginas públicas del alta y la activación
+  sirven `Referrer-Policy: no-referrer` y `X-Robots-Tag: noindex, nofollow`, y la web borra el
+  token de la URL al leerlo.
+- **Pendiente antes de pacientes reales:** endpoint público con los datos del responsable (hoy la
+  pantalla muestra un marcador) y revisión por abogado de los textos v1.0 (borrador).
+
 ## Reserva de citas desde el portal: límites de frecuencia
 
 - El límite de 30 peticiones/minuto va **en memoria y por instancia**: con varias instancias el
