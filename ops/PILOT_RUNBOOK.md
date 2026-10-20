@@ -198,6 +198,22 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
   de un THERAPIST. **H1 es requisito antes de que un cliente real se dé de baja o pida la
   devolución de sus datos.**
 
+## Alta por QR: caducidad de las solicitudes (14 días)
+
+- Las solicitudes de alta en el portal (`PortalSignupRequest`) sin respuesta caducan a los 14 días y
+  se **borran** con auditoría `PORTAL_SIGNUP_REQUEST_EXPIRED` (solo ids, sin datos personales).
+- Hoy la API las borra **por espacio de trabajo** cuando alguien lista o recibe solicitudes de ese
+  espacio. Un espacio sin actividad las conserva más allá de los 14 días hasta la siguiente purga.
+- Purga global (todos los espacios): `npm run portal-signup:purge`. Solo necesita `DATABASE_URL`,
+  es idempotente y solo imprime el recuento. Se ejecuta desde el clon de despliegue con la URL leída
+  con `read -rs` (como los CLI de la lista de espera) y `unset` al terminar.
+- **Pendiente (Bruno):** purga automática dentro de la API (al arrancar y cada hora, como la
+  limpieza de importaciones). Mientras no esté desplegada, ejecutar la purga global **una vez por
+  semana** y anotar fecha y recuento en el registro del piloto. Cuando esté, la orden manual queda
+  solo como respaldo.
+- No se usa GitHub Actions para esta purga: el repositorio es público y exigiría guardar
+  `DATABASE_URL` de producción en GitHub y abrir la base a las IP de los runners.
+
 ## Backups
 
 - Frecuencia recomendada para piloto: diaria.
