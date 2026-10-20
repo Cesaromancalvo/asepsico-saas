@@ -23,8 +23,8 @@ function linkErrorMessage(err: unknown): string {
     if (err.code === 'PORTAL_ACCOUNT_ALREADY_EXISTS') {
       return 'Este paciente ya tiene cuenta en el portal (o una pendiente de activar). Rechaza esta solicitud.';
     }
-    if (err.code === 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN') {
-      return 'Este paciente no admite alta por QR: activa su portal a mano, con su madre, padre o tutor, desde su ficha.';
+    if (err.code === 'PORTAL_SIGNUP_MANUAL_IN_PERSON') {
+      return 'Este paciente no admite alta por QR (es menor de edad o su ficha no tiene fecha de nacimiento): activa su portal en persona desde su ficha.';
     }
     if (err.status === 404) return 'No encontramos esa solicitud o ese paciente. Puede que ya se haya resuelto: recarga la bandeja.';
     if (err.message) return err.message;

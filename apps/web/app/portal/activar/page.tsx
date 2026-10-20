@@ -69,7 +69,7 @@ export default function PortalActivationPage() {
   return (
     <main className="portal-login ps-public">
       <section aria-labelledby={`${id}-title`}>
-        <span className="eyebrow">Portal del paciente</span>
+        <span className="eyebrow">Portal de pacientes</span>
 
         {step === 'loading' && <p role="status">Cargando…</p>}
 
@@ -102,7 +102,7 @@ export default function PortalActivationPage() {
               {error && <div className="agenda-error" role="alert">{error}</div>}
               <button className="button primary" type="submit" disabled={busy}>{busy ? 'Activando…' : 'Activar mi cuenta'}</button>
             </form>
-            <small>Este portal no es un canal de urgencias. Si lo necesitas, llama al 024 o al 112.</small>
+            <small>El portal no es un canal de urgencias. Si es una urgencia, llama al 112. Si tienes pensamientos de suicidio, llama al 024.</small>
           </>
         )}
       </section>

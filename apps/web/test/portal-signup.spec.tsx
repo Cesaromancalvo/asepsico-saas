@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ActivationHandoff from '../components/ActivationHandoff';
 import SignupRequestCard, { PROFESSIONAL_REMOVED_LABEL } from '../components/SignupRequestCard';
-import { ageInYears, PORTAL_SIGNUP_NOTICE_VERSIONS, PRIVACY_ACK_LABEL, PORTAL_TERMS_LABEL, tokenFromHash } from '../lib/portal-signup';
+import { ageInYears, MIN_SIGNUP_AGE, PORTAL_SIGNUP_NOTICE_VERSIONS, tokenFromHash } from '../lib/portal-signup';
+import { FORBIDDEN_PHRASES, LAYER1, LAYER2, plain, PORTAL_TERMS, PORTAL_TERMS_LABEL, PRIVACY_ACK_LABEL } from '../lib/portal-signup-texts';
 import type { SignupRequest } from '../lib/portal-signup';
 
 const WEB_ROOT = join(__dirname, '..');
@@ -87,6 +88,27 @@ describe('Alta pública', () => {
     expect(config).toContain(`'${PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms}'`);
   });
 
+  it('la edad mínima coincide con la de la API', () => {
+    const config = readFileSync(join(WEB_ROOT, '..', 'api', 'src', 'portal-signup', 'portal-signup.config.ts'), 'utf8');
+    expect(config).toMatch(new RegExp(`MIN_SIGNUP_AGE_YEARS = ${MIN_SIGNUP_AGE};`));
+  });
+
+  it('ningún texto del alta usa las frases que Lex prohíbe ni nombra al profesional', () => {
+    const all = [
+      plain(LAYER1.title), plain(LAYER1.intro), LAYER1.introStrong, LAYER1.introEnd, LAYER1.heading,
+      ...LAYER1.items.map((i) => plain(i.text)), ...LAYER2.rows.map((r) => plain(r.text)),
+      plain(PORTAL_TERMS.title), ...PORTAL_TERMS.items.map((i) => plain(i.text)), PRIVACY_ACK_LABEL, PORTAL_TERMS_LABEL,
+    ].join(' ');
+    for (const phrase of FORBIDDEN_PHRASES) expect(all).not.toMatch(phrase);
+    expect(all).not.toMatch(/\{nombre_profesional\}|tu psic[oó]log[oa] .* responsable/i);
+    const page = readFileSync(join(WEB_ROOT, 'app', 'portal', 'alta', 'page.tsx'), 'utf8');
+    for (const phrase of FORBIDDEN_PHRASES) expect(page).not.toMatch(phrase);
+  });
+
+  it('el título es de solicitud (enviar no crea cuenta) y los datos pendientes se ven como marcador', () => {
+    expect(plain(LAYER1.title)).toBe('Solicitud de acceso al portal de pacientes de [Datos de la consulta pendientes]');
+  });
+
   it('las casillas no hablan de consentir y la página no ofrece WhatsApp (C7, C15)', () => {
     const page = readFileSync(join(WEB_ROOT, 'app', 'portal', 'alta', 'page.tsx'), 'utf8');
     expect(`${PRIVACY_ACK_LABEL} ${PORTAL_TERMS_LABEL}`).not.toMatch(/consiento/i);
@@ -100,9 +122,9 @@ describe('Alta pública', () => {
     expect(tokenFromHash('')).toBeNull();
   });
 
-  it('calcula la edad como la API (16 años el día del cumpleaños)', () => {
+  it('calcula la edad como la API (los años se cumplen el mismo día)', () => {
     const now = new Date('2026-10-20T12:00:00.000Z');
-    expect(ageInYears('2010-10-20', now)).toBe(16);
-    expect(ageInYears('2010-10-21', now)).toBe(15);
+    expect(ageInYears('2008-10-20', now)).toBe(18);
+    expect(ageInYears('2008-10-21', now)).toBe(17);
   });
 });

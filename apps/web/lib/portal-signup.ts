@@ -19,44 +19,18 @@ import { api } from './api';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 const seg = encodeURIComponent;
 
-/** Edad mínima para el alta autónoma por QR (C6). Igual que MIN_SIGNUP_AGE_YEARS de la API. */
-export const MIN_SIGNUP_AGE = 16;
+/** Edad mínima para el alta por QR (piloto: 18). Igual que MIN_SIGNUP_AGE_YEARS de la API. */
+export const MIN_SIGNUP_AGE = 18;
 
 /**
- * Versiones de los textos de la pantalla de alta. Deben coincidir con
+ * Versiones de los textos de la pantalla de alta (lib/portal-signup-texts.ts). Deben coincidir con
  * PORTAL_SIGNUP_NOTICE_VERSIONS de apps/api/src/portal-signup/portal-signup.config.ts (lo
- * comprueba test/portal-signup.spec.ts). Cambiar un texto obliga a subir su versión en los dos.
+ * comprueba test/portal-signup.spec.tsx). Cambiar un texto obliga a subir su versión en los dos.
  */
 export const PORTAL_SIGNUP_NOTICE_VERSIONS = {
-  privacyNotice: 'portal-info-art13-borrador-2026-10',
-  portalTerms: 'portal-normas-uso-borrador-2026-10',
+  privacyNotice: 'portal-alta-qr-art13-v1.0-borrador-2026-10-20',
+  portalTerms: 'portal-normas-uso-v1.0-borrador-2026-10-20',
 } as const;
-
-/**
- * Información art. 13, capa 1 (BORRADOR pendiente de Lex Psi y del abogado). No nombra la
- * consulta ni al profesional: la pantalla pública no debe revelar a quién pertenece el QR.
- */
-export const PRIVACY_NOTICE_LAYER1: { title: string; items: { term: string; text: string }[] } = {
-  title: 'Información sobre tus datos',
-  items: [
-    { term: 'Responsable', text: 'La consulta de psicología que te ha facilitado este código QR.' },
-    { term: 'Qué datos', text: 'Tu nombre y apellidos, tu correo, tu teléfono si lo indicas y tu fecha de nacimiento, además de datos técnicos de acceso.' },
-    { term: 'Para qué', text: 'Para que tu consulta compruebe tu identidad y te dé acceso a tu portal de paciente.' },
-    { term: 'Cuánto tiempo', text: 'Si tu consulta no responde a la solicitud en 14 días, se borra. Si la acepta, tus datos pasan a tu ficha de paciente.' },
-    { term: 'Tus derechos', text: 'Puedes pedir a tu consulta acceder a tus datos, corregirlos, suprimirlos u oponerte a su uso. También puedes reclamar ante la Agencia Española de Protección de Datos.' },
-  ],
-};
-
-/** Normas de uso del portal (BORRADOR). */
-export const PORTAL_TERMS_SUMMARY: string[] = [
-  'El portal es personal: no compartas tu contraseña.',
-  'No es un canal de urgencias. Si lo necesitas, llama al 024 (atención a la conducta suicida) o al 112.',
-  'Tu consulta responderá en su horario habitual.',
-];
-
-/** Textos de las dos casillas (desmarcadas). El primero es un acuse de lectura, no un consentimiento. */
-export const PRIVACY_ACK_LABEL = 'He leído la información sobre cómo se tratan mis datos.';
-export const PORTAL_TERMS_LABEL = 'Acepto las normas de uso del portal.';
 
 /** Formato de los tokens emitidos por la API (256 bits en base64url). */
 export const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -87,7 +61,7 @@ export function ageInYears(birthDate: string, now: Date = new Date()): number {
   return age;
 }
 
-export const MINOR_SIGNUP_MESSAGE = 'Con menos de 16 años el alta la hace tu consulta contigo y con tu madre, padre o tutor.';
+export const MINOR_SIGNUP_MESSAGE = `El alta con este código es para mayores de ${MIN_SIGNUP_AGE} años. Pide a tu consulta que te dé de alta en persona.`;
 
 /** Mensajes de los avisos al vincular (409 PORTAL_SIGNUP_CONFIRMATION_REQUIRED). */
 export const LINK_WARNING_LABEL: Record<PortalSignupLinkWarning, string> = {

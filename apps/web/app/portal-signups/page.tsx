@@ -20,7 +20,7 @@ type Accepted = { result: PortalSignupAcceptedContract; name: string; context: s
 
 function acceptErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.code === 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN') return 'Esta persona tiene menos de 16 años: el alta se hace a mano, con su madre, padre o tutor.';
+    if (err.code === 'PORTAL_SIGNUP_MANUAL_IN_PERSON') return 'Esta persona es menor de edad: no admite alta por QR. Activa su portal en persona desde su ficha.';
     if (err.status === 404) return 'Esta solicitud ya no existe: puede que otra persona la haya resuelto o que haya caducado.';
     if (err.status === 409) return err.message || 'La solicitud ya se ha resuelto. Recarga la bandeja.';
     if (err.message) return err.message;

@@ -22,7 +22,8 @@
 .ps-bulk-confirm{margin:0}
 .ps-req.is-selected{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet),var(--shadow-sm)}
 .ps-req-top{display:flex;gap:14px;align-items:flex-start}
-.ps-req-top .ps-req-check{margin-top:4px}
+.ps-req-body{display:grid;flex:1;gap:14px;min-width:0}
+.ps-req-top .ps-req-check{margin-top:3px}
 .ps-req .bk-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .ps-req .bk-actions .ps-reject{margin-left:auto}
 
@@ -153,3 +154,23 @@
   .ps-poster-text{font-size:13pt;color:#000;max-width:none}
   .ps-poster-kicker{font-size:11pt;color:#000}
 }
+.dashboard-subtitle a{color:var(--violet-ink);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- Textos legales del alta (borrador v1.0) ---------- */
+.ps-draft{margin:12px 0 4px;padding:10px 12px;border:1px solid #ecd9a3;border-radius:var(--r-sm);background:var(--warning-soft);color:#5c3d00;font-size:var(--fs-sm);font-weight:500}
+.portal-login .ps-public-title{font-size:var(--fs-2xl);line-height:1.25}
+.ps-var{padding:0 2px;border-radius:4px;background:var(--warning-soft);color:#5c3d00;font-weight:600;white-space:normal}
+.ps-notice-link{width:max-content;max-width:100%;color:var(--violet-ink);font-size:var(--fs-sm);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.ps-emergency{margin:0;padding:12px 14px;border-radius:var(--r-sm);background:var(--danger-soft);color:#7a2530;font-size:var(--fs-sm);line-height:1.5}
+.ps-check a{color:var(--violet-ink);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.portal-login .ps-check label{display:inline;font-size:inherit;font-weight:inherit;cursor:pointer}
+.ps-submit-hint{margin-top:-6px;text-align:center}
+.ps-public .button:disabled{opacity:.55;cursor:not-allowed}
+.ps-legal section{width:min(720px,100%)}
+.ps-legal-list{display:grid;gap:0;margin:20px 0}
+.ps-legal-list div{display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:16px;padding:14px 0;border-top:1px solid var(--border)}
+.ps-legal-list dt{color:var(--ink);font-size:var(--fs-sm);font-weight:600}
+.ps-legal-list dd{margin:0;color:var(--text);font-size:var(--fs-sm);line-height:1.6}
+.ps-legal-terms{display:grid;gap:12px;margin:20px 0;padding-left:22px;color:var(--text);font-size:var(--fs-md);line-height:1.6}
+.ps-legal-terms strong{color:var(--ink)}
+@media(max-width:760px){.ps-legal-list div{grid-template-columns:1fr;gap:4px}}

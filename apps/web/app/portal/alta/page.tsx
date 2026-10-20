@@ -1,10 +1,13 @@
 'use client';
 
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
+import NoticeText from '@/components/NoticeText';
 import {
-  ageInYears, MIN_SIGNUP_AGE, MINOR_SIGNUP_MESSAGE, PORTAL_SIGNUP_NOTICE_VERSIONS, PORTAL_TERMS_LABEL, PORTAL_TERMS_SUMMARY,
-  PRIVACY_ACK_LABEL, PRIVACY_NOTICE_LAYER1, PublicRequestError, submitSignupRequest, tokenFromHash,
+  ageInYears, MIN_SIGNUP_AGE, MINOR_SIGNUP_MESSAGE, PORTAL_SIGNUP_NOTICE_VERSIONS, PublicRequestError, submitSignupRequest, tokenFromHash,
 } from '@/lib/portal-signup';
+import {
+  DRAFT_NOTICE, EMERGENCY_TEXT, EMERGENCY_TITLE, LAYER1, PORTAL_TERMS_LABEL, PORTAL_TERMS_LABEL_BEFORE, PORTAL_TERMS_LINK, PRIVACY_ACK_LABEL,
+} from '@/lib/portal-signup-texts';
 
 type Step = 'loading' | 'no-token' | 'form' | 'sent' | 'minor';
 
@@ -16,10 +19,10 @@ function todayIso() {
 }
 
 /**
- * Alta pública en el portal desde el QR fijo de un profesional. No muestra el nombre de la
- * consulta ni del profesional, y la respuesta es siempre la misma (QR válido o no): no permite
- * averiguar nada. Con menos de 16 años no se envía nada y se explica que el alta es presencial
- * con la familia.
+ * Solicitud pública de acceso al portal desde el QR fijo de un profesional. Enviarla NO crea
+ * ninguna cuenta: la consulta la revisa y entrega la activación en persona. No nombra al
+ * profesional, y la respuesta es siempre la misma (QR válido o no): no permite averiguar nada.
+ * Por debajo de la edad mínima no se envía ningún dato y se remite al alta en persona.
  */
 export default function PortalSignupPage() {
   const id = useId();
@@ -44,14 +47,13 @@ export default function PortalSignupPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token) return;
+    if (!token || !privacyAck || !termsAccepted) return;
     setError('');
     const data = new FormData(event.currentTarget);
     const birthDate = String(data.get('birthDate') ?? '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) { setError('Indica tu fecha de nacimiento.'); return; }
-    // Regla de menores (C6): no se envía ningún dato de un menor de 16.
+    // Por debajo de la edad mínima no se envía ningún dato.
     if (ageInYears(birthDate) < MIN_SIGNUP_AGE) { setStep('minor'); return; }
-    if (!privacyAck || !termsAccepted) { setError('Para continuar, marca las dos casillas.'); return; }
     const phone = String(data.get('phone') ?? '').trim();
     setBusy(true);
     try {
@@ -83,10 +85,12 @@ export default function PortalSignupPage() {
     }
   }
 
+  const ready = privacyAck && termsAccepted;
+
   return (
     <main className="portal-login ps-public">
       <section aria-labelledby={`${id}-title`}>
-        <span className="eyebrow">Portal del paciente</span>
+        <span className="eyebrow">Portal de pacientes</span>
 
         {step === 'loading' && <p role="status">Cargando…</p>}
 
@@ -107,7 +111,7 @@ export default function PortalSignupPage() {
 
         {step === 'minor' && (
           <div className="ps-result">
-            <h1 id={`${id}-title`} ref={resultRef} tabIndex={-1}>El alta la hace tu consulta</h1>
+            <h1 id={`${id}-title`} ref={resultRef} tabIndex={-1}>El alta la hace tu consulta en persona</h1>
             <p>{MINOR_SIGNUP_MESSAGE}</p>
             <p>No hemos enviado ningún dato. Ya puedes cerrar esta página.</p>
           </div>
@@ -115,8 +119,11 @@ export default function PortalSignupPage() {
 
         {step === 'form' && (
           <>
-            <h1 id={`${id}-title`}>Pide tu acceso al portal</h1>
-            <p>Déjanos tus datos. Tu consulta comprobará que eres tú y te dará en persona el enlace para elegir tu contraseña.</p>
+            <p className="ps-draft" role="note">{DRAFT_NOTICE}</p>
+            <h1 id={`${id}-title`} className="ps-public-title"><NoticeText text={LAYER1.title} /></h1>
+            <p>
+              <NoticeText text={LAYER1.intro} /><strong>{LAYER1.introStrong}</strong>{LAYER1.introEnd}
+            </p>
 
             <form onSubmit={submit} className="ps-public-form">
               <div className="ps-public-grid">
@@ -132,35 +139,41 @@ export default function PortalSignupPage() {
               <label>
                 Fecha de nacimiento
                 <input name="birthDate" type="date" required min="1900-01-01" max={todayIso()} aria-describedby={`${id}-birth-hint`} />
-                <small id={`${id}-birth-hint`}>Con menos de 16 años, el alta se hace en la consulta con tu familia.</small>
+                <small id={`${id}-birth-hint`}>El alta con este código es para mayores de {MIN_SIGNUP_AGE} años. Si tienes menos, la consulta te dará de alta en persona.</small>
               </label>
 
               <div className="ps-notice" aria-labelledby={`${id}-notice-title`} role="region">
-                <h2 id={`${id}-notice-title`}>{PRIVACY_NOTICE_LAYER1.title}</h2>
+                <h2 id={`${id}-notice-title`}>{LAYER1.heading}</h2>
                 <dl>
-                  {PRIVACY_NOTICE_LAYER1.items.map((item) => (
-                    <div key={item.term}><dt>{item.term}</dt><dd>{item.text}</dd></div>
+                  {LAYER1.items.map((item) => (
+                    <div key={item.term}><dt>{item.term}</dt><dd><NoticeText text={item.text} /></dd></div>
                   ))}
                 </dl>
-                <details className="ps-details">
-                  <summary>Normas de uso del portal</summary>
-                  <ul>{PORTAL_TERMS_SUMMARY.map((line) => <li key={line}>{line}</li>)}</ul>
-                </details>
+                <a className="ps-notice-link" href="/portal/alta/informacion" target="_blank" rel="noopener noreferrer">
+                  {LAYER1.fullInfoLink}<span className="sr-only"> (se abre en otra pestaña)</span>
+                </a>
               </div>
+
+              <p className="ps-emergency" role="note"><strong>{EMERGENCY_TITLE}</strong> {EMERGENCY_TEXT}</p>
 
               <label className="ps-check">
                 <input type="checkbox" checked={privacyAck} onChange={(event) => setPrivacyAck(event.target.checked)} />
                 <span>{PRIVACY_ACK_LABEL}</span>
               </label>
-              <label className="ps-check">
-                <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
-                <span>{PORTAL_TERMS_LABEL}</span>
-              </label>
+              <div className="ps-check">
+                <input id={`${id}-terms`} type="checkbox" aria-label={PORTAL_TERMS_LABEL} checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
+                <span>
+                  <label htmlFor={`${id}-terms`}>{PORTAL_TERMS_LABEL_BEFORE}</label>
+                  <a href="/portal/alta/normas" target="_blank" rel="noopener noreferrer">{PORTAL_TERMS_LINK}<span className="sr-only"> (se abre en otra pestaña)</span></a>.
+                </span>
+              </div>
 
               {error && <div className="agenda-error" role="alert">{error}</div>}
-              <button className="button primary" type="submit" disabled={busy}>{busy ? 'Enviando…' : 'Enviar solicitud'}</button>
+              <button className="button primary" type="submit" disabled={busy || !ready} aria-describedby={ready ? undefined : `${id}-submit-hint`}>
+                {busy ? 'Enviando…' : 'Enviar solicitud'}
+              </button>
+              {!ready && <small id={`${id}-submit-hint`} className="ps-submit-hint">Marca las dos casillas para poder enviarla.</small>}
             </form>
-            <small>Este portal no es un canal de urgencias. Si lo necesitas, llama al 024 o al 112.</small>
           </>
         )}
       </section>
