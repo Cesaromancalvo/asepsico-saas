@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
 import { api, ApiError } from '@/lib/api';
-import { sanitizeOtp } from '@/lib/otp';
+import { OTP_AUTOFILL_CHECKS_MS, acceptOtpInput, isUserInsertion } from '@/lib/otp';
 
 type LoginResponse =
   | { mfaRequired: true; pendingToken: string }
@@ -15,31 +15,47 @@ export default function LoginPage() {
   const [notice, setNotice] = useState(''); // aviso al volver al paso 1 porque el paso 2 ya no vale
   const [pendingToken, setPendingToken] = useState<string>(''); // vacío = todavía en el paso 1 (email/contraseña)
   const [busy, setBusy] = useState(false);
-  // Correo del paso 1: se reusa como usuario oculto en el paso 2 para los gestores de contraseñas.
-  const [email, setEmail] = useState('');
-  // Campo del código controlado y vacío al entrar, para que el navegador no lo rellene con el correo guardado.
+  // Campo del código controlado y vacío al entrar: el navegador no debe rellenarlo con el correo ni la contraseña.
   const [code, setCode] = useState('');
   const otpRef = useRef<HTMLInputElement>(null);
+  // Si la persona ya ha tecleado, pegado o pulsado el campo. Safari autorrellena sin keydown ni beforeinput de usuario.
+  const userInteracted = useRef(false);
 
-  // Defensa ante el autorrelleno de Safari, que puede escribir el correo en el campo del código sin pasar por React
-  // o un instante después de montar el paso 2: se revisa al montar y poco después.
+  function markInteracted() {
+    userInteracted.current = true;
+  }
+
+  // Al mostrar el paso 2 y durante unos segundos, se vacía cualquier valor que no venga de la persona
+  // (Safari puede escribir en el DOM sin pasar por React, y hacerlo un instante después de montar).
   useEffect(() => {
     if (!pendingToken) return;
-    const clearIfEmail = () => {
-      const field = otpRef.current;
-      if (field && field.value !== sanitizeOtp(field.value)) {
-        field.value = '';
+    userInteracted.current = false;
+    const field = otpRef.current;
+    const clearIfAutofilled = () => {
+      const current = otpRef.current;
+      if (!current) return;
+      const accepted = acceptOtpInput(current.value, userInteracted.current);
+      if (accepted !== current.value) {
+        current.value = '';
         setCode('');
       }
     };
-    clearIfEmail();
-    const timers = [100, 500, 1500].map((ms) => window.setTimeout(clearIfEmail, ms));
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
+    const onBeforeInput = (event: Event) => {
+      if (isUserInsertion((event as InputEvent).inputType)) markInteracted();
+    };
+    field?.addEventListener('beforeinput', onBeforeInput);
+    clearIfAutofilled();
+    const timers = OTP_AUTOFILL_CHECKS_MS.map((ms) => window.setTimeout(clearIfAutofilled, ms));
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      field?.removeEventListener('beforeinput', onBeforeInput);
+    };
   }, [pendingToken]);
 
   function backToPasswordStep(message = '') {
     setPendingToken('');
     setCode('');
+    userInteracted.current = false;
     setError('');
     setNotice(message);
   }
@@ -52,7 +68,6 @@ export default function LoginPage() {
     const form = e.currentTarget;
     const data = new FormData(form);
     const enteredEmail = String(data.get('email') ?? '');
-    setEmail(enteredEmail);
     const passwordField = form.elements.namedItem('password');
     if (passwordField instanceof HTMLInputElement) passwordField.value = '';
     try {
@@ -112,20 +127,9 @@ export default function LoginPage() {
           <p className="muted">Introduce el código de 6 dígitos de tu app de autenticación, o uno de tus códigos de recuperación.</p>
           <form onSubmit={submitMfaCode}>
             {/*
-              Usuario oculto antes del código: Safari y los gestores de contraseñas meten aquí el correo en vez de en
-              el campo del código. Oculto solo a la vista (no con hidden ni display:none, que Safari ignora al autorrellenar).
+              Sin campo de usuario (ni oculto): con él Safari trata el paso como un login y mete el correo o la
+              contraseña en el código. El código solo se acepta cuando la persona teclea, pega o pulsa el campo.
             */}
-            <input
-              id="mfa-username"
-              className="sr-only autofill-username"
-              type="email"
-              name="username"
-              autoComplete="username"
-              value={email}
-              readOnly
-              tabIndex={-1}
-              aria-hidden="true"
-            />
             <label className="field">
               Código
               <input
@@ -136,14 +140,24 @@ export default function LoginPage() {
                 autoFocus
                 inputMode="numeric"
                 autoComplete="one-time-code"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
                 placeholder="123456"
                 required
                 minLength={6}
                 maxLength={11}
                 value={code}
-                onChange={(event) => setCode(sanitizeOtp(event.target.value))}
-                onFocus={(event) => {
-                  if (event.target.value !== sanitizeOtp(event.target.value)) setCode('');
+                onKeyDown={markInteracted}
+                onPaste={markInteracted}
+                onPointerDown={markInteracted}
+                onClick={markInteracted}
+                onChange={(event) => {
+                  const accepted = acceptOtpInput(event.target.value, userInteracted.current);
+                  if (accepted !== event.target.value) event.target.value = '';
+                  setCode(accepted);
                 }}
               />
             </label>

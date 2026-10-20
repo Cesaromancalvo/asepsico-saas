@@ -1,11 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sanitizeOtp } from '../lib/otp';
+import { OTP_AUTOFILL_CHECKS_MS, acceptOtpInput, isUserInsertion, sanitizeOtp } from '../lib/otp';
 
 /*
  * Regresiones de fix/ui-reserva-y-mfa:
- * - El paso del código MFA se autorrellenaba con el correo guardado por el navegador (visto en Safari).
+ * - El paso del código MFA se autorrellenaba con el correo guardado por el navegador (visto en Safari) y,
+ *   con un usuario oculto delante (fix/mfa-safari-autofill), con la contraseña.
  * - La regla .bk-switch input (22x22) deformaba el interruptor .e1-switch de "Reserva desde el portal".
  */
 const WEB_ROOT = join(__dirname, '..');
@@ -55,40 +56,48 @@ describe('login: paso del código de verificación en dos pasos', () => {
     expect(login).toMatch(/function backToPasswordStep[\s\S]*?setCode\(''\)/);
   });
 
-  it('el usuario oculto va antes del código y está oculto solo a la vista (Safari ignora hidden/display:none)', () => {
+  it('no hay ningún campo de usuario (ni oculto): Safari lo tomaba por un login y metía la contraseña en el código', () => {
     const all = inputs(step);
-    const userIndex = all.findIndex((input) => /autoComplete="username"/.test(input));
-    const otpIndex = all.findIndex((input) => /name="otp"/.test(input));
-    expect(userIndex).toBeGreaterThan(-1);
-    expect(userIndex).toBeLessThan(otpIndex);
-    const user = all[userIndex];
-    expect(user).toMatch(/name="username"/);
-    expect(user).toMatch(/id="mfa-username"/);
-    expect(user).toMatch(/value=\{email\}/);
-    expect(user).toMatch(/readOnly/);
-    expect(user).toMatch(/tabIndex=\{-1\}/);
-    expect(user).toMatch(/aria-hidden="true"/);
-    expect(user).toMatch(/className="sr-only autofill-username"/);
-    // Ni el atributo hidden ni display:none: Safari no autorrellena campos ocultos así y mete el correo en el código.
-    expect(user).not.toMatch(/(?<![-\w])hidden\b/); // aria-hidden sí, el atributo hidden no
-    expect(user).not.toMatch(/display:\s*'?none/);
+    expect(all).toHaveLength(1);
+    for (const input of all) {
+      expect(input).not.toMatch(/autoComplete="(username|current-password|email)"/);
+      expect(input).not.toMatch(/name="username"/);
+      expect(input).not.toMatch(/type="(email|password)"/);
+    }
+    expect(step).not.toMatch(/autofill-username|mfa-username/);
+    expect(globals).not.toMatch(/\.autofill-username/);
   });
 
-  it('la clase del usuario oculto lo saca de la vista sin display:none ni visibility:hidden', () => {
-    expect(globals).toMatch(/\.sr-only\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip:rect\(0,0,0,0\)/);
-    const rule = globals.match(/\.autofill-username\{[^}]*\}/)?.[0];
-    expect(rule).toBeDefined();
-    expect(rule).toMatch(/opacity:0/);
-    expect(rule).toMatch(/pointer-events:none/);
-    expect(rule).not.toMatch(/display:none|visibility:hidden/);
-  });
-
-  it('el campo del código tiene id="otp" y descarta el correo autorrellenado (al escribir, al enfocar y al montar)', () => {
+  it('el campo del código no lo tratan como contraseña los gestores ni lo corrige el navegador', () => {
     expect(otp).toMatch(/id="otp"/);
-    expect(otp).toMatch(/onChange=\{\(event\) => setCode\(sanitizeOtp\(event\.target\.value\)\)\}/);
-    expect(otp).toMatch(/onFocus=/);
+    expect(otp).toMatch(/autoCapitalize="off"/);
+    expect(otp).toMatch(/autoCorrect="off"/);
+    expect(otp).toMatch(/spellCheck=\{false\}/);
+    expect(otp).toMatch(/data-1p-ignore/);
+    expect(otp).toMatch(/data-lpignore="true"/);
+  });
+
+  it('solo acepta el valor tras interacción real: keydown, paste, pointerdown/click y beforeinput de usuario', () => {
     expect(otp).toMatch(/ref=\{otpRef\}/);
-    expect(login).toMatch(/useEffect\(\(\) => \{\s*if \(!pendingToken\) return;[\s\S]*?sanitizeOtp[\s\S]*?\}, \[pendingToken\]\)/);
+    expect(otp).toMatch(/onKeyDown=\{markInteracted\}/);
+    expect(otp).toMatch(/onPaste=\{markInteracted\}/);
+    expect(otp).toMatch(/onPointerDown=\{markInteracted\}/);
+    expect(otp).toMatch(/onClick=\{markInteracted\}/);
+    expect(otp).toMatch(/acceptOtpInput\(event\.target\.value, userInteracted\.current\)/);
+    expect(login).toMatch(/addEventListener\('beforeinput'/);
+    expect(login).toMatch(/isUserInsertion\(\(event as InputEvent\)\.inputType\)/);
+  });
+
+  it('al mostrar el paso 2 reinicia la interacción y vacía estado y DOM en cada comprobación; limpia timers al desmontar', () => {
+    const effect = login.match(/useEffect\(\(\) => \{\s*if \(!pendingToken\) return;[\s\S]*?\}, \[pendingToken\]\)/)?.[0];
+    expect(effect).toBeDefined();
+    expect(effect).toMatch(/userInteracted\.current = false/);
+    expect(effect).toMatch(/OTP_AUTOFILL_CHECKS_MS\.map/);
+    expect(effect).toMatch(/current\.value = ''/);
+    expect(effect).toMatch(/setCode\(''\)/);
+    expect(effect).toMatch(/clearTimeout/);
+    expect(effect).toMatch(/removeEventListener\('beforeinput'/);
+    expect(login).toMatch(/function backToPasswordStep[\s\S]*?userInteracted\.current = false/);
   });
 
   it('el código enviado a /auth/login/mfa es el del estado, no un campo "code" del formulario', () => {
@@ -107,6 +116,61 @@ describe('sanitizeOtp: limpia el correo autorrellenado sin tocar códigos válid
     for (const value of ['', '123456', '12345', 'abcd-ef12-3', 'ABCDE-12345', 'a1b2c3d4e5f']) {
       expect(sanitizeOtp(value)).toBe(value);
     }
+  });
+});
+
+describe('acceptOtpInput / isUserInsertion: el autorrelleno sin interacción se borra', () => {
+  /** Simula el campo: el flag de interacción como en la página y el valor que acaba en el estado. */
+  function field() {
+    let interacted = false;
+    let code = '';
+    return {
+      interact: () => { interacted = true; },
+      beforeInput: (inputType: string) => { if (isUserInsertion(inputType)) interacted = true; },
+      input: (value: string) => { code = acceptOtpInput(value, interacted); return code; },
+    };
+  }
+
+  it('un valor autorrellenado sin interacción (contraseña, correo o código) se descarta', () => {
+    const f = field();
+    expect(f.input('Contrasena-Ficticia-1')).toBe('');
+    expect(f.input('ana.ficticia@example.test')).toBe('');
+    expect(f.input('123456')).toBe('');
+    // El autorrelleno no genera beforeinput de usuario.
+    f.beforeInput('insertReplacementText');
+    expect(f.input('Contrasena-Ficticia-1')).toBe('');
+  });
+
+  it('tras keydown, paste o pulsar el campo se conserva lo que escribe la persona', () => {
+    const typed = field();
+    typed.interact(); // keydown
+    expect(typed.input('123456')).toBe('123456');
+
+    const pasted = field();
+    pasted.beforeInput('insertFromPaste');
+    expect(pasted.input('654321')).toBe('654321');
+
+    const written = field();
+    written.beforeInput('insertText');
+    expect(written.input('1')).toBe('1');
+  });
+
+  it('los códigos de recuperación funcionan tras la interacción, y el "@" se sigue descartando', () => {
+    const f = field();
+    f.interact();
+    for (const value of ['abcd-ef12-3', 'ABCDE-12345', 'a1b2c3d4e5f']) expect(f.input(value)).toBe(value);
+    expect(f.input('ana.ficticia@example.test')).toBe('');
+  });
+
+  it('solo escribir y pegar cuentan como inserción de usuario', () => {
+    expect(isUserInsertion('insertText')).toBe(true);
+    expect(isUserInsertion('insertFromPaste')).toBe(true);
+    expect(isUserInsertion('insertReplacementText')).toBe(false);
+    expect(isUserInsertion(undefined)).toBe(false);
+  });
+
+  it('las comprobaciones cubren desde el montaje hasta 3 s después', () => {
+    expect([...OTP_AUTOFILL_CHECKS_MS]).toEqual([0, 100, 300, 700, 1500, 3000]);
   });
 });
 
