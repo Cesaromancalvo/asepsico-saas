@@ -1,5 +1,5 @@
 'use client';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
 import { api, ApiError } from '@/lib/api';
@@ -14,6 +14,16 @@ export default function LoginPage() {
   const [notice, setNotice] = useState(''); // aviso al volver al paso 1 porque el paso 2 ya no vale
   const [pendingToken, setPendingToken] = useState<string>(''); // vacío = todavía en el paso 1 (email/contraseña)
   const [busy, setBusy] = useState(false);
+  // Aviso al llegar desde una sesión revocada (lib/api.ts → /login?sesion=terminada).
+  const [sessionEnded, setSessionEnded] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('sesion') !== 'terminada') return;
+    setSessionEnded(true);
+    // Se limpia la URL para que el aviso no vuelva a salir al recargar.
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
 
   function backToPasswordStep(message = '') {
     setPendingToken('');
@@ -111,6 +121,14 @@ export default function LoginPage() {
       <div className="card" style={{ maxWidth: 460, margin: '80px auto' }}>
         <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>AsePsico</div>
         <h1>Accede a tu consulta</h1>
+        {sessionEnded && !notice && (
+          <div className="e1-notice info" role="status">
+            <div>
+              <strong>Tu sesión ha terminado</strong>
+              <p>Puede que se haya cambiado tu contraseña o que ya no formes parte de esta consulta. Vuelve a entrar; si no puedes, habla con la persona titular.</p>
+            </div>
+          </div>
+        )}
         {notice && <p className="error" role="alert">{notice}</p>}
         <form onSubmit={submitPassword}>
           <label className="field">Correo<input name="email" type="email" autoComplete="username" required /></label>

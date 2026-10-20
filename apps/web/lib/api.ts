@@ -54,6 +54,32 @@ function redirectToTermsIfRequired(status: number, code: string | undefined) {
   window.location.assign(TERMS_PAGE);
 }
 
+/** Código del 401 de la API cuando el token está bien firmado pero la sesión ya no vale (baja del equipo, contraseña cambiada). */
+export const SESSION_REVOKED = 'SESSION_REVOKED';
+/** Login con el aviso de sesión terminada (la pantalla de login lo lee de la URL). */
+export const SESSION_REVOKED_LOGIN_URL = '/login?sesion=terminada';
+
+/**
+ * Interceptor global del 401 SESSION_REVOKED. Llega aquí solo cuando ya se intentó renovar la
+ * sesión una vez (o la renovación falló, o la petición repetida sigue rechazada): no hay más
+ * reintentos y se va al login con un aviso. Una sola redirección aunque fallen varias peticiones
+ * en paralelo, y nunca desde el propio login (sin bucles).
+ */
+let redirectingToLogin = false;
+
+function redirectToLoginIfRevoked(status: number, code: string | undefined) {
+  if (status !== 401 || code !== SESSION_REVOKED || typeof window === 'undefined') return;
+  if (window.location.pathname === '/login' || redirectingToLogin) return;
+  redirectingToLogin = true;
+  window.location.assign(SESSION_REVOKED_LOGIN_URL);
+}
+
+/** Solo para tests: vuelve a permitir la redirección. */
+export function resetSessionRedirectForTests() {
+  redirectingToLogin = false;
+  redirectingToTerms = false;
+}
+
 // Rutas en las que un 401 es una respuesta de negocio (credenciales, código, pendingToken) y
 // no un access token caducado. Repetirlas tras renovar la sesión contaría el fallo dos veces
 // en el límite de intentos del MFA.
@@ -85,6 +111,8 @@ async function shouldRefresh(path: string, response: Response): Promise<boolean>
  * Cliente de la API. Si una petición autenticada devuelve 401 (access token caducado),
  * intenta renovar la sesión una vez vía /auth/refresh y repite la petición original antes
  * de rendirse. Esto evita que el usuario tenga que volver a iniciar sesión cada 15 minutos.
+ * Si tras ese único intento la respuesta sigue siendo 401 SESSION_REVOKED (baja del equipo o
+ * contraseña cambiada), se lleva al login con un aviso.
  * Los errores se lanzan como ApiError (con `status`).
  */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -104,6 +132,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       message = 'Demasiadas peticiones seguidas. Espera un minuto y vuelve a intentarlo.';
     }
     redirectToTermsIfRequired(response.status, code);
+    if (!NO_REFRESH_PATHS.has(path)) redirectToLoginIfRevoked(response.status, code);
     const error = new ApiError(message, response.status, code);
     error.body = body && typeof body === 'object' ? body : {};
     throw error;
