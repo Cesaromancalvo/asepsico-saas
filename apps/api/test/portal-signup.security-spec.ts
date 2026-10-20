@@ -10,7 +10,7 @@ import { PortalActivationService } from '../src/portal-signup/portal-activation.
 import { PortalSignupController, PublicPortalSignupController } from '../src/portal-signup/portal-signup.controller';
 import { ActivatePortalAccountDto, SubmitSignupRequestDto } from '../src/portal-signup/dto/portal-signup.dto';
 import {
-  hashToken, MAX_PENDING_REQUESTS_PER_PROFESSIONAL, MAX_REQUESTS_PER_LINK_PER_HOUR, PORTAL_SIGNUP_NOTICE_VERSIONS, SIGNUP_ACCEPTED_RESPONSE,
+  hashToken, MAX_PENDING_REQUESTS_PER_PROFESSIONAL, MIN_SIGNUP_AGE_YEARS, MAX_REQUESTS_PER_LINK_PER_HOUR, PORTAL_SIGNUP_NOTICE_VERSIONS, SIGNUP_ACCEPTED_RESPONSE,
 } from '../src/portal-signup/portal-signup.config';
 import { PortalService } from '../src/portal/portal.service';
 
@@ -52,7 +52,7 @@ function seed(overrides: Record<string, any[]> = {}) {
     patient: [
       { id: 'p1', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', email: 'Lucia.Ficticia@example.com', phone: '+34 600000000', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-nobirth', workspaceId: WS, firstName: 'Sin', lastName: 'Fecha', birthDate: null, status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
-      { id: 'p-minor', workspaceId: WS, firstName: 'Menor', lastName: 'Ficticio', birthDate: new Date(`${yearsAgo(14)}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
+      { id: 'p-minor', workspaceId: WS, firstName: 'Menor', lastName: 'Ficticio', birthDate: new Date(`${yearsAgo(MIN_SIGNUP_AGE_YEARS - 1)}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-blocked', workspaceId: WS, firstName: 'Lucía', lastName: 'Ficticia Prueba', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'BLOCKED', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
       { id: 'p-ws2', workspaceId: 'ws-2', firstName: 'Lucía', lastName: 'Ficticia Prueba', birthDate: new Date(`${ADULT_BIRTH}T00:00:00Z`), status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', deletedAt: null },
     ],
@@ -182,17 +182,17 @@ describe('Envío público: sin enumeración, menores y token rotado', () => {
     expect(rows(prisma, 'portalSignupRequest')).toHaveLength(0);
   });
 
-  it('menor de 16 → 400 PORTAL_SIGNUP_MIN_AGE con token válido E inválido (no depende del token) y sin guardar nada', async () => {
+  it('menor de la edad mínima → 400 PORTAL_SIGNUP_MIN_AGE con token válido E inválido (no depende del token) y sin guardar nada', async () => {
     const prisma = seed();
     const token = await withLink(prisma);
     for (const t of [token, 'Z'.repeat(43)]) {
-      const error = await services(prisma).requests.submit(body(t, { birthDate: yearsAgo(16, 1) }) as any).catch((e) => e);
+      const error = await services(prisma).requests.submit(body(t, { birthDate: yearsAgo(MIN_SIGNUP_AGE_YEARS, 1) }) as any).catch((e) => e);
       expect(error).toBeInstanceOf(BadRequestException);
       expect(codeOf(error)).toBe('PORTAL_SIGNUP_MIN_AGE');
     }
     expect(rows(prisma, 'portalSignupRequest')).toHaveLength(0);
-    // Con 16 años cumplidos hoy sí se admite.
-    await services(prisma).requests.submit(body(token, { birthDate: yearsAgo(16) }) as any);
+    // Con la edad mínima cumplida hoy sí se admite.
+    await services(prisma).requests.submit(body(token, { birthDate: yearsAgo(MIN_SIGNUP_AGE_YEARS) }) as any);
     expect(rows(prisma, 'portalSignupRequest')).toHaveLength(1);
   });
 
@@ -350,13 +350,13 @@ describe('Aceptar vinculando a un paciente existente', () => {
     await expect(services(prisma).requests.acceptLinkingPatient(WS, therapistA, requestId, { patientId: 'p1' })).resolves.toMatchObject({ patientId: 'p1' });
   });
 
-  it('paciente sin fecha de nacimiento o menor de 16 en la ficha → 400 (activación manual con tutor)', async () => {
+  it('paciente sin fecha de nacimiento o menor de la edad mínima en la ficha → 400 (activación manual en persona)', async () => {
     const prisma = seed();
     const { requestId } = await pendingRequest(prisma);
     for (const patientId of ['p-nobirth', 'p-minor']) {
       const error = await services(prisma).requests.acceptLinkingPatient(WS, owner, requestId, { patientId }).catch((e) => e);
       expect(error).toBeInstanceOf(BadRequestException);
-      expect(codeOf(error)).toBe('PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN');
+      expect(codeOf(error)).toBe('PORTAL_SIGNUP_MANUAL_IN_PERSON');
     }
     expect(rows(prisma, 'patientPortalAccount')).toHaveLength(0);
   });

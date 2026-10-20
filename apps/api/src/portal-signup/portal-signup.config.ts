@@ -18,8 +18,12 @@ export const MAX_PENDING_REQUESTS_PER_PROFESSIONAL = 20;
 export const MAX_REQUESTS_PER_LINK_PER_HOUR = 10;
 /** Vida del enlace de activación (poner contraseña) que se entrega al aceptar la solicitud. */
 export const ACTIVATION_TTL_MS = 72 * 60 * 60_000;
-/** C6 (Lex Psi): sin alta autónoma por debajo de 16 años; con 16–17 hasta que responda el abogado se recomienda manual. */
-export const MIN_SIGNUP_AGE_YEARS = 16;
+/**
+ * Lex Psi 20/10 (alta-qr-textos v1): alta por QR solo para mayores de 18 en el piloto; 16–17 por
+ * activación manual en persona hasta que el abogado responda (Q2). Decisión del Jefe: se puede
+ * cambiar aquí; ningún texto ni test lleva la cifra escrita a mano.
+ */
+export const MIN_SIGNUP_AGE_YEARS = 18;
 
 /**
  * Versiones vigentes de los textos de la pantalla de alta (información art. 13 en capa 1 y normas
@@ -27,8 +31,8 @@ export const MIN_SIGNUP_AGE_YEARS = 16;
  * que el frontend debe mostrar y devolver. Cambiar el texto obliga a subir la versión.
  */
 export const PORTAL_SIGNUP_NOTICE_VERSIONS = {
-  privacyNotice: 'portal-info-art13-borrador-2026-10',
-  portalTerms: 'portal-normas-uso-borrador-2026-10',
+  privacyNotice: 'portal-alta-qr-art13-v1.0-borrador-2026-10-20',
+  portalTerms: 'portal-normas-uso-v1.0-borrador-2026-10-20',
 } as const;
 
 /** Límites por IP (ThrottlerGuard global; la clave es req.ip, ver trust proxy en main.ts). */
@@ -38,7 +42,7 @@ export const ACTIVATION_THROTTLE = { default: { limit: 10, ttl: 60 * 60_000 } };
 /** Respuesta ÚNICA del envío público: idéntica con token válido, inválido, rotado o descartado. */
 export const SIGNUP_ACCEPTED_RESPONSE = Object.freeze({
   ok: true,
-  message: 'Hemos recibido tu solicitud. Tu consulta la revisará y te dará el enlace para activar tu cuenta.',
+  message: 'Hemos recibido tu solicitud. La consulta la revisará y te dará en persona el enlace para activar tu cuenta. Si no se resuelve en 14 días, se borrará.',
 });
 
 export const ACTIVATION_INVALID_MESSAGE = 'Este enlace ya no es válido. Pide otro a tu consulta.';

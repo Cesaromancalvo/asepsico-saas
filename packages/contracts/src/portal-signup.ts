@@ -18,7 +18,7 @@ export interface PortalSignupRequestBody {
   lastName: string;
   email: string;
   phone?: string;
-  /** AAAA-MM-DD, obligatoria. Menores de 16 → 400 PORTAL_SIGNUP_MIN_AGE. */
+  /** AAAA-MM-DD, obligatoria. Por debajo de la edad mínima (18 en el piloto) → 400 PORTAL_SIGNUP_MIN_AGE. */
   birthDate: string;
   /** "He leído la información sobre cómo se tratan mis datos." Acuse de lectura, no consentimiento. */
   privacyNoticeAcknowledged: true;
@@ -65,7 +65,7 @@ export interface PortalActivationBody { token: string; password: string }
 
 export type PortalSignupErrorCode =
   | 'PORTAL_SIGNUP_MIN_AGE'
-  | 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN'
+  | 'PORTAL_SIGNUP_MANUAL_IN_PERSON'
   | 'PORTAL_SIGNUP_IDENTITY_MISMATCH'
   | 'PORTAL_SIGNUP_CONFIRMATION_REQUIRED'
   | 'PORTAL_ACCOUNT_ALREADY_EXISTS'
