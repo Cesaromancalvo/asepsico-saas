@@ -1,8 +1,9 @@
 'use client';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
 import { api, ApiError } from '@/lib/api';
+import { sanitizeOtp } from '@/lib/otp';
 
 type LoginResponse =
   | { mfaRequired: true; pendingToken: string }
@@ -18,6 +19,23 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   // Campo del código controlado y vacío al entrar, para que el navegador no lo rellene con el correo guardado.
   const [code, setCode] = useState('');
+  const otpRef = useRef<HTMLInputElement>(null);
+
+  // Defensa ante el autorrelleno de Safari, que puede escribir el correo en el campo del código sin pasar por React
+  // o un instante después de montar el paso 2: se revisa al montar y poco después.
+  useEffect(() => {
+    if (!pendingToken) return;
+    const clearIfEmail = () => {
+      const field = otpRef.current;
+      if (field && field.value !== sanitizeOtp(field.value)) {
+        field.value = '';
+        setCode('');
+      }
+    };
+    clearIfEmail();
+    const timers = [100, 500, 1500].map((ms) => window.setTimeout(clearIfEmail, ms));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [pendingToken]);
 
   function backToPasswordStep(message = '') {
     setPendingToken('');
@@ -93,11 +111,26 @@ export default function LoginPage() {
           <h1>Verificación en dos pasos</h1>
           <p className="muted">Introduce el código de 6 dígitos de tu app de autenticación, o uno de tus códigos de recuperación.</p>
           <form onSubmit={submitMfaCode}>
-            {/* Usuario oculto: asocia el código a la cuenta en los gestores de contraseñas sin que se autorrellene el campo del código. */}
-            <input type="email" name="username" autoComplete="username" value={email} readOnly hidden aria-hidden="true" tabIndex={-1} />
+            {/*
+              Usuario oculto antes del código: Safari y los gestores de contraseñas meten aquí el correo en vez de en
+              el campo del código. Oculto solo a la vista (no con hidden ni display:none, que Safari ignora al autorrellenar).
+            */}
+            <input
+              id="mfa-username"
+              className="sr-only autofill-username"
+              type="email"
+              name="username"
+              autoComplete="username"
+              value={email}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+            />
             <label className="field">
               Código
               <input
+                ref={otpRef}
+                id="otp"
                 name="otp"
                 type="text"
                 autoFocus
@@ -108,7 +141,10 @@ export default function LoginPage() {
                 minLength={6}
                 maxLength={11}
                 value={code}
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) => setCode(sanitizeOtp(event.target.value))}
+                onFocus={(event) => {
+                  if (event.target.value !== sanitizeOtp(event.target.value)) setCode('');
+                }}
               />
             </label>
             {error && <p className="error" role="alert">{error}</p>}
