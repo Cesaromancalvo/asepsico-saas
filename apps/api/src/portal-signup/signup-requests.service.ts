@@ -31,7 +31,7 @@ const sameEmail = (a: string | null | undefined, b: string | null | undefined) =
 const EMAIL_UNAVAILABLE = 'Ese correo no puede usarse para esta cuenta de portal; indica otro correo';
 
 /** Motivos de rechazo al vincular (lista cerrada, van a la auditoría sin datos personales). */
-type LinkRejection = 'CONFIRMATION_REQUIRED' | 'PATIENT_CLOSED' | 'ACCESS_MODE_NOT_ALLOWED' | 'PATIENT_UNDER_16_OR_NO_BIRTHDATE' | 'IDENTITY_MISMATCH' | 'PATIENT_ALREADY_HAS_ACCOUNT' | 'EMAIL_UNAVAILABLE';
+type LinkRejection = 'CONFIRMATION_REQUIRED' | 'PATIENT_CLOSED' | 'ACCESS_MODE_NOT_ALLOWED' | 'PATIENT_UNDER_MIN_AGE_OR_NO_BIRTHDATE' | 'IDENTITY_MISMATCH' | 'PATIENT_ALREADY_HAS_ACCOUNT' | 'EMAIL_UNAVAILABLE';
 
 /**
  * Solicitudes de alta en el portal hechas desde el QR fijo de un profesional.
@@ -57,7 +57,7 @@ export class SignupRequestsService {
       throw new BadRequestException({
         statusCode: 400,
         code: 'PORTAL_SIGNUP_MIN_AGE',
-        message: 'Con menos de 16 años el alta la hace tu consulta contigo y con tu madre, padre o tutor.',
+        message: `El alta con este código es para mayores de ${MIN_SIGNUP_AGE_YEARS} años. Pide a tu consulta que te dé de alta en persona.`,
       });
     }
 
@@ -213,8 +213,8 @@ export class SignupRequestsService {
     }
     const patientBirth = isoDay(patient.birthDate);
     if (!patientBirth || ageInYears(patientBirth) < MIN_SIGNUP_AGE_YEARS) {
-      return reject('PATIENT_UNDER_16_OR_NO_BIRTHDATE', new BadRequestException({
-        statusCode: 400, code: 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN', message: 'Este paciente no admite alta por QR: activa el portal manualmente con su tutor.',
+      return reject('PATIENT_UNDER_MIN_AGE_OR_NO_BIRTHDATE', new BadRequestException({
+        statusCode: 400, code: 'PORTAL_SIGNUP_MANUAL_IN_PERSON', message: 'Este paciente no admite alta por QR (menor de edad o sin fecha de nacimiento): activa el portal manualmente en persona.',
       }));
     }
     const sameIdentity = normalizeName(patient.firstName) === normalizeName(request.firstName)
@@ -355,7 +355,7 @@ export class SignupRequestsService {
     }
     const request = decryptModel('portalSignupRequest', row) as unknown as DecryptedRequest;
     // Defensa: el envío ya lo exige, pero la regla se repite al aceptar (la fecha no cambia; la ley sí podría).
-    if (ageInYears(request.birthDate) < MIN_SIGNUP_AGE_YEARS) throw new BadRequestException({ statusCode: 400, code: 'PORTAL_SIGNUP_MANUAL_WITH_GUARDIAN', message: 'Alta por QR no permitida para menores de 16 años.' });
+    if (ageInYears(request.birthDate) < MIN_SIGNUP_AGE_YEARS) throw new BadRequestException({ statusCode: 400, code: 'PORTAL_SIGNUP_MANUAL_IN_PERSON', message: 'Alta por QR no permitida para menores de edad ni sin fecha de nacimiento.' });
     return request;
   }
 

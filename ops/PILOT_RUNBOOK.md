@@ -198,6 +198,24 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
   de un THERAPIST. **H1 es requisito antes de que un cliente real se dé de baja o pida la
   devolución de sus datos.**
 
+## Alta por QR: caducidad de las solicitudes (14 días)
+
+- Las solicitudes de alta en el portal (`PortalSignupRequest`) sin respuesta caducan a los 14 días y
+  se **borran** con auditoría `PORTAL_SIGNUP_REQUEST_EXPIRED` (solo ids, sin datos personales).
+- **Purga automática dentro de la API** (`PortalSignupCleanupService`), sin coste ni cron externo:
+  una vez unos 10 s después de arrancar (sin bloquear el arranque) y después **cada hora**, en todos
+  los espacios. Es idempotente (varias instancias a la vez no son un problema) y no hace nada con
+  `NODE_ENV=test`. Si falla, solo deja un aviso en el log con el tipo de error
+  (`Purga de solicitudes de alta fallida (...)`), nunca datos. Si ese aviso se repite, revisar la
+  conexión a la base de datos y lanzar la purga manual.
+- Además, la API purga las de un espacio cada vez que alguien lista o recibe solicitudes de ese espacio.
+- **Respaldo manual** (todos los espacios): `npm run portal-signup:purge`. Solo necesita
+  `DATABASE_URL`, es idempotente y solo imprime el recuento. Se ejecuta desde el clon de despliegue
+  con la URL leída con `read -rs` (como los CLI de la lista de espera) y `unset` al terminar. Ya no
+  hace falta ejecutarla cada semana: solo si el aviso de fallo se repite o tras una caída larga.
+- No se usa GitHub Actions para esta purga: el repositorio es público y exigiría guardar
+  `DATABASE_URL` de producción en GitHub y abrir la base a las IP de los runners.
+
 ## Backups
 
 - Frecuencia recomendada para piloto: diaria.
