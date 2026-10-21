@@ -261,9 +261,11 @@ Las altas repetidas y el honeypot no avisan. Está **apagado por defecto**.
 1. En Scaleway (región fr-par), comprobar que el dominio `notificaciones.asepsico.es` aparece como
    verificado en Transactional Email. Mientras no lo esté, los envíos fallan (solo queda un aviso en el log).
 2. Crear una **API key** asociada a una aplicación IAM con una política que dé solo
-   `TransactionalEmailFullAccess` (o el permiso de envío equivalente) y **solo** sobre el proyecto
-   `asepsico-prod`. Ningún otro permiso. Anotar en el registro del piloto la fecha y el ID de la clave
-   (nunca la clave secreta).
+   `TransactionalEmailEmailSmtpCreate` (enviar por SMTP; es el mínimo, preferible a
+   `TransactionalEmailFullAccess`) y **solo** sobre el proyecto `asepsico-prod`. Ningún otro permiso.
+   Anotar en el registro del piloto la fecha y el ID de la clave (nunca la clave secreta). El ID del
+   proyecto (para `MAIL_SMTP_USER`) está en Transactional Email → dominio → Overview (credenciales
+   SMTP) y en Project Dashboard → Settings.
 3. En Render → servicio de la API → Environment:
    - `MAIL_SMTP_HOST=smtp.tem.scaleway.com`
    - `MAIL_SMTP_PORT=587`
