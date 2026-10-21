@@ -94,8 +94,15 @@ describe('Configuración del correo', () => {
     }
   });
 
-  it('puerto distinto de 587/465 → sin transporte', () => {
-    expect(readMailConfig(configured({ MAIL_SMTP_PORT: '25' }))).toBeNull();
+  it('puertos admitidos: 587, 465, 2587 y 2465; cualquier otro → sin transporte y no arranca', () => {
+    for (const port of ['587', '465', '2587', '2465']) {
+      expect(readMailConfig(configured({ MAIL_SMTP_PORT: port }))?.smtp.port).toBe(Number(port));
+      expect(() => assertMailConfig(configured({ MAIL_SMTP_PORT: port }))).not.toThrow();
+    }
+    for (const port of ['25', '2525', '2588', '24650', '0', '-587', '587.0', '0587', 'abc', ' 587x']) {
+      expect([port, readMailConfig(configured({ MAIL_SMTP_PORT: port }))]).toEqual([port, null]);
+      expect(() => assertMailConfig(configured({ MAIL_SMTP_PORT: port }))).toThrow(/MAIL_SMTP_PORT/);
+    }
   });
 
   it('ENABLED=false (o ausente) no exige nada; ENABLED=true sin config → error con NOMBRES, nunca valores', () => {
@@ -110,7 +117,7 @@ describe('Configuración del correo', () => {
     expect(() => assertMailConfig(configured())).not.toThrow();
   });
 
-  it('transporte SMTP: TLS obligatorio (STARTTLS exigido en 587, TLS implícito en 465), AUTH PLAIN, sin ficheros ni URLs', async () => {
+  it('transporte SMTP: TLS obligatorio (STARTTLS exigido en 587/2587, TLS implícito en 465/2465), AUTH PLAIN, sin ficheros ni URLs', async () => {
     const sendMail = jest.fn(async () => ({}));
     createTransportMock.mockReturnValue({ sendMail });
     const config = readMailConfig(configured())!;
@@ -121,6 +128,19 @@ describe('Configuración del correo', () => {
     }));
     smtpTransport(readMailConfig(configured({ MAIL_SMTP_PORT: '465' }))!);
     expect(createTransportMock.mock.calls[1][0]).toMatchObject({ port: 465, secure: true, requireTLS: true });
+  });
+
+  it('modo TLS por puerto: 465/2465 TLS implícito, 587/2587 STARTTLS exigido; siempre TLS ≥ 1.2, certificado verificado y timeouts cortos', () => {
+    const expected: Record<string, boolean> = { '587': false, '2587': false, '465': true, '2465': true };
+    for (const [port, secure] of Object.entries(expected)) {
+      createTransportMock.mockClear();
+      smtpTransport(readMailConfig(configured({ MAIL_SMTP_PORT: port }))!);
+      expect(createTransportMock.mock.calls[0][0]).toMatchObject({
+        port: Number(port), secure, requireTLS: true,
+        tls: expect.objectContaining({ minVersion: 'TLSv1.2', rejectUnauthorized: true }),
+        connectionTimeout: 15_000, greetingTimeout: 10_000, socketTimeout: 30_000,
+      });
+    }
   });
 });
 

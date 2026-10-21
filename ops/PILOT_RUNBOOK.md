@@ -268,7 +268,11 @@ Las altas repetidas y el honeypot no avisan. Está **apagado por defecto**.
    SMTP) y en Project Dashboard → Settings.
 3. En Render → servicio de la API → Environment:
    - `MAIL_SMTP_HOST=smtp.tem.scaleway.com`
-   - `MAIL_SMTP_PORT=587`
+   - `MAIL_SMTP_PORT=2465` (TLS implícito). **No usar 587 ni 465 en el plan gratuito de Render:** desde
+     septiembre de 2025 bloquea la salida a los puertos SMTP 25, 465 y 587 y el aviso nunca llega (en el
+     log sale `Aviso de lista de espera no enviado (Error ETIMEDOUT)` o similar a los ~15 s). Scaleway
+     acepta los alternativos 2465 (TLS implícito) y 2587 (STARTTLS); la API admite 587, 465, 2587 y
+     2465, siempre con TLS ≥ 1.2 y certificado verificado. En un plan de pago de Render vale cualquiera.
    - `MAIL_SMTP_USER=` ID del proyecto `asepsico-prod`
    - `MAIL_SMTP_PASSWORD=` clave secreta de la API key (se pega una vez y no se vuelve a mostrar)
    - `MAIL_FROM=AsePsico <avisos@notificaciones.asepsico.es>`
@@ -279,8 +283,9 @@ Las altas repetidas y el honeypot no avisan. Está **apagado por defecto**.
 
 **Probarlo:** apuntarse en la landing con un correo de prueba propio. En menos de un minuto llega el
 aviso. Después, borrar esa alta con `npm run waitlist:delete -- --email <correo de prueba>`. Si no
-llega: buscar en el log de Render `Aviso de lista de espera no enviado (...)` (solo trae el tipo de
-error) y revisar el panel de Scaleway (dominio verificado, cuota, clave).
+llega: buscar en el log de Render `Aviso de lista de espera no enviado (...)` (solo trae el tipo y el
+código de error; `ETIMEDOUT`/`ECONNECTION` suele ser un puerto bloqueado: comprobar `MAIL_SMTP_PORT=2465`)
+y revisar el panel de Scaleway (dominio verificado, cuota, clave).
 
 **Rotar la clave** (cada 6–12 meses, o ya si se sospecha una fuga): crear una API key nueva con la
 misma política → cambiar `MAIL_SMTP_PASSWORD` en Render → probar con un alta de prueba → **borrar la
