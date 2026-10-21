@@ -33,7 +33,9 @@ const SCAN_DIRS = ['src', 'prisma'];
 const PROVIDER_SENDING = /sendMail|nodemailer|\bresend\b|@scaleway|smtp/i;
 // Distingue mayúsculas y exige límite de palabra: PortalAccountEmailService o email.service no cuentan.
 const OWN_MAIL_SERVICE = /\bMailService\b|\bMailModule\b|\bsendInternal\b|(?<![\w-])mail\.(?:service|module)\b/;
-const EMAIL_SENDING = { test: (source: string) => PROVIDER_SENDING.test(source) || OWN_MAIL_SERVICE.test(source) };
+// Argos B6: también mail_service / mailService / MAIL_SERVICE (p. ej. un token de inyección).
+const MAIL_SERVICE_TOKEN = /\bmail_?service\b/i;
+const EMAIL_SENDING = { test: (source: string) => PROVIDER_SENDING.test(source) || OWN_MAIL_SERVICE.test(source) || MAIL_SERVICE_TOKEN.test(source) };
 
 /** Archivos que envían (o usan el servicio de correo) sin la puerta ni la lista permitida. */
 function offenders(files: { file: string; source: string }[]): string[] {
@@ -83,5 +85,12 @@ describe('Sin envío de email fuera de la puerta de correos verificados (Argos B
     expect(offenders([{ file: 'src/mail/mail.service.ts', source: samples[0].source }])).toEqual([]);
     // Sin falsos positivos con nombres parecidos.
     expect(offenders([{ file: 'src/portal-signup/x.ts', source: "import { PortalAccountEmailService } from './portal-account-email.service';" }])).toEqual([]);
+    expect(offenders([{ file: 'src/otro/y.ts', source: 'class EmailService {}; const emailService = new EmailService();' }])).toEqual([]);
+    // B6: un token de inyección o variable mail_service / mailService fuera de la lista sí se detecta.
+    const tokens = [
+      { file: 'src/patients/token-ficticio.ts', source: "@Inject('MAIL_SERVICE') private readonly mail: any" },
+      { file: 'src/patients/var-ficticia.ts', source: 'const mailService = this.moduleRef.get(token);' },
+    ];
+    expect(offenders(tokens)).toEqual(tokens.map((t) => t.file));
   });
 });

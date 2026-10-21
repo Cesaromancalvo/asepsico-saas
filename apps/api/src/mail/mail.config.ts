@@ -13,29 +13,42 @@ export type MailConfig = { smtp: SmtpConfig; from: string } | null;
 export class InvalidMailConfigError extends Error {}
 
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-// Nombre visible sin < > ni caracteres de control (CR/LF incluidos: evita inyección de cabeceras).
-const FROM_RE = /^(?:[^<>\x00-\x1f\x7f]{1,80} )?<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+// Nombre visible sin < > ni caracteres de control (CR/LF incluidos: evita inyección de cabeceras),
+// sin espacio inicial ni final.
+const FROM_RE = /^(?:[^<>\s\x00-\x1f\x7f][^<>\x00-\x1f\x7f]{0,79} )?<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 const value = (env: NodeJS.ProcessEnv, name: string) => (env[name] ?? '').trim();
 
 /**
- * Transporte SMTP solo si están TODAS las variables y son válidas (remitente con FROM_RE y cada
- * destinatario interno con EMAIL_RE); si no, null y no se crea transporte. Así MailService no
- * depende de que main.ts haya llamado a assertMailConfig.
+ * Problemas de la configuración de correo, solo con NOMBRES de variables (nunca valores). Fuente
+ * única para readMailConfig (transporte) y assertMailConfig (arranque): así nunca puede pasar que
+ * el arranque acepte una configuración con la que luego no se crea transporte (aviso apagado en
+ * silencio). MAIL_FROM se comprueba sin recortar: un espacio o salto de línea final lo invalida.
  */
-export function readMailConfig(env: NodeJS.ProcessEnv = process.env): MailConfig {
-  const host = value(env, 'MAIL_SMTP_HOST');
-  const port = Number(value(env, 'MAIL_SMTP_PORT'));
-  const user = value(env, 'MAIL_SMTP_USER');
-  const password = env.MAIL_SMTP_PASSWORD ?? '';
-  // Sin trim: un CR/LF al final del remitente también invalida la configuración.
+export function mailConfigProblems(env: NodeJS.ProcessEnv = process.env): string[] {
+  const problems: string[] = [];
+  for (const name of ['MAIL_SMTP_HOST', 'MAIL_SMTP_USER', 'MAIL_SMTP_PASSWORD', 'MAIL_FROM', 'WAITLIST_NOTIFY_TO']) {
+    if (!value(env, name)) problems.push(`${name} (falta)`);
+  }
+  const port = value(env, 'MAIL_SMTP_PORT');
+  if (!port) problems.push('MAIL_SMTP_PORT (falta)');
+  else if (port !== '587' && port !== '465') problems.push('MAIL_SMTP_PORT (solo 587 o 465)');
   const from = env.MAIL_FROM ?? '';
-  if (!host || !user || !password || !from || (port !== 465 && port !== 587)) return null;
-  if (!FROM_RE.test(from)) return null;
+  if (value(env, 'MAIL_FROM') && !FROM_RE.test(from)) problems.push('MAIL_FROM (formato: "Nombre <direccion@dominio>", sin espacios ni saltos de línea al principio o al final)');
   const to = internalRecipients(env);
-  if (!to.length || !to.every((r) => EMAIL_RE.test(r))) return null;
-  if (/[\x00-\x1f\x7f]/.test(host + user)) return null;
-  return { smtp: { host, port, user, password }, from };
+  if (to.length && !to.every((r) => EMAIL_RE.test(r))) problems.push('WAITLIST_NOTIFY_TO (direcciones no válidas)');
+  if (/[\x00-\x1f\x7f]/.test(value(env, 'MAIL_SMTP_HOST'))) problems.push('MAIL_SMTP_HOST (caracteres no válidos)');
+  if (/[\x00-\x1f\x7f]/.test(value(env, 'MAIL_SMTP_USER'))) problems.push('MAIL_SMTP_USER (caracteres no válidos)');
+  return problems;
+}
+
+/** Transporte SMTP solo si la configuración no tiene ningún problema; si no, null (sin transporte). */
+export function readMailConfig(env: NodeJS.ProcessEnv = process.env): MailConfig {
+  if (mailConfigProblems(env).length) return null;
+  return {
+    smtp: { host: value(env, 'MAIL_SMTP_HOST'), port: Number(value(env, 'MAIL_SMTP_PORT')) as 465 | 587, user: value(env, 'MAIL_SMTP_USER'), password: env.MAIL_SMTP_PASSWORD ?? '' },
+    from: env.MAIL_FROM ?? '',
+  };
 }
 
 export function waitlistNotifyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -53,16 +66,7 @@ export function internalRecipients(env: NodeJS.ProcessEnv = process.env): string
  */
 export function assertMailConfig(env: NodeJS.ProcessEnv = process.env): void {
   if (!waitlistNotifyEnabled(env)) return;
-  const problems: string[] = [];
-  for (const name of ['MAIL_SMTP_HOST', 'MAIL_SMTP_USER', 'MAIL_SMTP_PASSWORD', 'MAIL_FROM', 'WAITLIST_NOTIFY_TO']) {
-    if (!value(env, name)) problems.push(`${name} (falta)`);
-  }
-  const port = value(env, 'MAIL_SMTP_PORT');
-  if (!port) problems.push('MAIL_SMTP_PORT (falta)');
-  else if (port !== '587' && port !== '465') problems.push('MAIL_SMTP_PORT (solo 587 o 465)');
-  if (value(env, 'MAIL_FROM') && !FROM_RE.test(value(env, 'MAIL_FROM'))) problems.push('MAIL_FROM (formato: "Nombre <direccion@dominio>")');
-  const to = internalRecipients(env);
-  if (to.length && !to.every((r) => EMAIL_RE.test(r))) problems.push('WAITLIST_NOTIFY_TO (direcciones no válidas)');
+  const problems = mailConfigProblems(env);
   if (problems.length) {
     throw new InvalidMailConfigError(`WAITLIST_NOTIFY_ENABLED=true pero la configuración de correo no es válida: ${problems.join(', ')}`);
   }

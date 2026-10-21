@@ -71,6 +71,29 @@ describe('Configuración del correo', () => {
     expect(factory).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['espacio final', 'AsePsico <avisos@example.test> '],
+    ['salto de línea final', 'AsePsico <avisos@example.test>\n'],
+    ['espacio inicial', ' AsePsico <avisos@example.test>'],
+  ])('MAIL_FROM con %s → el arranque falla nombrando MAIL_FROM y no hay transporte (coherentes)', (_label, from) => {
+    const env = configured({ MAIL_FROM: from });
+    expect(() => assertMailConfig(env)).toThrow(/MAIL_FROM/);
+    expect(readMailConfig(env)).toBeNull();
+  });
+
+  it('arranque y transporte siempre coinciden: si el arranque acepta, hay transporte', () => {
+    const variants: Record<string, string>[] = [
+      {}, { MAIL_SMTP_PORT: '465' }, { MAIL_FROM: 'avisos@example.test' }, { WAITLIST_NOTIFY_TO: `${JEFE}, otra@example.test` },
+      { MAIL_SMTP_PORT: '2525' }, { MAIL_SMTP_HOST: '' }, { MAIL_FROM: 'Nombre\r\n <a@example.test>' }, { WAITLIST_NOTIFY_TO: 'mal' },
+    ];
+    for (const extra of variants) {
+      const env = configured(extra);
+      let startupOk = true;
+      try { assertMailConfig(env); } catch { startupOk = false; }
+      expect([JSON.stringify(extra), startupOk]).toEqual([JSON.stringify(extra), readMailConfig(env) !== null]);
+    }
+  });
+
   it('puerto distinto de 587/465 → sin transporte', () => {
     expect(readMailConfig(configured({ MAIL_SMTP_PORT: '25' }))).toBeNull();
   });
