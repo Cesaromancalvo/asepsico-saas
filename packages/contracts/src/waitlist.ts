@@ -6,7 +6,7 @@
  *
  * Flujo (sin cookies, sin credenciales, fetch con mode "cors"):
  *  1. GET  {API}/api/v1/public/waitlist/form-token  → 200 WaitlistFormTokenResponse
- *     (pedirlo al abrir/enfocar el formulario, no al cargar la página).
+ *     (la landing lo pide al cargar la portada para despertar la API; ver docs/WAITLIST_API.md).
  *  2. POST {API}/api/v1/public/waitlist  (Content-Type: application/json, body WaitlistSubmitRequest)
  *     → 202 WaitlistAcceptedResponse  (alta nueva, email repetido y honeypot: respuesta idéntica;
  *       un email repetido NO cambia nada de la alta existente)

@@ -458,9 +458,13 @@
 
   /* 8. Formulario propio de la lista de espera ------------------------------- */
   // Contrato: docs/WAITLIST_API.md. Todo con fetch (CSP: connect-src a la API y form-action 'none'),
-  // sin cookies (credentials: 'omit') y sin guardar nada en el navegador. El token se pide la primera
-  // vez que se enfoca el formulario (no al cargar la página) y no se envía antes de minSeconds.
-  // Tras el 202 se muestra siempre el mismo mensaje: nunca se dice si el email ya estaba apuntado.
+  // sin cookies (credentials: 'omit') y sin guardar nada en el navegador. El token se pide AL CARGAR
+  // la página: la API está en el plan gratuito de Render y puede tardar más de un minuto en despertar,
+  // así que esa única petición técnica (sin identificadores, sin cookies, sin referer) la despierta
+  // mientras se lee la página y deja el token listo para el envío. Se pide con el GET de form-token y
+  // no con /health porque /health no admite CORS desde la landing (la petición fallaría en la consola).
+  // No se envía antes de minSeconds. Tras el 202 se muestra siempre el mismo mensaje: nunca se dice si
+  // el email ya estaba apuntado.
   function initWaitlist() {
     var section = document.getElementById('apuntate');
     if (!section || features.ownWaitlistForm !== true) return;
@@ -481,11 +485,13 @@
     if (!apiOk || !version || !window.fetch || !window.Promise || !window.JSON) return; // queda el aviso sin JS
 
     var email = String(cfg.CONTACT_EMAIL || '').trim() || 'asepsico1@gmail.com';
-    var TIMEOUT_MS = 30000;            // Render puede tardar en despertar
+    var TIMEOUT_MS = 90000;            // arranque en frío de Render medido: ~72 s
+    var RETRY_DELAY_MS = 2000;         // pausa antes del único reintento tras un fallo de red
     var TOKEN_MAX_AGE_MS = 110 * 60000; // el token caduca a las 2 h: se renueva antes
     var MSG = {
       sending: 'Enviando tus datos…',
       slow: 'Enviando tus datos… El servidor puede tardar unos segundos en responder.',
+      waking: 'Estamos despertando el servidor, puede tardar hasta un minuto. No cierres la página.',
       invalid: 'Revisa los campos marcados.',
       rejected: 'No hemos podido apuntarte con esos datos. Revisa el formulario e inténtalo de nuevo.',
       tooMany: 'Has hecho demasiados intentos. Prueba de nuevo en unos minutos.',
@@ -504,7 +510,8 @@
     // Petición JSON con timeout. Devuelve { status, body } o rechaza con un error de red.
     function request(path, opts) {
       var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
+      var timedOut = false;
+      var timer = ctrl ? setTimeout(function () { timedOut = true; ctrl.abort(); }, TIMEOUT_MS) : null;
       var init = {
         method: opts.method,
         mode: 'cors',
@@ -524,7 +531,12 @@
           try { body = txt ? JSON.parse(txt) : null; } catch (e) { body = null; }
           return { status: res.status, body: body };
         });
-      }, function (err) { clear(); throw err; });
+      }, function (err) {
+        clear();
+        // Tras esperar TIMEOUT_MS no se reintenta solo: se marca para distinguirlo de un corte de red.
+        if (timedOut) { var t = new Error('timeout'); t.timeout = true; throw t; }
+        throw err;
+      });
     }
 
     function getToken(force) {
@@ -701,7 +713,17 @@
       setBusy(true);
       say(MSG.sending);
       var slowTimer = setTimeout(function () { if (busy) say(MSG.slow); }, 6000);
-      post(payload, false).then(function (r) {
+      var wakeTimer = setTimeout(function () { if (busy) say(MSG.waking); }, 20000);
+      // Un único reintento automático si falla la red (no tras un timeout ni tras una respuesta HTTP):
+      // conserva el token; si la API ya lo hubiera gastado, post() pide otro (TOKEN_INVALID). Un alta
+      // repetida con el mismo email no cambia nada en la API, así que reintentar es seguro.
+      function attempt(isRetry) {
+        return post(payload, false).then(null, function (err) {
+          if (isRetry || !err || err.httpStatus || err.timeout) throw err;
+          return delay(RETRY_DELAY_MS).then(function () { return attempt(true); });
+        });
+      }
+      attempt(false).then(function (r) {
         if (r.status === 202) { say(''); showDone(); return; }
         if (r.status === 429) { say(MSG.tooMany, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
@@ -712,11 +734,13 @@
         else say(MSG.network, 'error');
       }).then(function () {
         clearTimeout(slowTimer);
+        clearTimeout(wakeTimer);
         setBusy(false);
       });
     });
 
-    // Primer foco en el formulario: se pide el token (si falla, se reintenta al enviar).
+    // Al enfocar el formulario: si el token de la carga falló o caducó, se vuelve a pedir (si falla,
+    // se reintenta al enviar). Con un token vigente o una petición en curso no se pide otro.
     form.addEventListener('focusin', function () {
       getToken(false).then(null, function () { /* se reintenta al enviar */ });
     });
@@ -749,6 +773,10 @@
     syncToolOther();
     if (nojs) nojs.hidden = true;
     fields.disabled = false;
+
+    // Despertar la API al cargar (ver el comentario de arriba). No bloquea nada: si falla, se
+    // reintenta al enfocar o al enviar.
+    getToken(false).then(null, function () { /* se reintenta al enfocar o al enviar */ });
   }
 
   // Cada bloque va aislado: si uno falla, los demás siguen funcionando.
