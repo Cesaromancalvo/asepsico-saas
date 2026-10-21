@@ -4,8 +4,8 @@
  * con un DOM mínimo simulado y un fetch FALSO: nunca se hace ninguna petición de red real.
  *
  * Comprueba:
- *  1. al cargar no se pide el token (cero llamadas a form-token antes del primer foco) y varios focos
- *     seguidos piden UNA sola vez;
+ *  1. al cargar se pide UN token (despierta la API de Render) sin ningún POST, sin referer ni cookies;
+ *     varios focos no piden otro; si el de la carga falla, el foco lo vuelve a pedir;
  *  2. no se envía antes de minSeconds desde que se emitió el token;
  *  3. tras el 202: mensaje final visible, campos vacíos (form.reset) y token descartado;
  *  4. tras un 400 (y un 429) el token no se reenvía: el siguiente envío pide otro;
@@ -13,7 +13,10 @@
  *  6. todas las peticiones con credentials: 'omit' y sin tocar localStorage, sessionStorage ni cookies;
  *  7. mensajes: 429, fallo de red y validación sin red;
  *  8. "¿Qué usas hoy?": opciones, "Otra" con caja de máx. 100 caracteres, y sin campos commercialConsent*;
- *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex.
+ *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex;
+ * 10. arranque en frío (tiempos escalados): mensajes a los 6 s y a los 20 s, timeout a los 90 s sin
+ *     reintento, sin doble envío mientras espera, un único reintento tras un fallo de red y el envío
+ *     espera al token que se está pidiendo desde la carga.
  *
  * Uso: node scripts/check-landing-form.mjs   (lo llama npm run test:landing). Sin dependencias.
  */
@@ -129,9 +132,9 @@ function buildDom() {
 }
 
 /* ---- fetch falso: cola de respuestas por ruta y registro de llamadas ---- */
-function makeFetch() {
+function makeFetch(preset = {}) {
   const calls = [];
-  const queue = { token: [], post: [] };
+  const queue = { token: [...(preset.token || [])], post: [...(preset.post || [])] };
   let n = 0;
   const fake = async (url, init = {}) => {
     const path = url.replace(API, '');
@@ -143,19 +146,30 @@ function makeFetch() {
     if (!next && kind === 'token') next = { status: 200, body: { formToken: `tok-${++n}`, minSeconds: 0 } };
     if (!next) next = { status: 202, body: { status: 'accepted' } };
     if (next === 'network') throw new TypeError('Failed to fetch');
+    // 'hang': no responde nunca; solo termina si se aborta (timeout). { delay }: responde tarde.
+    if (next === 'hang' || next.delay) {
+      await new Promise((res, rej) => {
+        if (next.delay) setTimeout(res, next.delay);
+        if (init.signal) init.signal.addEventListener('abort', () => rej(new Error('AbortError')));
+      });
+    }
     return { status: next.status, text: async () => JSON.stringify(next.body) };
   };
   return { fake, calls, queue };
 }
 
-function load() {
+// opts.token / opts.post: respuestas preparadas ANTES de cargar (el token se pide al cargar).
+// opts.timeScale: divide los temporizadores de main.js (6 s, 20 s, 90 s…) para probarlos en ms.
+function load(opts = {}) {
   const dom = buildDom();
-  const net = makeFetch();
+  const net = makeFetch(opts);
+  const scale = opts.timeScale || 1;
+  const scaledTimeout = (fn, ms) => setTimeout(fn, (ms || 0) / scale);
   const storageHits = [];
   const trap = (name) => ({ get() { storageHits.push(name); return { getItem() {}, setItem() {} }; } });
   const win = {
     fetch: net.fake,
-    setTimeout, clearTimeout, Promise, JSON, AbortController, console: { error: () => {}, log() {} },
+    setTimeout: scaledTimeout, clearTimeout, Promise, JSON, AbortController, console: { error: () => {}, log() {} },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     addEventListener() {}, removeEventListener() {},
     requestAnimationFrame: (fn) => setTimeout(fn, 0),
@@ -188,11 +202,16 @@ const tokenCalls = (t) => t.net.calls.filter((c) => c.path.endsWith('/form-token
 const posts = (t) => t.net.calls.filter((c) => c.path === '/public/waitlist');
 async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sleep(ms); }
 
-/* ---- 1. Ninguna petición al cargar; varios focos = un solo token ---- */
+/* ---- 1. Al cargar, un solo token (despierta la API); varios focos no piden otro ---- */
 {
   const t = load();
   await sleep(20);
-  check(t.net.calls.length === 0, `1: al cargar se hicieron ${t.net.calls.length} peticiones (deben ser 0)`);
+  check(t.net.calls.length === 1 && tokenCalls(t).length === 1, `1: al cargar se hicieron ${t.net.calls.length} peticiones (debe ser 1: el token)`);
+  const c = tokenCalls(t)[0];
+  if (c) {
+    check(c.init.method === 'GET' && !c.init.body, '1: la petición de la carga no es un GET sin cuerpo');
+    check(c.init.credentials === 'omit' && c.init.referrerPolicy === 'no-referrer', '1: la petición de la carga lleva cookies o referer');
+  }
   check(t.section.querySelector('[data-waitlist-fields]').disabled === false, '1: el formulario no se activó');
   t.form.dispatch('focusin'); t.form.dispatch('focusin'); t.form.dispatch('focusin');
   await sleep(20);
@@ -201,11 +220,17 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   await sleep(20);
   check(tokenCalls(t).length === 1, '1: un foco con token vigente volvió a pedirlo');
 }
+{
+  const t = load({ token: ['network'] });
+  await sleep(20);
+  t.form.dispatch('focusin');
+  await sleep(20);
+  check(tokenCalls(t).length === 2, `1: si falla el token de la carga, el foco debe pedirlo otra vez (hubo ${tokenCalls(t).length})`);
+}
 
 /* ---- 2 y 3. Espera minSeconds; 202 → mensaje, campos vacíos, token descartado ---- */
 {
-  const t = load();
-  t.net.queue.token.push({ status: 200, body: { formToken: 'tok-espera', minSeconds: 1 } });
+  const t = load({ token: [{ status: 200, body: { formToken: 'tok-espera', minSeconds: 1 } }] });
   t.form.dispatch('focusin');
   await sleep(10);
   const tokenAt = tokenCalls(t)[0].at;
@@ -311,21 +336,35 @@ for (const [opts, expected] of [
   check(t.toolOtherWrap.hidden === true && t.form.querySelector('#wl-tool-other').value === '', '8: al dejar "Otra" la caja no se ocultó ni se vació');
 }
 
-/* ---- 7. Red caída y validación sin red ---- */
+/* ---- 7. Red caída (un reintento automático) y validación sin red ---- */
 {
   const t = load();
   t.form.dispatch('focusin');
   await sleep(10);
   t.net.queue.post.push('network');
   fill(t);
-  await submitAndWait(t);
+  await submitAndWait(t, 2600);
+  const p = posts(t);
+  check(p.length === 2, `7: un fallo de red debe reintentar una vez (hubo ${p.length} envíos)`);
+  if (p.length === 2) check(p[0].body.formToken === p[1].body.formToken, '7: el reintento tras un fallo de red no conservó el token');
+  check(t.done.hidden === false, '7: el reintento con 202 no mostró el mensaje final');
+}
+{
+  const t = load();
+  t.form.dispatch('focusin');
+  await sleep(10);
+  t.net.queue.post.push('network', 'network');
+  fill(t);
+  await submitAndWait(t, 2600);
+  check(posts(t).length === 2, `7: con dos fallos de red debe haber 2 envíos (hubo ${posts(t).length})`);
   check(/No hemos podido conectar/.test(t.status.textContent), `7: mensaje de red inesperado: "${t.status.textContent}"`);
   check(t.form.querySelector('#wl-name').value !== '', '7: tras un fallo de red se borraron los datos escritos');
+  check(t.section.querySelector('[data-wl-submit]').getAttribute('aria-disabled') === 'false', '7: tras el error el botón sigue deshabilitado');
 }
 {
   const t = load();
   await submitAndWait(t);
-  check(t.net.calls.length === 0, '7: un formulario vacío hizo peticiones');
+  check(posts(t).length === 0 && t.net.calls.length === 1, '7: un formulario vacío hizo peticiones (aparte del token de la carga)');
   check(t.form.querySelector('#wl-name').getAttribute('aria-invalid') === 'true', '7: el nombre vacío no se marcó como inválido');
   check(doc.activeElement && doc.activeElement.id === 'wl-name', '7: el foco no fue al primer campo con error');
   check(/marca la casilla de privacidad/.test(doc.getElementById('wl-privacy-err').textContent), '7: falta el error de la casilla de privacidad');
@@ -352,9 +391,45 @@ for (const [opts, expected] of [
   }
 }
 
+/* ---- 10. Arranque en frío (temporizadores divididos entre 1000: 6 s = 6 ms, 20 s = 20 ms, 90 s = 90 ms) ---- */
+{ // La API no responde: mensajes progresivos, sin doble envío, timeout a los 90 s y SIN reintento.
+  const t = load({ timeScale: 1000, post: ['hang'] });
+  await sleep(10);
+  fill(t);
+  t.form.dispatch('submit');
+  await sleep(12);
+  check(/puede tardar unos segundos/.test(t.status.textContent), `10: a los 6 s falta el aviso de espera ("${t.status.textContent}")`);
+  t.form.dispatch('submit');
+  await sleep(18);
+  check(/despertando el servidor/.test(t.status.textContent) && /No cierres la página/.test(t.status.textContent), `10: a los 20 s falta el aviso de despertar ("${t.status.textContent}")`);
+  check(t.section.querySelector('[data-wl-submit]').getAttribute('aria-disabled') === 'true', '10: el botón no está deshabilitado mientras espera');
+  await sleep(150);
+  check(posts(t).length === 1, `10: hubo ${posts(t).length} envíos (doble envío o reintento tras timeout)`);
+  check(/No hemos podido conectar/.test(t.status.textContent), `10: tras 90 s sin respuesta falta el error ("${t.status.textContent}")`);
+}
+{ // La API tarda 50 s (dentro de los 90): sale bien y se vio el aviso de despertar.
+  const t = load({ timeScale: 1000, post: [{ delay: 50, status: 202, body: { status: 'accepted' } }] });
+  await sleep(10);
+  fill(t);
+  t.form.dispatch('submit');
+  await sleep(35);
+  check(/despertando el servidor/.test(t.status.textContent), '10: con 50 s de espera no salió el aviso de despertar');
+  await sleep(60);
+  check(t.done.hidden === false && posts(t).length === 1, '10: una respuesta a los 50 s no completó el alta');
+}
+{ // El token de la carga aún no ha llegado al enviar: el envío espera a ESE token (no pide otro).
+  const t = load({ token: [{ delay: 300, status: 200, body: { formToken: 'tok-lento', minSeconds: 0 } }] });
+  fill(t);
+  t.form.dispatch('focusin');
+  await submitAndWait(t, 700);
+  check(tokenCalls(t).length === 1, `10: con el token en curso se pidieron ${tokenCalls(t).length} tokens`);
+  check(posts(t).length === 1 && posts(t)[0].body.formToken === 'tok-lento', '10: el envío no usó el token que se estaba pidiendo');
+  check(t.done.hidden === false, '10: el envío tras esperar el token no terminó');
+}
+
 if (failures.length) {
   for (const f of failures) console.error(`ERROR   ${f}`);
   console.error(`\ncheck-landing-form: ${failures.length} fallo(s).`);
   process.exit(1);
 }
-console.log('check-landing-form: OK (fetch simulado: token solo al enfocar, minSeconds, 202, 400/413/415/429, reintentos, red, validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política).');
+console.log('check-landing-form: OK (fetch simulado: token al cargar, minSeconds, 202, 400/413/415/429, reintentos, red con un reintento, arranque en frío (6/20/90 s), validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política).');

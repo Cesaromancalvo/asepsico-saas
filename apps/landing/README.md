@@ -38,9 +38,14 @@ apps/landing/
   Nada de `<iframe>`, Google Fonts, CDN, vídeos ni píxeles. Instagram (y el Google Form, solo si se
   apaga `FEATURES.ownWaitlistForm`) son **enlaces** normales (`target="_blank" rel="noopener noreferrer"`).
 - **Única petición de red: la API propia de la lista de espera** (`WAITLIST_API_URL`), con `fetch`,
-  `credentials: 'omit'` y solo cuando alguien usa el formulario (sección `#apuntate`). Contrato:
-  `docs/WAITLIST_API.md`. El token se pide al enfocar el formulario (no al cargar la página) y no se
-  envía antes de `minSeconds` (3 s). Tras el `202` el mensaje es siempre el mismo (no dice si el
+  `credentials: 'omit'` y `referrerPolicy: 'no-referrer'`, solo en la portada (sección `#apuntate`). Contrato:
+  `docs/WAITLIST_API.md`. El token se pide **al cargar la página** (una sola petición técnica, sin
+  identificadores): la API está en el plan gratuito de Render y su arranque en frío medido es de ~72 s,
+  así que esa petición la despierta mientras se lee la página. Se usa el `GET` de `form-token` y no
+  `/health` porque `/health` no da CORS a la landing. Si falla, se vuelve a pedir al enfocar el
+  formulario o al enviar. No se envía antes de `minSeconds` (3 s). Timeout de 90 s por petición;
+  mientras se envía, a los 6 s sale "puede tardar unos segundos" y a los 20 s "Estamos despertando el
+  servidor…"; un fallo de red (no un timeout) se reintenta solo una vez antes de mostrar el error. Tras el `202` el mensaje es siempre el mismo (no dice si el
   email ya estaba apuntado). Sin cookies, sin `localStorage`/`sessionStorage`.
 - **Sin analítica** (decisión del Jefe, 01/10): la web no mide visitas ni clics y no usa cookies.
   El origen de las altas se pregunta en el formulario. El snippet de Plausible sigue comentado en el
@@ -67,9 +72,10 @@ cualquier otro `[[...]]`); con `--require-filled` (salida del build) cualquier m
 datos ficticios: salida sin marcadores y válida para la CSP, fallo cerrado sin variables o con
 valores mal formados, y ningún valor escrito en el log.
 `scripts/check-landing-form.mjs` prueba el formulario de la lista de espera con un DOM mínimo y un
-`fetch` simulado (sin red): ninguna petición al cargar y un solo token aunque haya varios focos, espera de
+`fetch` simulado (sin red): un solo token al cargar (ninguno más aunque haya varios focos), espera de
 `minSeconds`, tras el `202` campos vacíos y token descartado, el token no se reenvía tras 400/413/415/429,
-reintentos únicos (`TOO_FAST`, `TOKEN_INVALID`), mensajes de 429, de red y de validación, `credentials:
+reintentos únicos (`TOO_FAST`, `TOKEN_INVALID`, fallo de red), arranque en frío con los tiempos escalados
+(avisos a los 6 y 20 s, timeout a los 90 s sin doble envío, el envío espera al token en curso), mensajes de 429, de red y de validación, `credentials:
 'omit'` y ningún acceso a `localStorage`, `sessionStorage` ni cookies.
 Excepción: los bloques `<script type="application/ld+json">` (datos estructurados) se permiten si
 son JSON válido, no llevan `src` y solo contienen URLs de la propia web o el identificador
@@ -131,7 +137,7 @@ WAITLIST_ALLOWED_ORIGINS=http://localhost:8080 npm run dev:api   # (más el rest
 
 Servir una **copia** de `public/` con `WAITLIST_API_URL: 'http://localhost:<puerto-api>/api/v1'` en su
 `js/config.js` (el código admite `http://` solo para `localhost`/`127.0.0.1`), sin cambiar el
-`config.js` del repositorio. Comprobar: token al enfocar, espera de 3 s, `202` → mensaje genérico (también
+`config.js` del repositorio. Comprobar: token al cargar la página, espera de 3 s, `202` → mensaje genérico (también
 con un email repetido), `429` tras 5 envíos, error de red con la API parada, teclado y lector de pantalla.
 
 ## Previsualizar en local
@@ -195,7 +201,7 @@ Comprobaciones para Dora tras el primer despliegue (auditoría SEO de Mou, C4 y 
   y el cuerpo es la página "No encontramos esta página".
 - `Cache-Control`: `/fonts/*` un año `immutable`, `/img/*` 30 días, `/css/*` y `/js/*` una hora.
 - La CSP servida lleva `connect-src 'self' https://asepsico-api.onrender.com` (`curl -sI https://asepsico.es | grep -i content-security`)
-  y, en el navegador, el formulario `#apuntate` pide `GET .../public/waitlist/form-token` al enfocarlo sin
+  y, en el navegador, la portada pide `GET .../public/waitlist/form-token` al cargar sin
   errores de CSP en la consola. **No enviar altas de prueba a producción.**
 - Ninguna respuesta con `Set-Cookie`.
 

@@ -41,7 +41,8 @@ Todas las peticiones con `fetch(..., { mode: 'cors', credentials: 'omit' })`. Si
 
 ### 1. `GET {API}/public/waitlist/form-token`
 
-Pedirlo al abrir o enfocar el formulario (no al cargar la página). Respuesta `200`:
+La landing lo pide al cargar la portada (despierta la API del plan gratuito de Render, con un arranque
+en frío de ~72 s) y otra vez al enfocar o enviar si ha fallado o caducado. Respuesta `200`:
 
 ```json
 { "formToken": "1759700000000.AbCd....firma", "minSeconds": 3 }
