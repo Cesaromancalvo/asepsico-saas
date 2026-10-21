@@ -42,9 +42,13 @@ export const WAITLIST_FORM_MIN_SECONDS = 3;
 /** Caducidad del token de formulario. */
 export const WAITLIST_FORM_MAX_AGE_SECONDS = 2 * 60 * 60;
 
-/** Rate limit por IP (req.ip, que depende de TRUST_PROXY). */
+/** Rate limit por IP (req.ip, que depende de TRUST_PROXY). Envíos: 5 cada 10 min (no cambia). */
 export const WAITLIST_SUBMIT_THROTTLE = { default: { limit: 5, ttl: 10 * 60_000 } };
-export const WAITLIST_TOKEN_THROTTLE = { default: { limit: 20, ttl: 10 * 60_000 } };
+/**
+ * Tokens de formulario: 80 cada 10 min por IP (Argos, 21/10/2026, arreglo de la landing). Emitir
+ * un token es barato y sin estado (HMAC, sin BD ni cookies); el límite que protege es el de envíos.
+ */
+export const WAITLIST_TOKEN_THROTTLE = { default: { limit: 80, ttl: 10 * 60_000 } };
 
 export class InvalidWaitlistConfigError extends Error {
   constructor(message: string) {

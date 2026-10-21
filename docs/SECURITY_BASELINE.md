@@ -165,7 +165,7 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - CORS propio solo para esa ruta (`WAITLIST_ALLOWED_ORIGINS`, por defecto `https://asepsico.es` y
   `https://www.asepsico.es`, sin credenciales) y además se exige la cabecera `Origin` permitida
   (403 si falta o no coincide). El resto de la API sigue con `WEB_ORIGIN`.
-- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
+- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 80 tokens
   cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
   (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
 - Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.

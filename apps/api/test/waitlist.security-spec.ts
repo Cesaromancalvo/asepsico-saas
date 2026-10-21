@@ -15,7 +15,7 @@ import { WaitlistOriginGuard } from '../src/waitlist/waitlist-origin.guard';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from '../src/waitlist/waitlist-crypto';
 import { confirmCommercialConsent, csvCell, deleteWaitlistEntry, withdrawCommercialConsent, purgeCutoff, purgeWaitlist, resolveExportPath, waitlistCsv } from '../src/waitlist/waitlist-admin';
-import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, InvalidWaitlistConfigError, WAITLIST_PATH, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, InvalidWaitlistConfigError, WAITLIST_PATH, WAITLIST_SUBMIT_THROTTLE, WAITLIST_TOKEN_THROTTLE, assertWaitlistConfig, parseWaitlistOrigins } from '../src/waitlist/waitlist.config';
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 import { Prisma } from '@prisma/client';
 
@@ -337,6 +337,21 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(checkFormToken(res.body.formToken)).toBe('too-fast');
     expect(checkFormToken(res.body.formToken, Date.now() + 4_000)).toBe('ok');
   });
+
+  it('GET form-token no pone cookies y no se cachea (no-store)', async () => {
+    const res = await request(app.getHttpServer()).get(`${URL}/form-token`).set('Origin', LANDING).set('X-Forwarded-For', nextClientIp()).expect(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('el mismo formToken en dos POST con el mismo email → dos 202 idénticos y una sola fila', async () => {
+    const formToken = issueFormToken(Date.now() - 10_000);
+    const first = await post(app, validBody({ formToken })).expect(202);
+    const second = await post(app, validBody({ formToken })).expect(202);
+    expect(second.body).toEqual(first.body);
+    expect(prisma.rows.size).toBe(1);
+    expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('Lista de espera: CORS y origen', () => {
@@ -412,6 +427,13 @@ describe('Lista de espera: CORS y origen', () => {
 });
 
 describe('Lista de espera: rate limit por IP', () => {
+  it('límites fijados: 5 envíos y 80 tokens por IP cada 10 min', () => {
+    expect(WAITLIST_SUBMIT_THROTTLE).toEqual({ default: { limit: 5, ttl: 10 * 60_000 } });
+    expect(WAITLIST_TOKEN_THROTTLE).toEqual({ default: { limit: 80, ttl: 10 * 60_000 } });
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', WaitlistController.prototype.submit)).toBe(5);
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', WaitlistController.prototype.formToken)).toBe(80);
+  });
+
   let app: INestApplication;
 
   beforeAll(async () => { app = await buildApp(mockPrisma(), undefined, false); });
