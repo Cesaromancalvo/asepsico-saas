@@ -3,11 +3,26 @@
  * Proveedor actual: Scaleway Transactional Email (fr-par) por SMTP; el código no depende de él.
  *
  * Variables (ningún valor en el repo; ver .env.example y ops/PILOT_RUNBOOK.md):
- *   MAIL_SMTP_HOST, MAIL_SMTP_PORT (587 STARTTLS o 465 TLS), MAIL_SMTP_USER, MAIL_SMTP_PASSWORD,
+ *   MAIL_SMTP_HOST, MAIL_SMTP_PORT (587/2587 STARTTLS exigido; 465/2465 TLS implícito), MAIL_SMTP_USER,
+ *   MAIL_SMTP_PASSWORD,
  *   MAIL_FROM, WAITLIST_NOTIFY_TO, WAITLIST_NOTIFY_ENABLED (por defecto false).
  */
 
-export type SmtpConfig = { host: string; port: 465 | 587; user: string; password: string };
+/**
+ * Puertos admitidos. 2465/2587 son los alternativos de Scaleway TEM: el plan gratuito de Render
+ * bloquea la salida a 25, 465 y 587 (desde sep-2025), así que allí se usa 2465.
+ */
+export const SMTP_IMPLICIT_TLS_PORTS = [465, 2465] as const;
+export const SMTP_STARTTLS_PORTS = [587, 2587] as const;
+export type SmtpPort = (typeof SMTP_IMPLICIT_TLS_PORTS)[number] | (typeof SMTP_STARTTLS_PORTS)[number];
+const ALLOWED_SMTP_PORTS: readonly string[] = [...SMTP_STARTTLS_PORTS, ...SMTP_IMPLICIT_TLS_PORTS].map(String);
+
+/** true si el puerto usa TLS implícito (465/2465); false si STARTTLS exigido (587/2587). */
+export function isImplicitTlsPort(port: SmtpPort): boolean {
+  return (SMTP_IMPLICIT_TLS_PORTS as readonly number[]).includes(port);
+}
+
+export type SmtpConfig = { host: string; port: SmtpPort; user: string; password: string };
 export type MailConfig = { smtp: SmtpConfig; from: string } | null;
 
 export class InvalidMailConfigError extends Error {}
@@ -32,7 +47,7 @@ export function mailConfigProblems(env: NodeJS.ProcessEnv = process.env): string
   }
   const port = value(env, 'MAIL_SMTP_PORT');
   if (!port) problems.push('MAIL_SMTP_PORT (falta)');
-  else if (port !== '587' && port !== '465') problems.push('MAIL_SMTP_PORT (solo 587 o 465)');
+  else if (!ALLOWED_SMTP_PORTS.includes(port)) problems.push('MAIL_SMTP_PORT (solo 587, 465, 2587 o 2465)');
   const from = env.MAIL_FROM ?? '';
   if (value(env, 'MAIL_FROM') && !FROM_RE.test(from)) problems.push('MAIL_FROM (formato: "Nombre <direccion@dominio>", sin espacios ni saltos de línea al principio o al final)');
   const to = internalRecipients(env);
@@ -46,7 +61,7 @@ export function mailConfigProblems(env: NodeJS.ProcessEnv = process.env): string
 export function readMailConfig(env: NodeJS.ProcessEnv = process.env): MailConfig {
   if (mailConfigProblems(env).length) return null;
   return {
-    smtp: { host: value(env, 'MAIL_SMTP_HOST'), port: Number(value(env, 'MAIL_SMTP_PORT')) as 465 | 587, user: value(env, 'MAIL_SMTP_USER'), password: env.MAIL_SMTP_PASSWORD ?? '' },
+    smtp: { host: value(env, 'MAIL_SMTP_HOST'), port: Number(value(env, 'MAIL_SMTP_PORT')) as SmtpPort, user: value(env, 'MAIL_SMTP_USER'), password: env.MAIL_SMTP_PASSWORD ?? '' },
     from: env.MAIL_FROM ?? '',
   };
 }

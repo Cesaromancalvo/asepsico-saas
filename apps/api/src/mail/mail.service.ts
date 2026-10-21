@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { createTransport } from 'nodemailer';
-import { internalRecipients, MailConfig, readMailConfig } from './mail.config';
+import { internalRecipients, isImplicitTlsPort, MailConfig, readMailConfig } from './mail.config';
 
 /** Mensaje de texto plano. Sin HTML, sin imágenes remotas, sin seguimiento. */
 export type InternalMail = { to: string; subject: string; text: string };
@@ -15,21 +15,23 @@ export const MIN_MAIL_PART_LENGTH = 10;
 
 /**
  * Transporte SMTP con nodemailer (versión exacta fijada en package.json; sin dependencias
- * transitivas). TLS obligatorio: 465 con TLS implícito, 587 con STARTTLS exigido (requireTLS),
- * TLS 1.2 como mínimo, AUTH PLAIN y sin acceso a ficheros ni URLs desde el mensaje.
+ * transitivas). TLS obligatorio: 465/2465 con TLS implícito, 587/2587 con STARTTLS exigido (requireTLS),
+ * TLS 1.2 como mínimo, certificado verificado, AUTH PLAIN y sin acceso a ficheros ni URLs desde el
+ * mensaje. Timeouts cortos: si la red bloquea el puerto (p. ej. Render gratuito con 465/587), el fallo
+ * llega al log en segundos (solo tipo y código de error) en lugar de quedarse colgado.
  */
 export function smtpTransport(config: NonNullable<MailConfig>): MailTransport {
   const transporter = createTransport({
     host: config.smtp.host,
     port: config.smtp.port,
-    secure: config.smtp.port === 465,
+    secure: isImplicitTlsPort(config.smtp.port),
     requireTLS: true,
     auth: { user: config.smtp.user, pass: config.smtp.password },
     authMethod: 'PLAIN',
     tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
-    connectionTimeout: 10_000,
+    connectionTimeout: 15_000,
     greetingTimeout: 10_000,
-    socketTimeout: 20_000,
+    socketTimeout: 30_000,
     disableFileAccess: true,
     disableUrlAccess: true,
     logger: false,

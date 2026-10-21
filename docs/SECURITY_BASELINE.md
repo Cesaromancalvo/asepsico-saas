@@ -197,8 +197,9 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - **Subencargado:** Scaleway SAS (Transactional Email, región fr-par, UE) para **avisos internos**
   al equipo. El correo **no contiene datos personales del apuntado ni datos de salud**: solo
   recuento de altas nuevas, total activo, fecha y la orden para consultarlas. Destinatario: el Jefe.
-- SMTP con TLS obligatorio (465 TLS implícito o 587 con STARTTLS exigido, TLS ≥ 1.2, certificado
-  verificado), AUTH PLAIN, nodemailer con versión exacta fijada, sin acceso a ficheros ni URLs desde el
+- SMTP con TLS obligatorio (465/2465 TLS implícito o 587/2587 con STARTTLS exigido, TLS ≥ 1.2,
+  certificado verificado; en Render gratuito se usa 2465 porque bloquea la salida a 25/465/587),
+  timeouts cortos (conexión 15 s, saludo 10 s, socket 30 s), AUTH PLAIN, nodemailer con versión exacta fijada, sin acceso a ficheros ni URLs desde el
   mensaje, texto plano sin imágenes ni seguimiento. Credenciales solo en Render.
 - `MailService` **solo escribe a los destinatarios internos** de `WAITLIST_NOTIFY_TO` (403 con
   cualquier otro). Escribir a pacientes está fuera de alcance y bloqueado: exigiría un servicio
