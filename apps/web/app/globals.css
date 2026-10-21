@@ -688,3 +688,27 @@ html{scroll-padding-top:var(--demo-banner-height,0px)}
 .reason-dialog{margin:auto;color:var(--text)}.reason-dialog::backdrop{background:rgba(25,23,34,.48);backdrop-filter:blur(4px)}.reason-dialog-desc{margin:6px 0 0;color:var(--text-soft);font-size:var(--fs-sm);line-height:1.5}.reason-dialog-field{display:grid;gap:6px;font-size:var(--fs-sm);font-weight:700}.reason-dialog-field textarea{resize:vertical;font:inherit;font-weight:400}.reason-dialog-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:6px}.reason-dialog-count{flex:0 0 auto;color:var(--text-soft);font-size:var(--fs-xs)}.reason-dialog-count.is-near{color:#a44141;font-weight:700}.reason-dialog-error{margin:12px 0 0}.reason-dialog .agenda-modal-header>button:focus-visible,.reason-dialog button:focus-visible{outline:3px solid var(--primary);outline-offset:2px}@media(max-width:700px){.reason-dialog .agenda-modal-actions{flex-direction:column-reverse}.reason-dialog .agenda-modal-actions>*{width:100%}}
 .billing-reverse{margin-left:auto;border:1px solid #cfd7d3;background:#fff;border-radius:9px;padding:6px 10px;font-size:var(--fs-sm);cursor:pointer}.billing-reverse:hover{border-color:#d68c8c;color:#aa3e3e}
 .reason-dialog .button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none}
+
+/* Tareas del profesional: campos de la tarjeta, acciones y formulario en móvil */
+.task-card-main .task-notes-grid{margin-top:14px}
+.task-notes-grid label{min-width:0;align-content:start}
+.task-notes-grid>label:only-child{grid-column:1/-1}
+.task-notes-grid textarea{width:100%;box-sizing:border-box}
+.task-card-main .task-notes-grid textarea{min-height:92px}
+.task-notes-grid .task-review-field textarea{background:#fff;border-color:#c9c1ef}
+.task-notes-grid .task-review-field span{color:var(--violet-ink)}
+.task-list-feedback .patient-save-state{margin:14px 0 0}
+.task-list-feedback+.agenda-error{margin:14px 0 0}
+.task-card-actions{display:flex;flex-direction:column;gap:8px;width:220px;flex-shrink:0;align-self:flex-start}
+.task-card-actions .task-action-primary{width:100%;min-height:44px;padding:10px 16px;font-size:var(--fs-sm);line-height:1.25;white-space:nowrap;box-shadow:0 6px 16px rgba(114,100,217,.22)}
+.task-card-actions-secondary{display:flex;flex-direction:column;gap:8px}
+.task-action-secondary{min-height:40px;padding:9px 14px;border:1px solid var(--border-strong);border-radius:12px;background:#fff;color:var(--text);font:inherit;font-size:var(--fs-xs);font-weight:600;line-height:1.25;white-space:nowrap;cursor:pointer;transition:border-color .16s ease,color .16s ease,background .16s ease}
+.task-action-secondary:hover{border-color:var(--primary);color:var(--primary-dark)}
+.task-action-secondary.danger{color:var(--text-soft)}
+.task-action-secondary.danger:hover{border-color:#d68c8c;background:#fff7f7;color:#aa3e3e}
+.task-action-secondary:focus-visible,.task-card-actions .task-action-primary:focus-visible{outline:3px solid rgba(114,100,217,.35);outline-offset:2px}
+.task-action-secondary:disabled{opacity:.5;cursor:not-allowed}
+.patient-record-actions.task-form-actions{display:flex;flex-wrap:wrap}
+.task-form-actions>.button{flex:1 1 150px;min-width:0;white-space:nowrap}
+@media(max-width:800px){.task-card-actions{width:100%;align-self:stretch;padding-top:14px;border-top:1px solid var(--border)}.task-card-actions-secondary{flex-direction:row;flex-wrap:wrap}.task-action-secondary{flex:1 1 140px;min-width:0}}
+@media(max-width:520px){.patient-record-actions.task-form-actions{flex-direction:column-reverse}.task-form-actions>.button{flex:0 0 auto;width:100%}}
