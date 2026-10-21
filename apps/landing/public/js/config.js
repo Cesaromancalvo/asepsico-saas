@@ -2,7 +2,8 @@
  * Configuración de la landing de AsePsico.
  * Es el único sitio que hay que tocar para cambiar enlaces, datos legales o encender/apagar bloques.
  * Sin dependencias ni peticiones a terceros (la única petición de red es a la API propia de la
- * lista de espera, WAITLIST_API_URL, y solo al usar el formulario).
+ * lista de espera, WAITLIST_API_URL: una petición técnica al cargar la portada para despertarla y
+ * pedir el token del formulario, y el envío del formulario).
  */
 window.ASEPSICO_CONFIG = Object.freeze({
   // API de la lista de espera propia (FEATURES.ownWaitlistForm). Contrato: docs/WAITLIST_API.md.

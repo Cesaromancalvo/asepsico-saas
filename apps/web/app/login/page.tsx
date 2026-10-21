@@ -1,8 +1,9 @@
 'use client';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
 import { api, ApiError } from '@/lib/api';
+import { OTP_AUTOFILL_CHECKS_MS, acceptOtpInput, isUserInsertion } from '@/lib/otp';
 
 type LoginResponse =
   | { mfaRequired: true; pendingToken: string }
@@ -25,8 +26,47 @@ export default function LoginPage() {
     window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
+  // Campo del código controlado y vacío al entrar: el navegador no debe rellenarlo con el correo ni la contraseña.
+  const [code, setCode] = useState('');
+  const otpRef = useRef<HTMLInputElement>(null);
+  // Si la persona ya ha tecleado, pegado o pulsado el campo. Safari autorrellena sin keydown ni beforeinput de usuario.
+  const userInteracted = useRef(false);
+
+  function markInteracted() {
+    userInteracted.current = true;
+  }
+
+  // Al mostrar el paso 2 y durante unos segundos, se vacía cualquier valor que no venga de la persona
+  // (Safari puede escribir en el DOM sin pasar por React, y hacerlo un instante después de montar).
+  useEffect(() => {
+    if (!pendingToken) return;
+    userInteracted.current = false;
+    const field = otpRef.current;
+    const clearIfAutofilled = () => {
+      const current = otpRef.current;
+      if (!current) return;
+      const accepted = acceptOtpInput(current.value, userInteracted.current);
+      if (accepted !== current.value) {
+        current.value = '';
+        setCode('');
+      }
+    };
+    const onBeforeInput = (event: Event) => {
+      if (isUserInsertion((event as InputEvent).inputType)) markInteracted();
+    };
+    field?.addEventListener('beforeinput', onBeforeInput);
+    clearIfAutofilled();
+    const timers = OTP_AUTOFILL_CHECKS_MS.map((ms) => window.setTimeout(clearIfAutofilled, ms));
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      field?.removeEventListener('beforeinput', onBeforeInput);
+    };
+  }, [pendingToken]);
+
   function backToPasswordStep(message = '') {
     setPendingToken('');
+    setCode('');
+    userInteracted.current = false;
     setError('');
     setNotice(message);
   }
@@ -38,14 +78,16 @@ export default function LoginPage() {
     setBusy(true);
     const form = e.currentTarget;
     const data = new FormData(form);
+    const enteredEmail = String(data.get('email') ?? '');
     const passwordField = form.elements.namedItem('password');
     if (passwordField instanceof HTMLInputElement) passwordField.value = '';
     try {
       const result = await api<LoginResponse>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email: data.get('email'), password: data.get('password') }),
+        body: JSON.stringify({ email: enteredEmail, password: data.get('password') }),
       });
       if (result.mfaRequired) {
+        setCode('');
         setPendingToken(result.pendingToken);
       } else {
         invalidateViewer();
@@ -63,9 +105,8 @@ export default function LoginPage() {
     setError('');
     setBusy(true);
     const form = e.currentTarget;
-    const code = new FormData(form).get('code');
-    const codeField = form.elements.namedItem('code');
-    if (codeField instanceof HTMLInputElement) codeField.value = '';
+    const codeField = form.elements.namedItem('otp');
+    setCode('');
     try {
       await api<LoginResponse>('/auth/login/mfa', {
         method: 'POST',
@@ -96,9 +137,40 @@ export default function LoginPage() {
           <h1>Verificación en dos pasos</h1>
           <p className="muted">Introduce el código de 6 dígitos de tu app de autenticación, o uno de tus códigos de recuperación.</p>
           <form onSubmit={submitMfaCode}>
+            {/*
+              Sin campo de usuario (ni oculto): con él Safari trata el paso como un login y mete el correo o la
+              contraseña en el código. El código solo se acepta cuando la persona teclea, pega o pulsa el campo.
+            */}
             <label className="field">
               Código
-              <input name="code" autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="123456" required minLength={6} maxLength={11} />
+              <input
+                ref={otpRef}
+                id="otp"
+                name="otp"
+                type="text"
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                placeholder="123456"
+                required
+                minLength={6}
+                maxLength={11}
+                value={code}
+                onKeyDown={markInteracted}
+                onPaste={markInteracted}
+                onPointerDown={markInteracted}
+                onClick={markInteracted}
+                onChange={(event) => {
+                  const accepted = acceptOtpInput(event.target.value, userInteracted.current);
+                  if (accepted !== event.target.value) event.target.value = '';
+                  setCode(accepted);
+                }}
+              />
             </label>
             {error && <p className="error" role="alert">{error}</p>}
             <button className="button" type="submit" disabled={busy}>{busy ? 'Comprobando…' : 'Confirmar'}</button>
