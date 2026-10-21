@@ -82,7 +82,7 @@ El token caduca a las 2 horas y no se puede usar hasta pasados `minSeconds` segu
 | `429` | `{ "statusCode": 429, "message": "ThrottlerException: Too Many Requests" }` | "Has hecho demasiados intentos. Prueba de nuevo en unos minutos." |
 | `5xx` / red | — | Mensaje genérico y el email de contacto como alternativa. Render puede tardar en despertar: timeout generoso (≈30 s) |
 
-Límites por IP: 5 envíos y 20 tokens cada 10 minutos.
+Límites por IP: 5 envíos y 80 tokens cada 10 minutos.
 
 ## Variables de entorno de la API (Dora)
 

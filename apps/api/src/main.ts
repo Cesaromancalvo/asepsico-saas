@@ -9,6 +9,7 @@ import { buildCorsDelegate } from './config/cors';
 import { WAITLIST_PATH, assertWaitlistConfig } from './waitlist/waitlist.config';
 import { waitlistBodyParser } from './waitlist/waitlist-body.middleware';
 import { PORTAL_SIGNUP_PUBLIC_PATH } from './portal-signup/portal-signup.config';
+import { assertMailConfig } from './mail/mail.config';
 
 async function bootstrap() {
   // Se valida ANTES de crear la app: un TRUST_PROXY mal escrito debe impedir el arranque, no
@@ -17,6 +18,8 @@ async function bootstrap() {
   const trustProxy = parseTrustProxy(process.env.TRUST_PROXY, process.env.NODE_ENV);
   // Igual con la lista de espera pública: orígenes CORS y WAITLIST_SECRET (obligatorio en producción).
   assertWaitlistConfig();
+  // Aviso por correo de la lista de espera: con WAITLIST_NOTIFY_ENABLED=true exige la configuración de correo completa.
+  assertMailConfig();
 
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');

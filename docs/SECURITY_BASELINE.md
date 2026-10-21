@@ -165,7 +165,7 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - CORS propio solo para esa ruta (`WAITLIST_ALLOWED_ORIGINS`, por defecto `https://asepsico.es` y
   `https://www.asepsico.es`, sin credenciales) y además se exige la cabecera `Origin` permitida
   (403 si falta o no coincide). El resto de la API sigue con `WEB_ORIGIN`.
-- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
+- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 80 tokens
   cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
   (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
 - Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.
@@ -188,6 +188,24 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   `npm run waitlist:delete -- --email <email>` (vacía todos los datos personales y el hash; deja
   `deletedAt`) y `npm run waitlist:purge` (plazo de 12 meses; tarea mensual en el runbook). Las
   claves de producción solo se usan en ejecuciones puntuales, nunca en un `.env` permanente.
+
+### Aviso interno por correo de altas nuevas (Scaleway como subencargado)
+
+- Módulo `apps/api/src/mail/` y `apps/api/src/waitlist/waitlist-notifier.ts`. Apagado por defecto
+  (`WAITLIST_NOTIFY_ENABLED`); con él encendido, la API valida al arrancar la configuración SMTP y,
+  si falta algo, no arranca (el error nombra variables, nunca valores).
+- **Subencargado:** Scaleway SAS (Transactional Email, región fr-par, UE) para **avisos internos**
+  al equipo. El correo **no contiene datos personales del apuntado ni datos de salud**: solo
+  recuento de altas nuevas, total activo, fecha y la orden para consultarlas. Destinatario: el Jefe.
+- SMTP con TLS obligatorio (465 TLS implícito o 587 con STARTTLS exigido, TLS ≥ 1.2, certificado
+  verificado), AUTH PLAIN, nodemailer con versión exacta fijada, sin acceso a ficheros ni URLs desde el
+  mensaje, texto plano sin imágenes ni seguimiento. Credenciales solo en Render.
+- `MailService` **solo escribe a los destinatarios internos** de `WAITLIST_NOTIFY_TO` (403 con
+  cualquier otro). Escribir a pacientes está fuera de alcance y bloqueado: exigiría un servicio
+  aparte que pase por `portalEmailUsableForDelivery` (correo verificado) y revisión de Argos y Lex Psi.
+  El test `no-email-sending.security-spec.ts` falla si aparece código de envío fuera de la lista permitida.
+- Asíncrono y agrupado (1 aviso cada 10 min), 1 reintento como mucho; los fallos solo dejan en el log
+  el tipo de error, nunca destinatario ni contenido. Un fallo de correo nunca afecta al alta.
 
 ## Registro por invitación y aceptación de condiciones
 

@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { encryptModelData } from '../common/crypto/clinical-crypto';
 import { PrismaService } from '../database/prisma.service';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
+import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
 import { WAITLIST_FORM_MIN_SECONDS, WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL } from './waitlist.config';
 
@@ -21,7 +22,7 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
 export class WaitlistService {
   private readonly logger = new Logger('Waitlist');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly notifier?: WaitlistNotifier) {}
 
   formToken() {
     return { formToken: issueFormToken(), minSeconds: WAITLIST_FORM_MIN_SECONDS };
@@ -83,6 +84,13 @@ export class WaitlistService {
     }
 
     this.logger.log('Alta en la lista de espera registrada');
+    // Aviso interno al Jefe (sin datos del apuntado), ya guardada el alta. Solo programa el envío:
+    // nunca bloquea ni hace fallar la respuesta pública. Las altas repetidas no avisan.
+    try {
+      this.notifier?.notifyNewEntry();
+    } catch {
+      this.logger.warn('Aviso de lista de espera no programado');
+    }
     return WAITLIST_ACCEPTED;
   }
 }
