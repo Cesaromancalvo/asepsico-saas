@@ -24,8 +24,8 @@ apps/landing/
     css/styles.css
     js/config.js           <- enlaces, datos legales e interruptores (lo único que hay que tocar)
     js/main.js             <- acordeón, narrativa con scroll, aparición de secciones, interruptores, "lo que te cuesta hoy", formulario de la lista de espera
-    estado/index.html      <- estado del servicio e incidencias (marcador [[ESTADO]], lo rellena build.mjs)
-    cambios/index.html     <- cambios y avisos previos (marcador [[CAMBIOS]], lo rellena build.mjs)
+    estado/index.html      <- estado del servicio e incidencias (marcador [[ESTADO]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
+    cambios/index.html     <- cambios y avisos previos (marcador [[CAMBIOS]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
     404.html               <- página de error propia (noindex, fuera del sitemap)
     fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
     img/                   <- logo y og-image.png (1200x630)
@@ -180,6 +180,15 @@ X-Frame-Options: DENY
 Permissions-Policy: camera=(), microphone=(), geolocation=()
 Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://asepsico-api.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'none'; object-src 'none'
 ```
+
+Cabecera adicional para `/estado/*` y `/cambios/*` (Settings → Headers, una regla por ruta), mientras estén
+escondidas (decisión del Jefe, 21/10; ya llevan `<meta name="robots" content="noindex, follow">`):
+
+```
+X-Robots-Tag: noindex, follow
+```
+
+Comprobar: `curl -sI https://asepsico.es/estado/ | grep -i x-robots-tag`. Se quita el día que vuelvan al pie y al sitemap.
 
 `connect-src` incluye la API de la lista de espera (único cambio respecto a la versión anterior, para
 el formulario propio). `form-action 'none'` se mantiene: el formulario se envía con `fetch`. Si la
