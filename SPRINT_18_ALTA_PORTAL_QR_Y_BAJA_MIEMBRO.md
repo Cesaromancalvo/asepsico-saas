@@ -7,7 +7,7 @@ Dos piezas que una consulta necesita antes del piloto:
 1. **Alta del paciente en el portal con el QR fijo de cada profesional**: el paciente pide acceso desde su móvil, la consulta revisa la solicitud y le entrega en persona el enlace para activar su cuenta.
 2. **Baja de un miembro del equipo**: cuando un profesional deja la consulta, su sesión se corta al momento, su trabajo pasa a otro profesional (o se decide después) y sus notas internas no pasan a nadie.
 
-Este documento registra lo que hay en la rama `feat/s5-integracion` + `feat/s5-web` (HEAD `9e08ba1`). **La entrega aún no está desplegada ni fusionada en `main`.** No declara nada como validado para datos clínicos reales: los textos legales del alta son un borrador pendiente de abogado y faltan los datos públicos del responsable.
+Este documento registra lo que hay en la rama `feat/s5-integracion` + `feat/s5-web` (HEAD `9e08ba1`), **fusionada en `main` con el PR #34 (`346e1fe`) y desplegada el 21/10/2026** (ver «Despliegue»). No declara nada como validado para datos clínicos reales: los textos legales del alta son un borrador pendiente de abogado y faltan los datos públicos del responsable.
 
 Numeración: la entrega S4 (sesión 4, PR #28) no tiene documento propio y ocupa el número 17 en el roadmap; esta entrega S5 toma el siguiente número libre, **18**.
 
@@ -93,7 +93,20 @@ Verificación de Quima sobre la rama de la entrega:
 - Prueba manual por HTTP: **21/21**.
 - Revisión de Argos: **aprobado** (condiciones aplicadas).
 
-No se ha ejecutado aún en el entorno desplegado: la entrega está **lista para desplegar**.
+## Despliegue (21/10/2026)
+
+- **PR #34** desde `docs/s5` (`a0c30e9`), merge `346e1fe`, hacia las 21:40.
+- **Migraciones:** producción de 33 a 37, con copia previa (`antes-s5`) y ensayo previo de las migraciones sobre esa copia restaurada.
+- **Comprobaciones posteriores**, sin datos reales:
+  - `GET /api/v1/health` correcto;
+  - las 4 rutas nuevas protegidas responden **401** sin sesión;
+  - `POST /api/v1/public/portal-signup/requests` con un token inventado responde **202** con la respuesta genérica;
+  - una activación inválida responde **400**;
+  - `GET /api/v1/environment` sigue devolviendo `demo: true`.
+- El Jefe revisó las pantallas nuevas en el entorno.
+- **Base de datos:** desde el 16/10/2026, en un plan con copias del proveedor, además de copias propias cifradas.
+
+Las comprobaciones las comunicó Pinky; no hay en el repositorio un registro de salida de comandos de esta sesión.
 
 ## Pendiente
 
@@ -120,4 +133,6 @@ La entrega S5 se considera **desplegada** cuando:
 - las 4 migraciones están aplicadas en producción (37 en total) con copia previa;
 - se comprueba en el entorno, sin datos reales, el alta por QR de principio a fin y la baja de un miembro con su `SESSION_REVOKED`.
 
-Estado actual: **Implementado, Pruebas incluidas, Ejecución confirmada en rama**. No es **Validado** para pacientes reales hasta cerrar los pendientes de H1 y del abogado.
+Cumplido (21/10/2026): PR fusionada en `main` y 4 migraciones aplicadas en producción (37) con copia previa. **Pendiente:** la comprobación en el entorno del alta por QR de principio a fin y de la baja de un miembro con su `SESSION_REVOKED`.
+
+Estado actual: **Implementado, Pruebas incluidas, Ejecución confirmada en rama, desplegado; BETA (solo demo)**. No es **Validado** para pacientes reales hasta cerrar los pendientes de H1 y del abogado.
