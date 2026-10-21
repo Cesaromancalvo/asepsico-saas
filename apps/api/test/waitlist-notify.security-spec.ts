@@ -57,6 +57,20 @@ describe('Configuración del correo', () => {
     await expect(mail.sendInternal({ to: JEFE, subject: WAITLIST_NOTIFY_SUBJECT, text: 'Texto ficticio de prueba' })).resolves.toBe(false);
   });
 
+  it.each([
+    ['MAIL_FROM con CRLF', { MAIL_FROM: 'AsePsico\r\nBcc: x@example.test <avisos@example.test>' }],
+    ['MAIL_FROM con LF al final', { MAIL_FROM: 'AsePsico <avisos@example.test>\n' }],
+    ['MAIL_FROM sin formato', { MAIL_FROM: 'no es un remitente' }],
+    ['WAITLIST_NOTIFY_TO inválido', { WAITLIST_NOTIFY_TO: 'jefe@example.test, no-es-correo' }],
+    ['WAITLIST_NOTIFY_TO vacío', { WAITLIST_NOTIFY_TO: '' }],
+  ])('%s → readMailConfig null y no se crea transporte (sin depender de main.ts)', (_label, extra) => {
+    const env = configured(extra as any);
+    expect(readMailConfig(env)).toBeNull();
+    const factory = jest.fn();
+    expect(new MailService(env, factory).isConfigured()).toBe(false);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
   it('puerto distinto de 587/465 → sin transporte', () => {
     expect(readMailConfig(configured({ MAIL_SMTP_PORT: '25' }))).toBeNull();
   });
@@ -190,17 +204,53 @@ describe('Aviso de altas de la lista de espera', () => {
     notifier.onModuleDestroy();
   });
 
-  it('las altas que llegan durante el reintento se suman a él', async () => {
+  it('el reintento va SOLO a los destinatarios que fallaron; las altas de mientras tanto, al siguiente aviso', async () => {
     jest.useFakeTimers();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    let calls = 0;
-    const { send, notifier } = setup(configured(), async () => { calls += 1; if (calls === 1) throw new Error('fallo'); });
+    const OTRO = 'socia@example.test';
+    let failOtro = true;
+    const { send, notifier } = setup(configured({ WAITLIST_NOTIFY_TO: `${JEFE}, ${OTRO}` }), async () => undefined);
+    send.mockImplementation((async (message: any) => {
+      if (message.to === OTRO && failOtro) { failOtro = false; throw Object.assign(new Error('fallo'), { name: 'SmtpError' }); }
+    }) as any);
     notifier.notifyNewEntry();
     await jest.advanceTimersByTimeAsync(0);
+    expect(send.mock.calls.map((c: any) => c[0].to)).toEqual([JEFE, OTRO]);
+
     notifier.notifyNewEntry();
     notifier.notifyNewEntry();
     await jest.advanceTimersByTimeAsync(WAITLIST_NOTIFY_RETRY_MS);
-    expect(send).toHaveBeenCalledTimes(2);
-    expect((send.mock.calls[1] as any[])[0].text).toContain('Hay 3 altas nuevas');
+    expect(send.mock.calls.map((c: any) => c[0].to)).toEqual([JEFE, OTRO, OTRO]);
+    expect((send.mock.calls[2] as any[])[0].text).toContain('Hay 1 alta nueva');
+
+    await jest.advanceTimersByTimeAsync(WAITLIST_NOTIFY_WINDOW_MS);
+    expect(send.mock.calls.slice(3).map((c: any) => [c[0].to, c[0].text.includes('Hay 2 altas nuevas')])).toEqual([[JEFE, true], [OTRO, true]]);
+    expect(notifier.pendingCount()).toBe(0);
   });
+
+  it('ráfaga de 1000 altas en la misma ventana → 1 envío por destinatario y nada pendiente', async () => {
+    jest.useFakeTimers();
+    const OTRO = 'socia@example.test';
+    const { send, notifier, waitlist } = setup(configured({ WAITLIST_NOTIFY_TO: `${JEFE},${OTRO}` }));
+    for (let i = 0; i < 1000; i++) await waitlist.submit(entry());
+    await jest.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.map((c: any) => c[0].to).sort()).toEqual([JEFE, OTRO].sort());
+    expect((send.mock.calls[0] as any[])[0].text).toContain('Hay 1000 altas nuevas');
+    expect(notifier.pendingCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(WAITLIST_NOTIFY_WINDOW_MS * 3);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['tarda 30 s', () => new Promise<void>((resolve) => setTimeout(resolve, 30_000))],
+    ['lanza', async () => { throw new Error('caído'); }],
+  ])('el alta no depende del transporte (%s): resuelve sin avanzar los temporizadores', async (_label, impl) => {
+    jest.useFakeTimers();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { send, waitlist } = setup(configured(), impl as any);
+    await expect(waitlist.submit(entry())).resolves.toEqual(WAITLIST_ACCEPTED);
+    expect(send).not.toHaveBeenCalled();
+  });
+});
 });

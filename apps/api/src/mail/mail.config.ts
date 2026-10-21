@@ -13,18 +13,28 @@ export type MailConfig = { smtp: SmtpConfig; from: string } | null;
 export class InvalidMailConfigError extends Error {}
 
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-const FROM_RE = /^(?:[^<>]{1,80} )?<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+// Nombre visible sin < > ni caracteres de control (CR/LF incluidos: evita inyección de cabeceras).
+const FROM_RE = /^(?:[^<>\x00-\x1f\x7f]{1,80} )?<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 const value = (env: NodeJS.ProcessEnv, name: string) => (env[name] ?? '').trim();
 
-/** Transporte SMTP solo si están TODAS las variables; si no, null (no se crea transporte). */
+/**
+ * Transporte SMTP solo si están TODAS las variables y son válidas (remitente con FROM_RE y cada
+ * destinatario interno con EMAIL_RE); si no, null y no se crea transporte. Así MailService no
+ * depende de que main.ts haya llamado a assertMailConfig.
+ */
 export function readMailConfig(env: NodeJS.ProcessEnv = process.env): MailConfig {
   const host = value(env, 'MAIL_SMTP_HOST');
   const port = Number(value(env, 'MAIL_SMTP_PORT'));
   const user = value(env, 'MAIL_SMTP_USER');
   const password = env.MAIL_SMTP_PASSWORD ?? '';
-  const from = value(env, 'MAIL_FROM');
+  // Sin trim: un CR/LF al final del remitente también invalida la configuración.
+  const from = env.MAIL_FROM ?? '';
   if (!host || !user || !password || !from || (port !== 465 && port !== 587)) return null;
+  if (!FROM_RE.test(from)) return null;
+  const to = internalRecipients(env);
+  if (!to.length || !to.every((r) => EMAIL_RE.test(r))) return null;
+  if (/[\x00-\x1f\x7f]/.test(host + user)) return null;
   return { smtp: { host, port, user, password }, from };
 }
 

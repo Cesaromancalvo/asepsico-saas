@@ -18,14 +18,30 @@ const ALLOWED_WITHOUT_GATE: string[] = [
   // otro): escribir a pacientes queda fuera de alcance y bloqueado.
   'src/mail/mail.config.ts',
   'src/mail/mail.service.ts',
+  'src/mail/mail.module.ts',
   'src/waitlist/waitlist-notifier.ts',
+  // Solo importa MailModule para construir el notificador (Argos M1, 21/10/2026).
+  'src/waitlist/waitlist.module.ts',
 ];
 /** Dependencias de envío permitidas (versión exacta fijada en package.json). */
 const ALLOWED_MAIL_DEPENDENCIES = ['nodemailer'];
 
 const ROOT = join(__dirname, '..');
 const SCAN_DIRS = ['src', 'prisma'];
-const EMAIL_SENDING = /sendMail|nodemailer|\bresend\b|@scaleway|smtp/i;
+// También el uso del servicio de correo propio: quien lo importe o llame a sendInternal debe estar
+// en la lista permitida (Argos M1).
+const PROVIDER_SENDING = /sendMail|nodemailer|\bresend\b|@scaleway|smtp/i;
+// Distingue mayúsculas y exige límite de palabra: PortalAccountEmailService o email.service no cuentan.
+const OWN_MAIL_SERVICE = /\bMailService\b|\bMailModule\b|\bsendInternal\b|(?<![\w-])mail\.(?:service|module)\b/;
+const EMAIL_SENDING = { test: (source: string) => PROVIDER_SENDING.test(source) || OWN_MAIL_SERVICE.test(source) };
+
+/** Archivos que envían (o usan el servicio de correo) sin la puerta ni la lista permitida. */
+function offenders(files: { file: string; source: string }[]): string[] {
+  return files
+    .filter(({ source }) => EMAIL_SENDING.test(source))
+    .filter(({ file, source }) => !source.includes('portalEmailUsableForDelivery') && !ALLOWED_WITHOUT_GATE.includes(file))
+    .map(({ file }) => file);
+}
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -37,12 +53,8 @@ function walk(dir: string): string[] {
 
 describe('Sin envío de email fuera de la puerta de correos verificados (Argos B1)', () => {
   it('ningún archivo de apps/api envía email sin portalEmailUsableForDelivery ni lista permitida', () => {
-    const offenders = SCAN_DIRS.flatMap((d) => walk(join(ROOT, d)))
-      .filter((file) => EMAIL_SENDING.test(readFileSync(file, 'utf8')))
-      .map((file) => ({ file: relative(ROOT, file), source: readFileSync(file, 'utf8') }))
-      .filter(({ file, source }) => !source.includes('portalEmailUsableForDelivery') && !ALLOWED_WITHOUT_GATE.includes(file))
-      .map(({ file }) => file);
-    expect(offenders).toEqual([]);
+    const files = SCAN_DIRS.flatMap((d) => walk(join(ROOT, d))).map((file) => ({ file: relative(ROOT, file), source: readFileSync(file, 'utf8') }));
+    expect(offenders(files)).toEqual([]);
   });
 
   it('package.json de la API no declara librerías de envío de email sin revisión, y las permitidas van fijadas', () => {
@@ -58,5 +70,18 @@ describe('Sin envío de email fuera de la puerta de correos verificados (Argos B
     for (const sample of ["import nodemailer from 'nodemailer'", 'transport.sendMail(msg)', "new Resend(key)", "from '@scaleway/sdk'", 'SMTP_HOST']) {
       expect(EMAIL_SENDING.test(sample)).toBe(true);
     }
+  });
+
+  it('un archivo ficticio fuera de la lista que importa MailService o llama a sendInternal se detecta', () => {
+    const samples = [
+      { file: 'src/patients/aviso-ficticio.ts', source: "import { MailService } from '../mail/mail.service';" },
+      { file: 'src/portal/otro-ficticio.ts', source: 'await this.mail.sendInternal({ to, subject, text });' },
+      { file: 'src/sessions/modulo-ficticio.ts', source: "imports: [MailModule]" },
+    ];
+    expect(offenders(samples)).toEqual(samples.map((s) => s.file));
+    // Y la lista permitida no es un comodín: el mismo código en un archivo permitido no cuenta.
+    expect(offenders([{ file: 'src/mail/mail.service.ts', source: samples[0].source }])).toEqual([]);
+    // Sin falsos positivos con nombres parecidos.
+    expect(offenders([{ file: 'src/portal-signup/x.ts', source: "import { PortalAccountEmailService } from './portal-account-email.service';" }])).toEqual([]);
   });
 });

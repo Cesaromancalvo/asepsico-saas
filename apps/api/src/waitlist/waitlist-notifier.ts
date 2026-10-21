@@ -45,7 +45,7 @@ export class WaitlistNotifier implements OnModuleDestroy {
       this.pending += 1;
       if (this.timer) return; // ya hay un aviso programado: se acumula
       const wait = Math.max(0, this.lastSentAt + WAITLIST_NOTIFY_WINDOW_MS - Date.now());
-      this.schedule(wait, false);
+      this.schedule(wait);
     } catch (error) {
       this.logger.warn(`Aviso de lista de espera no programado (${(error as Error)?.name ?? 'Error'})`);
     }
@@ -56,32 +56,59 @@ export class WaitlistNotifier implements OnModuleDestroy {
     this.timer = undefined;
   }
 
-  private schedule(ms: number, isRetry: boolean, carried = 0) {
-    this.timer = setTimeout(() => void this.flush(isRetry, carried), ms);
+  private schedule(ms: number, retry?: { count: number; to: string[] }) {
+    this.timer = setTimeout(() => void this.flush(retry), ms);
     this.timer.unref();
   }
 
-  /** Envía el aviso acumulado. Público para los tests. */
-  async flush(isRetry = false, carried = 0): Promise<void> {
+  /**
+   * Envía el aviso acumulado (o, con `retry`, reintenta UNA vez el mismo aviso solo a los
+   * destinatarios que fallaron). Las altas que lleguen mientras tanto esperan al siguiente aviso
+   * normal de la ventana. Público para los tests; nunca lanza.
+   */
+  async flush(retry?: { count: number; to: string[] }): Promise<void> {
     this.timer = undefined;
-    // Las altas que llegaron mientras esperaba el reintento se suman a las arrastradas.
-    const count = carried + this.pending;
-    this.pending = 0;
-    if (count <= 0) return;
-    this.lastSentAt = Date.now();
-    try {
-      const total = await this.prisma.waitlistEntry.count({ where: { deletedAt: null } });
-      const text = waitlistNotifyBody(count, total, new Date());
-      for (const to of internalRecipients(this.env)) {
-        await this.mail.sendInternal({ to, subject: WAITLIST_NOTIFY_SUBJECT, text });
+    const count = retry ? retry.count : this.pending;
+    if (!retry) this.pending = 0;
+    const recipients = retry ? retry.to : internalRecipients(this.env);
+    if (count > 0 && recipients.length) {
+      this.lastSentAt = Date.now();
+      let failed: string[] = recipients;
+      let lastError: unknown;
+      try {
+        const total = await this.prisma.waitlistEntry.count({ where: { deletedAt: null } });
+        const text = waitlistNotifyBody(count, total, new Date());
+        failed = [];
+        for (const to of recipients) {
+          try {
+            await this.mail.sendInternal({ to, subject: WAITLIST_NOTIFY_SUBJECT, text });
+          } catch (error) {
+            failed.push(to);
+            lastError = error;
+          }
+        }
+      } catch (error) {
+        lastError = error;
       }
-    } catch (error) {
-      const code = (error as { code?: string })?.code;
-      this.logger.warn(`Aviso de lista de espera no enviado (${(error as Error)?.name ?? 'Error'}${code ? ` ${code}` : ''})${isRetry ? '' : '; se reintenta una vez'}`);
-      if (!isRetry) {
-        this.schedule(WAITLIST_NOTIFY_RETRY_MS, true, count);
+      if (failed.length) {
+        const code = (lastError as { code?: string })?.code;
+        // Solo tipo y código de error: nunca destinatarios ni contenido.
+        this.logger.warn(`Aviso de lista de espera no enviado (${(lastError as Error)?.name ?? 'Error'}${code ? ` ${code}` : ''})${retry ? '' : '; se reintenta una vez'}`);
+        if (!retry) {
+          this.schedule(WAITLIST_NOTIFY_RETRY_MS, { count, to: failed });
+          return;
+        }
       }
     }
+    // Altas llegadas durante un reintento: siguiente aviso al cerrarse la ventana.
+    if (!this.timer && this.pending > 0) {
+      this.schedule(Math.max(0, this.lastSentAt + WAITLIST_NOTIFY_WINDOW_MS - Date.now()));
+    }
+  }
+
+  /** Para los tests: altas acumuladas sin avisar todavía. */
+  pendingCount(): number {
+    return this.pending;
   }
 }
 
