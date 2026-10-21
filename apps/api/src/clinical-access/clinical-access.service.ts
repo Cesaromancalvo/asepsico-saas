@@ -72,7 +72,7 @@ export class ClinicalAccessService {
   async getMemberProfile(workspaceId: string, actor: AuthUser): Promise<MemberClinicalProfile | null> {
     if (!actor?.sub || !workspaceId) return null;
     const member = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId, userId: actor.sub },
+      where: { workspaceId, userId: actor.sub, status: 'ACTIVE' },
       select: { role: true, isClinician: true },
     });
     return member ? { role: member.role, isClinician: member.isClinician === true } : null;

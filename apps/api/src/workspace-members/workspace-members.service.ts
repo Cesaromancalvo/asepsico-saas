@@ -10,6 +10,8 @@ const MEMBER_SELECT = {
   role: true,
   isClinician: true,
   createdAt: true,
+  status: true,
+  removedAt: true,
   user: { select: { firstName: true, lastName: true, email: true } },
 } as const;
 
@@ -23,7 +25,7 @@ export class WorkspaceMembersService {
 
   /** Rol real del actor en la BD (el token puede estar desactualizado). */
   private async actorRole(workspaceId: string, actor: AuthUser) {
-    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub }, select: { role: true } });
+    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub, status: 'ACTIVE' }, select: { role: true } });
     return member?.role ?? null;
   }
 
@@ -46,14 +48,14 @@ export class WorkspaceMembersService {
       throw new ForbiddenException('Solo el propietario puede marcar profesionales clínicos');
     }
     return this.prisma.$transaction(async (tx) => {
-      const current = await tx.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { id: true, role: true, isClinician: true } });
+      const current = await tx.workspaceMember.findFirst({ where: { workspaceId, userId, status: 'ACTIVE' }, select: { id: true, role: true, isClinician: true } });
       if (!current) throw new NotFoundException('Miembro no encontrado');
       if (current.role === 'ASSISTANT') throw new BadRequestException('Un asistente no puede ser profesional clínico');
       if (current.role === 'THERAPIST') throw new BadRequestException('Un terapeuta siempre es profesional clínico');
       if (current.isClinician !== dto.isClinician) {
         // Escritura acotada al workspace, con compare-and-set del rol y del valor leído: nunca solo por id.
         const { count } = await tx.workspaceMember.updateMany({
-          where: { id: current.id, workspaceId, role: { in: ['OWNER', 'ADMIN'] }, isClinician: current.isClinician },
+          where: { id: current.id, workspaceId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] }, isClinician: current.isClinician },
           data: { isClinician: dto.isClinician },
         });
         if (count === 0) throw new BadRequestException('El miembro cambió mientras se guardaba; vuelve a intentarlo');
@@ -77,6 +79,7 @@ export class WorkspaceMembersService {
 
 type MemberRow = {
   id: string; userId: string; role: string; isClinician: boolean; createdAt: Date;
+  status?: string | null; removedAt?: Date | null;
   user?: { firstName: string; lastName: string; email: string } | null;
 };
 
@@ -87,6 +90,9 @@ function toMemberView(member: MemberRow) {
     role: member.role,
     isClinician: member.isClinician === true,
     createdAt: member.createdAt,
+    // Estado de la membresía (historia B): los dados de baja siguen en la lista con su fecha.
+    status: member.status ?? 'ACTIVE',
+    removedAt: member.removedAt ?? null,
     firstName: member.user?.firstName ?? null,
     lastName: member.user?.lastName ?? null,
     email: member.user?.email ?? null,

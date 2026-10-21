@@ -12,10 +12,11 @@ import { MfaService } from './mfa.service';
 
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const MFA_PENDING_TTL = '5m';
-// Membresía con la que se inicia sesión: la más antigua, de forma determinista.
-const FIRST_MEMBERSHIP = { memberships: { take: 1, orderBy: { createdAt: 'asc' as const } } };
+// Membresía con la que se inicia sesión: la ACTIVA más antigua, de forma determinista. Un miembro
+// dado de baja (REMOVED) no puede iniciar sesión en ese espacio.
+const FIRST_MEMBERSHIP = { memberships: { where: { status: 'ACTIVE' as const }, take: 1, orderBy: { createdAt: 'asc' as const } } };
 
-type SessionUser = { id: string; email: string; firstName: string; lastName: string; totpEnabled: boolean };
+type SessionUser = { id: string; email: string; firstName: string; lastName: string; totpEnabled: boolean; tokenVersion?: number };
 
 export type IssuedSession = {
   accessToken: string;
@@ -113,7 +114,7 @@ export class AuthService {
 
     const [user, membership] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: stored.userId } }),
-      this.prisma.workspaceMember.findFirst({ where: { userId: stored.userId, workspaceId: stored.workspaceId } }),
+      this.prisma.workspaceMember.findFirst({ where: { userId: stored.userId, workspaceId: stored.workspaceId, status: 'ACTIVE' } }),
     ]);
     if (!user || !membership) throw new UnauthorizedException('Sesión no válida');
 
@@ -165,6 +166,8 @@ export class AuthService {
       role,
       mfaEnabled: user.totpEnabled,
       sid: sessionFamily,
+      // Versión de credenciales: JwtAuthGuard rechaza el token en cuanto la de la BD cambia.
+      tv: user.tokenVersion ?? 0,
     });
     const refreshToken = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -199,7 +202,7 @@ export class AuthService {
     assertStaffRole(actor);
     if (typeof actor.sub !== 'string' || typeof actor.workspaceId !== 'string') throw new UnauthorizedException();
     const member = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId: actor.workspaceId, userId: actor.sub },
+      where: { workspaceId: actor.workspaceId, userId: actor.sub, status: 'ACTIVE' },
       select: {
         role: true,
         isClinician: true,

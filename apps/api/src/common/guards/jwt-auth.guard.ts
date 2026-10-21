@@ -2,6 +2,7 @@ import { ExecutionContext, ForbiddenException, Injectable, InternalServerErrorEx
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../../database/prisma.service';
 import { API_PREFIX, assertTermsAccepted, normalizeRequestPath } from '../../legal/terms-acceptance';
+import { assertActiveSession } from '../auth/active-session';
 
 // Roles que deben tener el segundo factor activo para poder usar la aplicación, no solo
 // para activarlo. ASSISTANT queda fuera a propósito: no toca contenido clínico.
@@ -35,8 +36,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   /**
-   * Tras autenticar (firma, expiración y MFA en handleRequest), comprueba que el profesional tiene
-   * aceptadas las condiciones vigentes. Si no, 428 TERMS_ACCEPTANCE_REQUIRED (ver src/legal/).
+   * Tras autenticar (firma, expiración y MFA en handleRequest):
+   *  1. revalida la sesión contra la BD: membresía ACTIVE y tokenVersion (401 SESSION_REVOKED si no);
+   *  2. comprueba que el profesional tiene aceptadas las condiciones vigentes. Si no, 428
+   *     TERMS_ACCEPTANCE_REQUIRED (ver src/legal/).
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const ok = (await super.canActivate(context)) as boolean;
@@ -44,6 +47,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const request = context.switchToHttp().getRequest();
     // Falla cerrado: sin acceso a la BD no se puede saber si las condiciones están aceptadas.
     if (!this.prisma) throw new InternalServerErrorException('Configuración de autenticación incompleta');
+    await assertActiveSession(this.prisma, request.user);
     await assertTermsAccepted(this.prisma, request.user, requestPath(request));
     return true;
   }

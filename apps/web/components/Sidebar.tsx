@@ -12,7 +12,8 @@ type SidebarProps = {
   syncText?: string;
 };
 // adminOnly: solo OWNER/ADMIN. processAccess: roles que entran en procesos y mensajes (no ASSISTANT).
-const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean; pendingBadge?: boolean }[] = [
+// noAssistant: recepción no lo gestiona (el QR de alta es de cada profesional).
+const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean; noAssistant?: boolean; pendingBadge?: boolean }[] = [
   {
     href: '/',
     label: 'Mi jornada',
@@ -40,6 +41,11 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     pendingBadge: true,
   },
   {
+    href: '/portal-signups',
+    label: 'Altas del portal',
+    icon: 'userPlus',
+  },
+  {
     href: '/messages',
     label: 'Mensajes',
     icon: 'message',
@@ -65,6 +71,12 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     label: 'Equipo',
     icon: 'team',
     adminOnly: true,
+  },
+  {
+    href: '/settings/portal-qr',
+    label: 'QR de alta',
+    icon: 'qr',
+    noAssistant: true,
   },
   {
     href: '/settings/security',
@@ -105,7 +117,8 @@ export default function Sidebar({
   }, [viewer?.role, pathname]);
   const items = navigation.filter((item) =>
     (!item.adminOnly || isAdminRole(viewer?.role)) &&
-    (!item.processAccess || isStaffWithProcessAccess(viewer?.role)));
+    (!item.processAccess || isStaffWithProcessAccess(viewer?.role)) &&
+    (!item.noAssistant || (viewer?.role != null && viewer.role !== 'ASSISTANT')));
   const displayName = [viewer?.firstName, viewer?.lastName].filter(Boolean).join(' ') || 'Profesional';
   const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   function isActive(href: string) {

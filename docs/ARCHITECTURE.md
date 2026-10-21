@@ -17,6 +17,16 @@
 5. Clinical Processes: episodio de tratamiento que agrupa sesiones de un paciente con un terapeuta (motivo, objetivos, notas internas, modalidad). Contiene el contenido clínico narrativo más sensible del sistema.
 6. Audit: registro de acciones sensibles.
 
+Dominios posteriores (detalle en `ROADMAP_ASEPSICO.md` y los `SPRINT_X_*.md`): portal del paciente,
+notificaciones, mensajería, exportaciones, acceso excepcional, reserva de citas desde el portal,
+alta en el portal con el QR del profesional (`portal-signup`) y baja de miembros del equipo
+(`workspace-members`, Sprint 18).
+
+## Sesiones revocables
+Además de firma y caducidad, `JwtAuthGuard` revalida en cada petición que la membresía siga `ACTIVE`
+y que el `tokenVersion` del token coincida con el del usuario; si no, 401 `SESSION_REVOKED` y la web
+vuelve al login. Detalle en `docs/SECURITY_BASELINE.md`.
+
 ## Control de acceso a contenido clínico
 `ASSISTANT` (recepción) no tiene ningún acceso a `ClinicalProcess`: solo gestiona Patients y Sessions
 para agendar. Un `THERAPIST` solo puede leer/editar/cerrar sus propios procesos; `OWNER`/`ADMIN`
@@ -31,4 +41,4 @@ Esto es intencional: evita que la vista general de pacientes se convierta en una
 que salte el control de acceso por terapeuta/rol.
 
 ## Próximos dominios
-Timeline basado en eventos; portal del paciente; IA con evidencias.
+Timeline basado en eventos; IA con evidencias.

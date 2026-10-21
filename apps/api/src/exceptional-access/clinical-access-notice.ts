@@ -20,7 +20,7 @@ export async function currentAuthorsOfPatient(tx: NoticeTx, workspaceId: string,
   });
   const authorIds = [...new Set(processes.map((row) => row.therapistId))];
   if (!authorIds.length) return [];
-  const members = await tx.workspaceMember.findMany({ where: { workspaceId, userId: { in: authorIds } }, select: { userId: true } });
+  const members = await tx.workspaceMember.findMany({ where: { workspaceId, userId: { in: authorIds }, status: 'ACTIVE' }, select: { userId: true } });
   const memberIds = new Set(members.map((row) => row.userId));
   return authorIds.filter((id) => memberIds.has(id));
 }

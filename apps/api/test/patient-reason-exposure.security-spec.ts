@@ -73,6 +73,7 @@ function patientsPrisma() {
     clinicalProcess: { findFirst: jest.fn(async () => ({ id: 'proc-1' })) },
     auditLog: { create: jest.fn(async () => ({})) },
     patientPortalAccount: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
+    portalActivationToken: { updateMany: jest.fn(async () => ({ count: 0 })) },
     exceptionalAccessJustification: { updateMany: jest.fn(async () => ({ count: 0 })) },
     appointmentRequest: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
   };
@@ -264,7 +265,7 @@ describe('GET /patients/:id/consultation-reason (campo clínico)', () => {
 describe('Dashboard: sin Message.body ni títulos de proceso', () => {
   function dashboardPrisma(actor: any = owner) {
     return treating({
-      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'OWNER', onboardingStep: 0, onboardingCompletedAt: null, onboardingDismissedAt: null, user: { firstName: 'O', lastName: 'W' } })) },
+      workspaceMember: { findFirst: jest.fn(async () => ({ role: 'OWNER', onboardingStep: 0, onboardingCompletedAt: null, onboardingDismissedAt: null, user: { firstName: 'O', lastName: 'W' } })) },
       session: {
         findMany: jest.fn(async () => [{ id: 's1', startsAt: new Date(Date.now() + 3600_000), status: 'SCHEDULED', patient: { id: 'p1', firstName: 'P', lastName: 'F' }, clinicalProcess: { title: PROCESS_TITLE, modality: 'ONLINE' } }]),
         count: jest.fn(async () => 1),

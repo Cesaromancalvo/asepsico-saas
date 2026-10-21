@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../database/prisma.service';
 import { UpdateNotificationPreferencesDto } from './dto/notification.dto';
 import { sendDeferredNoticeReminders } from '../exceptional-access/exceptional-access-register.service';
+import { routeToActiveMembers } from '../workspace-members/notification-recipients.util';
 
 @Injectable()
 export class NotificationsService {
@@ -89,6 +90,14 @@ export class NotificationsService {
     }
     for(const c of consents){const pp:any=prefForPatient(c.patientId);if(pp.consentReminders&&inWindow(c.expiresAt,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:c.patientId,type:'CONSENT_EXPIRING',title:'Consentimiento próximo a caducar',body:'Uno de tus consentimientos caduca pronto. Consúltalo en tu portal.',actionUrl:'/portal',dedupeKey:`consent:${c.id}:patient:${pp.reminderHoursBefore}h`});}
     for(const i of invoices){const pp:any=prefForPatient(i.patientId);if(pp.invoiceReminders&&inWindow(i.dueDate,pp.reminderHoursBefore)) add({workspaceId:actor.workspaceId,audience:'PATIENT',patientId:i.patientId,type:'INVOICE_DUE',title:'Factura pendiente',body:`La factura ${i.invoiceNumber} tiene un saldo pendiente.`,actionUrl:'/portal',dedupeKey:`invoice:${i.id}:patient:${pp.reminderHoursBefore}h`});}
+    // Recordatorios a un profesional dado de baja sin reasignar ("decidir después") → OWNER/ADMIN activos.
+    const routes=await routeToActiveMembers(this.p(),actor.workspaceId,rows.filter((r)=>r.audience==='PROFESSIONAL').map((r)=>r.userId));
+    const routed=rows.flatMap((r)=>{
+      if(r.audience!=='PROFESSIONAL') return [r];
+      const to=routes.get(r.userId)??[];
+      return to.map((userId)=>userId===r.userId?r:{...r,userId,dedupeKey:`${r.dedupeKey}:to:${userId}`});
+    });
+    rows.length=0; rows.push(...routed);
     const result=rows.length ? await this.p().notification.createMany({data:rows,skipDuplicates:true}) : {count:0};
     // Acceso excepcional: recordatorio cada 30 días al OWNER de los avisos al titular diferidos (§3.6).
     const deferredReminders=await sendDeferredNoticeReminders(this.prisma,actor.workspaceId,now);

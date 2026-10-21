@@ -143,12 +143,16 @@ export class ExportsService {
     });
     if (!workspace) throw new NotFoundException('Workspace no encontrado');
 
-    const [sessions, invoices, resources, conversations, auditLogs] = await Promise.all([
+    const [sessions, invoices, resources, conversations, auditLogs, archivedPrivateNotes] = await Promise.all([
       this.prisma.session.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.invoice.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.therapeuticResource.count({ where: { workspaceId: user.workspaceId, archivedAt: null } }),
       this.prisma.conversation.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.auditLog.findMany({ where: { workspaceId: user.workspaceId }, orderBy: { createdAt: 'desc' }, take: 1000 }),
+      // Notas internas de profesionales anteriores (historia B): solo el recuento agregado. Su
+      // contenido no sale en esta exportación administrativa (decisión de Argos): su devolución
+      // depende de la futura exportación clínica completa H1.
+      this.prisma.clinicalProcessPrivateNote.count({ where: { workspaceId: user.workspaceId } }),
     ]);
     const generatedAt = new Date().toISOString();
     await this.audit(user, 'WORKSPACE_DATA_EXPORTED', 'Workspace', user.workspaceId, { generatedAt, format: 'JSON' });
@@ -159,7 +163,7 @@ export class ExportsService {
       // de seguridad por si en el futuro se añade alguno.
       members: this.decryptForExport(workspace.members, 'WORKSPACE_ADMIN_EXPORT'),
       patients: this.decryptForExport(workspace.patients, 'WORKSPACE_ADMIN_EXPORT'),
-      inventory: { sessions, invoices, resources, conversations },
+      inventory: { sessions, invoices, resources, conversations, archivedPrivateNotes },
       recentAuditLogs: this.decryptForExport(auditLogs, 'WORKSPACE_ADMIN_EXPORT'),
       notice: 'Esta exportación administrativa no sustituye a una copia de seguridad de PostgreSQL.',
     };
@@ -168,7 +172,7 @@ export class ExportsService {
   async getPilotReadiness(user: AuthUser) {
     this.assertAdmin(user);
     const [members, patients, futureSessions, portalAccounts, pendingConsents, overdueInvoices] = await Promise.all([
-      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId } }),
+      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE' } }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, deletedAt: null } }),
       this.prisma.session.count({ where: { workspaceId: user.workspaceId, startsAt: { gt: new Date() }, status: 'SCHEDULED' } }),
       this.prisma.patientPortalAccount.count({ where: { workspaceId: user.workspaceId, isActive: true } }),

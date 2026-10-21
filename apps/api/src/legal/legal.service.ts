@@ -60,7 +60,7 @@ export class LegalService {
 
   private async actorRole(actor: AuthUser) {
     const member = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId: actor.workspaceId, userId: actor.sub },
+      where: { workspaceId: actor.workspaceId, userId: actor.sub, status: 'ACTIVE' },
       select: { role: true },
     });
     return member?.role ?? null;

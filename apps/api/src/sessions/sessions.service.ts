@@ -780,6 +780,7 @@ export class SessionsService {
           userId:
             requestedTherapistId,
           workspaceId,
+          status: 'ACTIVE',
         },
       });
 

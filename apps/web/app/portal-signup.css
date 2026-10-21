@@ -1,0 +1,177 @@
+/* Alta en el portal por QR (ps-) y baja de miembros (mr-). Usa los tokens de design-system.css. */
+
+/* ---------- Botón destructivo y enlaces ---------- */
+.button.danger{border:1px solid var(--danger);background:var(--danger);color:#fff;box-shadow:var(--shadow-sm)}
+.button.danger:hover{border-color:#8E2833;background:#8E2833;color:#fff}
+.button.danger:disabled{opacity:.6}
+.ps-reject{color:var(--danger)}
+.ps-reject:hover{color:#8E2833}
+.ps-label{display:block;margin-bottom:8px;color:var(--ink);font-size:var(--fs-md);font-weight:500}
+.ps-break{overflow-wrap:anywhere}
+
+/* ---------- Barra de filtros ---------- */
+.ps-toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:0 0 16px}
+.ps-filter{display:grid;gap:6px;min-width:min(280px,100%);color:var(--text-soft);font-size:var(--fs-sm);font-weight:500}
+.ps-filter select{min-height:44px;padding:0 12px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:var(--fs-md)}
+.ps-filter select:focus-visible{outline:none;box-shadow:var(--focus)}
+
+/* ---------- Bandeja ---------- */
+.ps-bulkbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;min-height:56px;margin:0 0 14px;padding:10px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+.ps-bulk-all{display:inline-flex;gap:10px;align-items:center;color:var(--ink);font-size:var(--fs-md);font-weight:500;cursor:pointer}
+.ps-bulk-all input,.ps-req-check{flex:none;width:20px;height:20px;margin:0;accent-color:var(--violet);cursor:pointer}
+.ps-bulk-confirm{margin:0}
+.ps-req.is-selected{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet),var(--shadow-sm)}
+.ps-req-top{display:flex;gap:14px;align-items:flex-start}
+.ps-req-body{display:grid;flex:1;gap:14px;min-width:0}
+.ps-req-top .ps-req-check{margin-top:3px}
+.ps-req .bk-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ps-req .bk-actions .ps-reject{margin-left:auto}
+
+/* ---------- Diálogos ---------- */
+.ps-dialog{width:min(560px,100%)}
+.ps-dialog-wide{width:min(720px,100%)}
+.ps-dialog .agenda-modal-header{margin-bottom:16px}
+.ps-dialog .agenda-modal-header h2{margin:0;font-size:var(--fs-xl);line-height:1.3}
+.ps-dialog .agenda-modal-header h2:focus{outline:none}
+.ps-dialog-kicker{margin:0 0 4px;color:var(--violet-ink);font-size:var(--fs-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.ps-dialog-text{margin:0 0 16px;color:var(--text);font-size:var(--fs-md)}
+.ps-dialog-foot{margin:18px 0 0;color:var(--text-soft);font-size:var(--fs-sm)}
+.ps-dialog-foot a{color:var(--violet-ink);font-weight:600}
+.ps-search{margin:0 0 16px}
+.ps-search-row{display:flex;gap:8px;align-items:stretch}
+.ps-search-row input{flex:1;min-width:0;min-height:44px;padding:0 12px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;font-size:var(--fs-base)}
+.ps-search-row input:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px rgba(112,100,210,.15)}
+.ps-search-row .button{flex:none}
+.ps-empty{margin:0;padding:12px 14px;border-radius:var(--r-sm);background:var(--surface-soft);color:var(--text-soft);font-size:var(--fs-md)}
+.ps-confirm{display:grid;gap:10px;padding:16px;border:1px solid #ecd9a3;border-radius:var(--r-md);background:var(--warning-soft);color:#5c3d00;font-size:var(--fs-md)}
+.ps-confirm h3{margin:0;color:#4a3100;font-size:var(--fs-base)}
+.ps-confirm h3:focus{outline:none}
+.ps-confirm p{margin:0}
+.ps-confirm .e1-checkbox{margin:4px 0 0;color:var(--ink);font-weight:600}
+.ps-warning-list{display:grid;gap:4px;margin:0;padding-left:20px;font-weight:600}
+
+/* ---------- Entrega del enlace de activación ---------- */
+.ps-handoff{display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:start}
+.ps-handoff-qr{padding:12px;border:1px solid var(--border);border-radius:var(--r-lg);background:#fff;box-shadow:var(--shadow-sm)}
+.ps-handoff-qr svg{display:block;width:220px;height:220px}
+.ps-handoff-copy{display:grid;gap:12px;font-size:var(--fs-md)}
+.ps-steps{display:grid;gap:8px;margin:0;padding-left:20px;color:var(--ink)}
+.ps-handoff-expiry{margin:0;color:var(--text-soft)}
+.ps-handoff-expiry strong{color:var(--ink)}
+.ps-handoff-warning{margin:0;padding:10px 12px;border-radius:var(--r-sm);background:var(--info-soft);color:var(--info);font-size:var(--fs-sm);font-weight:500}
+.ps-details{font-size:var(--fs-sm)}
+.ps-details summary{width:max-content;color:var(--violet-ink);font-weight:600;cursor:pointer}
+.ps-details summary:focus-visible{outline:none;box-shadow:var(--focus);border-radius:4px}
+.ps-details p,.ps-details ul{margin:8px 0 0}
+.ps-url{padding:8px 10px;border-radius:var(--r-sm);background:var(--surface-soft);color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--fs-xs);overflow-wrap:anywhere}
+
+/* ---------- QR del profesional ---------- */
+.ps-qr-card{max-width:980px}
+.ps-qr-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.ps-qr-head h2{margin:0 0 4px}
+.ps-qr-head p{margin:0}
+.ps-qr-body{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:28px;align-items:start}
+.ps-poster{display:grid;justify-items:center;gap:10px;padding:24px 20px;border:1px solid var(--border);border-radius:var(--r-lg);background:#fff;text-align:center}
+.ps-poster-kicker{margin:0;color:var(--violet-ink);font-size:var(--fs-xs);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.ps-qr-svg{display:block;width:232px;height:232px}
+.ps-poster-title{margin:4px 0 0;color:var(--ink);font-size:var(--fs-lg);font-weight:600}
+.ps-poster-text{max-width:28ch;margin:0;color:var(--text-soft);font-size:var(--fs-md)}
+.ps-qr-actions{display:grid;gap:22px}
+.ps-action-group{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ps-action-group .button{display:inline-flex;gap:8px;align-items:center}
+.ps-url-row{display:grid;gap:6px}
+.ps-danger-zone{padding-top:18px;border-top:1px solid var(--border)}
+.ps-danger-zone h3{margin:0 0 10px;color:var(--ink);font-size:var(--fs-md);font-weight:600}
+.ps-qr-empty{display:grid;justify-items:start;gap:12px}
+.ps-qr-empty p{margin:0;color:var(--text);font-size:var(--fs-md)}
+
+/* ---------- Notas internas del profesional anterior ---------- */
+.ps-prev-notes{display:flex;gap:8px;align-items:center;margin:14px 0 0;padding:10px 12px;border:1px dashed var(--border-strong);border-radius:var(--r-sm);background:var(--surface-soft);color:var(--text-soft);font-size:var(--fs-sm)}
+.ps-prev-notes svg{flex:none;color:var(--text-light)}
+
+/* ---------- Portal (páginas públicas) ---------- */
+.ps-public section{width:min(520px,100%)}
+.ps-public h1:focus{outline:none}
+.ps-public-form{gap:14px}
+.ps-public-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.ps-public label small{color:var(--text-soft);font-size:var(--fs-xs);font-weight:400}
+.ps-optional{color:var(--text-light);font-weight:400}
+.ps-public input[type=date]{width:100%;background:#fff;color:var(--ink);font:inherit}
+.ps-notice{display:grid;gap:10px;padding:16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-soft)}
+.ps-notice h2{margin:0;color:var(--ink);font-size:var(--fs-base);font-weight:600}
+.ps-notice dl{display:grid;gap:8px;margin:0}
+.ps-notice dl div{display:grid;gap:2px}
+.ps-notice dt{color:var(--ink);font-size:var(--fs-sm);font-weight:600}
+.ps-notice dd{margin:0;color:var(--text-soft);font-size:var(--fs-sm);line-height:1.5}
+.ps-notice ul{padding-left:18px;color:var(--text-soft);font-size:var(--fs-sm);line-height:1.5}
+.portal-login .ps-check{display:flex;gap:10px;align-items:flex-start;font-size:var(--fs-md);font-weight:500;cursor:pointer}
+.portal-login .ps-check input{flex:none;width:20px;min-height:0;height:20px;margin:2px 0 0;padding:0;accent-color:var(--violet)}
+.ps-result{display:grid;gap:4px}
+.ps-block{display:flex;justify-content:center;margin-top:12px}
+
+/* ---------- Cuenta pendiente (portal del paciente en la ficha) ---------- */
+.ps-pending-account{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+
+/* ---------- Baja de miembros ---------- */
+.mr-row{grid-template-columns:minmax(0,1.5fr) minmax(0,.7fr) minmax(0,1fr) minmax(120px,auto)}
+.mr-row-actions{align-items:flex-end}
+.mr-row.is-removed{background:var(--surface-soft)}
+.mr-row.is-removed strong{color:var(--text-soft)}
+.mr-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:0 0 16px}
+.mr-counts div{display:grid;gap:2px;padding:12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface-soft)}
+.mr-counts strong{color:var(--ink);font-size:var(--fs-2xl);font-weight:600;line-height:1.1}
+.mr-counts span{color:var(--text-soft);font-size:var(--fs-xs)}
+.mr-effects{display:grid;gap:6px;margin:0 0 16px;padding-left:20px;color:var(--text);font-size:var(--fs-md)}
+.mr-select{margin:0 0 4px 30px}
+.mr-reasons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mr-notes{margin:12px 0 0;padding:10px 12px;border-radius:var(--r-sm);background:var(--info-soft);color:var(--info);font-size:var(--fs-sm);font-weight:500}
+.mr-keep{margin:0 0 4px;color:var(--text-soft);font-size:var(--fs-sm)}
+.mr-keep a{color:var(--violet-ink);font-weight:600}
+.mr-summary{display:grid;gap:8px;margin:0 0 14px;padding-left:20px;color:var(--ink);font-size:var(--fs-md)}
+
+@media(max-width:760px){
+  .ps-handoff{grid-template-columns:1fr;justify-items:center}
+  .ps-handoff-copy{justify-items:stretch;width:100%}
+  .ps-qr-body{grid-template-columns:1fr}
+  .ps-public-grid{grid-template-columns:1fr}
+  .mr-row{grid-template-columns:1fr}
+  .mr-row-actions{align-items:flex-start}
+  .mr-reasons{grid-template-columns:1fr}
+  .mr-select{margin-left:0}
+  .ps-req .bk-actions .ps-reject{margin-left:0}
+  .ps-bulkbar{align-items:flex-start;flex-direction:column}
+  .agenda-modal-actions{flex-wrap:wrap}
+}
+
+/* ---------- Impresión del QR: solo el cartel ---------- */
+@media print{
+  body *{visibility:hidden}
+  .ps-print-area,.ps-print-area *{visibility:visible}
+  .ps-print-area{position:absolute;top:0;left:0;width:100%;display:grid;place-items:center;padding-top:20mm}
+  .ps-poster{border:2px solid #000;padding:14mm 12mm;gap:6mm}
+  .ps-qr-svg{width:110mm;height:110mm}
+  .ps-poster-title{font-size:20pt;color:#000}
+  .ps-poster-text{font-size:13pt;color:#000;max-width:none}
+  .ps-poster-kicker{font-size:11pt;color:#000}
+}
+.dashboard-subtitle a{color:var(--violet-ink);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- Textos legales del alta (borrador v1.0) ---------- */
+.ps-draft{margin:12px 0 4px;padding:10px 12px;border:1px solid #ecd9a3;border-radius:var(--r-sm);background:var(--warning-soft);color:#5c3d00;font-size:var(--fs-sm);font-weight:500}
+.portal-login .ps-public-title{font-size:var(--fs-2xl);line-height:1.25}
+.ps-var{padding:0 2px;border-radius:4px;background:var(--warning-soft);color:#5c3d00;font-weight:600;white-space:normal}
+.ps-notice-link{width:max-content;max-width:100%;color:var(--violet-ink);font-size:var(--fs-sm);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.ps-emergency{margin:0;padding:12px 14px;border-radius:var(--r-sm);background:var(--danger-soft);color:#7a2530;font-size:var(--fs-sm);line-height:1.5}
+.ps-check a{color:var(--violet-ink);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.portal-login .ps-check label{display:inline;font-size:inherit;font-weight:inherit;cursor:pointer}
+.ps-submit-hint{margin-top:-6px;text-align:center}
+.ps-public .button:disabled{opacity:.55;cursor:not-allowed}
+.ps-legal section{width:min(720px,100%)}
+.ps-legal-list{display:grid;gap:0;margin:20px 0}
+.ps-legal-list div{display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:16px;padding:14px 0;border-top:1px solid var(--border)}
+.ps-legal-list dt{color:var(--ink);font-size:var(--fs-sm);font-weight:600}
+.ps-legal-list dd{margin:0;color:var(--text);font-size:var(--fs-sm);line-height:1.6}
+.ps-legal-terms{display:grid;gap:12px;margin:20px 0;padding-left:22px;color:var(--text);font-size:var(--fs-md);line-height:1.6}
+.ps-legal-terms strong{color:var(--ink)}
+@media(max-width:760px){.ps-legal-list div{grid-template-columns:1fr;gap:4px}}
+.ps-copy-warning{margin:2px 0 0;padding:10px 12px;border-radius:var(--r-sm);background:var(--warning-soft);color:#5c3d00;font-size:var(--fs-sm);line-height:1.5}

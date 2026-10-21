@@ -57,13 +57,13 @@ export const STORE_NAMES = [
  * clínicos; owner-clinico-1 sí).
  */
 export const DEFAULT_MEMBERS: Row[] = [
-  { workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true },
-  { workspaceId: 'ws-1', userId: 'therapist-2', role: 'THERAPIST', isClinician: true },
-  { workspaceId: 'ws-2', userId: 'therapist-9', role: 'THERAPIST', isClinician: true },
-  { workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false },
-  { workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: false },
-  { workspaceId: 'ws-1', userId: 'admin-1', role: 'ADMIN', isClinician: false },
-  { workspaceId: 'ws-1', userId: 'owner-clinico-1', role: 'OWNER', isClinician: true },
+  { workspaceId: 'ws-1', userId: 'therapist-1', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
+  { workspaceId: 'ws-1', userId: 'therapist-2', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
+  { workspaceId: 'ws-2', userId: 'therapist-9', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' },
+  { workspaceId: 'ws-1', userId: 'assistant-1', role: 'ASSISTANT', isClinician: false, status: 'ACTIVE' },
+  { workspaceId: 'ws-1', userId: 'owner-1', role: 'OWNER', isClinician: false, status: 'ACTIVE' },
+  { workspaceId: 'ws-1', userId: 'admin-1', role: 'ADMIN', isClinician: false, status: 'ACTIVE' },
+  { workspaceId: 'ws-1', userId: 'owner-clinico-1', role: 'OWNER', isClinician: true, status: 'ACTIVE' },
 ];
 
 export function prismaMock(seed: Partial<Stores> = {}) {

@@ -50,7 +50,7 @@ export function isPatientPortalOpen(status: string | null | undefined): boolean 
  * auditoría los registre: si la auditoría falla, la revocación se deshace con todo lo demás.
  */
 export async function revokeAllPortalAccounts(
-  tx: Pick<Prisma.TransactionClient, 'patientPortalAccount'>,
+  tx: Pick<Prisma.TransactionClient, 'patientPortalAccount' | 'portalActivationToken'>,
   workspaceId: string,
   patientId: string,
 ): Promise<string[]> {
@@ -59,6 +59,9 @@ export async function revokeAllPortalAccounts(
   if (ids.length > 0) {
     await tx.patientPortalAccount.updateMany({ where: { ...where, id: { in: ids } }, data: { isActive: false } });
   }
+  // Alta por QR: los enlaces de activación vivos se revocan, para que no activen el portal si el
+  // paciente vuelve a quedar abierto (restore). Solo la consulta podría emitir uno nuevo.
+  await tx.portalActivationToken.updateMany({ where: { workspaceId, patientId, usedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
   return ids;
 }
 

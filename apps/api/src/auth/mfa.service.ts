@@ -183,9 +183,15 @@ export class MfaService {
           guard = { mfaRecoveryCodes: { equals: user.mfaRecoveryCodes } };
         }
 
+        // Sube tokenVersion (compare-and-set): los access tokens vivos dicen mfaEnabled=true y dejan
+        // de valer al momento; el navegador renueva con su refresh token y recibe el estado real.
+        const currentTokenVersion = user.tokenVersion ?? 0;
         const claim = await tx.user.updateMany({
-          where: { id: user.id, totpEnabled: true, ...guard },
-          data: { totpSecret: null, totpEnabled: false, mfaRecoveryCodes: [], totpLastUsedStep: null, ...RESET_FAILURES },
+          where: { id: user.id, totpEnabled: true, tokenVersion: currentTokenVersion, ...guard },
+          data: {
+            totpSecret: null, totpEnabled: false, mfaRecoveryCodes: [], totpLastUsedStep: null,
+            tokenVersion: currentTokenVersion + 1, ...RESET_FAILURES,
+          },
         });
         if (claim.count !== 1) {
           return fail('code_already_used_or_state_changed', new UnauthorizedException('Código no válido'));

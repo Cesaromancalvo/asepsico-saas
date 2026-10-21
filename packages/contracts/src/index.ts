@@ -89,6 +89,7 @@ export interface ConversationListItemContract {
 export * from './patient-import';
 export * from './waitlist';
 export * from './exceptional-access';
+export * from './portal-signup';
 
 // Registro por invitación y condiciones versionadas (feat/registro-por-invitacion).
 export type LegalDocumentType = 'PILOT_TERMS' | 'DPA_ART28' | 'PRIVACY_PRODUCT';
@@ -113,7 +114,26 @@ export type StaffRole = 'OWNER' | 'ADMIN' | 'THERAPIST' | 'ASSISTANT';
 /** GET /auth/me: datos no clínicos del propio usuario (todos los roles de personal). */
 export interface AuthMeContract { userId: string; email: string; firstName: string; lastName: string; role: StaffRole; isClinician: boolean; mfaEnabled: boolean; workspace: { id: string; name: string }; }
 /** 403 de JwtAuthGuard: { statusCode: 403, code: 'MFA_SETUP_REQUIRED', message } (rol que exige MFA sin activarlo). */
-export type AuthErrorCode = 'MFA_SETUP_REQUIRED' | 'CHANGE_PASSWORD_INVALID' | 'MFA_CODE_REQUIRED' | 'PASSWORD_UNCHANGED';
+export type AuthErrorCode = 'MFA_SETUP_REQUIRED' | 'CHANGE_PASSWORD_INVALID' | 'MFA_CODE_REQUIRED' | 'PASSWORD_UNCHANGED' | 'SESSION_REVOKED';
+
+// Baja de un miembro del equipo (historia B). 401 SESSION_REVOKED: el token ya no vale (baja o cambio de contraseña).
+export type WorkspaceMemberStatus = 'ACTIVE' | 'REMOVED';
+export type MemberRemovalReason = 'LEFT_PRACTICE' | 'END_OF_COLLABORATION' | 'LEAVE_OF_ABSENCE' | 'OTHER';
+/** GET /workspace-members (OWNER/ADMIN): datos administrativos, nunca clínicos. Los dados de baja siguen en la lista. */
+export interface WorkspaceMemberContract { id: string; userId: string; role: StaffRole; isClinician: boolean; createdAt: string; status: WorkspaceMemberStatus; removedAt: string | null; firstName: string | null; lastName: string | null; email: string | null; }
+/** Recuentos de lo que sigue a nombre del miembro. */
+export interface MemberPendingWorkContract { activeProcesses: number; pausedProcesses: number; futureSessions: number; pendingAppointmentRequests: number; }
+/** GET /workspace-members/:userId/removal-preview */
+export interface MemberRemovalPreviewContract extends MemberPendingWorkContract { userId: string; role: StaffRole; status: WorkspaceMemberStatus; reassignTargets: { userId: string; firstName: string | null; lastName: string | null }[]; }
+/** POST /workspace-members/:userId/remove. Sin reassignToUserId = "decidir después". */
+export interface RemoveMemberRequestContract { reassignToUserId?: string; reason?: MemberRemovalReason; }
+/** POST /workspace-members/:userId/reassign (solo miembros ya dados de baja). */
+export interface ReassignMemberWorkRequestContract { toUserId: string; }
+export interface MemberWorkReassignmentContract { toUserId: string; processes: number; futureSessions: number; keptSessionsWithPrivateNotes: number; archivedProcessNotes: number; }
+export interface MemberRemovalResultContract { userId: string; status: 'REMOVED'; removedAt: string; revokedSessions: number; closedExceptionalAccesses: number; rejectedAppointmentRequests: number; reassignment: MemberWorkReassignmentContract | null; pending: MemberPendingWorkContract; }
+export interface MemberReassignResultContract { userId: string; reassignment: MemberWorkReassignmentContract; pending: MemberPendingWorkContract; }
+/** 400/409 de la baja: { statusCode, code, message } (+ conflicts en REASSIGN_SCHEDULE_CONFLICT y REASSIGN_PROCESS_CONFLICT). La reserva del portal responde 409 BOOKING_UNAVAILABLE si el profesional ya no la ofrece. */
+export type MemberRemovalErrorCode = 'SELF_REMOVAL_NOT_ALLOWED' | 'LAST_OWNER' | 'MEMBER_ALREADY_REMOVED' | 'MEMBER_STILL_ACTIVE' | 'MEMBER_CHANGED' | 'NOTHING_TO_REASSIGN' | 'INVALID_REASSIGN_TARGET' | 'REASSIGN_SCHEDULE_CONFLICT' | 'REASSIGN_PROCESS_CONFLICT';
 /**
  * POST /auth/change-password (JWT + CSRF, 5/min). `newPassword`: mínimo 12 caracteres y máximo 72 bytes UTF-8
  * (límite de bcrypt; copia en apps/api/src/auth/password-policy.ts y apps/web/lib/password-change.ts).
@@ -250,3 +270,5 @@ export interface PortalAppointmentRequestContract {
   resolvedAt: string | null;
   therapist: RequestPersonContract;
 }
+/** GET /clinical-processes/:id: true si hay notas internas archivadas de un profesional anterior (nunca su contenido). */
+export interface ClinicalProcessPreviousAuthorNotesFlag { hasPreviousAuthorNotes: boolean; }

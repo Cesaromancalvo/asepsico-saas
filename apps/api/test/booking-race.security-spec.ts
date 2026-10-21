@@ -3,6 +3,7 @@ import { PortalBookingService, PortalUser } from '../src/scheduling/portal-booki
 import { AppointmentRequestsService } from '../src/scheduling/appointment-requests.service';
 import { ClinicalProcessesService } from '../src/clinical-processes/clinical-processes.service';
 import { SessionsService } from '../src/sessions/sessions.service';
+import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 
 /**
  * Doble reserva contra PostgreSQL REAL (advisory locks e índice único de verdad). Criterio 14 de
@@ -193,6 +194,37 @@ describeDb('Doble reserva (PostgreSQL real)', () => {
       if (!['ok', 404, 409].includes(statusOf(results[0]) as any)) failures.push(`ronda ${round}: solicitud -> ${statusOf(results[0])} ${describeError(results[0])}`);
       const pendingLeft = await prisma.appointmentRequest.count({ where: { workspaceId, patientId: patient.id, status: 'PENDING' } });
       if (pendingLeft) failures.push(`ronda ${round}: quedan ${pendingLeft} PENDING tras cerrar el proceso`);
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('historia B: una solicitud del portal a la vez que la baja del profesional: nunca queda una PENDING suya ni hay 500', async () => {
+    const failures: string[] = [];
+    for (let round = 0; round < 8; round += 1) {
+      const tag = `${run}-baja-${round}`;
+      const ws = await prisma.workspace.create({ data: { name: `Consulta ficticia ${tag}` } });
+      const owner = await prisma.user.create({ data: { email: `${tag}-owner@example.com`, passwordHash: 'hash-ficticio', firstName: 'Titular', lastName: 'Ficticio' } });
+      const leaver = await prisma.user.create({ data: { email: `${tag}-ter@example.com`, passwordHash: 'hash-ficticio', firstName: 'Profesional', lastName: 'Ficticio' } });
+      await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: owner.id, role: 'OWNER', isClinician: false } });
+      await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: leaver.id, role: 'THERAPIST', isClinician: true } });
+      const patient = await prisma.patient.create({ data: { workspaceId: ws.id, firstName: 'Paciente', lastName: `Ficticio ${tag}` } });
+      await prisma.clinicalProcess.create({ data: { workspaceId: ws.id, patientId: patient.id, therapistId: leaver.id, title: 'Proceso ficticio' } });
+      await prisma.therapistAvailability.create({ data: { workspaceId: ws.id, therapistId: leaver.id, portalBookingEnabled: true, minNoticeHours: 2, maxHorizonDays: 60 } });
+      await prisma.availabilityWindow.createMany({ data: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ workspaceId: ws.id, therapistId: leaver.id, weekday, startMinute: 480, endMinute: 1200 })) });
+      const user: PortalUser = { workspaceId: ws.id, patientId: patient.id, portalAccountId: `${tag}-acc`, accessorType: 'PATIENT' };
+      const [slot] = (await new PortalBookingService(prisma as any).slots(user, { therapistId: leaver.id })).slots;
+      const delay = (round % 4) * 3;
+      const results = await Promise.allSettled([
+        new PortalBookingService(prisma as any).createRequest(user, { therapistId: leaver.id, startsAt: slot.startsAt.toISOString() }),
+        (async () => {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          return new MemberRemovalService(prisma as any).remove(ws.id, { sub: owner.id, workspaceId: ws.id, role: 'OWNER', email: `${tag}-owner@example.com` } as any, leaver.id, {});
+        })(),
+      ]);
+      if (results[1].status !== 'fulfilled') failures.push(`ronda ${round}: baja -> ${statusOf(results[1])} ${describeError(results[1])}`);
+      if (!['ok', 404, 409].includes(statusOf(results[0]) as any)) failures.push(`ronda ${round}: solicitud -> ${statusOf(results[0])} ${describeError(results[0])}`);
+      const pendingLeft = await prisma.appointmentRequest.count({ where: { workspaceId: ws.id, therapistId: leaver.id, status: 'PENDING' } });
+      if (pendingLeft) failures.push(`ronda ${round}: quedan ${pendingLeft} PENDING del profesional dado de baja`);
     }
     expect(failures).toEqual([]);
   });

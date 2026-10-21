@@ -14,6 +14,7 @@ import { CsrfGuard } from '../src/common/guards/csrf.guard';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
 import { RegistrationService } from '../src/auth/registration.service';
 import { PasswordService } from '../src/auth/password.service';
+import { assertActiveSession } from '../src/common/auth/active-session';
 import { PrismaService } from '../src/database/prisma.service';
 
 /**
@@ -49,6 +50,7 @@ type FakeUser = {
   totpLastUsedStep: number | null;
   mfaRecoveryCodes: string[];
   mfaFailedAttempts: number;
+  tokenVersion?: number;
   mfaLockedUntil: Date | null;
 };
 
@@ -171,7 +173,7 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     db.users.set(USER_ID, {
       id: USER_ID, email: EMAIL, passwordHash, firstName: 'Ana', lastName: 'Ficticia',
       totpSecret: null, totpEnabled: false, totpLastUsedStep: null, mfaRecoveryCodes: [],
-      mfaFailedAttempts: 0, mfaLockedUntil: null,
+      mfaFailedAttempts: 0, mfaLockedUntil: null, tokenVersion: 0,
       ...overrides,
     });
   }
@@ -210,7 +212,10 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    await app.init();
+    // Escucha UNA vez en un puerto efímero. Si no, supertest abre y CIERRA el servidor en cada
+    // petición: con peticiones en paralelo, la primera en terminar cierra el servidor con las otras
+    // en vuelo y fallan con ECONNRESET (test inestable de las altas simultáneas, 21/10/2026).
+    await app.listen(0, '127.0.0.1');
   });
 
   beforeEach(() => {
@@ -361,6 +366,29 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[0] }).expect(201);
       expect(user()).toMatchObject({ totpEnabled: false, totpSecret: null, mfaRecoveryCodes: [], totpLastUsedStep: null });
       expect(actions()).toEqual(['MFA_SETUP_STARTED', 'MFA_ENABLED', 'MFA_RECOVERY_CODE_USED', 'MFA_DISABLED']);
+    });
+
+    it('desactivar el MFA sube tokenVersion: el access token anterior (mfaEnabled=true) deja de valer al momento', async () => {
+      await seedUser();
+      const setup = await post('mfa/setup').expect(201);
+      const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
+      expect(user().tokenVersion).toBe(0);
+      await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[0] }).expect(201);
+      expect(user().tokenVersion).toBe(1);
+      const sessionDb: any = {
+        workspaceMember: { findFirst: async () => ({ id: 'm-ficticio' }) },
+        user: { findUnique: async () => ({ tokenVersion: user().tokenVersion }) },
+      };
+      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 0 })).rejects.toMatchObject({ status: 401, response: { code: 'SESSION_REVOKED' } });
+      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 1 })).resolves.toBeUndefined();
+    });
+
+    it('un disable que falla (código erróneo) no sube tokenVersion', async () => {
+      await seedUser();
+      const setup = await post('mfa/setup').expect(201);
+      await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
+      await post('mfa/disable').send({ password: PASSWORD, code: '000000' }).expect(401);
+      expect(user().tokenVersion).toBe(0);
     });
 
     it('desactivar con el MISMO TOTP del confirm se rechaza; con el del paso siguiente funciona', async () => {

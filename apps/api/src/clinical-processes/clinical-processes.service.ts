@@ -173,6 +173,23 @@ export class ClinicalProcessesService {
       throw new ForbiddenException('No tienes acceso al contenido clínico de este proceso');
     }
 
+    // Lectura de un proceso ajeno por un clínico que trata al paciente (co-terapeuta, solo lectura y
+    // sin notas internas): queda auditada. EXCEPTIONAL ya la audita resolveScope.
+    if (!isAuthor && scope.level === 'TREATING') {
+      await this.prisma.auditLog.create({
+        data: {
+          workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_READ_NOT_AUTHOR', entityType: 'ClinicalProcess', entityId: process.id,
+          metadata: { patientId: process.patientId, authorId: process.therapistId },
+        },
+      });
+    }
+
+    // Notas internas de un profesional anterior (archivadas al reasignar): solo un indicador, nunca
+    // el contenido. Ni el destino ni OWNER/ADMIN las leen por esta vía.
+    const previousAuthorNotes = await this.prisma.clinicalProcessPrivateNote.count({
+      where: { workspaceId, processId: process.id, authorId: { not: actor.sub } },
+    });
+
     const { internalNotes, ...rest } = decryptProcess({ ...process, patient: toPatientView(process.patient) });
     const sessions = (process.sessions ?? []).map((session) => {
       const decrypted = decryptSession(session);
@@ -184,6 +201,7 @@ export class ClinicalProcessesService {
     return {
       ...rest,
       ...(isAuthor ? { internalNotes } : {}),
+      hasPreviousAuthorNotes: previousAuthorNotes > 0,
       sessions,
       readOnly: !(isAuthor && process.status === 'ACTIVE' && scope.level === 'TREATING'),
     };
@@ -435,7 +453,7 @@ export class ClinicalProcessesService {
 
   /** El profesional responsable de un proceso debe ser miembro clínico del workspace. */
   private async assertClinicianMember(workspaceId: string, userId: string) {
-    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { role: true, isClinician: true } });
+    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId, status: 'ACTIVE' }, select: { role: true, isClinician: true } });
     if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
     if (!isClinicalProfile(membership)) {
       throw new BadRequestException('El profesional indicado no está marcado como profesional clínico');
