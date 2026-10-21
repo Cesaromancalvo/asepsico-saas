@@ -212,7 +212,10 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    await app.init();
+    // Escucha UNA vez en un puerto efímero. Si no, supertest abre y CIERRA el servidor en cada
+    // petición: con peticiones en paralelo, la primera en terminar cierra el servidor con las otras
+    // en vuelo y fallan con ECONNRESET (test inestable de las altas simultáneas, 21/10/2026).
+    await app.listen(0, '127.0.0.1');
   });
 
   beforeEach(() => {
