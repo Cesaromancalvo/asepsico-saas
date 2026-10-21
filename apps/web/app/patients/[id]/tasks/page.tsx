@@ -7,6 +7,8 @@ import Sidebar from '@/components/Sidebar';
 import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
 import TaskActions from '@/components/TaskActions';
+import TaskCardNotes from '@/components/TaskCardNotes';
+import { applyOptimistic, settleTaskUpdate } from '@/lib/task-update';
 
 type TaskStatus='DRAFT'|'PENDING'|'IN_PROGRESS'|'SUBMITTED'|'CHANGES_REQUESTED'|'COMPLETED'|'CANCELLED';
 type Goal={id:string;title:string;status:string};
@@ -44,11 +46,11 @@ function PatientTasksPageContent(){
  async function createTask(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget,fd=new FormData(form);const draft=fd.get('action')==='draft';try{setSaving(true);setError('');await api(`/patients/${patientId}/tasks`,{method:'POST',body:JSON.stringify({title:fd.get('title'),instructions:fd.get('instructions')||undefined,dueDate:fd.get('dueDate')||undefined,therapyGoalId:fd.get('therapyGoalId')||undefined,saveAsDraft:draft})});form.reset();setSelectedTemplate('');setListError('');setNotice(draft?'Borrador guardado.':'Tarea asignada.');await refreshTasks()}catch(err){setError(err instanceof Error?err.message:'No se pudo crear la tarea')}finally{setSaving(false)}}
  /** Actualización optimista: la tarjeta cambia al momento; si la API falla se avisa y se vuelve al estado real. */
  async function update(task:Task,payload:Partial<Pick<Task,'status'|'reviewComment'|'clinicianNotes'>>,message?:string){
+  const previous={...task};
   setBusyTask(task.id);setListError('');setNotice('');
-  setTasks(list=>list.map(t=>t.id===task.id?{...t,...payload}:t));
-  try{await api(`/patients/${patientId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify(payload)});setNotice(message??(payload.status?ACTION_NOTICE[payload.status]??'Tarea actualizada.':'Cambios guardados.'))}
-  catch(err){setListError(err instanceof Error?err.message:'No se pudo actualizar la tarea')}
-  finally{await refreshTasks();setBusyTask(null)}
+  setTasks(list=>applyOptimistic<Task>(list,task.id,payload));
+  const result=await settleTaskUpdate<Task>({previous,patch:()=>api(`/patients/${patientId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify(payload)}),refresh:()=>api<Task[]>(`/patients/${patientId}/tasks`),successNotice:message??(payload.status?ACTION_NOTICE[payload.status]??'Tarea actualizada.':'Cambios guardados.')});
+  setTasks(result.next);setListError(result.error);setNotice(result.notice);setBusyTask(null);
  }
  async function removeDraft(task:Task){if(!confirm(`¿Eliminar el borrador “${task.title}”?`))return;setBusyTask(task.id);setListError('');setNotice('');try{await api(`/patients/${patientId}/tasks/${task.id}`,{method:'DELETE'});setTasks(list=>list.filter(t=>t.id!==task.id));setNotice('Borrador eliminado.')}catch(err){setListError(err instanceof Error?err.message:'No se pudo eliminar')}finally{setBusyTask(null)}}
  function cancelTask(task:Task){if(confirm(`¿Cancelar la tarea “${task.title}”? Dejará de aparecer en el portal del paciente.`))update(task,{status:'CANCELLED'})}
@@ -71,9 +73,7 @@ function PatientTasksPageContent(){
    {listError&&<div className="agenda-error" role="alert">{listError}</div>}
    <div className="therapeutic-task-list">{visible.map(task=>{const busy=busyTask===task.id;return <article key={task.id} className={`therapeutic-task-card task-${task.status.toLowerCase()}`} aria-busy={busy}><div className="task-card-main"><div className="therapy-goal-top"><span className={`task-status task-status-${task.status.toLowerCase()}`}>{LABEL[task.status]}</span>{task.dueDate&&<span className="task-date">Fecha objetivo {fmt(task.dueDate)}</span>}{task.therapyGoal&&<span className="task-goal">{task.therapyGoal.title}</span>}</div><h3>{task.title}</h3>{task.instructions&&<p>{task.instructions}</p>}
    {task.patientFeedback&&<div className="patient-record-card"><strong>Respuesta del paciente</strong><p>{task.patientFeedback}</p>{task.submittedAt&&<small>Entregada {fmt(task.submittedAt)}</small>}</div>}
-   {task.reviewComment&&task.status!=='SUBMITTED'&&<div className="patient-record-card"><strong>Devolución profesional</strong><p>{task.reviewComment}</p></div>}
-   <div className="task-notes-grid">{task.status==='SUBMITTED'&&<label className="task-review-field"><span>Devolución para el paciente</span><textarea id={`review-${task.id}`} defaultValue={task.reviewComment||''} placeholder="Feedback breve, claro y no punitivo…"/></label>}
-   <label><span>Nota clínica privada</span><textarea defaultValue={task.clinicianNotes||''} placeholder="Solo para ti; el paciente no la ve." onBlur={e=>{if(e.target.value!==(task.clinicianNotes||''))update(task,{clinicianNotes:e.target.value},'Nota privada guardada.')}}/></label></div></div>
+   <TaskCardNotes task={task} onSaveNote={value=>update(task,{clinicianNotes:value},'Nota privada guardada.')}/></div>
    <TaskActions task={task} busy={busy} onAssign={()=>update(task,{status:'PENDING'})} onRemoveDraft={()=>removeDraft(task)} onComplete={()=>update(task,{status:'COMPLETED',reviewComment:reviewValue(task)})} onRequestChanges={()=>update(task,{status:'CHANGES_REQUESTED',reviewComment:reviewValue(task)})} onReopen={()=>update(task,{status:'IN_PROGRESS'})} onCancel={()=>cancelTask(task)}/></article>})}{visible.length===0&&<div className="therapy-empty"><strong>No hay tareas en esta vista</strong><p>Crea una tarea o cambia el filtro.</p></div>}</div>
   </section></div>
   <section className="patient-record-card"><div className="patient-plan-section-heading"><div><span>02</span><div><h2>Biblioteca de plantillas</h2><p>Guarda indicaciones reutilizables sin vincularlas a ningún paciente.</p></div></div></div><form className="therapy-goal-form" onSubmit={saveTemplate}><label><span>Nombre</span><input name="title" required minLength={2} maxLength={180}/></label><label><span>Instrucciones base</span><textarea name="instructions" maxLength={5000}/></label><div className="task-form-row"><label><span>Categoría</span><input name="category" maxLength={80} placeholder="Registro, exposición, psicoeducación…"/></label><button className="button secondary">Guardar plantilla</button></div></form></section>
