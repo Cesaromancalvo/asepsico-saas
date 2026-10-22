@@ -13,8 +13,9 @@ window.ASEPSICO_CONFIG = Object.freeze({
 
   // Versión de la política que acepta quien se apunta (se envía en privacyPolicyVersion). Tiene que
   // coincidir con la que muestra /privacidad-lista-espera/ y estar entre las que acepta la API
-  // (desplegar la API antes que la landing al cambiarla).
-  WAITLIST_POLICY_VERSION: 'lista-espera-v3',
+  // (desplegar la API antes que la landing al cambiarla). v4 desde el 22/10/2026; la v3 queda archivada
+  // en /privacidad-lista-espera/v3/.
+  WAITLIST_POLICY_VERSION: 'lista-espera-v4',
 
   // RED DE SEGURIDAD: formulario de Google Forms, solo si FEATURES.ownWaitlistForm está apagado.
   // Se abre como enlace normal en una pestaña nueva: nunca incrustado.
