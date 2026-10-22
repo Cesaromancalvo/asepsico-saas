@@ -381,7 +381,9 @@ for (const [opts, expected] of [
   check(sent === contract, `9: config.js envía "${sent}" pero packages/contracts dice "${contract}"`);
   check(accepted.includes(sent), `9: la API no acepta "${sent}" (acepta ${accepted.join(', ')})`);
   // Las versiones archivadas que acepta la API o enlaza la vigente tienen su página, con noindex.
-  for (const v of accepted.filter((x) => x !== sent)) {
+  // Las posteriores a la que envía la landing (la API ya acepta la siguiente antes de que la landing la publique) no.
+  const num = (x) => Number((x.match(/-v(\d+)$/) || [])[1]);
+  for (const v of accepted.filter((x) => x !== sent && num(x) < num(sent))) {
     const n = v.replace('lista-espera-', '');
     check(page.includes(`href="/privacidad-lista-espera/${n}/"`), `9: la política vigente no enlaza la archivada /${n}/`);
     let old = '';

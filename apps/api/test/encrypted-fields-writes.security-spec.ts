@@ -130,7 +130,7 @@ const CASES: Case[] = [
   { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
   { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
-    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any) },
+    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v4', formToken: issueFormToken(Date.now() - 10_000) } as any) },
   { name: 'PortalSignup.submit', writes: { portalSignupRequest: ['firstName', 'lastName', 'email', 'phone', 'birthDate'] },
     run: (p) => new SignupRequestsService(p).submit({ token: 'A'.repeat(43), firstName: 'Nombre', lastName: 'Ficticio', email: 'alta@example.com', phone: '600000000', birthDate: '1990-01-01', privacyNoticeAcknowledged: true, portalTermsAccepted: true, privacyNoticeVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.privacyNotice, portalTermsVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms } as any) },
   { name: 'PortalIntakeLinks.rotate', writes: { portalIntakeLink: ['tokenEncrypted'] },
