@@ -195,7 +195,9 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['sin el campo de aceptación', { privacyAccepted: undefined }],
     ['aceptación como texto', { privacyAccepted: 'true' }],
     ['versión de política antigua (v1, Google Forms)', { privacyPolicyVersion: 'lista-espera-v1' }],
-    ['versión de política inexistente', { privacyPolicyVersion: 'lista-espera-v4' }],
+    ['versión de política inexistente', { privacyPolicyVersion: 'lista-espera-v5' }],
+    ['versión inventada', { privacyPolicyVersion: 'lista-espera-v99' }],
+    ['versión v4 con mayúsculas', { privacyPolicyVersion: 'LISTA-ESPERA-V4' }],
     ['versión con espacios', { privacyPolicyVersion: ' lista-espera-v3' }],
     ['sin versión de política', { privacyPolicyVersion: undefined }],
   ])('400 si no se acepta la política vigente: %s', async (_label, overrides) => {
@@ -203,11 +205,11 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
-  it('transición v2 → v3: la API acepta las dos versiones vigentes y no otras', () => {
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3']);
+  it('transición v3 → v4: la API acepta v3 y v4 (y v2, aún en transición) y no otras', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4']);
   });
 
-  it.each(['lista-espera-v2', 'lista-espera-v3'])('transición: %s → 202 y se guarda la versión enviada, tal cual', async (version) => {
+  it.each(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('transición: %s → 202 y se guarda la versión enviada, tal cual', async (version) => {
     await post(app, validBody({ privacyPolicyVersion: version })).expect(202);
     expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(1);
     expect(prisma.waitlistEntry.create.mock.calls[0][0].data.privacyPolicyVersion).toBe(version);
@@ -227,6 +229,20 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(res.body.code).toBe('WAITLIST_COMMERCIAL_NOT_OFFERED');
     expect(JSON.stringify(res.body)).not.toContain(EMAIL);
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('v4 + commercialConsentRequested:true → 400 y sin create (la política v4 tampoco ofrece comunicaciones comerciales)', async () => {
+    const res = await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v4', commercialConsentRequested: true })).expect(400);
+    expect(res.body.code).toBe('WAITLIST_COMMERCIAL_NOT_OFFERED');
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('v4 sin el campo commercialConsentRequested (como lo enviará la landing) → 202 y se guarda false', async () => {
+    const { commercialConsentRequested: _omit, ...body } = validBody({ privacyPolicyVersion: 'lista-espera-v4' });
+    await post(app, body).expect(202);
+    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
+    expect(data.privacyPolicyVersion).toBe('lista-espera-v4');
+    expect(data.commercialConsentRequested).toBe(false);
   });
 
   it('v3 + commercialConsentRequested:false → 202 y se guarda false', async () => {

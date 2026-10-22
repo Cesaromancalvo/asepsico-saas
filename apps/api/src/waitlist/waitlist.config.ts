@@ -28,14 +28,19 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  *  - lista-espera-v3: 17/10/2026, sin casilla de comunicaciones comerciales y con "¿Qué usas hoy?" en
  *    opciones (texto de Lex Psi; pendiente de revisión del abogado humano). La v2 queda archivada
  *    en /privacidad-lista-espera/v2/.
+ *  - lista-espera-v4: 22/10/2026, acceso del responsable también desde un panel web privado, anotaciones
+ *    de seguimiento y aviso interno de altas por Scaleway (texto de Lex Psi; pendiente de revisión del
+ *    abogado humano). Mismas finalidades, bases y plazos que v3 y tampoco ofrece comunicaciones
+ *    comerciales. La v3 queda archivada en /privacidad-lista-espera/v3/; se sigue aceptando solo durante
+ *    la transición: retirarla cuando la landing publicada envíe lista-espera-v4.
  */
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3'] as const;
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'] as const;
 
 /**
  * Versiones cuya política no ofrece comunicaciones comerciales: un alta con ellas y
  * commercialConsentRequested=true es un 400 (no se registra una solicitud que el texto aceptado no recoge).
  */
-export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3'];
+export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3', 'lista-espera-v4'];
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
