@@ -301,7 +301,16 @@ y `waitlist:export` las muestra todas). Un fallo de envío se reintenta una sola
 
 Sustituye al uso diario de `waitlist:export` / `waitlist:delete` (los CLI siguen valiendo). Solo lo
 ve quien esté en `PLATFORM_ADMIN_EMAILS` **y** tenga el MFA activo; para cualquier otro la API
-responde 404. **No activarlo en producción hasta que la landing publique `lista-espera-v4`.**
+responde 404.
+
+> **NO rellenar `PLATFORM_ADMIN_EMAILS` en Render todavía.** Solo cuando se cumplan las DOS cosas:
+> 1. `/api/v1` ya **no** pasa por el proxy de Vercel (salida prevista 27–28/10). Mientras pase, la
+>    API ve la IP del proxy (el límite de intentos no funciona por cliente) y los datos de la lista
+>    viajarían por un encargado adicional no previsto.
+> 2. La landing ya publica la política **`lista-espera-v4`** (con la v3 publicada no se activa: dice
+>    que no hay panel web).
+>
+> Se puede crear la cuenta exclusiva (paso 1) antes; la variable (paso 2), no.
 
 **1. Crear la cuenta exclusiva de administración (una vez).** No uses tu cuenta de una consulta ni la
 del demo: el panel ve datos personales y esa cuenta debe servir solo para esto.
@@ -312,9 +321,14 @@ del demo: el panel ve datos personales y esa cuenta debe servir solo para esto.
    contraseñas) y como nombre del espacio **«AsePsico interno»**. Si el formulario pregunta si atiendes pacientes, responder que no.
    No crear pacientes ni invitar a nadie en ese espacio: debe quedarse vacío.
 4. Activar la verificación en dos pasos (la app la exige al OWNER) y guardar los códigos de
-   recuperación en el gestor de contraseñas.
+   recuperación en el gestor de contraseñas. Al activarla se cierran las demás sesiones de esa
+   cuenta (otros navegadores vuelven al login); la del navegador donde la activas sigue abierta.
 
-**2. Activar la variable.** En Render → servicio de la API → Environment:
+**2. Activar la variable** (solo con los dos bloqueos de arriba resueltos y la cuenta del paso 1
+ya creada: nunca poner en la variable un email que aún no tenga cuenta, porque quien se registrara
+con él obtendría el acceso). Escribir el email exactamente como se registró, solo con caracteres
+ASCII (sin acentos ni caracteres especiales; si los tiene, la API lo ignora y nadie entra). En
+Render → servicio de la API → Environment:
 `PLATFORM_ADMIN_EMAILS=<el correo de la cuenta exclusiva>` (uno solo; nunca el de una cuenta de
 consulta). Guardar y dejar que redespliegue. Sin la variable, o vacía, nadie entra.
 
@@ -322,7 +336,8 @@ consulta). Guardar y dejar que redespliegue. Sin la variable, o vacía, nadie en
 `/admin/lista-espera` carga. Con cualquier otra cuenta: sin enlace y 404. Desactivar el MFA de la
 cuenta exclusiva quita el acceso al momento (volver a activarlo para recuperarlo).
 
-**Uso.** Suprimir un alta pide tu contraseña y no se puede deshacer (misma supresión que
+**Uso.** Suprimir un alta pide tu contraseña (los fallos cuentan para el bloqueo temporal de la
+cuenta, como los del código de verificación) y no se puede deshacer (misma supresión que
 `waitlist:delete`). Cada consulta y cada supresión quedan en `PlatformAuditLog` sin datos
 personales (consulta por SQL de solo lectura si hace falta). No copies datos fuera del panel.
 
