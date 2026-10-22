@@ -238,6 +238,8 @@ function requiredStep(job, name, command) {
 requiredStep('quality', 'Web unit tests', 'npm --workspace @asepsico/web run test -- --ci');
 requiredStep('postgres-integration', 'Session close and booking race tests (real PostgreSQL)',
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race)'");
+requiredStep('postgres-integration', 'Platform admin waitlist panel tests (real PostgreSQL)',
+  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern 'platform-admin-db'");
 requiredStep('postgres-integration', 'Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)',
   'node scripts/verify-billing-assistant-live.mjs');
 const landingStep = requiredStep('quality', 'Landing build fails closed without legal holder variables',

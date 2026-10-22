@@ -208,6 +208,42 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - Asíncrono y agrupado (1 aviso cada 10 min), 1 reintento como mucho; los fallos solo dejan en el log
   el tipo de error, nunca destinatario ni contenido. Un fallo de correo nunca afecta al alta.
 
+## Panel privado de la lista de espera (`/api/v1/admin/*`, capacidad `PLATFORM_ADMIN`)
+
+Módulo `apps/api/src/platform/`; contrato en `packages/contracts/src/platform-waitlist.ts`.
+
+- **`PLATFORM_ADMIN` no es un rol de workspace** ni se guarda en la BD. Se asigna **solo** con la
+  variable `PLATFORM_ADMIN_EMAILS` de la API (falla cerrado: vacía = nadie). No hay endpoint, DTO,
+  pantalla ni seed que la conceda (test estático en `platform-admin.security-spec.ts`).
+- Requisitos acumulativos en cada petición: sesión normal válida (`JwtAuthGuard`: firma, caducidad,
+  membresía ACTIVE, `tokenVersion`, condiciones), token con `mfaEnabled=true`, cuenta con
+  `totpEnabled=true` **en la BD** (desactivar el MFA quita el acceso al momento) y email **de la BD**
+  (no el del token) en la variable.
+- **Cualquier fallo → 404** idéntico al de una ruta inexistente (sin sesión, sesión revocada,
+  condiciones pendientes, no admin, MFA desactivado, variable vacía). `PlatformAdminGuard` va antes
+  de `CsrfGuard` para que un no admin nunca vea un 403. `GET /admin/me` devuelve solo
+  `{ platformAdmin }` a cualquier sesión (para pintar o no el enlace) y no audita.
+- **No concede nada clínico ni de workspaces:** no toca roles ni `workspaceId` del token y el módulo
+  no lee ni escribe ninguna tabla con `workspaceId`. Test de regresión con la app completa y
+  PostgreSQL real (`platform-admin-db.security-spec.ts`): las respuestas de `/patients`,
+  `/clinical-processes`, `/sessions` y `/exports` son idénticas siendo o no `PLATFORM_ADMIN`.
+- **Cuenta exclusiva:** el `PLATFORM_ADMIN` usa una cuenta propia con MFA cuyo único workspace es
+  uno interno vacío ("AsePsico interno"); nunca una cuenta de una consulta ni la del demo.
+- `GET /admin/waitlist`: altas activas descifradas (nunca `emailHash`; las suprimidas no aparecen),
+  campos no descifrables como `null` + `unreadableFields`, contadores (8 semanas ISO en
+  `Europe/Madrid`, origen, situación). `Cache-Control: no-store`, 30/min.
+- `POST /admin/waitlist/:id/delete`: reautenticación con contraseña (como las exportaciones), CSRF,
+  5/min; misma supresión que `waitlist:delete` (`suppressedData`, por id). 401
+  `PLATFORM_REAUTH_FAILED` sin cambios; 404 si no existe o ya estaba suprimida.
+- **Auditoría propia `PlatformAuditLog`** (sin `workspaceId`, sin IP ni user-agent), en la misma
+  transacción que la operación: `PLATFORM_WAITLIST_VIEWED` `{ activeCount }`,
+  `PLATFORM_WAITLIST_ENTRY_SUPPRESSED` `{}` (entityId = id de la fila ya vacía),
+  `PLATFORM_REAUTH_FAILED` `{ operation }`, `PLATFORM_ACCESS_DENIED` `{}` (usuario autenticado no
+  admin). Nunca nombre, email, hash, herramientas ni contraseña en metadata ni en logs (test).
+  Plazo de conservación de esta tabla: pendiente (Lex Psi, P7).
+- **Bloqueante legal antes de activarlo en producción:** publicar la política `lista-espera-v4`
+  (la v3 dice que no hay panel web). Fase 2 (no implementada): exportación CSV y nota de seguimiento.
+
 ## Registro por invitación y aceptación de condiciones
 
 - **Registro cerrado:** `POST /auth/register` solo funciona con una invitación de plataforma de un
