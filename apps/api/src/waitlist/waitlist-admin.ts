@@ -1,13 +1,13 @@
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { decryptModel } from '../common/crypto/clinical-crypto';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../common/crypto/field-encryption';
 import { hashWaitlistEmail } from './waitlist-crypto';
 
 /**
- * Gestión de la lista de espera para César, SOLO por CLI (no hay endpoint de administración):
- * prisma/scripts/waitlist-export.ts y prisma/scripts/waitlist-delete.ts. Aquí vive la lógica
- * pura para poder probarla sin base de datos. Ninguna función registra valores personales.
+ * Gestión de la lista de espera para César: por CLI (prisma/scripts/waitlist-*.ts) y, desde el
+ * panel privado, por la API de plataforma (src/platform/, solo PLATFORM_ADMIN). Aquí vive la lógica
+ * compartida para poder probarla sin base de datos. Ninguna función registra valores personales.
  */
 
 export const WAITLIST_CSV_COLUMNS = [
@@ -91,6 +91,20 @@ function suppressedData(now: Date) {
 export async function deleteWaitlistEntry(prisma: PrismaClient, email: string, now: Date = new Date()): Promise<number> {
   const emailHash = hashWaitlistEmail(email);
   const result = await prisma.waitlistEntry.updateMany({ where: { emailHash, deletedAt: null }, data: suppressedData(now) });
+  return result.count;
+}
+
+/**
+ * La misma supresión, por id de fila (panel privado, POST /api/v1/admin/waitlist/:id/delete).
+ * Solo afecta a una fila ACTIVA: devuelve 0 si no existe o ya estaba suprimida. Acepta el cliente
+ * de una transacción para escribir la auditoría en la misma transacción.
+ */
+export async function suppressWaitlistEntryById(
+  db: Pick<PrismaClient, 'waitlistEntry'> | Pick<Prisma.TransactionClient, 'waitlistEntry'>,
+  id: string,
+  now: Date = new Date(),
+): Promise<number> {
+  const result = await db.waitlistEntry.updateMany({ where: { id, deletedAt: null }, data: suppressedData(now) });
   return result.count;
 }
 
