@@ -7,6 +7,7 @@ import { pendingLabel, PENDING_REQUESTS_EVENT } from '../lib/booking';
 import { fetchPendingCount } from '../lib/booking-client';
 import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
 import { invalidateTermsStatus, useTermsStatus } from '../lib/legal';
+import { invalidatePlatformAdmin, PANEL_PATH, usePlatformAdmin } from '../lib/platform-waitlist';
 import Icon, { IconName } from './Icon';
 type SidebarProps = {
   syncText?: string;
@@ -97,6 +98,8 @@ export default function Sidebar({
   // Condiciones nuevas sin aceptar: cada profesional las acepta por sí mismo y la API le bloquea
   // (428 → /terms) hasta que lo haga. Este aviso es solo un recordatorio por si llega a verse.
   const terms = useTermsStatus();
+  // Panel de la lista de espera: el enlace solo existe si la API dice platformAdmin (nadie más lo ve).
+  const platformAdmin = usePlatformAdmin();
   // Solicitudes de cita pendientes (solo el número, sin nombres ni fechas). Se vuelve a pedir al
   // cambiar de pantalla, cada minuto y cuando la bandeja avisa de que resolvió alguna.
   const [pending, setPending] = useState(0);
@@ -136,6 +139,7 @@ export default function Sidebar({
       await logout();
       invalidateViewer();
       invalidateTermsStatus();
+      invalidatePlatformAdmin();
     } finally {
       window.location.href = '/login';
     }
@@ -167,6 +171,19 @@ export default function Sidebar({
           </Link>
         ))}
       </nav>
+      {platformAdmin && (
+        <nav className="sidebar-nav sidebar-admin" aria-label="Administración de AsePsico">
+          <span className="sidebar-section-label">Administración</span>
+          <Link
+            href={PANEL_PATH}
+            className={`sidebar-link ${pathname.startsWith(PANEL_PATH) ? 'active' : ''}`}
+            aria-current={pathname.startsWith(PANEL_PATH) ? 'page' : undefined}
+          >
+            <span className="sidebar-icon"><Icon name="clipboard" /></span>
+            <span>Lista de espera</span>
+          </Link>
+        </nav>
+      )}
       <div className="sidebar-bottom">
         {terms?.acceptanceRequired && (
           <p className="sidebar-terms-notice" role="note">
