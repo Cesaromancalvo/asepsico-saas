@@ -88,6 +88,9 @@ const NO_REFRESH_PATHS = new Set(['/auth/login', '/auth/login/mfa', '/auth/refre
 // código incorrectos). Solo se renueva y repite si el 401 es el genérico del guard.
 export const BUSINESS_401_PATHS: ReadonlySet<string> = new Set(['/auth/mfa/confirm', '/auth/mfa/disable', '/auth/change-password']);
 const AUTH_LAYER_401_MESSAGES = new Set(['Unauthorized', 'Token no válido para este dominio']);
+// 401 de negocio identificados por su código (rutas con parámetros, que no caben en BUSINESS_401_PATHS):
+// contraseña de reautenticación incorrecta. Nunca se renueva ni se repite (contaría el fallo dos veces).
+export const BUSINESS_401_CODES: ReadonlySet<string> = new Set(['PLATFORM_REAUTH_FAILED']);
 
 async function readError(response: Response): Promise<{ message?: string; code?: string }> {
   const body = (await response.json().catch(() => ({}))) as { message?: unknown; code?: unknown };
@@ -102,6 +105,8 @@ async function readMessage(response: Response): Promise<string | undefined> {
 
 async function shouldRefresh(path: string, response: Response): Promise<boolean> {
   if (response.status !== 401 || NO_REFRESH_PATHS.has(path)) return false;
+  const { code } = await readError(response.clone());
+  if (code && BUSINESS_401_CODES.has(code)) return false;
   if (!BUSINESS_401_PATHS.has(path)) return true;
   const message = await readMessage(response.clone());
   return message === undefined || AUTH_LAYER_401_MESSAGES.has(message);
@@ -137,6 +142,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     error.body = body && typeof body === 'object' ? body : {};
     throw error;
   }
+  // 204 sin cuerpo (p. ej. la supresión de un alta del panel de plataforma).
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 
