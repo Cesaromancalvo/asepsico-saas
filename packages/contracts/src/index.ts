@@ -90,6 +90,7 @@ export * from './patient-import';
 export * from './waitlist';
 export * from './exceptional-access';
 export * from './portal-signup';
+export * from './platform-waitlist';
 
 // Registro por invitación y condiciones versionadas (feat/registro-por-invitacion).
 export type LegalDocumentType = 'PILOT_TERMS' | 'DPA_ART28' | 'PRIVACY_PRODUCT';
