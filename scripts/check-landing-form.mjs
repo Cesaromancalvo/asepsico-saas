@@ -242,7 +242,7 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   if (p[0]) {
     check(p[0].at - tokenAt >= 1000, `2: se envió ${p[0].at - tokenAt} ms después del token (mínimo 1000)`);
     check(p[0].body.formToken === 'tok-espera', '2: no se envió el token recibido');
-    check(p[0].body.privacyPolicyVersion === 'lista-espera-v3', '2: privacyPolicyVersion distinto de lista-espera-v3');
+    check(p[0].body.privacyPolicyVersion === 'lista-espera-v4', '2: privacyPolicyVersion distinto de lista-espera-v4');
     check(!Object.keys(p[0].body).some((k) => k.startsWith('commercialConsent')), '2: se envió un campo commercialConsent* (la casilla de novedades ya no existe)');
     check(p[0].body.tools === 'Otra: Un programa propio', `8: "Otra" con texto se envió como "${p[0].body.tools}"`);
     check(p[0].init.headers['Content-Type'] === 'application/json', '2: falta Content-Type JSON');

@@ -21,9 +21,9 @@ export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' 
 
 /**
  * Versión de la política que muestra (y envía) la landing. Debe estar entre las que acepta la API
- * (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta también lista-espera-v2).
+ * (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta también lista-espera-v2 y v3).
  */
-export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v3';
+export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v4';
 
 export interface WaitlistFormTokenResponse {
   formToken: string;
