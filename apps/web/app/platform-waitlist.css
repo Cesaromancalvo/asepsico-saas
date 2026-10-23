@@ -65,7 +65,7 @@
 .wl-chip:focus-visible{outline:none;box-shadow:var(--focus)}
 .wl-week-filter{min-width:min(240px,100%);margin-left:auto}
 
-.wl-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md)}
+.wl-table-wrap{position:relative;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md)}
 .wl-table{width:100%;min-width:980px;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-sm)}
 .wl-table th:nth-child(1){width:9%}
 .wl-table th:nth-child(2){width:21%}
