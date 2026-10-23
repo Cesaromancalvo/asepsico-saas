@@ -173,6 +173,10 @@ describe('Suprimir alta con contraseña', () => {
     mockFetch((path) => (path === '/admin/me' ? { status: 200, body: { platformAdmin: true } } : { status: 429, body: { message: 'ThrottlerException: Too Many Requests' } }));
     const throttled = await suppressEntry('wl-1', 'x').catch((err) => err);
     expect(suppressErrorMessage(throttled)).toContain('Espera un minuto');
+    // Bloqueo temporal de la cuenta (los fallos cuentan como los del MFA): se muestra el texto de la API.
+    mockFetch((path) => (path === '/admin/me' ? { status: 200, body: { platformAdmin: true } } : { status: 429, body: { statusCode: 429, message: 'Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.' } }));
+    const locked = await suppressEntry('wl-1', 'x').catch((err) => err);
+    expect(suppressErrorMessage(locked)).toBe('Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.');
   });
 
   it('el diálogo explica que es irreversible y pide la contraseña con su etiqueta', () => {
@@ -255,5 +259,13 @@ describe('Sin persistencia ni exportación', () => {
     const source = readFileSync(join(__dirname, '../app/admin/lista-espera/page.tsx'), 'utf8');
     expect(source).toContain('Lista de espera · solo para administración de AsePsico');
     expect(source).not.toMatch(/responsable:\s*AsePsico/i);
+  });
+});
+
+describe('404 propia en español', () => {
+  it('not-found.tsx está en español y no menciona el panel', () => {
+    const source = readFileSync(join(__dirname, '../app/not-found.tsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(source).toContain('No encontramos esta página');
+    expect(source).not.toMatch(/lista de espera|admin/i);
   });
 });

@@ -113,6 +113,7 @@ export default function WaitlistSuppressDialog({ target, onConfirm, onClose }: P
           aria-describedby={error ? errorId : undefined}
         />
       </label>
+      <small className="wl-dialog-hint">Los intentos con contraseña incorrecta cuentan para el bloqueo temporal de tu cuenta.</small>
       {error && <p id={errorId} className="agenda-error wl-dialog-error" role="alert">{error}</p>}
 
       <div className="agenda-modal-actions">

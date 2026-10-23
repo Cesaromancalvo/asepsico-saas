@@ -197,7 +197,7 @@ export default function LoginPage() {
           <div className="e1-notice info" role="status">
             <div>
               <strong>Tu sesión ha terminado</strong>
-              <p>Puede que se haya cambiado tu contraseña o que ya no formes parte de esta consulta. Vuelve a entrar; si no puedes, habla con la persona titular.</p>
+              <p>Si acabas de cambiar tu contraseña o activar la verificación en dos pasos, vuelve a iniciar sesión. También puede que ya no formes parte de esta consulta: si no puedes entrar, habla con la persona titular.</p>
             </div>
           </div>
         )}

@@ -129,7 +129,8 @@ export function suppressErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401 && err.code === 'PLATFORM_REAUTH_FAILED') return 'La contraseña no es correcta. No se ha suprimido nada.';
     if (err.status === 404) return 'Esta alta ya no existe: puede que ya se haya suprimido. Cierra y recarga la lista.';
-    if (err.status === 429) return 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentarlo.';
+    // 429: bloqueo temporal de la cuenta (la API dice cuántos minutos) o límite de peticiones.
+    if (err.status === 429) return err.message || 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentarlo.';
     if (err.status === 400) return 'Escribe tu contraseña para confirmar.';
   }
   return 'No se ha podido suprimir el alta. Comprueba la conexión y vuelve a intentarlo.';

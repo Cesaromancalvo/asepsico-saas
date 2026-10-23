@@ -133,6 +133,7 @@ td.wl-person>span{display:block}
 .wl-dialog-warning .ui-icon{margin-top:2px;color:var(--danger)}
 .wl-dialog-field{display:grid;margin-bottom:6px}
 .wl-dialog-field input{width:100%}
+.wl-dialog-hint{display:block;color:var(--text-light);font-size:var(--fs-xs)}
 .wl-dialog-error{margin:8px 0 0}
 
 /* ---------- Responsive ---------- */
@@ -157,3 +158,12 @@ td.wl-person>span{display:block}
   .wl-dialog .agenda-modal-actions .button{flex:1}
 }
 @media(prefers-reduced-motion:reduce){.wl-chip,.wl-week-bar,.wl-suppress{transition:none}}
+
+/* ---------- 404 propia de la aplicación (app/not-found.tsx) ---------- */
+.nf-page{display:grid;min-height:calc(100vh - var(--demo-banner-height,0px) - 40px);place-items:center;padding:24px 16px}
+.nf-card{display:grid;justify-items:center;gap:8px;width:min(480px,100%);padding:40px 32px;text-align:center}
+.nf-card .eyebrow{margin:8px 0 0}
+.nf-card h1{margin:0;color:var(--ink);font-size:var(--fs-2xl);letter-spacing:-.01em}
+.nf-card p{margin:0;color:var(--text-soft);font-size:var(--fs-md)}
+.nf-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px}
+@media(max-width:520px){.nf-card{padding:32px 20px}.nf-actions{display:grid;width:100%}}
