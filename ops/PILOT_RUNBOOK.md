@@ -320,6 +320,9 @@ del demo: el panel ve datos personales y esa cuenta debe servir solo para esto.
 3. Abrir el enlace y registrarse con ese correo, una contraseña larga y única (gestor de
    contraseñas) y como nombre del espacio **«AsePsico interno»**. Si el formulario pregunta si atiendes pacientes, responder que no.
    No crear pacientes ni invitar a nadie en ese espacio: debe quedarse vacío.
+   **El espacio «AsePsico interno» no debe tener nunca ningún otro miembro** (ni titulares, ni
+   terapeutas, ni recepción): si alguien más entrara en él, compartiría consulta con la única
+   cuenta que ve la lista de espera. Revisarlo en Ajustes → Equipo al activar el panel y cada mes.
 4. Activar la verificación en dos pasos (la app la exige al OWNER) y guardar los códigos de
    recuperación en el gestor de contraseñas. Al activarla se cierran las demás sesiones de esa
    cuenta (otros navegadores vuelven al login); la del navegador donde la activas sigue abierta.
@@ -332,7 +335,8 @@ Render → servicio de la API → Environment:
 `PLATFORM_ADMIN_EMAILS=<el correo de la cuenta exclusiva>` (uno solo; nunca el de una cuenta de
 consulta). Guardar y dejar que redespliegue. Sin la variable, o vacía, nadie entra.
 
-**3. Comprobar.** Con la cuenta exclusiva: el menú de usuario muestra «Lista de espera» y
+**3. Comprobar.** Con la cuenta exclusiva: la barra lateral (en escritorio) muestra
+«Administración › Lista de espera» y
 `/admin/lista-espera` carga. Con cualquier otra cuenta: sin enlace y 404. Desactivar el MFA de la
 cuenta exclusiva quita el acceso al momento (volver a activarlo para recuperarlo).
 
