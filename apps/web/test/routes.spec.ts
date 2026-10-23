@@ -74,3 +74,28 @@ describe('routes', () => {
     }
   });
 });
+
+describe('legacyToStatic: casos hostiles adicionales (condición de Argos, 23/10)', () => {
+  it('protocolo relativo, barra invertida y rutas codificadas → null', () => {
+    for (const href of ['//evil.com/patients/x', `//evil.com/patients/${P}/plan`, '/\\evil.com', `/\\evil.com/patients/${P}`,
+      '/patients/%2F..%2F/plan', `/patients/%2F..%2F${P}/plan`, `/patients/${P}%2F..%2F/plan`]) {
+      expect(legacyToStatic(href)).toBeNull();
+    }
+  });
+
+  it('ids con mayúsculas o con punto → null', () => {
+    for (const id of ['CM1A2B3C4D5E6F7G8H9I0J1K2', 'cm1a2b3c4d5E6f7g8h9i0j1k2', 'cm1a2b3c4d5e6f7g8h9i0j1k.', 'cm1a2b3c4d.e6f7g8h9i0j1k2']) {
+      expect(legacyToStatic(`/patients/${id}`)).toBeNull();
+      expect(legacyToStatic(`/patients/${id}/plan`)).toBeNull();
+      expect(legacyToStatic(`/patients/${P}/processes/${id}`)).toBeNull();
+      expect(legacyToStatic(`/agenda/${id}`)).toBeNull();
+    }
+  });
+
+  it('la query original (p. ej. ?next=https://evil) nunca viaja al destino', () => {
+    const out = legacyToStatic(`/patients/${P}/processes/${S}?next=https://evil.example/x#frag`);
+    expect(out).toBe(processHref(P, S));
+    expect(out).not.toMatch(/evil|next=|#/);
+    expect(legacyToStatic(`/agenda/${S}?next=https://evil.example`)).toBe(sessionHref(S));
+  });
+});

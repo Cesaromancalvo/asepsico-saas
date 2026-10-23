@@ -112,3 +112,13 @@ describe('Enlaces del QR y de activación (sitio estático)', () => {
     expect(activationUrl('https://app.example.test', TOKEN)).toBe(`https://app.example.test/portal/activar/#t=${TOKEN}`);
   });
 });
+
+describe('takeTokenFromLocation en el sitio estático (/portal/alta/ con barra)', () => {
+  it('lee el token y deja la ruta con barra final y sin fragmento', () => {
+    const win = fakeWindow({ pathname: '/portal/alta/', hash: `#t=${TOKEN}` });
+    expect(takeTokenFromLocation(win)).toBe(TOKEN);
+    expect(win.history.replaceState).toHaveBeenCalledWith(null, '', '/portal/alta/');
+    expect(win.location.pathname).toBe('/portal/alta/');
+    expect(win.location.hash).toBe('');
+  });
+});
