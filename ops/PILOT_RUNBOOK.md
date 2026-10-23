@@ -69,10 +69,19 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
   /portal/activar/* Cache-Control: no-store
   /admin/*          Cache-Control: no-store             (panel privado de la lista de espera)
   ```
-  `no-referrer` (global) porque el id va en la query y el token del alta en el fragmento. `'unsafe-inline'` en `script-src` es provisional
-  (Next exportado mete scripts inline sin nonce); ver "Trabajo futuro".
-- Comprobación: `curl -sI https://app.asepsico.es/ | grep -iE 'strict-transport|content-security|x-frame|referrer'`.
-  Y `curl -sI https://app.asepsico.es/portal/alta/ | grep -iE 'robots|cache-control|referrer'` (noindex, no-store, no-referrer).
+  `no-referrer` (global) porque el id va en la query y el token del alta en el fragmento. `'unsafe-inline'` en la cabecera queda solo
+  como respaldo: el `postbuild` de la web (`apps/web/scripts/csp-hashes.mjs`) escribe en cada HTML una
+  `<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'sha256-…'…">` con los
+  hashes de sus scripts inline (Next exportado los mete sin nonce y cambian en cada build, por eso no
+  caben en una cabecera fija). El navegador aplica cabecera **y** meta: un script inline sin hash no se
+  ejecuta. Si el `postbuild` no puede poner la meta en una página con scripts inline, el build falla.
+- Comprobación (tras cada cambio de cabeceras, dominio o despliegue relevante): `npm run verify:static-site`
+  (`scripts/verify-static-site.mjs`: cabeceras globales, meta CSP con hashes, 404 propia sin reescritura
+  SPA, rutas sin barra, `no-store`/`noindex`/`no-referrer` en `/portal/alta/`, `/portal/activar/` y
+  `/admin/lista-espera/`, caché de `/_next/static/` y CORS de la API: un origen ajeno nunca autorizado).
+  Antes de cambiar `WEB_ORIGIN`, con `-- --antes-del-corte`.
+- **Nunca** añadir en Render una regla de reescritura `/* → /index.html` (SPA): rompería la 404 propia
+  (y la redirección de URL antiguas) y serviría la app con 200 en cualquier ruta.
 - Los QR de alta y los enlaces de activación usan el origen de la página (`window.location.origin`):
   un QR descargado desde otro dominio (p. ej. `*.vercel.app`) apunta allí. Tras el cambio de dominio,
   volver a descargar el QR desde `https://app.asepsico.es/settings/portal-qr/` (el token no cambia).
@@ -195,9 +204,9 @@ Antes de dar por cerrado cualquier cambio de dominio o DNS de la API:
 
 ### Trabajo futuro (no implementado)
 
-- **CSP sin `'unsafe-inline'` en la web (tras la salida de Vercel).** Paso `postbuild` que calcule
-  los hashes sha256 de los scripts inline de `apps/web/out/**/*.html` y genere la cabecera
-  `script-src 'self' 'sha256-…'` para el Static Site; luego quitar `'unsafe-inline'`.
+- **CSP: quitar también `'unsafe-inline'` de la cabecera de Render.** Hecho el 23/10 con meta por
+  página (ver "Web (Render Static Site)"); quitarlo de la cabecera exigiría la unión de todos los
+  hashes en una cabecera que cambia en cada build. Revisar si Render permite cabeceras desde el repo.
 
 - **Límite por email en `/auth/login`.** El límite actual es por IP. Conviene añadir un límite por
   email (normalizado) además del de IP, para frenar el credential stuffing distribuido desde

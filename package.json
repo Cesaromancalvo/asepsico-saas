@@ -30,6 +30,7 @@
     "test:smoke": "node scripts/smoke-live.mjs",
     "db:migrate:ci": "npm --workspace @asepsico/api run prisma:migrate:deploy",
     "test:ci-config": "node scripts/verify-ci-postgres.mjs",
+    "verify:static-site": "node scripts/verify-static-site.mjs",
     "test:landing": "node scripts/check-landing.mjs && node scripts/check-landing-build.mjs && node scripts/check-landing-form.mjs && node scripts/check-landing-cambios.mjs"
   },
   "engines": {
