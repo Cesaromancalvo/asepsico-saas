@@ -27,8 +27,12 @@ datos clínicos reales en producción.
   además de firma y caducidad, exige contra la BD que la membresía del workspace del token siga
   `ACTIVE` y que el claim `tv` del token coincida con `User.tokenVersion`. Si no, 401 con código
   estable `SESSION_REVOKED` (la web renueva con el refresh token o vuelve al login). Suben
-  `tokenVersion`: el cambio de contraseña y desactivar el MFA (el token vivo decía
-  `mfaEnabled=true`). Los tokens emitidos antes de existir `tv` cuentan como versión 0. Login,
+  `tokenVersion`: el cambio de contraseña, desactivar el MFA (el token vivo decía
+  `mfaEnabled=true`) y **activar el MFA** (condición de Argos, panel de plataforma): `mfa/confirm`
+  sube `tokenVersion`, revoca **todos** los refresh tokens del usuario (ninguna sesión abierta sin
+  segundo factor puede renovarse con `mfaEnabled=true`) y, como esa misma petición acaba de verificar
+  contraseña + TOTP, emite una sesión nueva solo para el navegador que lo activa. Los demás
+  dispositivos vuelven al login. Los tokens emitidos antes de existir `tv` cuentan como versión 0. Login,
   refresh y `/auth/me` ignoran membresías que no estén `ACTIVE`.
 - Baja de un miembro del equipo (`POST /workspace-members/:userId/remove`, OWNER/ADMIN; ADMIN solo
   sobre THERAPIST/ASSISTANT; nadie a sí mismo ni al último OWNER): la membresía pasa a `REMOVED`
@@ -207,6 +211,63 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   El test `no-email-sending.security-spec.ts` falla si aparece código de envío fuera de la lista permitida.
 - Asíncrono y agrupado (1 aviso cada 10 min), 1 reintento como mucho; los fallos solo dejan en el log
   el tipo de error, nunca destinatario ni contenido. Un fallo de correo nunca afecta al alta.
+
+## Panel privado de la lista de espera (`/api/v1/admin/*`, capacidad `PLATFORM_ADMIN`)
+
+Módulo `apps/api/src/platform/`; contrato en `packages/contracts/src/platform-waitlist.ts`.
+
+- **`PLATFORM_ADMIN` no es un rol de workspace** ni se guarda en la BD. Se asigna **solo** con la
+  variable `PLATFORM_ADMIN_EMAILS` de la API (falla cerrado: vacía = nadie). No hay endpoint, DTO,
+  pantalla ni seed que la conceda (test estático en `platform-admin.security-spec.ts`).
+- Requisitos acumulativos en cada petición: sesión normal válida (`JwtAuthGuard`: firma, caducidad,
+  membresía ACTIVE, `tokenVersion`, condiciones), token con `mfaEnabled=true` (como activar el MFA
+  cierra las sesiones previas, eso implica una sesión abierta o reemitida con segundo factor),
+  cuenta con `totpEnabled=true` **en la BD** (desactivar el MFA quita el acceso al momento) y email
+  **de la BD** (no el del token) en la variable.
+- **Comparación del email (veto ALTA de Argos):** misma normalización con la que se guardan las
+  cuentas (`trim` + minúsculas, **sin NFKC**) e igualdad **exacta** con `User.email`. Tanto las
+  entradas de la variable como el email de la cuenta deben ser ASCII imprimible
+  (`/^[\x21-\x7e]+@[\x21-\x7e]+$/`); si no, no es admin. Así una cuenta registrada con un homógrafo
+  («ａdmin@…» de ancho completo, la ligadura «ﬁ», un punto de ancho completo) nunca coincide con el
+  email del admin aunque NFKC los igualara (tests unitario y con BD).
+- **Orden obligatorio:** crear la cuenta exclusiva **antes** de poner su email en la variable. Si la
+  variable nombrara un email sin cuenta, quien consiguiera registrarse con él (p. ej. con una
+  invitación de miembro de su propia consulta) obtendría la capacidad.
+- **Cualquier fallo → 404** idéntico al de una ruta inexistente (sin sesión, sesión revocada,
+  condiciones pendientes, no admin, MFA desactivado, variable vacía). `PlatformAdminGuard` va antes
+  de `CsrfGuard` para que un no admin nunca vea un 403. `GET /admin/me` devuelve solo
+  `{ platformAdmin }` a cualquier sesión (para pintar o no el enlace) y no audita.
+- **No concede nada clínico ni de workspaces:** no toca roles ni `workspaceId` del token y el módulo
+  no lee ni escribe ninguna tabla con `workspaceId`. Test de regresión con la app completa y
+  PostgreSQL real (`platform-admin-db.security-spec.ts`): las respuestas de `/patients`,
+  `/clinical-processes`, `/sessions` y `/exports` son idénticas siendo o no `PLATFORM_ADMIN`.
+- **Cuenta exclusiva:** el `PLATFORM_ADMIN` usa una cuenta propia con MFA cuyo único workspace es
+  uno interno vacío ("AsePsico interno"); nunca una cuenta de una consulta ni la del demo.
+- `GET /admin/waitlist`: altas activas descifradas (nunca `emailHash`; las suprimidas no aparecen),
+  campos no descifrables como `null` + `unreadableFields`, contadores (8 semanas ISO en
+  `Europe/Madrid`, origen, situación). `Cache-Control: no-store`, 30/min.
+- `POST /admin/waitlist/:id/delete`: reautenticación con contraseña (como las exportaciones), CSRF,
+  5/min; misma supresión que `waitlist:delete` (`suppressedData`, por id). 401
+  `PLATFORM_REAUTH_FAILED` sin cambios; 404 si no existe o ya estaba suprimida. Pasa por
+  `MfaService.runAttempt`: los fallos de contraseña cuentan en el **mismo contador por cuenta** que
+  el MFA y el cambio de contraseña (espera creciente, 429 mientras dura); una contraseña correcta lo
+  reinicia. Ese contador deja además su fila `PLATFORM_REAUTH_FAILED` `{ reason, failedAttempts }`
+  (sin IP) en el `AuditLog` del workspace **propio** del admin (el interno vacío).
+- **Auditoría propia `PlatformAuditLog`** (sin `workspaceId`, sin IP ni user-agent), en la misma
+  transacción que la operación: `PLATFORM_WAITLIST_VIEWED` `{ activeCount }`,
+  `PLATFORM_WAITLIST_ENTRY_SUPPRESSED` `{}` (entityId = id de la fila ya vacía),
+  `PLATFORM_REAUTH_FAILED` `{ operation }`, `PLATFORM_ACCESS_DENIED` `{}` (usuario autenticado no
+  admin). Nunca nombre, email, hash, herramientas ni contraseña en metadata ni en logs (test).
+  Plazo de conservación de esta tabla: pendiente (Lex Psi, P7).
+- **NO rellenar `PLATFORM_ADMIN_EMAILS` en producción todavía.** Dos bloqueos, los dos deben estar
+  resueltos antes:
+  1. **Proxy de Vercel:** mientras `/api/v1` pase por el proxy de Vercel (hasta la salida prevista
+     el 27–28/10), `req.ip` es la del proxy, así que el `ThrottlerGuard` (30/min la lista, 5/min la
+     supresión) no limita por cliente, y los datos descifrados de la lista pasarían por un encargado
+     adicional (Vercel) no previsto para este tratamiento.
+  2. **Política:** con la `lista-espera-v3` publicada no se puede activar (dice que no hay panel
+     web). Primero se publica la `lista-espera-v4` en la landing.
+- Fase 2 (no implementada): exportación CSV y nota de seguimiento.
 
 ## Registro por invitación y aceptación de condiciones
 

@@ -1,32 +1,30 @@
-'use client';
-
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { legacyToStatic } from '@/lib/routes';
+import Icon from '@/components/Icon';
+import LegacyRedirect from '@/components/LegacyRedirect';
 
-/*
- * 404 del sitio estático (se publica como 404.html). Si la URL tiene el formato antiguo
- * (/patients/<id>/plan, /agenda/<id>: marcadores o enlaces anteriores a la salida de Vercel),
- * redirige a la ruta nueva con el id en la query. Si no, muestra el 404 normal.
+export const metadata = { title: 'Página no encontrada · AsePsico', robots: { index: false, follow: false } };
+
+/**
+ * 404 propia de la aplicación (sustituye a la de Next, en inglés). Neutra a propósito: la usan
+ * también las rutas que la API esconde con 404 (p. ej. /admin/lista-espera para quien no es
+ * PLATFORM_ADMIN), así que no da pistas de si la página existe para otras personas.
+ * En el sitio estático, LegacyRedirect lleva antes las URLs antiguas a las rutas nuevas.
  */
 export default function NotFound() {
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    const target = legacyToStatic(window.location.pathname + window.location.search + window.location.hash);
-    if (target) {
-      window.location.replace(target);
-      return;
-    }
-    setChecking(false);
-  }, []);
-
-  if (checking) return null;
   return (
-    <main style={{ maxWidth: 560, margin: '64px auto', padding: '0 16px' }}>
-      <h1>Página no encontrada</h1>
-      <p>La dirección no existe o ha cambiado.</p>
-      <p><Link href="/">Volver al inicio</Link></p>
-    </main>
+    <LegacyRedirect>
+      <main className="nf-page">
+        <section className="dashboard-card nf-card" aria-labelledby="nf-title">
+          <span className="ui-empty-icon" aria-hidden="true"><Icon name="info" size={24} /></span>
+          <p className="eyebrow">Error 404</p>
+          <h1 id="nf-title">No encontramos esta página</h1>
+          <p>Puede que el enlace esté mal escrito o que la página ya no exista.</p>
+          <div className="nf-actions">
+            <Link href="/" className="button">Ir a Mi jornada</Link>
+            <Link href="/login" className="button secondary">Iniciar sesión</Link>
+          </div>
+        </section>
+      </main>
+    </LegacyRedirect>
   );
 }

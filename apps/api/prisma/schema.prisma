@@ -232,6 +232,7 @@ model User {
   tokenVersion                 Int                          @default(0)
   /// Último cambio de contraseña (constancia; la invalidación la hace tokenVersion).
   passwordChangedAt            DateTime?
+  platformAuditLogs            PlatformAuditLog[]           @relation("PlatformAuditActor")
 }
 
 /// Invitación de un solo uso para crear un workspace nuevo (registro cerrado). La crea solo la
@@ -1406,4 +1407,23 @@ model ClinicalProcessPrivateNote {
 
   @@index([workspaceId, processId])
   @@index([authorId])
+}
+
+/// Auditoría de la capacidad de plataforma PLATFORM_ADMIN (panel privado de la lista de espera).
+/// Tabla propia y SIN workspaceId: es un tratamiento de AsePsico como responsable, separado de la
+/// auditoría de cualquier consulta (ningún OWNER/ADMIN puede verla). Sin IP ni user-agent, y la
+/// metadata solo lleva recuentos u operaciones: nunca nombre, email, emailHash, herramientas ni
+/// contraseñas.
+model PlatformAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("PlatformAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
 }

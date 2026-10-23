@@ -146,17 +146,39 @@ export class MfaService {
         const step = await verifyTotpCode(decryptField(user.totpSecret)!, code, user.totpLastUsedStep);
         if (step === null) return fail('invalid_code', new UnauthorizedException('El código no es correcto'));
 
+        // Rol actual de la BD, acotado al workspace del token: con él se emite la sesión nueva.
+        const member = await tx.workspaceMember.findFirst({
+          where: { userId: user.id, workspaceId: actor.workspaceId, status: 'ACTIVE' },
+          select: { role: true },
+        });
+        if (!member) return reject(null, new UnauthorizedException());
+
         const recoveryCodes = generateRecoveryCodes();
         const hashedCodes = await hashRecoveryCodes(recoveryCodes);
+        // Condición de Argos (panel de plataforma): activar el MFA cierra TODAS las sesiones abiertas
+        // sin segundo factor. Sube tokenVersion (compare-and-set: los access tokens vivos dejan de
+        // valer, 401 SESSION_REVOKED) y revoca todos los refresh tokens (ninguna sesión anterior
+        // puede renovarse con mfaEnabled=true sin haber pasado el TOTP). Como esta petición acaba
+        // de verificar contraseña + TOTP, el controlador emite aquí mismo una sesión nueva.
+        const currentTokenVersion = user.tokenVersion ?? 0;
+        const tokenVersion = currentTokenVersion + 1;
         const claim = await tx.user.updateMany({
-          where: { id: user.id, totpEnabled: false, totpSecret: user.totpSecret, ...stepNotYetUsed(step) },
-          data: { totpEnabled: true, mfaRecoveryCodes: hashedCodes, totpLastUsedStep: step, ...RESET_FAILURES },
+          where: { id: user.id, totpEnabled: false, totpSecret: user.totpSecret, tokenVersion: currentTokenVersion, ...stepNotYetUsed(step) },
+          data: { totpEnabled: true, mfaRecoveryCodes: hashedCodes, totpLastUsedStep: step, tokenVersion, ...RESET_FAILURES },
         });
         if (claim.count !== 1) {
           return fail('code_already_used_or_state_changed', new UnauthorizedException('El código no es correcto o ya se ha utilizado'));
         }
-        await tx.auditLog.create({ data: mfaAudit(actor, 'MFA_ENABLED', meta, { recoveryCodesIssued: recoveryCodes.length }) });
-        return { kind: 'ok', value: { recoveryCodes } };
+        const revoked = await tx.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+        await tx.auditLog.create({ data: mfaAudit(actor, 'MFA_ENABLED', meta, { recoveryCodesIssued: recoveryCodes.length, revokedSessions: revoked.count }) });
+        return {
+          kind: 'ok',
+          value: {
+            recoveryCodes,
+            sessionUser: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, totpEnabled: true, tokenVersion },
+            role: member.role as string,
+          },
+        };
       },
     });
   }
