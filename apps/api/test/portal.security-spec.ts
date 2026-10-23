@@ -12,6 +12,7 @@ import { PrismaService } from '../src/database/prisma.service';
 import { PatientCoreService } from '../src/patients/patient-core.service';
 
 function prismaMock(){const p:any={
+  portalActivationToken:{updateMany:jest.fn().mockResolvedValue({count:0})},
   patient:{findFirst:jest.fn(),updateMany:jest.fn().mockResolvedValue({count:1})}, patientPortalAccount:{findFirst:jest.fn(),findUnique:jest.fn(),create:jest.fn(),upsert:jest.fn(),update:jest.fn(async()=>{throw new Error('update solo por id no permitido');}),updateMany:jest.fn().mockResolvedValue({count:1})},
   auditLog:{create:jest.fn()}, session:{findMany:jest.fn()}, therapeuticTask:{findMany:jest.fn()}, consentRecord:{findMany:jest.fn()}, invoice:{findMany:jest.fn()}, resourceShare:{findMany:jest.fn().mockResolvedValue([])}
 }; p.$transaction=jest.fn(async(cb:any)=>cb(p)); return p;}
@@ -206,6 +207,8 @@ function transactionalPrisma(initialMode:string, accounts:Account[], opts:{failA
     },
     auditLog:{create:jest.fn(async({data}:any)=>{ if(opts.failAuditAction&&data.action===opts.failAuditAction) throw new Error('audit down'); get().audit.push(data); return data; })},
     session:{findMany:jest.fn().mockResolvedValue([])},
+    // Reserva desde el portal: sin solicitudes pendientes en estos escenarios.
+    appointmentRequest:{findMany:jest.fn().mockResolvedValue([]),updateMany:jest.fn().mockResolvedValue({count:0})},
   });
   const root:any=client(()=>state);
   root.$transaction=jest.fn(async(cb:any)=>{

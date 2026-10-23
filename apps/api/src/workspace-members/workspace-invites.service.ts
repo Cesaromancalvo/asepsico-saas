@@ -29,7 +29,7 @@ export class WorkspaceInvitesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async actorRole(workspaceId: string, actor: AuthUser) {
-    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub }, select: { role: true } });
+    const member = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId: actor.sub, status: 'ACTIVE' }, select: { role: true } });
     return member?.role ?? null;
   }
 

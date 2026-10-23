@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -22,7 +23,8 @@ import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
 import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view.util';
 import { projectSelect } from '../patients/patient-view.util';
-import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
+import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -68,6 +70,34 @@ async function lockActiveProcess(tx: Prisma.TransactionClient, workspaceId: stri
   });
   if (count === 0) {
     throw new BadRequestException('Solo se pueden programar o mover sesiones de un proceso clínico activo');
+  }
+}
+
+/**
+ * Con el lock de la agenda del profesional ya tomado: la franja no puede pisar otra cita no
+ * cancelada (400, como siempre) ni una solicitud de cita del portal pendiente (409: hay que
+ * aprobarla o rechazarla antes). Los bloqueos de disponibilidad no impiden citar desde la agenda:
+ * solo dejan de ofrecerse en el portal.
+ */
+async function assertSlotFree(
+  tx: Prisma.TransactionClient,
+  workspaceId: string,
+  therapistId: string,
+  startsAt: Date,
+  endsAt: Date,
+  excludeSessionId?: string,
+) {
+  const conflict = await findScheduleConflict(tx, { workspaceId, therapistId, startsAt, endsAt, excludeSessionId, includeBlocks: false });
+  if (conflict === 'SESSION') {
+    throw new BadRequestException('El profesional ya tiene una sesión en ese horario');
+  }
+  if (conflict === 'REQUEST') {
+    throw new ConflictException({
+      statusCode: 409,
+      error: 'Conflict',
+      code: 'SLOT_NOT_AVAILABLE',
+      message: 'Hay una solicitud de cita pendiente en ese horario: apruébala o recházala antes',
+    });
   }
 }
 
@@ -235,8 +265,8 @@ export class SessionsService {
     // Contenido clínico de la sesión: su autor (clínico, lo suyo aunque el proceso se cerrara) o
     // un clínico que trata al paciente (sin el resumen interno, que es nota interna del autor).
     const isAuthor = session.therapistId === actor.sub;
-    const scope = await this.access.resolveScope(workspaceId, actor, session.patientId);
-    if (scope && (isAuthor || scope.level === 'TREATING')) {
+    const scope = await this.access.resolveScope(workspaceId, actor, session.patientId, 'session');
+    if (scope && (isAuthor || readsWholeRecord(scope))) {
       const decrypted = decryptSession(session);
       if (isAuthor) return decrypted;
       const { internalSummary: _hidden, ...visible } = decrypted;
@@ -316,17 +346,14 @@ export class SessionsService {
       await this.assertCanWriteNotesFor(workspaceId, actor, therapistId, dto.patientId);
     }
 
-    await this.assertNoOverlap(
-      workspaceId,
-      therapistId,
-      startsAt,
-      endsAt,
-    );
-
     const session =
       await this.prisma.$transaction(
         async (tx) => {
+          // Agenda del profesional serializada: el solape se comprueba y la cita se escribe con el
+          // lock tomado (antes era una lectura previa sin bloqueo y dos altas podían colarse).
+          await lockTherapistSchedule(tx, workspaceId, therapistId);
           await lockActiveProcess(tx, workspaceId, clinicalProcess.id);
+          await assertSlotFree(tx, workspaceId, therapistId, startsAt, endsAt);
 
           const created =
             await tx.session.create({
@@ -430,24 +457,15 @@ export class SessionsService {
       endsAt,
     );
 
-    if (
-      dto.startsAt ||
-      dto.endsAt
-    ) {
-      await this.assertNoOverlap(
-        workspaceId,
-        session.therapistId,
-        startsAt,
-        endsAt,
-        id,
-      );
-    }
-
     // Solo se reprograma dentro de un proceso ACTIVO (un proceso cerrado o de alta no recibe
-    // citas nuevas ni movidas). Comprobación y escritura en la misma transacción, con la fila
-    // del proceso bloqueada (ver lockActiveProcess).
+    // citas nuevas ni movidas). Comprobación y escritura en la misma transacción, con la agenda
+    // del profesional y la fila del proceso bloqueadas (ver lockActiveProcess).
     await this.prisma.$transaction(async (tx) => {
+      await lockTherapistSchedule(tx, workspaceId, session.therapistId);
       await lockActiveProcess(tx, workspaceId, session.clinicalProcessId);
+      if (dto.startsAt || dto.endsAt) {
+        await assertSlotFree(tx, workspaceId, session.therapistId, startsAt, endsAt, id);
+      }
 
       // Las notas SOLO se escriben si llegan en el dto. Antes se re-cifraba session.notes (ya
       // descifrado por get()): si el descifrado había fallado, se persistía el marcador
@@ -762,6 +780,7 @@ export class SessionsService {
           userId:
             requestedTherapistId,
           workspaceId,
+          status: 'ACTIVE',
         },
       });
 
@@ -790,49 +809,6 @@ export class SessionsService {
     ) {
       throw new ForbiddenException(
         'No puedes modificar sesiones de otro profesional',
-      );
-    }
-  }
-
-  private async assertNoOverlap(
-    workspaceId: string,
-    therapistId: string,
-    startsAt: Date,
-    endsAt: Date,
-    excludeId?: string,
-  ) {
-    const overlapping =
-      await this.prisma.session.findFirst({
-        where: {
-          workspaceId,
-          therapistId,
-
-          status: {
-            not:
-              SessionStatus.CANCELLED,
-          },
-
-          ...(excludeId
-            ? {
-                id: {
-                  not: excludeId,
-                },
-              }
-            : {}),
-
-          startsAt: {
-            lt: endsAt,
-          },
-
-          endsAt: {
-            gt: startsAt,
-          },
-        },
-      });
-
-    if (overlapping) {
-      throw new BadRequestException(
-        'El profesional ya tiene una sesión en ese horario',
       );
     }
   }

@@ -7,6 +7,7 @@ import { PatientCoreService } from './patient-core.service';
 import { toPatientView } from './patient-view.util';
 import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.util';
 import { revokeAllPortalAccounts } from '../portal/portal-access-mode.util';
+import { withdrawPendingRequestsOfPatient } from '../scheduling/appointment-request-lifecycle.util';
 
 const ALLOWED_TRANSITIONS: Record<PatientStatus, AssignableStatus[]> = {
   ACTIVE: ['PAUSED', 'DISCHARGED'],
@@ -110,6 +111,13 @@ export class PatientLifecycleService {
       // Un paciente archivado no conserva acceso al portal. restore() NO las reactiva: el
       // profesional debe volver a habilitarlas a mano.
       const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
+      // Acceso excepcional (CA2.4): paciente borrado → los accesos abiertos se cierran. Los
+      // registros NO se borran (se conservan con su retentionUntil).
+      await tx.exceptionalAccessJustification.updateMany({
+        where: { workspaceId, patientId: id, closedAt: null },
+        data: { closedAt: new Date(), closeReason: 'PATIENT_ARCHIVED' },
+      });
+      await withdrawPendingRequestsOfPatient(tx, workspaceId, id, actor.sub, 'PATIENT_ARCHIVED');
 
       await tx.auditLog.create({
         data: {
@@ -208,6 +216,11 @@ export class PatientLifecycleService {
 
       // Datos bloqueados (art. 32 LOPDGDD): fuera de todo uso operativo, portal incluido.
       const revokedPortalAccountIds = await revokeAllPortalAccounts(tx, workspaceId, id);
+      // CA4.6: los accesos excepcionales del paciente pasan a bloqueados (no se borran); la
+      // explicación solo se lee después con un motivo de bloqueo.
+      await tx.exceptionalAccessJustification.updateMany({ where: { workspaceId, patientId: id, blockedAt: null }, data: { blockedAt } });
+      await tx.exceptionalAccessJustification.updateMany({ where: { workspaceId, patientId: id, closedAt: null }, data: { closedAt: blockedAt, closeReason: 'PATIENT_BLOCKED' } });
+      await withdrawPendingRequestsOfPatient(tx, workspaceId, id, actor.sub, 'PATIENT_BLOCKED');
 
       await tx.auditLog.create({
         data: {

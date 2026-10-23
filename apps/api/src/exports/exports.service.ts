@@ -3,7 +3,8 @@ import { compare } from 'bcryptjs';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { decryptDeep, decryptPatientRecord } from '../common/crypto/clinical-crypto';
-import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
+import { EXPORT_ALLOWED_REASONS } from '../exceptional-access/exceptional-access.policy';
 
 const CLINICAL_ROLES = ['OWNER', 'ADMIN', 'THERAPIST'];
 const ADMIN_ROLES = ['OWNER', 'ADMIN'];
@@ -66,7 +67,14 @@ export class ExportsService {
     // contenido clínico (sin notas internas ajenas); el autor de un proceso cerrado, solo lo suyo;
     // OWNER/ADMIN que no le tratan → 403 (la copia de custodia y la del art. 15 irán aparte).
     const { scope } = await this.access.assertCanRead(user.workspaceId, user, patientId, 'patient-export');
-    const treating = scope.level === 'TREATING';
+    const exceptional = scope.level === 'EXCEPTIONAL';
+    // C5 / CA2.7: con acceso excepcional, la historia completa solo se exporta con los tres códigos
+    // permitidos; con los demás, 403 auditado sin generar nada.
+    if (exceptional && !(EXPORT_ALLOWED_REASONS as readonly string[]).includes(scope.exceptionalReasonCode ?? '')) {
+      await this.audit(user, 'EXCEPTIONAL_ACCESS_EXPORT_DENIED', 'Patient', patientId, { exceptionalAccessId: scope.exceptionalAccessId, reasonCode: scope.exceptionalReasonCode });
+      throw new ForbiddenException('El motivo de este acceso excepcional no permite exportar la historia completa');
+    }
+    const treating = readsWholeRecord(scope);
     const ws = user.workspaceId;
     const own = { workspaceId: ws, therapistId: user.sub };
     const patient = await this.prisma.patient.findFirst({
@@ -102,9 +110,16 @@ export class ExportsService {
     });
     // El motivo de consulta de la ficha no es atribuible a un autor: solo para quien trata.
     if (!treating) delete record.consultationReason;
+    // Acceso excepcional: tampoco las notas de los profesionales en tareas y escalas, ni las notas
+    // de los consentimientos (en pantalla se le sirven sin ellas: vista administrativa) (CA2.2).
+    if (exceptional) {
+      record.consentRecords = (record.consentRecords ?? []).map(({ notes: _hidden, ...rest }: any) => rest);
+      record.therapeuticTasks = (record.therapeuticTasks ?? []).map(({ clinicianNotes: _hidden, ...rest }: any) => rest);
+      record.clinicalAssessments = (record.clinicalAssessments ?? []).map(({ clinicalNotes: _hidden, ...rest }: any) => rest);
+    }
 
     const generatedAt = new Date().toISOString();
-    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON', scope: scope.level });
+    await this.audit(user, 'PATIENT_DATA_EXPORTED', 'Patient', patientId, { generatedAt, format: 'JSON', scope: scope.level, ...(exceptional ? { exceptionalAccessId: scope.exceptionalAccessId, reasonCode: scope.exceptionalReasonCode } : {}) });
     return {
       schemaVersion: '1.0',
       exportType: 'PATIENT_CLINICAL_RECORD',
@@ -128,12 +143,16 @@ export class ExportsService {
     });
     if (!workspace) throw new NotFoundException('Workspace no encontrado');
 
-    const [sessions, invoices, resources, conversations, auditLogs] = await Promise.all([
+    const [sessions, invoices, resources, conversations, auditLogs, archivedPrivateNotes] = await Promise.all([
       this.prisma.session.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.invoice.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.therapeuticResource.count({ where: { workspaceId: user.workspaceId, archivedAt: null } }),
       this.prisma.conversation.count({ where: { workspaceId: user.workspaceId } }),
       this.prisma.auditLog.findMany({ where: { workspaceId: user.workspaceId }, orderBy: { createdAt: 'desc' }, take: 1000 }),
+      // Notas internas de profesionales anteriores (historia B): solo el recuento agregado. Su
+      // contenido no sale en esta exportación administrativa (decisión de Argos): su devolución
+      // depende de la futura exportación clínica completa H1.
+      this.prisma.clinicalProcessPrivateNote.count({ where: { workspaceId: user.workspaceId } }),
     ]);
     const generatedAt = new Date().toISOString();
     await this.audit(user, 'WORKSPACE_DATA_EXPORTED', 'Workspace', user.workspaceId, { generatedAt, format: 'JSON' });
@@ -144,7 +163,7 @@ export class ExportsService {
       // de seguridad por si en el futuro se añade alguno.
       members: this.decryptForExport(workspace.members, 'WORKSPACE_ADMIN_EXPORT'),
       patients: this.decryptForExport(workspace.patients, 'WORKSPACE_ADMIN_EXPORT'),
-      inventory: { sessions, invoices, resources, conversations },
+      inventory: { sessions, invoices, resources, conversations, archivedPrivateNotes },
       recentAuditLogs: this.decryptForExport(auditLogs, 'WORKSPACE_ADMIN_EXPORT'),
       notice: 'Esta exportación administrativa no sustituye a una copia de seguridad de PostgreSQL.',
     };
@@ -153,7 +172,7 @@ export class ExportsService {
   async getPilotReadiness(user: AuthUser) {
     this.assertAdmin(user);
     const [members, patients, futureSessions, portalAccounts, pendingConsents, overdueInvoices] = await Promise.all([
-      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId } }),
+      this.prisma.workspaceMember.count({ where: { workspaceId: user.workspaceId, status: 'ACTIVE' } }),
       this.prisma.patient.count({ where: { workspaceId: user.workspaceId, deletedAt: null } }),
       this.prisma.session.count({ where: { workspaceId: user.workspaceId, startsAt: { gt: new Date() }, status: 'SCHEDULED' } }),
       this.prisma.patientPortalAccount.count({ where: { workspaceId: user.workspaceId, isActive: true } }),

@@ -23,17 +23,37 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * anterior cuando la landing ya no la sirva.
  *  - lista-espera-v1: texto del 29/09/2026 (Google Forms). No se acepta: no describe este formulario.
  *  - lista-espera-v2: formulario propio en asepsico.es (texto de Lex Psi; pendiente de revisión del abogado humano).
+ *    Altas del 16/10/2026 al 17/10/2026. Se sigue aceptando solo durante la transición a v3: retirarla
+ *    cuando la landing publicada envíe lista-espera-v3. Los registros ya guardados con v2 no cambian.
+ *  - lista-espera-v3: 17/10/2026, sin casilla de comunicaciones comerciales y con "¿Qué usas hoy?" en
+ *    opciones (texto de Lex Psi; pendiente de revisión del abogado humano). La v2 queda archivada
+ *    en /privacidad-lista-espera/v2/.
+ *  - lista-espera-v4: 22/10/2026, acceso del responsable también desde un panel web privado, anotaciones
+ *    de seguimiento y aviso interno de altas por Scaleway (texto de Lex Psi; pendiente de revisión del
+ *    abogado humano). Mismas finalidades, bases y plazos que v3 y tampoco ofrece comunicaciones
+ *    comerciales. La v3 queda archivada en /privacidad-lista-espera/v3/; se sigue aceptando solo durante
+ *    la transición: retirarla cuando la landing publicada envíe lista-espera-v4.
  */
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2'] as const;
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'] as const;
+
+/**
+ * Versiones cuya política no ofrece comunicaciones comerciales: un alta con ellas y
+ * commercialConsentRequested=true es un 400 (no se registra una solicitud que el texto aceptado no recoge).
+ */
+export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3', 'lista-espera-v4'];
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
 /** Caducidad del token de formulario. */
 export const WAITLIST_FORM_MAX_AGE_SECONDS = 2 * 60 * 60;
 
-/** Rate limit por IP (req.ip, que depende de TRUST_PROXY). */
+/** Rate limit por IP (req.ip, que depende de TRUST_PROXY). Envíos: 5 cada 10 min (no cambia). */
 export const WAITLIST_SUBMIT_THROTTLE = { default: { limit: 5, ttl: 10 * 60_000 } };
-export const WAITLIST_TOKEN_THROTTLE = { default: { limit: 20, ttl: 10 * 60_000 } };
+/**
+ * Tokens de formulario: 80 cada 10 min por IP (Argos, 21/10/2026, arreglo de la landing). Emitir
+ * un token es barato y sin estado (HMAC, sin BD ni cookies); el límite que protege es el de envíos.
+ */
+export const WAITLIST_TOKEN_THROTTLE = { default: { limit: 80, ttl: 10 * 60_000 } };
 
 export class InvalidWaitlistConfigError extends Error {
   constructor(message: string) {

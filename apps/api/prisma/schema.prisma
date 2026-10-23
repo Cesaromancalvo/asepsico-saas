@@ -14,6 +14,21 @@ enum WorkspaceRole {
   ASSISTANT
 }
 
+/// Estado de la membresía. REMOVED = dado de baja: la fila se conserva (autoría y auditoría) y
+/// pierde todo acceso al espacio.
+enum WorkspaceMemberStatus {
+  ACTIVE
+  REMOVED
+}
+
+/// Motivo de baja de un miembro, de lista cerrada (opcional). Sin texto libre.
+enum MemberRemovalReason {
+  LEFT_PRACTICE
+  END_OF_COLLABORATION
+  LEAVE_OF_ABSENCE
+  OTHER
+}
+
 enum PatientStatus {
   ACTIVE
   PAUSED
@@ -129,50 +144,64 @@ enum SessionType {
 }
 
 model Workspace {
-  id                   String                 @id @default(cuid())
-  name                 String
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  members              WorkspaceMember[]
-  patients             Patient[]
-  sessions             Session[]
-  auditLogs            AuditLog[]
-  clinicalProcesses    ClinicalProcess[]
-  patientDocuments     PatientDocument[]
-  consentRecords       ConsentRecord[]
-  clinicalReports      ClinicalReport[]
-  invoices             Invoice[]
-  payments             Payment[]
-  portalAccounts       PatientPortalAccount[]
-  therapeuticResources TherapeuticResource[]
-  resourceShares       ResourceShare[]
-  conversations        Conversation[]
-  patientImportJobs    PatientImportJob[]
-  patientImportItems   PatientImportItem[]
-  termsAcceptances     TermsAcceptance[]
-  workspaceInvites     WorkspaceInvite[]
-  registrationInvite   RegistrationInvite?
+  id                          String                           @id @default(cuid())
+  name                        String
+  createdAt                   DateTime                         @default(now())
+  updatedAt                   DateTime                         @updatedAt
+  members                     WorkspaceMember[]
+  patients                    Patient[]
+  sessions                    Session[]
+  auditLogs                   AuditLog[]
+  clinicalProcesses           ClinicalProcess[]
+  patientDocuments            PatientDocument[]
+  consentRecords              ConsentRecord[]
+  clinicalReports             ClinicalReport[]
+  invoices                    Invoice[]
+  payments                    Payment[]
+  portalAccounts              PatientPortalAccount[]
+  therapeuticResources        TherapeuticResource[]
+  resourceShares              ResourceShare[]
+  conversations               Conversation[]
+  patientImportJobs           PatientImportJob[]
+  patientImportItems          PatientImportItem[]
+  termsAcceptances            TermsAcceptance[]
+  workspaceInvites            WorkspaceInvite[]
+  registrationInvite          RegistrationInvite?
+  clinicalProcessOpenings     ClinicalProcessOpening[]
+  exceptionalAccesses         ExceptionalAccessJustification[]
+  exceptionalAccessMisses     ExceptionalAccessReasonMiss?
+  /// Zona horaria IANA del espacio: los huecos de la reserva desde el portal se calculan en hora
+  /// local (con cambios de horario de verano e invierno).
+  timeZone                    String                           @default("Europe/Madrid")
+  therapistAvailabilities     TherapistAvailability[]
+  availabilityWindows         AvailabilityWindow[]
+  availabilityBlocks          AvailabilityBlock[]
+  appointmentRequests         AppointmentRequest[]
+  portalIntakeLinks           PortalIntakeLink[]
+  portalSignupRequests        PortalSignupRequest[]
+  portalActivationTokens      PortalActivationToken[]
+  clinicalProcessPrivateNotes ClinicalProcessPrivateNote[]
 }
 
 model User {
-  id                           String                @id @default(cuid())
-  email                        String                @unique
+  id                           String                       @id @default(cuid())
+  email                        String                       @unique
   passwordHash                 String
   firstName                    String
   lastName                     String
   totpSecret                   String?
-  totpEnabled                  Boolean               @default(false)
-  mfaRecoveryCodes             String[]              @default([])
+  totpEnabled                  Boolean                      @default(false)
+  mfaRecoveryCodes             String[]                     @default([])
   /// Último paso TOTP (floor(epoch/30)) aceptado; impide reutilizar un código (RFC 6238 §5.2).
   totpLastUsedStep             Int?
   /// Fallos de segundo factor seguidos (se pone a 0 con cualquier verificación correcta).
-  mfaFailedAttempts            Int                   @default(0)
+  mfaFailedAttempts            Int                          @default(0)
   /// Espera temporal tras varios fallos seguidos. Nunca es un bloqueo permanente.
   mfaLockedUntil               DateTime?
-  createdAt                    DateTime              @default(now())
-  updatedAt                    DateTime              @updatedAt
+  createdAt                    DateTime                     @default(now())
+  updatedAt                    DateTime                     @updatedAt
   memberships                  WorkspaceMember[]
-  auditLogs                    AuditLog[]            @relation("AuditActor")
+  auditLogs                    AuditLog[]                   @relation("AuditActor")
   refreshTokens                RefreshToken[]
   sessionsAsTherapist          Session[]
   clinicalProcessesAsTherapist ClinicalProcess[]
@@ -185,12 +214,24 @@ model User {
   messagesSent                 Message[]
   patientImportJobs            PatientImportJob[]
   termsAcceptances             TermsAcceptance[]
-  workspaceInvitesSent         WorkspaceInvite[]     @relation("WorkspaceInviteInvitedBy")
-  workspaceInvitesAccepted     WorkspaceInvite[]     @relation("WorkspaceInviteAcceptedUser")
-  registrationInviteUsed       RegistrationInvite?   @relation("RegistrationInviteUsedBy")
+  workspaceInvitesSent         WorkspaceInvite[]            @relation("WorkspaceInviteInvitedBy")
+  workspaceInvitesAccepted     WorkspaceInvite[]            @relation("WorkspaceInviteAcceptedUser")
+  registrationInviteUsed       RegistrationInvite?          @relation("RegistrationInviteUsedBy")
+  availabilitySettings         TherapistAvailability[]
+  availabilityWindows          AvailabilityWindow[]
+  availabilityBlocks           AvailabilityBlock[]
+  appointmentRequests          AppointmentRequest[]
+  portalIntakeLinks            PortalIntakeLink[]           @relation("PortalIntakeLinkProfessional")
+  portalSignupRequests         PortalSignupRequest[]        @relation("PortalSignupRequestProfessional")
+  clinicalProcessPrivateNotes  ClinicalProcessPrivateNote[]
   /// Usuario ficticio creado por db:seed-demo-workspace (Recepción Demo, Terapeuta Demo). Solo lo
   /// borra db:purge-demo-workspace. Nunca se marca a un usuario real.
-  isDemo                       Boolean               @default(false)
+  isDemo                       Boolean                      @default(false)
+  /// Versión de las credenciales. Va en el access token (claim `tv`) y JwtAuthGuard la compara en
+  /// cada petición: subirla (cambio de contraseña) invalida al momento todos los access tokens vivos.
+  tokenVersion                 Int                          @default(0)
+  /// Último cambio de contraseña (constancia; la invalidación la hace tokenVersion).
+  passwordChangedAt            DateTime?
 }
 
 /// Invitación de un solo uso para crear un workspace nuevo (registro cerrado). La crea solo la
@@ -263,61 +304,71 @@ model TermsAcceptance {
 }
 
 model WorkspaceMember {
-  id                    String        @id @default(cuid())
+  id                    String                @id @default(cuid())
   workspaceId           String
   userId                String
-  role                  WorkspaceRole @default(THERAPIST)
+  role                  WorkspaceRole         @default(THERAPIST)
   /// Profesional clínico: puede tratar pacientes. No da acceso por sí solo: el contenido clínico
   /// exige además un proceso ACTIVO con el paciente (o ser autor de un proceso cerrado, solo lo suyo).
   /// Solo es configurable en OWNER/ADMIN (lo cambia el OWNER): THERAPIST siempre es clínico y
   /// ASSISTANT nunca (ambas cosas con CHECK en la base de datos).
-  isClinician           Boolean       @default(false)
-  createdAt             DateTime      @default(now())
-  onboardingStep        Int           @default(0)
+  isClinician           Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  onboardingStep        Int                   @default(0)
   onboardingCompletedAt DateTime?
   onboardingDismissedAt DateTime?
-  workspace             Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Baja del miembro (historia B). REMOVED ⇔ removedAt no nulo (CHECK en la BD). Nunca se borra
+  /// la fila: lo que escribió sigue firmado con su nombre. JwtAuthGuard rechaza a un REMOVED.
+  status                WorkspaceMemberStatus @default(ACTIVE)
+  removedAt             DateTime?
+  /// Quién le dio de baja (userId del OWNER/ADMIN). Sin FK: constancia aunque cambie el equipo.
+  removedById           String?
+  removalReason         MemberRemovalReason?
+  workspace             Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
   @@index([userId])
+  @@index([workspaceId, status])
 }
 
 model Patient {
-  id                  String                 @id @default(cuid())
-  workspaceId         String
-  firstName           String
-  lastName            String
-  email               String?
-  phone               String?
-  birthDate           DateTime?
-  consultationReason  String?
-  status              PatientStatus          @default(ACTIVE)
-  portalAccessMode    PortalAccessMode       @default(PATIENT_ONLY)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  deletedAt           DateTime?
-  blockedAt           DateTime?
-  retentionUntil      DateTime?
+  id                     String                  @id @default(cuid())
+  workspaceId            String
+  firstName              String
+  lastName               String
+  email                  String?
+  phone                  String?
+  birthDate              DateTime?
+  consultationReason     String?
+  status                 PatientStatus           @default(ACTIVE)
+  portalAccessMode       PortalAccessMode        @default(PATIENT_ONLY)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  deletedAt              DateTime?
+  blockedAt              DateTime?
+  retentionUntil         DateTime?
   /// Paciente inventado sembrado por db:seed-demo-workspace. db:purge-demo-workspace borra SOLO
   /// pacientes con isDemo=true (y todo lo que cuelga de ellos). Nunca se marca a un paciente real.
-  isDemo              Boolean                @default(false)
-  workspace           Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  sessions            Session[]
-  clinicalProcesses   ClinicalProcess[]
-  clinicalHistory     ClinicalHistory?
-  therapyGoals        TherapyGoal[]
-  therapeuticTasks    TherapeuticTask[]
-  clinicalAssessments ClinicalAssessment[]
-  patientDocuments    PatientDocument[]
-  consentRecords      ConsentRecord[]
-  clinicalReports     ClinicalReport[]
-  invoices            Invoice[]
-  payments            Payment[]
-  portalAccounts      PatientPortalAccount[]
-  resourceShares      ResourceShare[]
-  conversations       Conversation[]
-  importItem          PatientImportItem?
+  isDemo                 Boolean                 @default(false)
+  workspace              Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  sessions               Session[]
+  clinicalProcesses      ClinicalProcess[]
+  clinicalHistory        ClinicalHistory?
+  therapyGoals           TherapyGoal[]
+  therapeuticTasks       TherapeuticTask[]
+  clinicalAssessments    ClinicalAssessment[]
+  patientDocuments       PatientDocument[]
+  consentRecords         ConsentRecord[]
+  clinicalReports        ClinicalReport[]
+  invoices               Invoice[]
+  payments               Payment[]
+  portalAccounts         PatientPortalAccount[]
+  resourceShares         ResourceShare[]
+  conversations          Conversation[]
+  importItem             PatientImportItem?
+  appointmentRequests    AppointmentRequest[]
+  portalActivationTokens PortalActivationToken[]
 
   @@index([workspaceId, status])
   @@index([workspaceId, lastName, firstName])
@@ -489,14 +540,18 @@ model ClinicalProcess {
   endedAt            DateTime?
   /// Momento en que pasó a PAUSED (fin de la ventana de mensajes mientras está en pausa).
   pausedAt           DateTime?
+  /// Motivo de apertura cuando el proceso se abrió sobre historia ajena (H6, acceso excepcional).
+  /// null en las altas normales y en los procesos anteriores a esta columna.
+  openingReasonCode  ProcessOpeningReason?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
-  workspace  Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient    Patient            @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  therapist  User               @relation(fields: [therapistId], references: [id], onDelete: Restrict)
-  sessions   Session[]
-  importItem PatientImportItem?
+  workspace    Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient      Patient                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist    User                         @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+  sessions     Session[]
+  importItem   PatientImportItem?
+  privateNotes ClinicalProcessPrivateNote[]
 
   @@index([workspaceId, status])
   @@index([patientId, status])
@@ -711,23 +766,36 @@ model Payment {
 }
 
 model PatientPortalAccount {
-  id                   String             @id @default(cuid())
-  workspaceId          String
-  patientId            String
-  accessorType         PortalAccessorType @default(PATIENT)
-  guardianName         String?
-  guardianRelationship String?
-  email                String
-  passwordHash         String
-  isActive             Boolean            @default(true)
-  mustChangePassword   Boolean            @default(true)
-  failedLoginAttempts  Int                @default(0)
-  lockedUntil          DateTime?
-  lastLoginAt          DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  patient              Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id                          String                  @id @default(cuid())
+  workspaceId                 String
+  patientId                   String
+  accessorType                PortalAccessorType      @default(PATIENT)
+  guardianName                String?
+  guardianRelationship        String?
+  email                       String
+  passwordHash                String
+  isActive                    Boolean                 @default(true)
+  mustChangePassword          Boolean                 @default(true)
+  failedLoginAttempts         Int                     @default(0)
+  lockedUntil                 DateTime?
+  lastLoginAt                 DateTime?
+  /// Cuenta creada al aceptar una solicitud de alta por QR: inactiva hasta que el paciente pone su
+  /// contraseña con el enlace de activación (PortalActivationToken). Nunca es true con isActive.
+  pendingActivation           Boolean                 @default(false)
+  /// Nulo = correo SIN verificar (hoy todos: no hay envío de email). Mientras sea nulo el correo
+  /// no se usa para notificaciones ni para recuperar la contraseña (portalEmailUsableForDelivery).
+  emailVerifiedAt             DateTime?
+  /// Acuse de lectura de la información art. 13 (NO es consentimiento ni base jurídica) y
+  /// aceptación de las normas de uso del portal, con la versión del texto mostrado.
+  privacyNoticeVersion        String?
+  privacyNoticeAcknowledgedAt DateTime?
+  portalTermsVersion          String?
+  portalTermsAcceptedAt       DateTime?
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+  workspace                   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient                     Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  activationTokens            PortalActivationToken[]
 
   @@unique([email])
   @@index([workspaceId, isActive])
@@ -759,6 +827,11 @@ enum NotificationType {
   CONSENT_EXPIRING
   INVOICE_DUE
   SYSTEM
+  /// Aviso al terapeuta titular: acceso excepcional o apertura de proceso sobre su historia.
+  /// Sin texto clínico ni explicación: persona, rol, iniciales del paciente y motivo.
+  CLINICAL_ACCESS_NOTICE
+  APPOINTMENT_REQUEST
+  APPOINTMENT_REQUEST_UPDATE
 }
 
 enum PortalAccessMode {
@@ -1001,4 +1074,336 @@ model WaitlistEntry {
   deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
+}
+
+// --- Acceso excepcional (docs/producto/acceso-excepcional.md) -------------------------------
+
+/// Motivo cerrado para abrir o reactivar un proceso sobre historia ajena (H6). Sin "Otro".
+enum ProcessOpeningReason {
+  SUBSTITUTION
+  TRANSFER_ON_LEAVE
+  PATIENT_REQUESTED_CHANGE
+  REFERRAL
+}
+
+enum ProcessOpeningKind {
+  OPENED
+  REACTIVATED
+}
+
+/// Resultado de la revisión posterior del OWNER (sin texto).
+enum OwnerReviewOutcome {
+  CORRECT
+  INCIDENT
+}
+
+/// Apertura o reactivación de un proceso sobre historia ajena (H6). Solo ids y códigos, nunca
+/// texto. Sin claves ajenas a paciente/proceso a propósito: el registro sobrevive a su borrado.
+model ClinicalProcessOpening {
+  id                   String               @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  clinicalProcessId    String
+  actorId              String
+  actorRole            WorkspaceRole
+  targetTherapistId    String
+  kind                 ProcessOpeningKind
+  reasonCode           ProcessOpeningReason
+  /// El OWNER/ADMIN se lo abrió a sí mismo: entra en la revisión de 72 h.
+  selfAssigned         Boolean
+  /// Número de OWNER del workspace al crearse (C4: decide quién puede revisar).
+  ownerCountAtCreation Int
+  ownerReviewDueAt     DateTime?
+  reviewedAt           DateTime?
+  reviewedById         String?
+  reviewOutcome        OwnerReviewOutcome?
+  selfReview           Boolean?
+  createdAt            DateTime             @default(now())
+  workspace            Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId])
+  @@index([workspaceId, ownerReviewDueAt])
+}
+
+/// Motivo cerrado del acceso excepcional (7 códigos, sin "Otro"). Ver exceptional-access.policy.ts.
+enum ExceptionalAccessReason {
+  CONTINUITY_OF_CARE
+  VITAL_URGENCY
+  PATIENT_RIGHTS_REQUEST
+  LEGAL_REQUIREMENT
+  CLAIM_DEFENCE
+  CUSTODY
+  DATA_INCIDENT
+}
+
+/// Acceso excepcional a la historia de un paciente (H1–H5). La explicación va CIFRADA y nunca
+/// sale en AuditLog, logs ni exportación ordinaria. Concede EXCEPTIONAL (solo lectura, sin notas
+/// internas) mientras: no esté cerrado ni bloqueado, no haya vencido `expiresAt`, la sesión
+/// `authSessionId` siga viva y sea la de la petición, el paciente no esté borrado y el actor siga
+/// siendo OWNER/ADMIN. Sin claves ajenas a paciente/usuario a propósito: sobrevive a su borrado.
+model ExceptionalAccessJustification {
+  id                         String                  @id @default(cuid())
+  workspaceId                String
+  patientId                  String
+  actorId                    String
+  actorRole                  WorkspaceRole
+  actorIsClinician           Boolean
+  reasonCode                 ExceptionalAccessReason
+  /// Explicación administrativa (20–300 caracteres), cifrada con el cifrado de campos.
+  justification              String
+  clinicalTermWarningIgnored Boolean                 @default(false)
+  /// Familia del refresh token (claim `sid` del access token). null = no concede (migrados).
+  authSessionId              String?
+  createdAt                  DateTime                @default(now())
+  expiresAt                  DateTime
+  closedAt                   DateTime?
+  /// MANUAL, LOGOUT, PATIENT_ARCHIVED (paciente archivado/borrado), PATIENT_BLOCKED, MIGRATED,
+  /// MEMBER_REMOVED (baja del miembro que lo abrió).
+  closeReason                String?
+  retentionUntil             DateTime
+  legalHold                  Boolean                 @default(false)
+  ownerCountAtCreation       Int
+  ownerReviewDueAt           DateTime?
+  reviewedAt                 DateTime?
+  reviewedById               String?
+  reviewOutcome              OwnerReviewOutcome?
+  selfReview                 Boolean?
+  /// Aviso al titular diferido por un OWNER (§3.6). El motivo va cifrado.
+  notificationDeferredAt     DateTime?
+  notificationDeferredReason String?
+  notificationReleasedAt     DateTime?
+  lastDeferralReminderAt     DateTime?
+  blockedAt                  DateTime?
+  /// H5: creado a partir de un AuditLog antiguo con el motivo en claro. Nunca concede acceso.
+  migratedFromAuditLogId     String?                 @unique
+  workspace                  Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, patientId, actorId])
+  @@index([workspaceId, ownerReviewDueAt])
+  @@index([authSessionId])
+}
+
+/// CA1.11: contador agregado del enlace "Mi motivo no está en la lista". Sin paciente, usuario ni texto.
+model ExceptionalAccessReasonMiss {
+  workspaceId String    @id
+  count       Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reserva de citas desde el portal (docs/producto/reserva-citas-portal.md)
+// ---------------------------------------------------------------------------------------------
+
+enum AvailabilityBlockReason {
+  VACATION
+  TRAINING
+  PERSONAL
+  OTHER
+}
+
+enum AppointmentRequestType {
+  NEW
+  RESCHEDULE
+  CANCEL
+}
+
+enum AppointmentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum AppointmentRejectionReason {
+  SLOT_UNAVAILABLE
+  DISCUSS_IN_SESSION
+  CONTACT_PRACTICE
+}
+
+/// Ajustes de reserva desde el portal de un profesional clínico dentro de un espacio.
+model TherapistAvailability {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  therapistId          String
+  /// Desactivada por defecto: solo la activan el propio profesional, OWNER o ADMIN.
+  portalBookingEnabled Boolean   @default(false)
+  sessionMinutes       Int       @default(50)
+  breakMinutes         Int       @default(10)
+  minNoticeHours       Int       @default(24)
+  maxHorizonDays       Int       @default(28)
+  cancelNoticeHours    Int       @default(24)
+  maxPendingPerPatient Int       @default(1)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist            User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, therapistId])
+}
+
+/// Franja semanal de consulta en hora local del espacio. weekday: 1 = lunes … 7 = domingo.
+/// startMinute/endMinute: minutos desde las 00:00 (múltiplos de 15).
+model AvailabilityWindow {
+  id          String    @id @default(cuid())
+  workspaceId String
+  therapistId String
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist   User      @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, therapistId])
+}
+
+/// Bloqueo puntual (vacaciones, formación…). Motivo de lista cerrada, sin texto libre. El portal
+/// nunca lo ve ni lo distingue de una cita.
+model AvailabilityBlock {
+  id          String                  @id @default(cuid())
+  workspaceId String
+  therapistId String
+  startsAt    DateTime
+  endsAt      DateTime
+  reason      AvailabilityBlockReason
+  createdById String?
+  createdAt   DateTime                @default(now())
+  workspace   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  therapist   User                    @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, therapistId, startsAt])
+}
+
+/// Solicitud de cita (nueva, cambio o cancelación) hecha desde el portal. Sin texto libre.
+model AppointmentRequest {
+  id                   String                      @id @default(cuid())
+  workspaceId          String
+  patientId            String
+  therapistId          String
+  clinicalProcessId    String?
+  /// RESCHEDULE/CANCEL: cita afectada. NEW: cita creada al aprobar.
+  sessionId            String?
+  type                 AppointmentRequestType
+  status               AppointmentRequestStatus    @default(PENDING)
+  /// Hueco pedido (NEW/RESCHEDULE). Nulo en CANCEL.
+  startsAt             DateTime?
+  endsAt               DateTime?
+  /// Igual a startsAt mientras la solicitud está PENDING; nulo en cuanto se resuelve. Con el índice
+  /// único de abajo impide en base de datos dos solicitudes pendientes del mismo hueco (PostgreSQL
+  /// trata los NULL como distintos, así que las resueltas no chocan).
+  heldStartsAt         DateTime?
+  requestedByAccountId String
+  accessorType         PortalAccessorType
+  rejectionReason      AppointmentRejectionReason?
+  expiresAt            DateTime
+  resolvedAt           DateTime?
+  resolvedById         String?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  workspace            Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient              Patient                     @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  therapist            User                        @relation(fields: [therapistId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, therapistId, heldStartsAt])
+  @@index([workspaceId, status, expiresAt])
+  @@index([workspaceId, patientId, status])
+  @@index([workspaceId, therapistId, status])
+  @@index([requestedByAccountId, createdAt])
+}
+
+/// QR o enlace de alta FIJO de un profesional clínico (se imprime en la consulta). Uno por
+/// profesional y workspace. Rotar cambia el token (el anterior deja de valer al instante);
+/// desactivar lo apaga sin borrarlo. El token se guarda como hash (búsqueda) y cifrado (para
+/// volver a mostrarlo e imprimirlo). Escanearlo NO da acceso a nada: solo deja una solicitud.
+model PortalIntakeLink {
+  id             String                @id @default(cuid())
+  workspaceId    String
+  professionalId String
+  /// SHA-256 (hex) del token de 256 bits.
+  tokenHash      String                @unique
+  /// Token cifrado con la clave de campos (encryptField), para volver a mostrar el QR.
+  tokenEncrypted String
+  isActive       Boolean               @default(true)
+  createdById    String
+  rotatedAt      DateTime              @default(now())
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  workspace      Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  professional   User                  @relation("PortalIntakeLinkProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  requests       PortalSignupRequest[]
+
+  @@unique([workspaceId, professionalId])
+}
+
+/// Solicitud de alta en el portal hecha desde el QR fijo de un profesional. Solo existe mientras
+/// está PENDIENTE: al aceptarse, rechazarse o caducar se BORRA (queda solo la auditoría, sin datos
+/// personales). Los datos personales van cifrados. No da acceso a nada.
+model PortalSignupRequest {
+  id                   String           @id @default(cuid())
+  workspaceId          String
+  intakeLinkId         String
+  professionalId       String
+  /// Cifrados (ENCRYPTED_TEXT_FIELDS.portalSignupRequest). birthDate como AAAA-MM-DD cifrado.
+  firstName            String
+  lastName             String
+  email                String
+  phone                String?
+  birthDate            String
+  privacyNoticeVersion String
+  portalTermsVersion   String
+  acknowledgedAt       DateTime         @default(now())
+  expiresAt            DateTime
+  createdAt            DateTime         @default(now())
+  workspace            Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  intakeLink           PortalIntakeLink @relation(fields: [intakeLinkId], references: [id], onDelete: Cascade)
+  professional         User             @relation("PortalSignupRequestProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, professionalId, expiresAt])
+  @@index([expiresAt])
+}
+
+/// Enlace de activación de un solo uso para que el paciente ponga su contraseña tras aceptar su
+/// solicitud. Solo se guarda el hash. Caduca; emitir otro revoca los anteriores de la cuenta.
+model PortalActivationToken {
+  id              String               @id @default(cuid())
+  workspaceId     String
+  patientId       String
+  portalAccountId String
+  tokenHash       String               @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  revokedAt       DateTime?
+  createdById     String
+  createdAt       DateTime             @default(now())
+  workspace       Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  patient         Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  portalAccount   PatientPortalAccount @relation(fields: [portalAccountId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, portalAccountId])
+}
+
+/// Notas internas de un profesional ANTERIOR de un proceso (historia B, veto de Argos). Al reasignar
+/// un proceso, sus `internalNotes` (cifradas, sin descifrar) se trasladan aquí con su autor y el
+/// campo vivo queda vacío para el nuevo profesional: ClinicalProcess.internalNotes siempre es del
+/// therapistId actual. Nunca se borra; solo su autor podría leerla (hoy no hay endpoint de lectura).
+model ClinicalProcessPrivateNote {
+  id          String          @id @default(cuid())
+  workspaceId String
+  processId   String
+  authorId    String
+  /// Texto cifrado con el cifrado de campos (igual que internalNotes).
+  notes       String
+  /// Por qué se archivó (hoy solo REASSIGNED).
+  reason      String          @default("REASSIGNED")
+  createdAt   DateTime        @default(now())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  process     ClinicalProcess @relation(fields: [processId], references: [id], onDelete: Restrict)
+  author      User            @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, processId])
+  @@index([authorId])
 }

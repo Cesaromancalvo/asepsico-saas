@@ -1,16 +1,22 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ClinicalProcessStatus, Prisma, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { rejectPendingRequestsOfProcess } from '../scheduling/appointment-request-lifecycle.util';
+import { lockPatientBooking, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { encryptField } from '../common/crypto/field-encryption';
 import { decryptProcess, decryptSession } from '../common/crypto/clinical-crypto';
-import { ClinicalAccessService, isClinicalProfile } from '../clinical-access/clinical-access.service';
+import { ClinicalAccessService, isClinicalProfile, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { CreateClinicalProcessDto } from './dto/create-clinical-process.dto';
 import { UpdateClinicalProcessDto } from './dto/update-clinical-process.dto';
 import { ClinicalProcessStatusValue } from './dto/change-clinical-process-status.dto';
 import { ListClinicalProcessesQueryDto } from './dto/list-clinical-processes-query.dto';
 import { PATIENT_VIEW_SELECT, projectSelect, toPatientView } from '../patients/patient-view.util';
 import { SESSION_BUSY_SELECT, SESSION_SUMMARY_SELECT } from '../sessions/session-view.util';
+import { OpeningDecision, OpeningDeniedSignal, decideOpening, hasForeignHistory, lockPatientForOpening, recordOpeningOverHistory } from './process-opening';
+
+/** Código del 403 al abrir o reactivar un proceso sobre historia ajena sin ser OWNER/ADMIN (H6). */
+export const PATIENT_HAS_FOREIGN_HISTORY = 'PATIENT_HAS_FOREIGN_HISTORY';
 
 /** Código del 409 al cerrar o dar de alta un proceso con citas futuras programadas. */
 export const PROCESS_HAS_FUTURE_SESSIONS = 'PROCESS_HAS_FUTURE_SESSIONS';
@@ -160,12 +166,29 @@ export class ClinicalProcessesService {
 
     // Autor (clínico) → todo lo suyo; clínico que trata al paciente → el proceso en solo lectura y
     // SIN notas internas ajenas; cualquier otro (OWNER/ADMIN que no trata...) → 403 auditado.
-    const scope = await this.access.resolveScope(workspaceId, actor, process.patientId);
+    const scope = await this.access.resolveScope(workspaceId, actor, process.patientId, 'clinical-process');
     const isAuthor = process.therapistId === actor.sub;
-    if (!scope || (!isAuthor && scope.level !== 'TREATING')) {
+    if (!scope || (!isAuthor && !readsWholeRecord(scope))) {
       await this.access.auditDenied(workspaceId, actor, 'clinical-process', scope ? 'NOT_AUTHOR' : 'NO_PROCESS', process.patientId);
       throw new ForbiddenException('No tienes acceso al contenido clínico de este proceso');
     }
+
+    // Lectura de un proceso ajeno por un clínico que trata al paciente (co-terapeuta, solo lectura y
+    // sin notas internas): queda auditada. EXCEPTIONAL ya la audita resolveScope.
+    if (!isAuthor && scope.level === 'TREATING') {
+      await this.prisma.auditLog.create({
+        data: {
+          workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_READ_NOT_AUTHOR', entityType: 'ClinicalProcess', entityId: process.id,
+          metadata: { patientId: process.patientId, authorId: process.therapistId },
+        },
+      });
+    }
+
+    // Notas internas de un profesional anterior (archivadas al reasignar): solo un indicador, nunca
+    // el contenido. Ni el destino ni OWNER/ADMIN las leen por esta vía.
+    const previousAuthorNotes = await this.prisma.clinicalProcessPrivateNote.count({
+      where: { workspaceId, processId: process.id, authorId: { not: actor.sub } },
+    });
 
     const { internalNotes, ...rest } = decryptProcess({ ...process, patient: toPatientView(process.patient) });
     const sessions = (process.sessions ?? []).map((session) => {
@@ -178,6 +201,7 @@ export class ClinicalProcessesService {
     return {
       ...rest,
       ...(isAuthor ? { internalNotes } : {}),
+      hasPreviousAuthorNotes: previousAuthorNotes > 0,
       sessions,
       readOnly: !(isAuthor && process.status === 'ACTIVE' && scope.level === 'TREATING'),
     };
@@ -198,32 +222,46 @@ export class ClinicalProcessesService {
       throw new ForbiddenException('El contenido clínico del proceso solo lo registra el profesional responsable');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Para distinguir la autoasignación en la auditoría: ¿el paciente ya tenía otro profesional
-      // con proceso activo? (el control de apertura llegará con su historia propia).
-      const otherActive = await tx.clinicalProcess.findFirst({
-        where: { workspaceId, patientId: dto.patientId, status: 'ACTIVE', therapistId: { not: therapistId } },
-        select: { id: true },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // H6: lock por paciente + regla de la historia ajena, dentro de la transacción (CA6.8).
+        await lockPatientForOpening(tx, workspaceId, dto.patientId);
+        const foreign = await hasForeignHistory(tx, { workspaceId, patientId: dto.patientId, targetTherapistId: therapistId });
+        const decision = await decideOpening(tx, actor, workspaceId, foreign, dto.openingReasonCode);
+        if (decision.kind === 'DENIED') throw new OpeningDeniedSignal(dto.patientId);
+        const overHistory = decision.kind === 'OVER_HISTORY';
+        const now = new Date();
+        const process = await tx.clinicalProcess.create({
+          data: {
+            workspaceId,
+            patientId: dto.patientId,
+            therapistId,
+            title: dto.title,
+            consultationReason: encryptField(dto.consultationReason),
+            goals: encryptField(dto.goals),
+            internalNotes: encryptField(dto.internalNotes),
+            modality: dto.modality,
+            frequency: dto.frequency,
+            startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
+            // Solo se guarda en aperturas sobre historia ajena; el alta normal queda en null (CA6.4).
+            openingReasonCode: overHistory ? decision.reasonCode : null,
+          },
+        });
+        await tx.auditLog.create({
+          data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId, therapistId, selfAssigned: ownProcess, overHistory } },
+        });
+        if (overHistory) {
+          await recordOpeningOverHistory(tx, {
+            workspaceId, actor, actorRole: decision.actorRole, patientId: dto.patientId, clinicalProcessId: process.id,
+            targetTherapistId: therapistId, reasonCode: decision.reasonCode, kind: 'OPENED', now,
+          });
+        }
+        return ownProcess ? decryptProcess(process) : toAdminView(process);
       });
-      const process = await tx.clinicalProcess.create({
-        data: {
-          workspaceId,
-          patientId: dto.patientId,
-          therapistId,
-          title: dto.title,
-          consultationReason: encryptField(dto.consultationReason),
-          goals: encryptField(dto.goals),
-          internalNotes: encryptField(dto.internalNotes),
-          modality: dto.modality,
-          frequency: dto.frequency,
-          startedAt: dto.startedAt ? new Date(dto.startedAt) : undefined,
-        },
-      });
-      await tx.auditLog.create({
-        data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_CREATED', entityType: 'ClinicalProcess', entityId: process.id, metadata: { patientId: dto.patientId, therapistId, selfAssigned: ownProcess, hadOtherActiveClinician: Boolean(otherActive) } },
-      });
-      return ownProcess ? decryptProcess(process) : toAdminView(process);
-    });
+    } catch (error) {
+      await this.auditOpeningDenied(workspaceId, actor, error);
+      throw error;
+    }
   }
 
   async update(workspaceId: string, actor: AuthUser, id: string, dto: UpdateClinicalProcessDto) {
@@ -283,7 +321,7 @@ export class ClinicalProcessesService {
    * cambio de estado, con auditoría por cita. Las citas pasadas que sigan SCHEDULED no se tocan
    * (quedan para marcarlas como realizadas o ausencia), pero ya no se pueden reprogramar.
    */
-  async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue, options: { cancelFutureSessions?: boolean } = {}) {
+  async changeStatus(workspaceId: string, actor: AuthUser, id: string, status: ClinicalProcessStatusValue, options: { cancelFutureSessions?: boolean; openingReasonCode?: unknown } = {}) {
     await this.assertClinicalAccess(workspaceId, actor, 'clinical-process-status');
     const process = await this.getRaw(workspaceId, id);
     // Estado del proceso: operación de gestión (OWNER/ADMIN) o del propio profesional clínico.
@@ -304,13 +342,35 @@ export class ClinicalProcessesService {
     const pausedAt = status === 'PAUSED' ? now : null;
     const closing = status === 'DISCHARGED' || status === 'CLOSED';
 
+    try {
     await this.prisma.$transaction(async (tx) => {
+      // 0) Mismo orden de locks que la reserva del portal (paciente -> profesional -> proceso):
+      //    sin esto, una solicitud que caduca tomaba filas de solicitud y luego el proceso, y este
+      //    cierre al revés (proceso y luego solicitudes) -> interbloqueo.
+      await lockPatientBooking(tx, workspaceId, process.patientId);
+      await lockTherapistSchedule(tx, workspaceId, process.therapistId);
+      // 0b) H6 (CA6.7): reactivar con procesos POSTERIORES de otros autores = apertura sobre
+      //    historia ajena. Lock por paciente y misma regla que el alta.
+      let opening: OpeningDecision = { kind: 'NORMAL' };
+      if (status === 'ACTIVE') {
+        await lockPatientForOpening(tx, workspaceId, process.patientId);
+        const foreign = await hasForeignHistory(tx, { workspaceId, patientId: process.patientId, targetTherapistId: process.therapistId, createdAfter: process.createdAt, excludeProcessId: id });
+        opening = await decideOpening(tx, actor, workspaceId, foreign, options.openingReasonCode);
+        if (opening.kind === 'DENIED') throw new OpeningDeniedSignal(process.patientId);
+      }
+
       // 1) Compare-and-set del estado, acotado al workspace (nunca solo por id). Va PRIMERO: el
       //    UPDATE bloquea la fila del proceso hasta el commit, y la creación/reprogramación de
       //    citas toca esa misma fila exigiendo ACTIVE, así que no puede colarse una cita nueva
       //    entre la lectura de las citas futuras y el cierre.
       const { count } = await tx.clinicalProcess.updateMany({ where: { id, workspaceId, status: process.status }, data: { status, endedAt, pausedAt } });
       if (count === 0) throw new ConflictException('El proceso ha cambiado mientras se actualizaba; recarga e inténtalo de nuevo');
+
+      // Criterio 21 de la reserva desde el portal: un proceso que deja de estar ACTIVO no deja
+      // solicitudes de cita pendientes (pasan a REJECTED, "contacta con la consulta").
+      if (status !== 'ACTIVE') {
+        await rejectPendingRequestsOfProcess(tx, workspaceId, id, actor.sub, `CLINICAL_PROCESS_${status}`);
+      }
 
       // 2) Citas futuras programadas, leídas ya con la fila bloqueada. Si las hay y no se pidió
       //    cancelarlas, el 409 revierte también el paso 1.
@@ -348,8 +408,33 @@ export class ClinicalProcessesService {
       await tx.auditLog.create({
         data: { workspaceId, actorId: actor.sub, action: 'CLINICAL_PROCESS_STATUS_CHANGED', entityType: 'ClinicalProcess', entityId: id, metadata: { from: process.status, to: status, cancelledFutureSessions: cancelledIds.length } },
       });
+      if (opening.kind === 'OVER_HISTORY') {
+        await recordOpeningOverHistory(tx, {
+          workspaceId, actor, actorRole: opening.actorRole, patientId: process.patientId, clinicalProcessId: id,
+          targetTherapistId: process.therapistId, reasonCode: opening.reasonCode, kind: 'REACTIVATED', now,
+        });
+      }
     });
+    } catch (error) {
+      await this.auditOpeningDenied(workspaceId, actor, error);
+      throw error;
+    }
     return view(await this.getRaw(workspaceId, id));
+  }
+
+  /**
+   * H6 (CA6.1, CA6.7): apertura o reactivación denegada por historia ajena → 403 auditado. Se
+   * audita FUERA de la transacción revertida para que el rastro quede (actor, paciente, sin texto).
+   */
+  private async auditOpeningDenied(workspaceId: string, actor: AuthUser, error: unknown) {
+    if (!(error instanceof OpeningDeniedSignal)) return;
+    await this.access.auditDenied(workspaceId, actor, 'clinical-process-open-over-history', 'FOREIGN_HISTORY', error.patientId);
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: PATIENT_HAS_FOREIGN_HISTORY,
+      message: 'Este paciente tiene historia con otro profesional. Pide a la dirección de la consulta que te abra el proceso.',
+    });
   }
 
   private assertClinicalAccess(workspaceId: string, actor: AuthUser, resource: string) {
@@ -368,7 +453,7 @@ export class ClinicalProcessesService {
 
   /** El profesional responsable de un proceso debe ser miembro clínico del workspace. */
   private async assertClinicianMember(workspaceId: string, userId: string) {
-    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId }, select: { role: true, isClinician: true } });
+    const membership = await this.prisma.workspaceMember.findFirst({ where: { workspaceId, userId, status: 'ACTIVE' }, select: { role: true, isClinician: true } });
     if (!membership) throw new BadRequestException('El terapeuta no pertenece al espacio de trabajo');
     if (!isClinicalProfile(membership)) {
       throw new BadRequestException('El profesional indicado no está marcado como profesional clínico');

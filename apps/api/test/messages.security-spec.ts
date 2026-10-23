@@ -1,13 +1,15 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { MessagesService } from '../src/messages/messages.service';
 import { treating } from './support/clinical-access-fixture';
+import { FAKE_TEAM, fakeMembersFindMany } from './support/fake-members';
 
 const owner:any={sub:'o1',workspaceId:'w1',role:'OWNER'};
 const therapist:any={sub:'t1',workspaceId:'w1',role:'THERAPIST'};
 const assistant:any={sub:'a1',workspaceId:'w1',role:'ASSISTANT'};
 
-function mock(){
+function mock(team = FAKE_TEAM){
   return {
+    workspaceMember:{findMany:fakeMembersFindMany(team)},
     patient:{findFirst:jest.fn()},
     clinicalProcess:{findFirst:jest.fn(),findMany:jest.fn()},
     conversation:{findMany:jest.fn(),findFirst:jest.fn(),upsert:jest.fn(),update:jest.fn(),updateMany:jest.fn()},
@@ -68,6 +70,19 @@ describe('Structured messages security and persistence',()=>{
     const rows=p.notification.createMany.mock.calls[0][0].data;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual(expect.objectContaining({userId:'t1',body:'Un paciente ha enviado un mensaje.',actionUrl:'/messages?patientId=p1'}));
+  });
+
+  it('historia B: si el terapeuta está dado de baja sin reasignar, el aviso va a OWNER/ADMIN activos del espacio (no a él)',async()=>{
+    const p=mock(FAKE_TEAM.map((m)=>m.userId==='t1'?{...m,status:'REMOVED'}:m));
+    p.conversation.findFirst.mockResolvedValue({id:'c1',workspaceId:'w1',patientId:'p1',status:'OPEN',patientCanReply:true});
+    p.message.create.mockResolvedValue({id:'m3'});
+    p.conversation.update.mockResolvedValue({});
+    p.clinicalProcess.findMany.mockResolvedValue([{therapistId:'t1'}]);
+    p.notification.createMany.mockResolvedValue({count:2});
+    await new MessagesService(p).portalSend({workspaceId:'w1',patientId:'p1'},{body:'Mensaje ficticio'} as any);
+    const rows=p.notification.createMany.mock.calls[0][0].data;
+    expect(rows.map((r:any)=>r.userId).sort()).toEqual(['ad1','o1']);
+    expect(rows.every((r:any)=>r.workspaceId==='w1')).toBe(true);
   });
 
   it('rejects patient replies when professional has closed the channel',async()=>{

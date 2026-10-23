@@ -108,7 +108,7 @@ describe('GET /clinical-processes (listado) sin notas de sesión ni narrativa cl
 
 describe('GET /clinical-processes/:id no devuelve el motivo de consulta del paciente', () => {
   it.each(CLINICAL)('%s: paciente proyectado con la vista general', async (_role, actor) => {
-    const prisma: any = treating({ clinicalProcess: { findFirst: jest.fn(async () => processRow()) } }, actor);
+    const prisma: any = treating({ clinicalProcess: { findFirst: jest.fn(async () => processRow()) }, clinicalProcessPrivateNote: { count: jest.fn(async () => 0) }, auditLog: { create: jest.fn(async () => ({})) } }, actor);
     const result: any = await new ClinicalProcessesService(prisma).get('ws-1', actor, 'proc-1');
 
     expect(result.patient).toMatchObject({ id: 'patient-1', firstName: 'Paciente' });

@@ -1,7 +1,10 @@
 'use client';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { logout } from '../lib/api';
+import { pendingLabel, PENDING_REQUESTS_EVENT } from '../lib/booking';
+import { fetchPendingCount } from '../lib/booking-client';
 import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
 import { invalidateTermsStatus, useTermsStatus } from '../lib/legal';
 import Icon, { IconName } from './Icon';
@@ -9,7 +12,8 @@ type SidebarProps = {
   syncText?: string;
 };
 // adminOnly: solo OWNER/ADMIN. processAccess: roles que entran en procesos y mensajes (no ASSISTANT).
-const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean }[] = [
+// noAssistant: recepción no lo gestiona (el QR de alta es de cada profesional).
+const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean; noAssistant?: boolean; pendingBadge?: boolean }[] = [
   {
     href: '/',
     label: 'Mi jornada',
@@ -29,6 +33,17 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     href: '/agenda',
     label: 'Agenda',
     icon: 'calendar',
+  },
+  {
+    href: '/agenda/solicitudes',
+    label: 'Solicitudes',
+    icon: 'inbox',
+    pendingBadge: true,
+  },
+  {
+    href: '/portal-signups',
+    label: 'Altas del portal',
+    icon: 'userPlus',
   },
   {
     href: '/messages',
@@ -58,6 +73,12 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     adminOnly: true,
   },
   {
+    href: '/settings/portal-qr',
+    label: 'QR de alta',
+    icon: 'qr',
+    noAssistant: true,
+  },
+  {
     href: '/settings/security',
     label: 'Seguridad',
     icon: 'shield',
@@ -76,14 +97,37 @@ export default function Sidebar({
   // Condiciones nuevas sin aceptar: cada profesional las acepta por sí mismo y la API le bloquea
   // (428 → /terms) hasta que lo haga. Este aviso es solo un recordatorio por si llega a verse.
   const terms = useTermsStatus();
+  // Solicitudes de cita pendientes (solo el número, sin nombres ni fechas). Se vuelve a pedir al
+  // cambiar de pantalla, cada minuto y cuando la bandeja avisa de que resolvió alguna.
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    if (!viewer?.role) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchPendingCount().then((count) => { if (!cancelled) setPending(count); }).catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener(PENDING_REQUESTS_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener(PENDING_REQUESTS_EVENT, refresh);
+    };
+  }, [viewer?.role, pathname]);
   const items = navigation.filter((item) =>
     (!item.adminOnly || isAdminRole(viewer?.role)) &&
-    (!item.processAccess || isStaffWithProcessAccess(viewer?.role)));
+    (!item.processAccess || isStaffWithProcessAccess(viewer?.role)) &&
+    (!item.noAssistant || (viewer?.role != null && viewer.role !== 'ASSISTANT')));
   const displayName = [viewer?.firstName, viewer?.lastName].filter(Boolean).join(' ') || 'Profesional';
   const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   function isActive(href: string) {
     if (href === '/') {
       return pathname === '/';
+    }
+    // La bandeja de solicitudes cuelga de /agenda pero tiene su propia entrada.
+    if (href === '/agenda') {
+      return pathname === '/agenda' || (pathname.startsWith('/agenda/') && !pathname.startsWith('/agenda/solicitudes'));
     }
     return pathname.startsWith(href);
   }
@@ -117,6 +161,9 @@ export default function Sidebar({
           >
             <span className="sidebar-icon"><Icon name={item.icon} /></span>
             <span>{item.label}</span>
+            {item.pendingBadge && pending > 0 && (
+              <span className="sidebar-badge" role="status" aria-label={pendingLabel(pending)}>{pending > 99 ? '99+' : pending}</span>
+            )}
           </Link>
         ))}
       </nav>

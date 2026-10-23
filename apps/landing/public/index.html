@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AsePsico · Seguimiento entre sesiones para psicólogos</title>
-  <meta name="description" content="Software para psicólogos y consultas, pensado para el seguimiento entre sesiones. Piloto gratuito: apúntate a la lista de espera.">
+  <title>Software para psicólogos y seguimiento entre sesiones</title>
+  <meta name="description" content="Estamos construyendo AsePsico: software para psicólogos que reúne agenda, pacientes e historia clínica, pensado para el seguimiento entre sesiones.">
   <link rel="canonical" href="https://asepsico.es/">
   <script type="application/ld+json">
   {
@@ -21,7 +21,15 @@
           "width": 192,
           "height": 192
         },
-        "description": "Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología."
+        "description": "Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología.",
+        "founder": { "@id": "https://asepsico.es/#cesar" }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://asepsico.es/#cesar",
+        "name": "César Román",
+        "url": "https://asepsico.es/#quienes-somos",
+        "description": "Psicólogo y fundador de AsePsico."
       },
       {
         "@type": "WebSite",
@@ -401,7 +409,7 @@
         <ul class="bento">
           <li class="tile tile--dark reveal">
             <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-task"/></svg></span>
-            <h3>Seguimiento entre sesiones</h3>
+            <h3>Pensado para el seguimiento entre sesiones</h3>
             <p>AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
           </li>
           <li class="tile reveal">
@@ -411,7 +419,7 @@
           </li>
           <li class="tile tile--mauve reveal">
             <span class="tile__icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span>
-            <h3>Piloto gratuito</h3>
+            <h3>Sin tarjeta ni datos de pago</h3>
             <p>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
           </li>
           <li class="tile reveal">
@@ -442,11 +450,6 @@
                   <p class="sfield__help" id="sv-v-help">Opcional. Por ejemplo, lo que cobras por sesión dividido entre las horas que te ocupa, o la cifra que tú decidas.</p>
                   <input id="sv-v" type="number" inputmode="decimal" min="0" max="500" step="1" autocomplete="off" placeholder="p. ej. 40" aria-describedby="sv-v-help sv-v-err" data-sv-value>
                   <p class="sfield__err" id="sv-v-err" data-sv-err hidden></p>
-                </div>
-                <div class="savings__others" data-sv-others>
-                  <p class="sfield__help savings__others-help" id="sv-o-help">Si dedicas tiempo a algo que no está en la lista, añádelo. Escribe solo el tipo de tarea, nunca datos de pacientes.</p>
-                  <div class="savings__others-list" data-sv-others-list></div>
-                  <button type="button" class="btn btn--ghost btn--sm savings__add" data-sv-add>+ Añadir otra tarea</button>
                 </div>
               </fieldset>
             </form>
@@ -502,7 +505,7 @@
             <summary>Cómo calculamos esto<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
             <div class="disclosure__body">
               <ul class="legal-list">
-                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada tarea (y en "Otra tarea", si la usas). Los números en gris de los campos son ejemplos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
+                <li><strong>A la semana:</strong> sumamos las horas que escribes en cada una de las cuatro tareas. Los números en gris de los campos son ejemplos del equipo, sin medir, y no cuentan: el resultado empieza en 0.</li>
                 <li><strong>Al mes:</strong> multiplicamos las horas a la semana por 46 semanas de trabajo al año (dejamos 6 para vacaciones y festivos) y dividimos entre 12 meses, unas 3,83 semanas por mes. Redondeamos hacia abajo a la media hora.</li>
                 <li><strong>En euros:</strong> solo si escribes el valor de tu hora, multiplicamos las horas a la semana y al mes por ese valor y redondeamos hacia abajo al euro. Es lo que vale ese tiempo, no dinero que vayas a ganar ni a ahorrar.</li>
                 <li><strong>El gráfico:</strong> qué parte de tus horas a la semana va a cada tarea, en porcentaje.</li>
@@ -613,7 +616,7 @@
         <div class="waitlist__intro">
           <span class="pilot__tag">Lista de espera</span>
           <h2 id="apuntate-titulo" class="display display--md">Apúntate a la lista de espera</h2>
-          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Déjanos tus datos y te escribiremos para contarte si hay plaza.</p>
+          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</p>
           <p class="small">Los campos marcados con <span aria-hidden="true">*</span><span class="visually-hidden">asterisco</span> son obligatorios.</p>
         </div>
 
@@ -656,12 +659,24 @@
                 <p class="sfield__err" id="wl-count-err" hidden></p>
               </div>
 
-              <div class="sfield">
-                <label for="wl-tools">¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></label>
-                <p class="sfield__help" id="wl-tools-help">Solo herramientas o programas (agenda en papel, Excel, un software de gestión…). No incluyas datos de pacientes.</p>
-                <textarea id="wl-tools" name="tools" rows="3" maxlength="500" autocomplete="off"
-                          aria-describedby="wl-tools-help wl-tools-err" data-wl-field="tools"></textarea>
-                <p class="sfield__err" id="wl-tools-err" hidden></p>
+              <fieldset class="sfield wl-choices" data-wl-group="tool">
+                <legend>¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></legend>
+                <div class="wl-choices__grid">
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Doctoralia"> Doctoralia</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Eholo"> Eholo</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Excel / hojas de cálculo"> Excel / hojas de cálculo</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Papel / agenda"> Papel / agenda</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Nada todavía"> Nada todavía</label>
+                  <label class="wl-choice"><input type="radio" name="currentTool" value="Otra"> Otra</label>
+                </div>
+              </fieldset>
+
+              <div class="sfield" data-wl-tool-other-wrap hidden>
+                <label for="wl-tool-other">¿Cuál? <span class="opt">(opcional)</span></label>
+                <p class="sfield__help" id="wl-tool-other-help">No incluyas datos de pacientes.</p>
+                <input id="wl-tool-other" name="currentToolOther" type="text" maxlength="100" autocomplete="off"
+                       aria-describedby="wl-tool-other-help wl-tool-other-err" data-wl-field="currentToolOther">
+                <p class="sfield__err" id="wl-tool-other-err" hidden></p>
               </div>
 
               <div class="sfield">
@@ -688,12 +703,7 @@
               </div>
               <p class="sfield__err wl-check__err" id="wl-privacy-err" hidden></p>
 
-              <div class="wl-check wl-check--sep">
-                <input id="wl-commercial" name="commercialConsentRequested" type="checkbox" data-wl-field="commercialConsentRequested">
-                <label for="wl-commercial">Quiero recibir por email novedades y ofertas de AsePsico para profesionales. Te pediremos que lo confirmes por email y podrás darte de baja en cualquier momento. <span class="opt">(Opcional)</span></label>
-              </div>
-
-              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento; y, solo si marcas la casilla opcional y lo confirmas por email, para enviarte novedades y ofertas. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
+              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
 
               <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
               <p class="wl-status" role="status" aria-live="polite" data-wl-status></p>
@@ -703,8 +713,7 @@
           <div class="waitlist__done" data-wl-done tabindex="-1" hidden>
             <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
             <h3 class="waitlist__done-title">Gracias</h3>
-            <p>Si los datos son correctos, te escribiremos a tu email.</p>
-            <p data-wl-done-commercial hidden>Si marcaste la casilla de novedades, te escribiremos para que lo confirmes. Hasta que no lo confirmes, no te enviaremos novedades ni ofertas.</p>
+            <p>Si te apuntas, solo te escribimos sobre tu solicitud y sobre el piloto.</p>
             <p class="small">Si quieres corregir algún dato o borrarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
           </div>
         </div>
@@ -719,7 +728,7 @@
         </figure>
         <div>
           <h2 id="quienes-titulo" class="display display--sm">Quiénes somos</h2>
-          <p class="lead">Soy César Román. He estudiado psicología y llevo unos meses desarrollando AsePsico.</p>
+          <p class="lead">Soy César Román, psicólogo, y llevo unos meses construyendo AsePsico.</p>
           <p>Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
           <p>Lo que pasa entre sesiones también es parte del trabajo.</p>
           <p>Por eso AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
@@ -739,7 +748,7 @@
           </div>
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-2">¿Cuándo empieza el piloto?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>
-            <div class="faq__a" id="faq-2"><p>Te lo contamos personalmente cuando hablemos contigo.</p></div>
+            <div class="faq__a" id="faq-2"><p>Estamos construyendo AsePsico. Piloto gratuito para psicólogos. Apúntate a la lista de espera.</p></div>
           </div>
           <div class="faq__item">
             <h3><button type="button" class="faq__q" aria-expanded="true" aria-controls="faq-3">¿Cuánto cuesta?<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></button></h3>

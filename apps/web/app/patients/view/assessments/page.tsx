@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
 import { patientHref, queryId } from '@/lib/routes';
 
@@ -27,7 +28,16 @@ const OPTIONS: Record<ScaleCode,string[]> = {
 
 function fmt(value:string){return new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(value));}
 
+/**
+ * Solo con TREATING: con acceso excepcional (o sin relación) no se montan las notas internas ni
+ * los controles de escritura; se remite a la ficha en solo lectura (revisión de Argos).
+ */
 export default function AssessmentsPage(){
+  const patientId = queryId(useSearchParams().get('id'));
+  return <ClinicalSubpageGate patientId={patientId} section="Escalas"><AssessmentsPageContent/></ClinicalSubpageGate>;
+}
+
+function AssessmentsPageContent(){
   const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [items,setItems]=useState<Assessment[]>([]);

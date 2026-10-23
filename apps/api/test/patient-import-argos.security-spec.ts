@@ -228,7 +228,7 @@ describe('Argos 4 (E1): solo un profesional clínico según la BD puede importar
   it.each(['OWNER', 'ADMIN'])('%s clínico (isClinician en BD) importa y los pacientes quedan a su nombre', async (role) => {
     const sub = `${role.toLowerCase()}-1`;
     const { prisma, db } = prismaMock({
-      workspaceMember: [{ workspaceId: 'ws-1', userId: sub, role, isClinician: true }],
+      workspaceMember: [{ workspaceId: 'ws-1', userId: sub, role, isClinician: true, status: 'ACTIVE' }],
     });
     const svc = services(prisma);
     const who = actor(sub, role);
@@ -247,7 +247,7 @@ describe('Argos 4 (E1): solo un profesional clínico según la BD puede importar
 
   it('C1: token THERAPIST con miembro ASSISTANT en la BD recibe 403, auditado solo con rol y operación', async () => {
     const { prisma, db } = prismaMock({
-      workspaceMember: [{ workspaceId: 'ws-1', userId: 'degradado-1', role: 'ASSISTANT', isClinician: false }],
+      workspaceMember: [{ workspaceId: 'ws-1', userId: 'degradado-1', role: 'ASSISTANT', isClinician: false, status: 'ACTIVE' }],
     });
     const svc = services(prisma);
     const who = actor('degradado-1', 'THERAPIST');
@@ -263,7 +263,7 @@ describe('Argos 4 (E1): solo un profesional clínico según la BD puede importar
   });
 
   it('un token ASSISTANT se rechaza aunque la BD dijera otra cosa', async () => {
-    const { prisma } = prismaMock({ workspaceMember: [{ workspaceId: 'ws-1', userId: 'x-1', role: 'THERAPIST', isClinician: true }] });
+    const { prisma } = prismaMock({ workspaceMember: [{ workspaceId: 'ws-1', userId: 'x-1', role: 'THERAPIST', isClinician: true, status: 'ACTIVE' }] });
     await expect(services(prisma).imports.upload('ws-1', actor('x-1', 'ASSISTANT'), csvFile(fakePatientsCsv(1))))
       .rejects.toBeInstanceOf(ForbiddenException);
   });

@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { encryptModelData } from '../common/crypto/clinical-crypto';
 import { PrismaService } from '../database/prisma.service';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
+import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
-import { WAITLIST_FORM_MIN_SECONDS } from './waitlist.config';
+import { WAITLIST_FORM_MIN_SECONDS, WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL } from './waitlist.config';
 
 /** Respuesta única para alta nueva, alta repetida y honeypot: no revela si el email ya estaba. */
 export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
@@ -21,7 +22,7 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
 export class WaitlistService {
   private readonly logger = new Logger('Waitlist');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly notifier?: WaitlistNotifier) {}
 
   formToken() {
     return { formToken: issueFormToken(), minSeconds: WAITLIST_FORM_MIN_SECONDS };
@@ -31,6 +32,12 @@ export class WaitlistService {
     if (dto.website && dto.website.trim() !== '') {
       this.logger.warn('Alta descartada: honeypot relleno');
       return WAITLIST_ACCEPTED;
+    }
+
+    // La política v3 ya no ofrece comunicaciones comerciales: no se registra una solicitud que no recoge.
+    if (dto.commercialConsentRequested === true && WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL.includes(dto.privacyPolicyVersion)) {
+      this.logger.warn('Alta rechazada: casilla comercial con una versión de la política que no la ofrece');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_COMMERCIAL_NOT_OFFERED', message: 'Esta versión de la política no incluye comunicaciones comerciales.' });
     }
 
     const token = checkFormToken(dto.formToken);
@@ -77,6 +84,13 @@ export class WaitlistService {
     }
 
     this.logger.log('Alta en la lista de espera registrada');
+    // Aviso interno al Jefe (sin datos del apuntado), ya guardada el alta. Solo programa el envío:
+    // nunca bloquea ni hace fallar la respuesta pública. Las altas repetidas no avisan.
+    try {
+      this.notifier?.notifyNewEntry();
+    } catch {
+      this.logger.warn('Aviso de lista de espera no programado');
+    }
     return WAITLIST_ACCEPTED;
   }
 }

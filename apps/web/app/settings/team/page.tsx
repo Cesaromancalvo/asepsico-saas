@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import TeamInvites from '@/components/TeamInvites';
+import MemberRemovalDialog, { RemovalTarget } from '@/components/MemberRemovalDialog';
 import { api } from '@/lib/api';
 import { invalidateViewer, isForbidden, ROLE_LABEL, StaffRole, useViewer } from '@/lib/clinical';
+import { canRemoveMember } from '@/lib/member-removal';
 
 /** Fila de GET /workspace-members (datos administrativos, sin nada clínico). */
 type Member = {
@@ -15,7 +17,13 @@ type Member = {
   firstName: string | null;
   lastName: string | null;
   email: string | null;
+  status?: 'ACTIVE' | 'REMOVED';
+  removedAt?: string | null;
 };
+
+function formatDay(value: string) {
+  return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+}
 
 function memberName(member: Member) {
   return [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || member.email || 'Miembro sin nombre';
@@ -28,6 +36,7 @@ export default function TeamPage() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [removal, setRemoval] = useState<RemovalTarget | null>(null);
 
   async function load() {
     try {
@@ -50,6 +59,9 @@ export default function TeamPage() {
   }, []);
 
   const isOwner = viewer?.role === 'OWNER';
+  const activeMembers = members.filter((member) => member.status !== 'REMOVED');
+  const removedMembers = members.filter((member) => member.status === 'REMOVED');
+  const canManageTeam = viewer?.role === 'OWNER' || viewer?.role === 'ADMIN';
 
   async function toggleClinician(member: Member, next: boolean) {
     setSavingUserId(member.userId);
@@ -114,17 +126,18 @@ export default function TeamPage() {
 
         {state === 'ready' && (
           <section className="patient-record-card">
-            <h2>Miembros ({members.length})</h2>
-            {members.length === 0 ? (
+            <h2>Miembros ({activeMembers.length})</h2>
+            {activeMembers.length === 0 ? (
               <p className="muted">Todavía no hay miembros en la consulta.</p>
             ) : (
               <ul className="e1-list">
-                {members.map((member) => {
+                {activeMembers.map((member) => {
                   const configurable = member.role === 'OWNER' || member.role === 'ADMIN';
                   const switchId = `clinician-${member.userId}`;
                   const hintId = `${switchId}-hint`;
+                  const removable = canRemoveMember(viewer, member);
                   return (
-                    <li key={member.id} className="e1-row">
+                    <li key={member.id} className="e1-row mr-row">
                       <div>
                         <strong>
                           {memberName(member)}
@@ -165,6 +178,18 @@ export default function TeamPage() {
                           </small>
                         )}
                       </div>
+                      <div className="mr-row-actions">
+                        {removable && (
+                          <button
+                            type="button"
+                            className="bk-link-button ps-reject"
+                            onClick={() => setRemoval({ userId: member.userId, name: memberName(member), mode: 'remove' })}
+                            aria-label={`Dar de baja a ${memberName(member)}`}
+                          >
+                            Dar de baja
+                          </button>
+                        )}
+                      </div>
                     </li>
                   );
                 })}
@@ -173,7 +198,53 @@ export default function TeamPage() {
           </section>
         )}
 
+        {state === 'ready' && removedMembers.length > 0 && (
+          <section className="patient-record-card" aria-labelledby="removed-title">
+            <h2 id="removed-title">Dados de baja ({removedMembers.length})</h2>
+            <p className="muted">
+              Ya no tienen acceso. Lo que escribieron sigue en la consulta con su nombre y sus notas internas no las ve nadie más.
+            </p>
+            <ul className="e1-list">
+              {removedMembers.map((member) => {
+                const clinical = member.role === 'THERAPIST' || member.isClinician;
+                return (
+                  <li key={member.id} className="e1-row mr-row is-removed">
+                    <div>
+                      <strong>{memberName(member)}</strong>
+                      {member.email && <small>{member.email}</small>}
+                    </div>
+                    <div>
+                      <span className="e1-badge">{ROLE_LABEL[member.role] ?? member.role}</span>
+                    </div>
+                    <div>
+                      <span className="ui-chip chip-neutral">{member.removedAt ? `De baja desde el ${formatDay(member.removedAt)}` : 'De baja'}</span>
+                    </div>
+                    <div className="mr-row-actions">
+                      {canManageTeam && clinical && (viewer?.role === 'OWNER' || member.role === 'THERAPIST') && (
+                        <button
+                          type="button"
+                          className="button secondary small-secondary"
+                          onClick={() => setRemoval({ userId: member.userId, name: memberName(member), mode: 'reassign' })}
+                          aria-label={`Ver y pasar el trabajo pendiente de ${memberName(member)}`}
+                        >
+                          Trabajo pendiente
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {state === 'ready' && viewer && <TeamInvites isOwner={isOwner} />}
+
+        <MemberRemovalDialog
+          target={removal}
+          onClose={() => setRemoval(null)}
+          onDone={(message) => { setStatus(message); void load(); }}
+        />
       </main>
     </div>
   );

@@ -10,9 +10,14 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { MessagesService } from '../src/messages/messages.service';
 import { PortalService } from '../src/portal/portal.service';
 import { MfaService } from '../src/auth/mfa.service';
+import { MemberRemovalService } from '../src/workspace-members/member-removal.service';
 import { treatingAccessStub } from './support/clinical-access-fixture';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
+import { ExceptionalAccessService } from '../src/exceptional-access/exceptional-access.service';
 import { issueFormToken } from '../src/waitlist/waitlist-crypto';
+import { SignupRequestsService } from '../src/portal-signup/signup-requests.service';
+import { IntakeLinksService } from '../src/portal-signup/intake-links.service';
+import { PORTAL_SIGNUP_NOTICE_VERSIONS } from '../src/portal-signup/portal-signup.config';
 
 /**
  * Test tabla-driven: por CADA campo marcado como cifrado en common/crypto/clinical-crypto.ts,
@@ -58,6 +63,8 @@ function recordingPrisma(rows: Record<string, Record<string, any>> = {}) {
   };
   const prisma: any = new Proxy({}, {
     get: (_t, prop: string) => {
+      // Advisory lock de H6 (apertura de procesos): no escribe nada.
+      if (prop === '$executeRawUnsafe' || prop === '$executeRaw') return async () => 1;
       if (prop === '$transaction') return async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg));
       if (prop === 'then' || typeof prop !== 'string') return undefined;
       return model(prop);
@@ -90,8 +97,12 @@ const CASES: Case[] = [
     run: (p) => new PatientTasksService(p, access).createTaskTemplate('ws-1', owner, { title: 'Plantilla', instructions: text('instrucciones') } as any) },
   { name: 'PatientTasks.updateTaskTemplate', writes: { therapeuticTaskTemplate: ['instructions'] },
     run: (p) => new PatientTasksService(p, access).updateTaskTemplate('ws-1', owner, 'tpl-1', { instructions: text('instrucciones') } as any) },
+  { name: 'ExceptionalAccess.create (explicación y motivo de diferimiento)', writes: { exceptionalAccessJustification: ['justification', 'notificationDeferredReason'] },
+    // Sin acceso vigente previo (el doble devuelve siempre una fila en findFirst).
+    run: (p) => (p.exceptionalAccessJustification.findFirst = jest.fn(async () => null), new ExceptionalAccessService(p, { getMemberProfile: async () => ({ role: 'OWNER', isClinician: false }), resolveScope: async () => null, auditDenied: jest.fn() } as any)
+      .create('ws-1', { ...owner, sid: 'sesion-ficticia' }, 'patient-1', { reasonCode: 'LEGAL_REQUIREMENT', justification: text('explicación administrativa'), confirmed: true, deferNotice: true, deferReason: text('motivo de diferimiento') } as any)) },
   { name: 'ClinicalProcesses.create', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
-    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
+    run: (p) => new ClinicalProcessesService(p).create('ws-1', owner, { patientId: 'patient-1', therapistId: 'owner-1', openingReasonCode: 'SUBSTITUTION', title: 'Proceso', consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'ClinicalProcesses.update', writes: { clinicalProcess: ['consultationReason', 'goals', 'internalNotes'] },
     run: (p) => new ClinicalProcessesService(p).update('ws-1', owner, 'proc-1', { consultationReason: text('m'), goals: text('g'), internalNotes: text('n') } as any) },
   { name: 'Sessions.updateNotes', writes: { session: ['notes', 'internalSummary'] },
@@ -112,10 +123,18 @@ const CASES: Case[] = [
     run: (p) => new MessagesService(p).send('ws-1', owner, 'conv-1', { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
   { name: 'Messages.portalSend', writes: { message: ['body', 'attachmentName'] }, rows: { conversation: { status: 'OPEN', patientCanReply: true } },
     run: (p) => new MessagesService(p).portalSend(portal, { body: text('mensaje'), attachmentName: 'adjunto-ficticio.pdf', attachmentKey: 'key-1', mimeType: 'application/pdf' } as any) },
+  // Baja de un miembro: sus notas internas se archivan copiando el texto YA cifrado (nunca en claro).
+  { name: 'MemberRemoval.reassignWork (archivo de notas internas)', writes: { clinicalProcessPrivateNote: ['notes'] },
+    rows: { workspaceMember: { userId: 'ther-old', role: 'OWNER', status: 'REMOVED' }, clinicalProcess: { internalNotes: encryptField(text('nota interna')) } },
+    run: (p) => new MemberRemovalService(p).reassignWork('ws-1', owner, 'ther-old', { toUserId: 'owner-1' }) },
   { name: 'Mfa.setupMfa', writes: { user: ['totpSecret'] },
     run: (p) => new MfaService(p).setupMfa({ userId: 'owner-1', workspaceId: 'ws-1' }, {}) },
   { name: 'Waitlist.submit', writes: { waitlistEntry: ['name', 'email', 'tools'] },
-    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v2', formToken: issueFormToken(Date.now() - 10_000) } as any) },
+    run: (p) => new WaitlistService(p).submit({ name: 'Profesional Ficticia', email: 'ficticia@example.com', situation: 'SELF_EMPLOYED', tools: text('herramientas'), source: 'INSTAGRAM', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v4', formToken: issueFormToken(Date.now() - 10_000) } as any) },
+  { name: 'PortalSignup.submit', writes: { portalSignupRequest: ['firstName', 'lastName', 'email', 'phone', 'birthDate'] },
+    run: (p) => new SignupRequestsService(p).submit({ token: 'A'.repeat(43), firstName: 'Nombre', lastName: 'Ficticio', email: 'alta@example.com', phone: '600000000', birthDate: '1990-01-01', privacyNoticeAcknowledged: true, portalTermsAccepted: true, privacyNoticeVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.privacyNotice, portalTermsVersion: PORTAL_SIGNUP_NOTICE_VERSIONS.portalTerms } as any) },
+  { name: 'PortalIntakeLinks.rotate', writes: { portalIntakeLink: ['tokenEncrypted'] },
+    run: (p) => new IntakeLinksService(p).rotate('ws-1', owner, 'me') },
 ];
 
 function registeredFields(): string[] {

@@ -20,10 +20,46 @@ datos clínicos reales en producción.
   `MFA_SETUP_REQUIRED` y los tokens del portal, 401. Política: 12 caracteres mínimo y 72 bytes
   UTF-8 máximo, bcrypt coste 12. En una sola transacción guarda el nuevo hash, revoca **todos**
   los refresh tokens del usuario, audita `USER_PASSWORD_CHANGED` (sin correo, IP ni user agent)
-  y emite una sesión nueva para el navegador actual. **Limitación conocida (aceptada por Argos):**
-  los access tokens ya emitidos en otros dispositivos siguen siendo válidos hasta caducar, como
-  máximo **15 minutos** después del cambio. Pendiente: invalidarlos con `tokenVersion` o
-  `passwordChangedAt` comprobado en el guard.
+  y emite una sesión nueva para el navegador actual. En la misma transacción sube
+  `User.tokenVersion` y guarda `passwordChangedAt`: los access tokens ya emitidos en otros
+  dispositivos dejan de valer en su siguiente petición (ver el punto siguiente).
+- Revalidación del access token en **cada** petición (`JwtAuthGuard` → `assertActiveSession`):
+  además de firma y caducidad, exige contra la BD que la membresía del workspace del token siga
+  `ACTIVE` y que el claim `tv` del token coincida con `User.tokenVersion`. Si no, 401 con código
+  estable `SESSION_REVOKED` (la web renueva con el refresh token o vuelve al login). Suben
+  `tokenVersion`: el cambio de contraseña y desactivar el MFA (el token vivo decía
+  `mfaEnabled=true`). Los tokens emitidos antes de existir `tv` cuentan como versión 0. Login,
+  refresh y `/auth/me` ignoran membresías que no estén `ACTIVE`.
+- Baja de un miembro del equipo (`POST /workspace-members/:userId/remove`, OWNER/ADMIN; ADMIN solo
+  sobre THERAPIST/ASSISTANT; nadie a sí mismo ni al último OWNER): la membresía pasa a `REMOVED`
+  con fecha, autor y motivo de lista cerrada (CHECK `REMOVED ⇔ removedAt`); **no se borra** ni la
+  fila ni el `User`, así que la autoría y la auditoría se conservan. En una transacción, serializada
+  por workspace y con el lock de la agenda del profesional: revoca sus refresh tokens de ese
+  workspace, cierra sus accesos excepcionales (`MEMBER_REMOVED`), rechaza sus solicitudes de cita
+  pendientes, desactiva su reserva desde el portal y audita `MEMBER_REMOVED` con recuentos. La
+  reserva del portal revalida bajo ese mismo lock (409 `BOOKING_UNAVAILABLE`). Con destino (o más
+  tarde con `POST :userId/reassign`), sus procesos ACTIVE/PAUSED y las citas futuras sin proceso o
+  de esos procesos pasan a otro profesional clínico activo, con 409 si choca con su agenda
+  (`REASSIGN_SCHEDULE_CONFLICT`) o si ya tiene un proceso abierto con el paciente
+  (`REASSIGN_PROCESS_CONFLICT`); una cita con resumen interno del que se va no se mueve (no se
+  expone ni se borra). `MEMBER_WORK_REASSIGNED` guarda ids de procesos y citas, sin nombres.
+  Las notas internas de un proceso tienen autor: al reasignarlo, sus `internalNotes` pasan
+  cifradas tal cual a `ClinicalProcessPrivateNote` (con `authorId`) y el campo vivo queda vacío
+  para el nuevo profesional, que solo ve el indicador `hasPreviousAuthorNotes`; nunca las lee ni
+  las pisa (auditado como `CLINICAL_PROCESS_PRIVATE_NOTES_ARCHIVED`, solo ids). Las notas
+  archivadas **no tienen hoy ninguna vía de lectura**: ningún endpoint ni exportación devuelve su
+  contenido (la exportación administrativa del workspace solo da el recuento agregado
+  `archivedPrivateNotes`), y nadie las lee consultando la BD directamente. Su devolución a la
+  consulta depende de la futura exportación clínica completa **H1**, que deberá incluir en el
+  mismo apartado las `internalNotes` vivas y `ClinicalProcessPrivateNote` con su autor, solo para
+  el OWNER con reautenticación, con auditoría por proceso (ids) y excluidas siempre de la
+  exportación del paciente (art. 18.3 Ley 41/2002) y de la de un THERAPIST. **H1 es requisito
+  antes de que un cliente real se dé de baja o pida la devolución de sus datos.** La lectura de un
+  proceso ajeno por un co-terapeuta queda auditada (`CLINICAL_PROCESS_READ_NOT_AUTHOR`).
+  Mientras no se reasigne ("decidir después"), los avisos de mensajes del portal y los
+  recordatorios dirigidos al miembro dado de baja se reenvían a los OWNER/ADMIN activos del
+  espacio; los selectores de profesional, la reserva y los destinatarios de avisos solo usan
+  membresías `ACTIVE`.
 - Protección CSRF con patrón *double-submit cookie* en los endpoints que modifican estado.
 - Rate limiting: 5 intentos/minuto en login y registro; 10/minuto en refresh; 100/minuto global.
 - Aislamiento por `workspaceId` aplicado tanto en lectura como en las propias operaciones de
@@ -129,15 +165,20 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
 - CORS propio solo para esa ruta (`WAITLIST_ALLOWED_ORIGINS`, por defecto `https://asepsico.es` y
   `https://www.asepsico.es`, sin credenciales) y además se exige la cabecera `Origin` permitida
   (403 si falta o no coincide). El resto de la API sigue con `WEB_ORIGIN`.
-- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 20 tokens
+- Anti-abuso sin terceros: rate limit por IP (`req.ip`, `TRUST_PROXY`) de 5 envíos y 80 tokens
   cada 10 min, honeypot `website` (202 idéntico sin guardar) y token de formulario firmado
   (HMAC, sin estado ni cookies) con tiempo mínimo de 3 s y caducidad de 2 h.
 - Cuerpo máximo de 16 KB en la ruta (413) y solo JSON (415), antes de los parsers globales.
 - Alta solo con `create` (nunca upsert): un email repetido o dos altas simultáneas chocan en el
   índice único de `emailHash` (P2002) y reciben el mismo 202 sin tocar la fila existente.
-- El formulario solo registra la solicitud comercial (`commercialConsentRequested` + fecha). El
-  consentimiento válido lo fija únicamente `waitlist:confirm-commercial` (doble opt-in manual) y
-  se retira con `waitlist:withdraw-commercial`. Nada comercial sin doble opt-in.
+- **Sin comunicaciones comerciales (política `lista-espera-v3`, 17/10/2026):** el formulario ya no
+  tiene la casilla de novedades ni de comunicaciones comerciales, y quien se apunta solo recibe
+  mensajes sobre su solicitud y el piloto. La API rechaza con 400 (`WAITLIST_COMMERCIAL_NOT_OFFERED`)
+  un alta v3 con `commercialConsentRequested=true`. Decisión de producto: se borra la marca
+  `commercialConsentRequested` de las altas anteriores (v2); las columnas `commercialConsent*` y los
+  CLI `waitlist:confirm-commercial` / `waitlist:withdraw-commercial` quedan solo por compatibilidad y
+  **no se usan**. Ofrecer comunicaciones comerciales en el futuro exigiría una política nueva con
+  consentimiento separado y doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
@@ -147,6 +188,25 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   `npm run waitlist:delete -- --email <email>` (vacía todos los datos personales y el hash; deja
   `deletedAt`) y `npm run waitlist:purge` (plazo de 12 meses; tarea mensual en el runbook). Las
   claves de producción solo se usan en ejecuciones puntuales, nunca en un `.env` permanente.
+
+### Aviso interno por correo de altas nuevas (Scaleway como subencargado)
+
+- Módulo `apps/api/src/mail/` y `apps/api/src/waitlist/waitlist-notifier.ts`. Apagado por defecto
+  (`WAITLIST_NOTIFY_ENABLED`); con él encendido, la API valida al arrancar la configuración SMTP y,
+  si falta algo, no arranca (el error nombra variables, nunca valores).
+- **Subencargado:** Scaleway SAS (Transactional Email, región fr-par, UE) para **avisos internos**
+  al equipo. El correo **no contiene datos personales del apuntado ni datos de salud**: solo
+  recuento de altas nuevas, total activo, fecha y la orden para consultarlas. Destinatario: el Jefe.
+- SMTP con TLS obligatorio (465/2465 TLS implícito o 587/2587 con STARTTLS exigido, TLS ≥ 1.2,
+  certificado verificado; en Render gratuito se usa 2465 porque bloquea la salida a 25/465/587),
+  timeouts cortos (conexión 15 s, saludo 10 s, socket 30 s), AUTH PLAIN, nodemailer con versión exacta fijada, sin acceso a ficheros ni URLs desde el
+  mensaje, texto plano sin imágenes ni seguimiento. Credenciales solo en Render.
+- `MailService` **solo escribe a los destinatarios internos** de `WAITLIST_NOTIFY_TO` (403 con
+  cualquier otro). Escribir a pacientes está fuera de alcance y bloqueado: exigiría un servicio
+  aparte que pase por `portalEmailUsableForDelivery` (correo verificado) y revisión de Argos y Lex Psi.
+  El test `no-email-sending.security-spec.ts` falla si aparece código de envío fuera de la lista permitida.
+- Asíncrono y agrupado (1 aviso cada 10 min), 1 reintento como mucho; los fallos solo dejan en el log
+  el tipo de error, nunca destinatario ni contenido. Un fallo de correo nunca afecta al alta.
 
 ## Registro por invitación y aceptación de condiciones
 
@@ -189,6 +249,36 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   **TODO (flujo de supresión de cuentas de profesionales):** todavía no existe. Cuando se
   implemente, debe seudonimizar en lugar de borrar, en una transacción auditada, y nunca saltarse el
   `RESTRICT`.
+
+## Alta en el portal con el QR del profesional (`/api/v1/public/portal-signup`)
+
+- **QR fijo por profesional** con token aleatorio de 256 bits, guardado como hash SHA-256 y cifrado;
+  solo lo ve, rota o desactiva quien lo gestiona (`ASSISTANT` no gestiona QR ajenos). El QR de un
+  profesional dado de baja deja de funcionar.
+- **Envío público sin enumeración:** la respuesta es idéntica con token válido, inválido, rotado o
+  desactivado y con solicitudes descartadas por límites (10 por IP y hora, 10 por QR y hora, 20
+  pendientes por profesional). Cuerpo limitado a 16 KB. Alta con QR solo para mayores de 18; el
+  resto, activación manual en persona.
+- **Solicitud pendiente cifrada y sin acceso a nada.** Aceptarla, rechazarla o que caduque (14
+  días, purga automática cada hora en la API) la borra; la auditoría guarda solo ids y motivos.
+- **Vincular a una ficha** con diferencias de correo o teléfono, o con un portal desactivado antes,
+  exige confirmación explícita y auditada (409 `PORTAL_SIGNUP_CONFIRMATION_REQUIRED`).
+- **Activación** con enlace de un solo uso de 72 h, entregado en persona y nunca por correo. La
+  cuenta queda inactiva hasta poner la contraseña. Las páginas públicas del alta y la activación
+  sirven `Referrer-Policy: no-referrer` y `X-Robots-Tag: noindex, nofollow`, y la web borra el
+  token de la URL al leerlo.
+- **Pendiente antes de pacientes reales:** endpoint público con los datos del responsable (hoy la
+  pantalla muestra un marcador) y revisión por abogado de los textos v1.0 (borrador).
+
+## Reserva de citas desde el portal: límites de frecuencia
+
+- El límite de 30 peticiones/minuto va **en memoria y por instancia**: con varias instancias el
+  límite efectivo se multiplica por su número y se pierde al reiniciar.
+- El conteo de 5 solicitudes/hora por cuenta se hace **fuera de la transacción** de alta; dos
+  peticiones simultáneas pueden pasarlo a la vez y superar el límite en una o dos solicitudes. Los
+  topes de pendientes por paciente y el hueco retenido sí se aplican dentro de la transacción.
+- Vale para una sola instancia. **Antes de escalar a varias instancias hay que pasar ambos
+  contadores a Redis** (contador atómico con caducidad).
 
 ## Antes de producción (pendiente)
 

@@ -6,7 +6,7 @@
  *
  * Flujo (sin cookies, sin credenciales, fetch con mode "cors"):
  *  1. GET  {API}/api/v1/public/waitlist/form-token  → 200 WaitlistFormTokenResponse
- *     (pedirlo al abrir/enfocar el formulario, no al cargar la página).
+ *     (la landing lo pide al cargar la portada para despertar la API; ver docs/WAITLIST_API.md).
  *  2. POST {API}/api/v1/public/waitlist  (Content-Type: application/json, body WaitlistSubmitRequest)
  *     → 202 WaitlistAcceptedResponse  (alta nueva, email repetido y honeypot: respuesta idéntica;
  *       un email repetido NO cambia nada de la alta existente)
@@ -19,8 +19,11 @@ export type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHE
 /** NOT_SAID = "Prefiero no decirlo". */
 export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 
-/** Versión de la política que muestra la landing. Debe coincidir con la que acepta la API. */
-export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v2';
+/**
+ * Versión de la política que muestra (y envía) la landing. Debe estar entre las que acepta la API
+ * (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta también lista-espera-v2 y v3).
+ */
+export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v4';
 
 export interface WaitlistFormTokenResponse {
   formToken: string;
@@ -34,7 +37,10 @@ export interface WaitlistSubmitRequest {
   /** Email válido, máx. 254. */
   email: string;
   situation: WaitlistSituation;
-  /** Opcional, máx. 500. */
+  /**
+   * Opcional, máx. 500. La landing manda una opción ("Doctoralia", "Eholo", "Excel / hojas de cálculo",
+   * "Papel / agenda", "Nada todavía", "Otra") o "Otra: <texto>" (texto de máx. 100).
+   */
   tools?: string;
   /** Opcional, entero 1–500. */
   professionalsCount?: number;
@@ -44,6 +50,7 @@ export interface WaitlistSubmitRequest {
   privacyAccepted: true;
   privacyPolicyVersion: typeof WAITLIST_PRIVACY_POLICY_VERSION;
   /**
+   * La landing ya no lo envía (sin casilla de novedades); la API lo sigue aceptando y, si falta, guarda false.
    * Casilla opcional de comunicaciones comerciales. Por defecto false. Solo registra la SOLICITUD:
    * el consentimiento válido requiere doble opt-in por email (manual, fuera del formulario).
    */

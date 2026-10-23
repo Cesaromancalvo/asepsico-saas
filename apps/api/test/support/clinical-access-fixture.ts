@@ -9,7 +9,7 @@
  *  - auditLog.create (si no existía) para registrar las denegaciones.
  */
 
-export type FakeMember = { userId: string; role: string; isClinician: boolean; workspaceId?: string };
+export type FakeMember = { userId: string; role: string; isClinician: boolean; workspaceId?: string; status?: string };
 export type FakeProcess = {
   id: string; patientId: string; therapistId: string; status: string; workspaceId?: string;
   createdAt?: Date; endedAt?: Date | null; updatedAt?: Date;
@@ -22,10 +22,12 @@ export function matchesWhere(row: Record<string, any>, where: Record<string, any
     if (key === 'OR') return (condition as any[]).some((sub) => matchesWhere(row, sub));
     if (key === 'AND') return (condition as any[]).every((sub) => matchesWhere(row, sub));
     const value = row[key];
+    // Como Prisma: una columna sin valor es NULL (las filas creadas por el doble no llevan defaults).
+    if (condition === null) return value === null || value === undefined;
     if (condition !== null && typeof condition === 'object' && !(condition instanceof Date)) {
       if ('in' in condition) return (condition.in as unknown[]).includes(value);
       if ('not' in condition) return condition.not && typeof condition.not === 'object' && 'in' in condition.not
-        ? !(condition.not.in as unknown[]).includes(value) : value !== condition.not;
+        ? !(condition.not.in as unknown[]).includes(value) : (value ?? null) !== condition.not;
       if ('notIn' in condition) return !(condition.notIn as unknown[]).includes(value);
       if ('contains' in condition) {
         if (typeof value !== 'string') return false;
@@ -56,7 +58,7 @@ const DEFAULT_DATE = new Date('2026-01-01T00:00:00Z');
 
 export function withClinicalAccess<T extends Record<string, any>>(prisma: T, fixture: { members: FakeMember[]; processes?: FakeProcess[]; workspaceId?: string }): T {
   const ws = fixture.workspaceId ?? 'ws-1';
-  const members = fixture.members.map((member) => ({ workspaceId: ws, ...member }));
+  const members = fixture.members.map((member) => ({ workspaceId: ws, status: 'ACTIVE', ...member }));
   const processes = (fixture.processes ?? []).map((process) => ({
     workspaceId: ws, createdAt: DEFAULT_DATE, endedAt: null, updatedAt: DEFAULT_DATE, ...process,
   }));
@@ -107,6 +109,8 @@ export function treatingAccessStub(patient: Record<string, any> = { id: 'patient
     assertPatientClinicalAccess: jest.fn(async () => patient),
     assertTreating: jest.fn(async () => ({ patient, scope })),
     assertCanRead: jest.fn(async () => ({ patient, scope })),
+    assertCanReadWholeRecord: jest.fn(async () => ({ patient, scope })),
+    auditExceptionalRead: jest.fn(async () => undefined),
     assertClinician: jest.fn(async () => undefined),
     resolveScope: jest.fn(async () => scope),
     getMemberProfile: jest.fn(async () => ({ role: 'OWNER', isClinician: true })),

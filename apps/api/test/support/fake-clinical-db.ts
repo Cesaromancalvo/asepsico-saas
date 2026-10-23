@@ -21,6 +21,9 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     patient: [], workspaceMember: [], clinicalProcess: [], session: [], clinicalHistory: [], therapyGoal: [],
     therapeuticTask: [], clinicalAssessment: [], patientDocument: [], consentRecord: [], clinicalReport: [],
     conversation: [], message: [], auditLog: [], resourceShare: [], invoice: [], notification: [], user: [],
+    clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
+    appointmentRequest: [], availabilityBlock: [], therapistAvailability: [], clinicalProcessPrivateNote: [],
+    portalIntakeLink: [], portalSignupRequest: [], portalActivationToken: [],
     ...seed,
   } as Store;
 
@@ -41,6 +44,9 @@ export function fakeClinicalDb(seed: Partial<Store>) {
   /** Relaciones mínimas para poder filtrar por ellas (patient: { workspaceId }, session: {...}). */
   const withRelationsForMatching = (model: string, row: Row): Row => {
     const out: Row = { ...row };
+    // Defaults de columna que importan para la seguridad (solo al filtrar; la fila no cambia).
+    if (model === 'workspaceMember' && out.status === undefined) out.status = 'ACTIVE';
+    if (model === 'user' && out.tokenVersion === undefined) out.tokenVersion = 0;
     if ('patientId' in row && model !== 'patient') out.patient = minimal(byId('patient', row.patientId));
     if (model === 'therapeuticTask') out.session = row.sessionId ? minimal(byId('session', row.sessionId)) : null;
     if (model === 'message') out.conversation = minimal(byId('conversation', row.conversationId));
@@ -51,6 +57,9 @@ export function fakeClinicalDb(seed: Partial<Store>) {
   const hydrate = (model: string, row: Row, args: Row = {}): Row => {
     const spec = { ...(args.include ?? {}), ...(args.select ?? {}) };
     const out: Row = { ...row };
+    // Defaults de columna (como Prisma, que siempre devuelve la columna con su valor por defecto).
+    if (model === 'workspaceMember' && out.status === undefined) out.status = 'ACTIVE';
+    if (model === 'user' && out.tokenVersion === undefined) out.tokenVersion = 0;
     if (model === 'patient') {
       for (const [key, child] of Object.entries(CHILD_RELATIONS)) {
         if (!spec[key]) continue;
@@ -87,6 +96,11 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     findFirst: jest.fn(async (args: Row = {}) => {
       const row = find(name, args.where)[0];
       return row ? hydrate(name, row, args) : null;
+    }),
+    findFirstOrThrow: jest.fn(async (args: Row = {}) => {
+      const row = find(name, args.where)[0];
+      if (!row) throw new Error(`${name}: no encontrado`);
+      return hydrate(name, row, args);
     }),
     findUnique: jest.fn(async (args: Row = {}) => {
       const row = find(name, args.where)[0];
@@ -135,6 +149,13 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       for (const key of Object.keys(snapshot)) store[key] = snapshot[key];
       throw error;
     }
+  });
+  // Advisory locks (H6): se registran para comprobar que se piden ANTES de leer la historia.
+  prisma.__locks = [] as string[];
+  prisma.$executeRawUnsafe = jest.fn(async (_sql: string, key: string) => { prisma.__locks.push(key); return 1; });
+  prisma.$executeRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    prisma.__locks.push(String(values[0]));
+    return 1;
   });
   prisma.__store = store;
   return prisma;

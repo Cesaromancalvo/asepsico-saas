@@ -19,11 +19,13 @@
     "waitlist:export": "tsx prisma/scripts/waitlist-export.ts",
     "waitlist:delete": "tsx prisma/scripts/waitlist-delete.ts",
     "waitlist:purge": "tsx prisma/scripts/waitlist-purge.ts",
+    "portal-signup:purge": "tsx prisma/scripts/portal-signup-purge.ts",
     "waitlist:confirm-commercial": "tsx prisma/scripts/waitlist-confirm-commercial.ts",
     "waitlist:withdraw-commercial": "tsx prisma/scripts/waitlist-withdraw-commercial.ts",
     "invites:create": "tsx prisma/scripts/create-registration-invite.ts",
     "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
-    "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts"
+    "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts",
+    "db:migrate-exceptional-reasons": "tsx prisma/scripts/migrate-exceptional-access-reasons.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -41,6 +43,7 @@
     "cookie-parser": "^1.4.7",
     "fflate": "^0.8.3",
     "helmet": "^8.0.0",
+    "nodemailer": "10.0.14",
     "otplib": "^13.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

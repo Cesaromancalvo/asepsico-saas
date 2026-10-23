@@ -540,16 +540,6 @@ img { max-width: 100%; height: auto; }
 .sfield__err[hidden] { display: none; }
 .sfield--value { padding-top: 22px; border-top: 1px solid var(--line); }
 .sfield input::placeholder { color: #8A8798; opacity: 1; }
-.sfield__title { margin: 0; font-weight: 600; line-height: 1.4; color: var(--ink); }
-.sfield__pair { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 480px) { .sfield__pair { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
-.sfield__sub { display: grid; gap: 6px; align-content: start; }
-.sfield__sub label { font-weight: 500; font-size: .9375rem; }
-.savings__others { display: grid; gap: 16px; padding-top: 22px; border-top: 1px solid var(--line); }
-.savings__others-help { margin: 0; }
-.savings__others-list { display: grid; gap: 18px; }
-.savings__add { justify-self: start; }
-.savings__add[hidden] { display: none; }
 
 .savings__result {
   position: sticky; top: calc(var(--header-h) + 20px); min-width: 0;
@@ -587,7 +577,7 @@ img { max-width: 100%; height: auto; }
 .donut__svg { width: 100%; height: 100%; display: block; }
 .donut__track { fill: none; stroke: var(--tint-2); stroke-width: 20; }
 .donut__seg { fill: none; stroke-width: 20; transition: stroke-dasharray .45s var(--ease-out), stroke-dashoffset .45s var(--ease-out); }
-/* Nueve colores, uno por tarea, y grises para "Otra tarea" (el gráfico se lee en la leyenda con nombre y %, sin depender del color). */
+/* Un color por tarea, hasta nueve (el gráfico se lee en la leyenda con nombre y %, sin depender del color). */
 .donut__seg--0 { stroke: var(--violet); }    .donut__key--0 { background: var(--violet); }
 .donut__seg--1 { stroke: var(--ink); }       .donut__key--1 { background: var(--ink); }
 .donut__seg--2 { stroke: var(--mauve); }     .donut__key--2 { background: var(--mauve); }
@@ -597,9 +587,6 @@ img { max-width: 100%; height: auto; }
 .donut__seg--6 { stroke: #2E8BA6; }          .donut__key--6 { background: #2E8BA6; }
 .donut__seg--7 { stroke: #D96C5A; }          .donut__key--7 { background: #D96C5A; }
 .donut__seg--8 { stroke: #8CC7A1; }          .donut__key--8 { background: #8CC7A1; }
-.donut__seg--other1 { stroke: #8A8798; }     .donut__key--other1 { background: #8A8798; }
-.donut__seg--other2 { stroke: #B9B6C6; }     .donut__key--other2 { background: #B9B6C6; }
-.donut__seg--other3 { stroke: #5F5C6E; }     .donut__key--other3 { background: #5F5C6E; }
 .donut__legend { list-style: none; display: grid; gap: 10px; }
 .donut__legend li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
 .donut__legend li[hidden] { display: none; }
@@ -728,7 +715,6 @@ img { max-width: 100%; height: auto; }
 .wl-check { display: flex; gap: 12px; align-items: flex-start; }
 .waitlist .wl-check input { margin-top: 3px; }
 .wl-check label { font-size: .9375rem; line-height: 1.5; cursor: pointer; }
-.wl-check--sep { padding-top: 18px; border-top: 1px solid var(--line); }
 .wl-check__err { margin-top: -14px; padding-left: 32px; }
 
 .wl-info { margin: 0; font-size: .8125rem; line-height: 1.55; color: var(--ink-soft); }
@@ -819,6 +805,19 @@ img { max-width: 100%; height: auto; }
 .back { display: inline-block; margin-bottom: 24px; }
 .legal h3 { font-size: 1.0625rem; margin-top: 1.4em; }
 .legal-list { padding-left: 1.2em; display: grid; gap: 6px; margin-bottom: 1em; }
+
+/* Estado y cambios */
+.status { border: 2px solid var(--line); border-radius: var(--radius); background: #fff; padding: 20px; margin: 24px 0; }
+.status__title { margin: 0 0 .3em; }
+.status--ok { border-color: var(--green); background: var(--green-bg); }
+.status--warn { border-color: var(--amber); background: var(--amber-bg); }
+.status--down { border-color: #9B1C1C; background: #FBE6E6; }
+.change { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 16px 20px; margin: 16px 0; }
+.change h3 { margin-top: .2em; }
+.change__meta { margin: 0; font-size: .9375rem; color: var(--ink-soft); }
+.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: .8125rem; margin-right: 6px; }
+.tag--notice { background: var(--amber-bg); color: var(--amber); }
+.tag--done { background: var(--green-bg); color: var(--green); }
 
 /* Calculadora (sin uso mientras esté apagada) */
 .calc { display: grid; gap: 24px; margin-top: 24px; }

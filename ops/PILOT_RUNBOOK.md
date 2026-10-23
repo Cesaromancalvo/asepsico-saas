@@ -219,6 +219,37 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
   devolverle `isClinician` de forma temporal y auditada para deshacer); no hay un deshacer
   administrativo.
 
+## Baja de un miembro: notas internas del profesional anterior
+
+- Al reasignar los procesos de un profesional dado de baja, sus notas internas se archivan en
+  `ClinicalProcessPrivateNote` (cifradas, con su autor). **Hoy no tienen ninguna vía de lectura**:
+  ningún endpoint ni exportación devuelve su contenido (la exportación del workspace solo da el
+  recuento `archivedPrivateNotes`) y **nadie las lee consultando la BD directamente** (tampoco el
+  operador de la plataforma).
+- Su devolución a la consulta depende de la futura exportación clínica completa **H1**: mismo
+  apartado que las `internalNotes` vivas, con autor, solo OWNER con reautenticación, auditoría por
+  proceso (ids) y siempre excluidas de la exportación del paciente (art. 18.3 Ley 41/2002) y de la
+  de un THERAPIST. **H1 es requisito antes de que un cliente real se dé de baja o pida la
+  devolución de sus datos.**
+
+## Alta por QR: caducidad de las solicitudes (14 días)
+
+- Las solicitudes de alta en el portal (`PortalSignupRequest`) sin respuesta caducan a los 14 días y
+  se **borran** con auditoría `PORTAL_SIGNUP_REQUEST_EXPIRED` (solo ids, sin datos personales).
+- **Purga automática dentro de la API** (`PortalSignupCleanupService`), sin coste ni cron externo:
+  una vez unos 10 s después de arrancar (sin bloquear el arranque) y después **cada hora**, en todos
+  los espacios. Es idempotente (varias instancias a la vez no son un problema) y no hace nada con
+  `NODE_ENV=test`. Si falla, solo deja un aviso en el log con el tipo de error
+  (`Purga de solicitudes de alta fallida (...)`), nunca datos. Si ese aviso se repite, revisar la
+  conexión a la base de datos y lanzar la purga manual.
+- Además, la API purga las de un espacio cada vez que alguien lista o recibe solicitudes de ese espacio.
+- **Respaldo manual** (todos los espacios): `npm run portal-signup:purge`. Solo necesita
+  `DATABASE_URL`, es idempotente y solo imprime el recuento. Se ejecuta desde el clon de despliegue
+  con la URL leída con `read -rs` (como los CLI de la lista de espera) y `unset` al terminar. Ya no
+  hace falta ejecutarla cada semana: solo si el aviso de fallo se repite o tras una caída larga.
+- No se usa GitHub Actions para esta purga: el repositorio es público y exigiría guardar
+  `DATABASE_URL` de producción en GitHub y abrir la base a las IP de los runners.
+
 ## Backups
 
 - Frecuencia recomendada para piloto: diaria.
@@ -241,16 +272,64 @@ Contrato y detalles en `docs/WAITLIST_API.md`.
 
 - **Host de la API para la landing: a confirmar por Dora** (`asepsico-api.onrender.com` no está
   verificado). Es configurable en la landing y debe coincidir con `connect-src` de su CSP.
-- **Nada comercial sin doble opt-in por email.** El formulario solo guarda la solicitud
-  (`commercialConsentRequested`). Doble opt-in manual: email de confirmación de César → si la
-  persona responde "Sí", conservar ese email y ejecutar `waitlist:confirm-commercial`. Solo se
-  envía algo comercial a filas con `commercialConsent=true`. Retirada solo con
-  `waitlist:withdraw-commercial` (o el futuro enlace de baja). Un segundo envío del formulario
-  con el mismo email no cambia nada.
+- **Casilla de novedades retirada (política `lista-espera-v3`, desde el 17/10/2026).** No se envía
+  **nada comercial** (ni novedades ni ofertas) a nadie de la lista de espera: solo mensajes sobre su
+  solicitud y el piloto. La marca `commercialConsentRequested` de las altas anteriores (v2) se borra
+  por decisión de producto; anotar la fecha de ejecución en el registro del piloto (sin datos
+  personales). `waitlist:confirm-commercial` y `waitlist:withdraw-commercial` siguen existiendo por
+  compatibilidad, pero **no se ejecutan**. Un segundo envío del formulario con el mismo email no
+  cambia nada.
 - **Claves de producción solo en ejecuciones puntuales de los CLI** (`waitlist:export`,
-  `waitlist:delete`, `waitlist:purge`, `waitlist:confirm-commercial`, `waitlist:withdraw-commercial`): se pasan en la línea de la orden y se descartan al
+  `waitlist:delete`, `waitlist:purge`): se pasan en la línea de la orden y se descartan al
   terminar; nunca en un `.env` permanente, en el perfil del shell ni en el repo.
 - **`WAITLIST_SECRET` no se rota.**
+
+### Aviso por correo de altas nuevas (Scaleway Transactional Email)
+
+Cuando alguien se apunta, la API envía al Jefe un correo **sin datos del apuntado** con asunto
+«Nuevo apunte en la lista de espera»: cuántas altas nuevas hay, el total activo, la fecha y cómo
+consultarlas (`waitlist:export`). Como mucho **1 aviso cada 10 minutos** con el recuento acumulado.
+Las altas repetidas y el honeypot no avisan. Está **apagado por defecto**.
+
+**Activarlo (una vez):**
+1. En Scaleway (región fr-par), comprobar que el dominio `notificaciones.asepsico.es` aparece como
+   verificado en Transactional Email. Mientras no lo esté, los envíos fallan (solo queda un aviso en el log).
+2. Crear una **API key** asociada a una aplicación IAM con una política que dé solo
+   `TransactionalEmailEmailSmtpCreate` (enviar por SMTP; es el mínimo, preferible a
+   `TransactionalEmailFullAccess`) y **solo** sobre el proyecto `asepsico-prod`. Ningún otro permiso.
+   Anotar en el registro del piloto la fecha y el ID de la clave (nunca la clave secreta). El ID del
+   proyecto (para `MAIL_SMTP_USER`) está en Transactional Email → dominio → Overview (credenciales
+   SMTP) y en Project Dashboard → Settings.
+3. En Render → servicio de la API → Environment:
+   - `MAIL_SMTP_HOST=smtp.tem.scaleway.com`
+   - `MAIL_SMTP_PORT=2465` (TLS implícito). **No usar 587 ni 465 en el plan gratuito de Render:** desde
+     septiembre de 2025 bloquea la salida a los puertos SMTP 25, 465 y 587 y el aviso nunca llega (en el
+     log sale `Aviso de lista de espera no enviado (Error ETIMEDOUT)` o similar a los ~15 s). Scaleway
+     acepta los alternativos 2465 (TLS implícito) y 2587 (STARTTLS); la API admite 587, 465, 2587 y
+     2465, siempre con TLS ≥ 1.2 y certificado verificado. En un plan de pago de Render vale cualquiera.
+   - `MAIL_SMTP_USER=` ID del proyecto `asepsico-prod`
+   - `MAIL_SMTP_PASSWORD=` clave secreta de la API key (se pega una vez y no se vuelve a mostrar)
+   - `MAIL_FROM=AsePsico <avisos@notificaciones.asepsico.es>`
+   - `WAITLIST_NOTIFY_TO=` el correo del Jefe
+   - `WAITLIST_NOTIFY_ENABLED=true`
+4. Guardar y dejar que Render redespliegue. Si falta algo, la API **no arranca** y el log dice qué
+   variable falta (sin mostrar valores): corregir y volver a guardar.
+
+**Probarlo:** apuntarse en la landing con un correo de prueba propio. En menos de un minuto llega el
+aviso. Después, borrar esa alta con `npm run waitlist:delete -- --email <correo de prueba>`. Si no
+llega: buscar en el log de Render `Aviso de lista de espera no enviado (...)` (solo trae el tipo y el
+código de error; `ETIMEDOUT`/`ECONNECTION` suele ser un puerto bloqueado: comprobar `MAIL_SMTP_PORT=2465`)
+y revisar el panel de Scaleway (dominio verificado, cuota, clave).
+
+**Rotar la clave** (cada 6–12 meses, o ya si se sospecha una fuga): crear una API key nueva con la
+misma política → cambiar `MAIL_SMTP_PASSWORD` en Render → probar con un alta de prueba → **borrar la
+clave antigua** en Scaleway → anotar la fecha en el registro del piloto.
+
+**Apagarlo:** `WAITLIST_NOTIFY_ENABLED=false` en Render (el resto de variables puede quedarse).
+
+**Límites conocidos:** el agrupado vive en memoria. En el plan gratuito la API se duerme: un aviso
+pendiente puede perderse al dormir o al reiniciar (aceptado: las altas siguen en la base de datos
+y `waitlist:export` las muestra todas). Un fallo de envío se reintenta una sola vez; nunca afecta al alta.
 
 ### Tarea programada: purga por plazo de conservación
 

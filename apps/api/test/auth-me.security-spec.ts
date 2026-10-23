@@ -36,7 +36,7 @@ describe('GET /auth/me', () => {
     const { svc, findFirst } = service(member({ role, isClinician: role === 'THERAPIST', user: { id: 'u-1', email: 'a@example.test', firstName: 'Nombre', lastName: 'Ficticio', totpEnabled: role !== 'ASSISTANT' } }));
     // El token dice otra cosa: manda la BD.
     const me = await svc.me({ sub: 'u-1', workspaceId: WS, role, email: 'a@example.test' });
-    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { workspaceId: WS, userId: 'u-1' } }));
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { workspaceId: WS, userId: 'u-1', status: 'ACTIVE' } }));
     expect(Object.keys(me).sort()).toEqual(['email', 'firstName', 'isClinician', 'lastName', 'mfaEnabled', 'role', 'userId', 'workspace']);
     expect(me).toMatchObject({ role, isClinician: role === 'THERAPIST', mfaEnabled: role !== 'ASSISTANT', workspace: { id: WS, name: 'Consulta Ficticia' } });
   });
