@@ -100,9 +100,18 @@ class FakePrisma {
 
   refreshToken = {
     create: async ({ data }: any) => {
-      this.refreshTokens.push(data);
+      this.refreshTokens.push({ revokedAt: null, ...data });
       return data;
     },
+    updateMany: async ({ where, data }: any) => {
+      const hits = this.refreshTokens.filter((t) => t.userId === where.userId && (where.revokedAt !== null || t.revokedAt == null));
+      hits.forEach((t) => Object.assign(t, data));
+      return { count: hits.length };
+    },
+  };
+
+  workspaceMember = {
+    findFirst: async ({ where }: any) => (this.users.has(where.userId) && where.workspaceId === WORKSPACE_ID ? { role: 'THERAPIST' } : null),
   };
 
   /** Advisory locks de transacción (pg_try_advisory_xact_lock). false = simular que no existen. */
@@ -372,23 +381,42 @@ describe('MFA hardening (setup/confirm/disable/login/mfa)', () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
       const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
-      expect(user().tokenVersion).toBe(0);
+      expect(user().tokenVersion).toBe(1); // activar también la sube (condición de Argos, panel de plataforma)
       await post('mfa/disable').send({ password: PASSWORD, code: confirm.body.recoveryCodes[0] }).expect(201);
-      expect(user().tokenVersion).toBe(1);
+      expect(user().tokenVersion).toBe(2);
       const sessionDb: any = {
         workspaceMember: { findFirst: async () => ({ id: 'm-ficticio' }) },
         user: { findUnique: async () => ({ tokenVersion: user().tokenVersion }) },
       };
-      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 0 })).rejects.toMatchObject({ status: 401, response: { code: 'SESSION_REVOKED' } });
-      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 1 })).resolves.toBeUndefined();
+      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 1 })).rejects.toMatchObject({ status: 401, response: { code: 'SESSION_REVOKED' } });
+      await expect(assertActiveSession(sessionDb, { sub: USER_ID, workspaceId: WORKSPACE_ID, tv: 2 })).resolves.toBeUndefined();
+    });
+
+    it('activar el MFA cierra todas las sesiones previas y emite una sesión nueva con mfaEnabled=true (Argos)', async () => {
+      await seedUser();
+      db.refreshTokens.push({ userId: USER_ID, tokenHash: 'sesion-previa-1', revokedAt: null }, { userId: USER_ID, tokenHash: 'sesion-previa-2', revokedAt: null });
+      const setup = await post('mfa/setup').expect(201);
+      const confirm = await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
+      expect(Object.keys(confirm.body)).toEqual(['recoveryCodes']);
+      // Las sesiones anteriores (sin segundo factor) quedan revocadas: no se pueden renovar.
+      expect(db.refreshTokens.filter((t) => t.tokenHash.startsWith('sesion-previa')).every((t) => t.revokedAt instanceof Date)).toBe(true);
+      // Sesión nueva para este navegador (acaba de verificar contraseña + TOTP).
+      const cookies = ([] as string[]).concat(confirm.headers['set-cookie'] ?? []);
+      expect(cookies.some((c) => c.startsWith('access_token='))).toBe(true);
+      expect(cookies.some((c) => c.startsWith('refresh_token='))).toBe(true);
+      const access = cookies.find((c) => c.startsWith('access_token='))!.split(';')[0].split('=')[1];
+      expect(app.get(JwtService).decode(access)).toMatchObject({ sub: USER_ID, mfaEnabled: true, tv: 1 });
+      expect(db.refreshTokens.filter((t) => t.revokedAt == null)).toHaveLength(1);
+      expect(db.auditLogs.find((a) => a.action === 'MFA_ENABLED').metadata).toEqual({ recoveryCodesIssued: 10, revokedSessions: 2 });
     });
 
     it('un disable que falla (código erróneo) no sube tokenVersion', async () => {
       await seedUser();
       const setup = await post('mfa/setup').expect(201);
       await post('mfa/confirm').send({ password: PASSWORD, code: await code(setup.body.secret) }).expect(201);
+      expect(user().tokenVersion).toBe(1);
       await post('mfa/disable').send({ password: PASSWORD, code: '000000' }).expect(401);
-      expect(user().tokenVersion).toBe(0);
+      expect(user().tokenVersion).toBe(1);
     });
 
     it('desactivar con el MISMO TOTP del confirm se rechaza; con el del paso siguiente funciona', async () => {

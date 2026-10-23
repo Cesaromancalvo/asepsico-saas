@@ -139,8 +139,19 @@ export class AuthController {
   @Header(...NO_STORE)
   @UseGuards(JwtAuthGuard, CsrfGuard)
   @Post('mfa/confirm')
-  async confirmMfaSetup(@CurrentUser() user: AuthUser, @Body() dto: ConfirmMfaSetupDto, @Req() req: Request) {
-    return this.mfa.confirmMfaSetup({ userId: user.sub, workspaceId: user.workspaceId }, dto.password, dto.code, meta(req));
+  async confirmMfaSetup(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ConfirmMfaSetupDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // Activar el MFA cierra todas las sesiones (tokenVersion + refresh tokens revocados, en
+    // MfaService). Esta petición ya verificó contraseña + TOTP: equivale a un login con segundo
+    // factor, así que el navegador que lo activa recibe una sesión nueva con mfaEnabled=true.
+    const result = await this.mfa.confirmMfaSetup({ userId: user.sub, workspaceId: user.workspaceId }, dto.password, dto.code, meta(req));
+    const session = await this.auth.issueSession(result.sessionUser, user.workspaceId, result.role, meta(req));
+    setAuthCookies(res, session);
+    return { recoveryCodes: result.recoveryCodes };
   }
 
   @Throttle(AUTH_THROTTLE)

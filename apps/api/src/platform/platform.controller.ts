@@ -52,6 +52,6 @@ export class PlatformController {
   @HttpCode(204)
   @Post('waitlist/:id/delete')
   async delete(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PlatformConfirmPasswordDto) {
-    await this.waitlist.suppress(user.sub, id, dto.password);
+    await this.waitlist.suppress({ userId: user.sub, workspaceId: user.workspaceId }, id, dto.password);
   }
 }

@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import * as cookieParser from 'cookie-parser';
+import { generate } from 'otplib';
 import request = require('supertest');
 import { getJwtSecret } from '../src/auth/jwt-secret.util';
 import { encryptModelData } from '../src/common/crypto/clinical-crypto';
@@ -44,6 +45,8 @@ describeDb('Panel privado de la lista de espera (PLATFORM_ADMIN, PostgreSQL real
   let app: INestApplication;
   let jwt: JwtService;
   const ids: Record<string, string> = {};
+  let member: (email: string, role: 'OWNER', workspaceId: string, totpEnabled?: boolean) => Promise<string>;
+  const cookiesOf = (res: request.Response) => Object.fromEntries(([] as string[]).concat(res.headers['set-cookie'] ?? []).map((c) => c.split(';')[0].split('=') as [string, string]));
 
   const token = (sub: string, workspaceId: string, role: string, mfaEnabled: boolean, extra: object = {}) =>
     jwt.sign({ sub, email: 'no-se-usa@example.com', workspaceId, role, mfaEnabled, tv: 0, ...extra });
@@ -71,7 +74,7 @@ describeDb('Panel privado de la lista de espera (PLATFORM_ADMIN, PostgreSQL real
     prisma = new PrismaClient({ datasourceUrl: url });
     const passwordHash = await hash(ADMIN_PASSWORD, 4);
     const docs = getCurrentLegalDocuments();
-    const member = async (email: string, role: 'OWNER', workspaceId: string, totpEnabled = true) => {
+    member = async (email: string, role: 'OWNER', workspaceId: string, totpEnabled = true) => {
       const user = await prisma.user.create({ data: { email, passwordHash, firstName: 'Usuario', lastName: 'Ficticio', totpEnabled } });
       await prisma.workspaceMember.create({ data: { workspaceId, userId: user.id, role, isClinician: true } });
       for (const doc of docs) await prisma.termsAcceptance.create({ data: { workspaceId, userId: user.id, documentType: doc.type, version: doc.version, textHash: doc.textHash } });
@@ -186,8 +189,11 @@ describeDb('Panel privado de la lista de espera (PLATFORM_ADMIN, PostgreSQL real
     const bad = await http().post(path).set(asAdmin()).send({ password: 'ClaveIncorrecta-000' }).expect(401);
     expect(bad.body).toMatchObject({ statusCode: 401, code: 'PLATFORM_REAUTH_FAILED' });
     expect(await prisma.waitlistEntry.findUniqueOrThrow({ where: { id: ids.active1 } })).toMatchObject({ deletedAt: null });
+    // El fallo cuenta para el bloqueo de la cuenta (mismo contador que el MFA y el cambio de contraseña).
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: ids.admin } })).mfaFailedAttempts).toBe(1);
 
     const ok = await http().post(path).set(asAdmin()).send({ password: ADMIN_PASSWORD }).expect(204);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: ids.admin } })).mfaFailedAttempts).toBe(0);
     expect(ok.headers['cache-control']).toBe('no-store');
     expect(await prisma.waitlistEntry.findUniqueOrThrow({ where: { id: ids.active1 } })).toMatchObject({
       name: null, email: null, emailHash: null, tools: null, situation: null, source: null, professionalsCount: null, commercialConsentRequested: false, commercialConsent: false,
@@ -210,6 +216,51 @@ describeDb('Panel privado de la lista de espera (PLATFORM_ADMIN, PostgreSQL real
     await prisma.waitlistEntry.updateMany({ where: { emailHash: hashWaitlistEmail(email) }, data: { emailHash: null, deletedAt: new Date() } });
     await new WaitlistService(prisma as any).submit({ name: 'Persona Ficticia', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any);
     expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email), deletedAt: null } })).toBe(1);
+  });
+
+  it('veto ALTA de Argos: una cuenta con MFA y email homógrafo (ancho completo, ligadura «ﬁ») NO es PLATFORM_ADMIN', async () => {
+    const realAdmins = [`${run}-admin@example.com`, `${run}-fiona@example.com`];
+    const lookalikes = [`${run}-\uFF41dmin@example.com`, `${run}-\uFB01ona@example.com`, `${run}-admin@example\uFF0Ecom`];
+    setAdmins(realAdmins.join(','));
+    for (const email of lookalikes) {
+      expect(email.normalize('NFKC')).toMatch(/^platform-\d+-(admin|fiona)@example\.com$/); // con NFKC habría coincidido
+      const ws = (await prisma.workspace.create({ data: { name: `Consulta homógrafa ficticia ${run}` } })).id;
+      const userId = await member(email.trim().toLowerCase(), 'OWNER', ws, true);
+      const headers = asAdmin(token(userId, ws, 'OWNER', true));
+      await http().get('/api/v1/admin/waitlist').set(headers).expect(404);
+      expect((await http().get('/api/v1/admin/me').set(headers).expect(200)).body).toEqual({ platformAdmin: false });
+    }
+  });
+
+  it('condición de Argos: activar el MFA cierra la sesión sin segundo factor; solo la sesión nueva entra al panel', async () => {
+    const email = `${run}-nueva-admin@example.com`;
+    const ws = (await prisma.workspace.create({ data: { name: `AsePsico interno ficticio 2 ${run}` } })).id;
+    await member(email, 'OWNER', ws, false);
+    setAdmins(email);
+    const csrf = { 'x-csrf-token': 'csrf-ficticio' };
+    const withCookies = (c: Record<string, string>) => ({ ...csrf, Cookie: `access_token=${c.access_token}; refresh_token=${c.refresh_token}; csrf_token=csrf-ficticio` });
+
+    const login = await http().post('/api/v1/auth/login').send({ email, password: ADMIN_PASSWORD }).expect(200);
+    expect(login.body.mfaRequired).toBe(false);
+    const old = cookiesOf(login);
+    await http().get('/api/v1/admin/waitlist').set(withCookies(old)).expect(404); // OWNER sin MFA
+
+    const setup = await http().post('/api/v1/auth/mfa/setup').set(withCookies(old)).expect(201);
+    const confirm = await http().post('/api/v1/auth/mfa/confirm').set(withCookies(old)).send({ password: ADMIN_PASSWORD, code: await generate({ secret: setup.body.secret }) }).expect(201);
+    expect(confirm.body.recoveryCodes).toHaveLength(10);
+    const fresh = cookiesOf(confirm);
+
+    // La sesión vieja (abierta sin segundo factor) ya no vale para nada:
+    await http().post('/api/v1/auth/refresh').set(withCookies(old)).expect(401); // no se puede renovar
+    // Su access token sigue diciendo mfaEnabled=false: fuera de las rutas de configurar el MFA, 403;
+    // en esas rutas (las únicas que pasan de ahí) la revalidación de sesión da 401 SESSION_REVOKED.
+    expect((await http().get('/api/v1/auth/me').set(withCookies(old)).expect(403)).body.code).toBe('MFA_SETUP_REQUIRED');
+    expect((await http().post('/api/v1/auth/mfa/setup').set(withCookies(old)).expect(401)).body.code).toBe('SESSION_REVOKED');
+    await http().get('/api/v1/admin/waitlist').set(withCookies(old)).expect(404);
+    // La sesión emitida al confirmar (contraseña + TOTP verificados) sí entra.
+    await http().get('/api/v1/admin/waitlist').set(withCookies(fresh)).expect(200);
+    const renewed = cookiesOf(await http().post('/api/v1/auth/refresh').set(withCookies(fresh)).expect(200));
+    await http().get('/api/v1/admin/waitlist').set(withCookies(renewed)).expect(200);
   });
 
   it('regresión multi-tenant: ser PLATFORM_ADMIN no cambia NADA en los endpoints clínicos', async () => {

@@ -52,6 +52,33 @@ describe('PLATFORM_ADMIN: asignación solo por PLATFORM_ADMIN_EMAILS (falla cerr
   });
 });
 
+describe('PLATFORM_ADMIN: sin equivalencias Unicode (veto ALTA de Argos)', () => {
+  const env = { PLATFORM_ADMIN_EMAILS: 'admin@x.test,fiona@x.test' };
+  const lookalikes = [
+    '\uFF41dmin@x.test', // «ａ» de ancho completo
+    '\uFF41\uFF44\uFF4D\uFF49\uFF4E\uFF20\uFF58\uFF0E\uFF54\uFF45\uFF53\uFF54', // todo en ancho completo
+    '\uFB01ona@x.test', // ligadura «ﬁ»
+    'admin@x.test\u200B', // espacio de anchura cero
+    'admin@x\uFF0Etest', // punto de ancho completo
+  ];
+
+  it.each(lookalikes)('una cuenta con MFA y email %j NO es PLATFORM_ADMIN', async (email) => {
+    expect(email.normalize('NFKC').toLowerCase().replace('\u200B', '')).toMatch(/^(admin|fiona)@x\.test$/); // con NFKC sí habría coincidido
+    expect(await isPlatformAdmin(fakeUsers({ email, totpEnabled: true }), { sub: 'u1', mfaEnabled: true }, env)).toBe(false);
+  });
+
+  it('se compara por igualdad exacta con el email guardado (trim + minúsculas, como el registro)', async () => {
+    expect(await isPlatformAdmin(fakeUsers({ email: 'admin@x.test', totpEnabled: true }), { sub: 'u1', mfaEnabled: true }, env)).toBe(true);
+    expect(await isPlatformAdmin(fakeUsers({ email: 'fiona@x.test', totpEnabled: true }), { sub: 'u1', mfaEnabled: true }, env)).toBe(true);
+    // Un email guardado con mayúsculas (no debería existir) no se "arregla": falla cerrado.
+    expect(await isPlatformAdmin(fakeUsers({ email: 'Admin@x.test', totpEnabled: true }), { sub: 'u1', mfaEnabled: true }, env)).toBe(false);
+  });
+
+  it('las entradas no ASCII de la variable se ignoran', () => {
+    expect([...parsePlatformAdminEmails(`${lookalikes.join(',')}, ADMIN@X.TEST `)]).toEqual(['admin@x.test']);
+  });
+});
+
 describe('PLATFORM_ADMIN: nada en el código ni en el esquema puede concederlo', () => {
   const src = resolve(__dirname, '../src');
   const files: string[] = [];
@@ -79,7 +106,10 @@ describe('PLATFORM_ADMIN: nada en el código ni en el esquema puede concederlo',
 
   it('los endpoints de plataforma no tocan tablas con workspaceId ni AuditLog de tenant', () => {
     const platform = files.filter((f) => f.includes(`${join('src', 'platform')}`)).map((f) => readFileSync(f, 'utf8')).join('\n')
-      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''); // sin comentarios
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '') // sin comentarios
+      // Única excepción: el actor de MfaService.runAttempt (contador de fallos por cuenta). Sus fallos
+      // se auditan en el workspace PROPIO del admin (el interno vacío), nunca en el de un cliente.
+      .replace('{ userId: user.sub, workspaceId: user.workspaceId }', '{ ACTOR_DEL_TOKEN }');
     expect(platform).not.toMatch(/\.(auditLog|patient|clinicalProcess|session|workspaceMember|workspace)\./);
     expect(platform).not.toMatch(/workspaceId/);
   });
