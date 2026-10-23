@@ -358,12 +358,20 @@ Sustituye al uso diario de `waitlist:export` / `waitlist:delete` (los CLI siguen
 ve quien esté en `PLATFORM_ADMIN_EMAILS` **y** tenga el MFA activo; para cualquier otro la API
 responde 404.
 
-> **NO rellenar `PLATFORM_ADMIN_EMAILS` en Render todavía.** Solo cuando se cumplan las DOS cosas:
+> **NO rellenar `PLATFORM_ADMIN_EMAILS` en Render todavía.** Solo cuando se cumplan las CUATRO cosas:
 > 1. `/api/v1` ya **no** pasa por el proxy de Vercel (salida prevista 27–28/10). Mientras pase, la
 >    API ve la IP del proxy (el límite de intentos no funciona por cliente) y los datos de la lista
 >    viajarían por un encargado adicional no previsto.
 > 2. La landing ya publica la política **`lista-espera-v4`** (con la v3 publicada no se activa: dice
 >    que no hay panel web).
+> 3. La **comprobación directa de `req.ip`** (sección "Comprobación directa de `req.ip`") da
+>    **COINCIDE**, hecha **después** de apuntar `api.asepsico.es` y de quitar el proxy de Vercel, y
+>    está anotada (fecha y resultado) en el registro del piloto. Si hubiera un proxy o CDN delante
+>    de Render con `TRUST_PROXY=1`, `req.ip` sería la IP del borde y el límite de intentos de la
+>    contraseña del panel no sería por cliente.
+> 4. La CSP efectiva de la web no permite scripts inline sin hash: `npm run verify:static-site`
+>    da TODO OK contra `https://app.asepsico.es` (meta CSP por página, ver "Web (Render Static
+>    Site)").
 >
 > Se puede crear la cuenta exclusiva (paso 1) antes; la variable (paso 2), no.
 
@@ -382,7 +390,7 @@ del demo: el panel ve datos personales y esa cuenta debe servir solo para esto.
    recuperación en el gestor de contraseñas. Al activarla se cierran las demás sesiones de esa
    cuenta (otros navegadores vuelven al login); la del navegador donde la activas sigue abierta.
 
-**2. Activar la variable** (solo con los dos bloqueos de arriba resueltos y la cuenta del paso 1
+**2. Activar la variable** (solo con los cuatro bloqueos de arriba resueltos y la cuenta del paso 1
 ya creada: nunca poner en la variable un email que aún no tenga cuenta, porque quien se registrara
 con él obtendría el acceso). Escribir el email exactamente como se registró, solo con caracteres
 ASCII (sin acentos ni caracteres especiales; si los tiene, la API lo ignora y nadie entra). En
