@@ -61,9 +61,21 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.asepsico.es; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   ```
   Ruta `/_next/static/*`: `Cache-Control: public, max-age=31536000, immutable`.
-  `no-referrer` porque el id va en la query. `'unsafe-inline'` en `script-src` es provisional
+  Además, lo que en Vercel daba `headers()` de `next.config.mjs` (con `output: 'export'` Next no
+  lo aplica):
+  ```
+  /*                X-Robots-Tag: noindex, nofollow     (la app no se indexa; la landing es asepsico.es)
+  /portal/alta/*    Cache-Control: no-store             (alta por QR: el token va en el fragmento)
+  /portal/activar/* Cache-Control: no-store
+  /admin/*          Cache-Control: no-store             (panel privado de la lista de espera)
+  ```
+  `no-referrer` (global) porque el id va en la query y el token del alta en el fragmento. `'unsafe-inline'` en `script-src` es provisional
   (Next exportado mete scripts inline sin nonce); ver "Trabajo futuro".
 - Comprobación: `curl -sI https://app.asepsico.es/ | grep -iE 'strict-transport|content-security|x-frame|referrer'`.
+  Y `curl -sI https://app.asepsico.es/portal/alta/ | grep -iE 'robots|cache-control|referrer'` (noindex, no-store, no-referrer).
+- Los QR de alta y los enlaces de activación usan el origen de la página (`window.location.origin`):
+  un QR descargado desde otro dominio (p. ej. `*.vercel.app`) apunta allí. Tras el cambio de dominio,
+  volver a descargar el QR desde `https://app.asepsico.es/settings/portal-qr/` (el token no cambia).
 
 ### Variables en el servicio web de Render
 
