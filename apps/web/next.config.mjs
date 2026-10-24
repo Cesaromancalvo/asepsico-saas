@@ -10,7 +10,16 @@ const nextConfig = {
       { key: 'Referrer-Policy', value: 'no-referrer' },
       { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
     ];
-    return ['/portal/alta', '/portal/alta/:path*', '/portal/activar'].map((source) => ({ source, headers: publicSignup }));
+    // Panel privado de la lista de espera: que el navegador no guarde la página en caché.
+    const platformPanel = [
+      { key: 'Cache-Control', value: 'no-store' },
+      { key: 'Referrer-Policy', value: 'no-referrer' },
+      { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+    ];
+    return [
+      ...['/portal/alta', '/portal/alta/:path*', '/portal/activar'].map((source) => ({ source, headers: publicSignup })),
+      ...['/admin', '/admin/:path*'].map((source) => ({ source, headers: platformPanel })),
+    ];
   },
   async rewrites() {
     const target = process.env.API_INTERNAL_URL;

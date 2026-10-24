@@ -297,6 +297,58 @@ clave antigua** en Scaleway → anotar la fecha en el registro del piloto.
 pendiente puede perderse al dormir o al reiniciar (aceptado: las altas siguen en la base de datos
 y `waitlist:export` las muestra todas). Un fallo de envío se reintenta una sola vez; nunca afecta al alta.
 
+### Panel privado de la lista de espera (`/admin/lista-espera`)
+
+Sustituye al uso diario de `waitlist:export` / `waitlist:delete` (los CLI siguen valiendo). Solo lo
+ve quien esté en `PLATFORM_ADMIN_EMAILS` **y** tenga el MFA activo; para cualquier otro la API
+responde 404.
+
+> **NO rellenar `PLATFORM_ADMIN_EMAILS` en Render todavía.** Solo cuando se cumplan las DOS cosas:
+> 1. `/api/v1` ya **no** pasa por el proxy de Vercel (salida prevista 27–28/10). Mientras pase, la
+>    API ve la IP del proxy (el límite de intentos no funciona por cliente) y los datos de la lista
+>    viajarían por un encargado adicional no previsto.
+> 2. La landing ya publica la política **`lista-espera-v4`** (con la v3 publicada no se activa: dice
+>    que no hay panel web).
+>
+> Se puede crear la cuenta exclusiva (paso 1) antes; la variable (paso 2), no.
+
+**1. Crear la cuenta exclusiva de administración (una vez).** No uses tu cuenta de una consulta ni la
+del demo: el panel ve datos personales y esa cuenta debe servir solo para esto.
+1. Elegir un correo propio que no tenga ya cuenta en AsePsico (p. ej. un alias tuyo dedicado).
+2. `DATABASE_URL=… WEB_ORIGIN=https://<web> npm run invites:create -- --email <ese correo> --created-by cli:cesar`
+   (orden puntual, sin `.env` permanente; el enlace sale una vez).
+3. Abrir el enlace y registrarse con ese correo, una contraseña larga y única (gestor de
+   contraseñas) y como nombre del espacio **«AsePsico interno»**. Si el formulario pregunta si atiendes pacientes, responder que no.
+   No crear pacientes ni invitar a nadie en ese espacio: debe quedarse vacío.
+   **El espacio «AsePsico interno» no debe tener nunca ningún otro miembro** (ni titulares, ni
+   terapeutas, ni recepción): si alguien más entrara en él, compartiría consulta con la única
+   cuenta que ve la lista de espera. Revisarlo en Ajustes → Equipo al activar el panel y cada mes.
+4. Activar la verificación en dos pasos (la app la exige al OWNER) y guardar los códigos de
+   recuperación en el gestor de contraseñas. Al activarla se cierran las demás sesiones de esa
+   cuenta (otros navegadores vuelven al login); la del navegador donde la activas sigue abierta.
+
+**2. Activar la variable** (solo con los dos bloqueos de arriba resueltos y la cuenta del paso 1
+ya creada: nunca poner en la variable un email que aún no tenga cuenta, porque quien se registrara
+con él obtendría el acceso). Escribir el email exactamente como se registró, solo con caracteres
+ASCII (sin acentos ni caracteres especiales; si los tiene, la API lo ignora y nadie entra). En
+Render → servicio de la API → Environment:
+`PLATFORM_ADMIN_EMAILS=<el correo de la cuenta exclusiva>` (uno solo; nunca el de una cuenta de
+consulta). Guardar y dejar que redespliegue. Sin la variable, o vacía, nadie entra.
+
+**3. Comprobar.** Con la cuenta exclusiva: la barra lateral (en escritorio) muestra
+«Administración › Lista de espera» y
+`/admin/lista-espera` carga. Con cualquier otra cuenta: sin enlace y 404. Desactivar el MFA de la
+cuenta exclusiva quita el acceso al momento (volver a activarlo para recuperarlo).
+
+**Uso.** Suprimir un alta pide tu contraseña (los fallos cuentan para el bloqueo temporal de la
+cuenta, como los del código de verificación) y no se puede deshacer (misma supresión que
+`waitlist:delete`). Cada consulta y cada supresión quedan en `PlatformAuditLog` sin datos
+personales (consulta por SQL de solo lectura si hace falta). No copies datos fuera del panel.
+
+**Quitar el acceso:** borrar o vaciar `PLATFORM_ADMIN_EMAILS` en Render (redespliega) o desactivar
+el MFA de la cuenta. Si se sospecha que la cuenta exclusiva está comprometida: vaciar la variable
+primero, después cambiar la contraseña (cierra todas sus sesiones) y regenerar el MFA.
+
 ### Tarea programada: purga por plazo de conservación
 
 | Cuándo | Qué |

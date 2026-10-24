@@ -23,6 +23,7 @@ import { LegalModule } from './legal/legal.module';
 import { ExceptionalAccessModule } from './exceptional-access/exceptional-access.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { PortalSignupModule } from './portal-signup/portal-signup.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { PortalSignupModule } from './portal-signup/portal-signup.module';
     LegalModule,
     SchedulingModule,
     PortalSignupModule,
+    PlatformModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
