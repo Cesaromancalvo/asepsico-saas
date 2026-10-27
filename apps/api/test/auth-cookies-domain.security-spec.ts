@@ -11,7 +11,10 @@ function fakeRes() {
   const res: any = { cookie: (n: string, _v: string, o: any) => set.push({ n, o }), clearCookie: (n: string, o: any) => cleared.push({ n, o }) };
   return { set, cleared, res };
 }
-const byName = (list: Array<{ n: string; o: any }>, n: string) => list.find((c) => c.n === n)!.o;
+// Con COOKIE_DOMAIN, set/clear también borran las cookies de sesión antiguas con Domain: hay dos
+// entradas con el mismo nombre. byName coge la del ámbito pedido (sin domain por defecto).
+const byName = (list: Array<{ n: string; o: any }>, n: string, withDomain = false) =>
+  list.find((c) => c.n === n && (withDomain ? c.o.domain !== undefined : c.o.domain === undefined))!.o;
 
 describe('Auth cookies: session host-only, only csrf_token with COOKIE_DOMAIN', () => {
   const prev = process.env.COOKIE_DOMAIN;
@@ -30,15 +33,16 @@ describe('Auth cookies: session host-only, only csrf_token with COOKIE_DOMAIN', 
   it('csrf_token uses COOKIE_DOMAIN and is readable by the web', () => {
     const { set, res } = fakeRes();
     setAuthCookies(res, { accessToken: 'a', refreshToken: 'r', refreshTokenExpiresAt: new Date(Date.now() + 60_000) });
-    expect(byName(set, 'csrf_token')).toMatchObject({ domain: '.example.test', httpOnly: false, sameSite: 'lax', path: '/' });
+    expect(byName(set, 'csrf_token', true)).toMatchObject({ domain: '.example.test', httpOnly: false, sameSite: 'lax', path: '/' });
   });
 
   it('logout clears each cookie with the same scope it was set with', () => {
     const { cleared, res } = fakeRes();
     clearAuthCookies(res);
-    expect(byName(cleared, 'access_token')).not.toHaveProperty('domain');
-    expect(byName(cleared, 'refresh_token')).not.toHaveProperty('domain');
-    expect(byName(cleared, 'csrf_token')).toMatchObject({ domain: '.example.test', path: '/' });
+    expect(byName(cleared, 'access_token')).toMatchObject({ path: '/' });
+    expect(byName(cleared, 'refresh_token')).toMatchObject({ path: '/api/v1/auth' });
+    expect(byName(cleared, 'csrf_token', true)).toMatchObject({ domain: '.example.test', path: '/' });
+    expect(cleared.filter((c) => c.n === 'csrf_token')).toHaveLength(1);
   });
 
   it('without COOKIE_DOMAIN (local) every cookie is host-only', () => {

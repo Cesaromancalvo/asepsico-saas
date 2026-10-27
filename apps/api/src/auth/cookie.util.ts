@@ -24,7 +24,25 @@ function csrfOptions() {
   return { ...baseOptions(), domain: process.env.COOKIE_DOMAIN || undefined };
 }
 
+/*
+ * Migración a sesión host-only: antes de la salida de Vercel, access_token y refresh_token se
+ * emitían con Domain=COOKIE_DOMAIN (.asepsico.es). Esas cookies antiguas siguen en el navegador
+ * hasta 7 días y se envían JUNTO a las nuevas host-only; cookie-parser se queda con la antigua
+ * (ya revocada), auth.service lo toma como reutilización del refresh token, revoca la familia y
+ * responde 401. Por eso, cada vez que se emiten o se borran las cookies de sesión, se borran
+ * también las antiguas con su mismo ámbito (domain + path). Sin COOKIE_DOMAIN no hay nada que
+ * limpiar. Las cookies se identifican por nombre, dominio y ruta: borrar la de Domain no toca la
+ * host-only nueva.
+ */
+function clearLegacyDomainSessionCookies(res: Response) {
+  const domain = process.env.COOKIE_DOMAIN;
+  if (!domain) return;
+  res.clearCookie(ACCESS_COOKIE, { ...baseOptions(), domain, path: '/' });
+  res.clearCookie(REFRESH_COOKIE, { ...baseOptions(), domain, path: '/api/v1/auth' });
+}
+
 export function setAuthCookies(res: Response, params: { accessToken: string; refreshToken: string; refreshTokenExpiresAt: Date }) {
+  clearLegacyDomainSessionCookies(res);
   res.cookie(ACCESS_COOKIE, params.accessToken, {
     ...baseOptions(),
     httpOnly: true,
@@ -50,6 +68,7 @@ export function setAuthCookies(res: Response, params: { accessToken: string; ref
 
 export function clearAuthCookies(res: Response) {
   const opts = baseOptions();
+  clearLegacyDomainSessionCookies(res);
   res.clearCookie(ACCESS_COOKIE, { ...opts, path: '/' });
   res.clearCookie(REFRESH_COOKIE, { ...opts, path: '/api/v1/auth' });
   res.clearCookie(CSRF_COOKIE, { ...csrfOptions(), path: '/' });

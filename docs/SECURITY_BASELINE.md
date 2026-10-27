@@ -14,6 +14,15 @@ datos clínicos reales en producción.
   cada `/auth/refresh` invalida el token anterior y emite uno nuevo. Si un token ya revocado
   se reutiliza (señal de robo/filtración), se revoca toda la familia de sesiones derivadas de
   ese login.
+- Cookies de sesión (`access_token`, `refresh_token`, `portal_access_token`) host-only de la API,
+  sin `Domain`; solo `csrf_token` lleva `COOKIE_DOMAIN` para que la web lo lea. Limpieza de las
+  cookies antiguas: antes de la salida de Vercel `access_token` y `refresh_token` llevaban
+  `Domain=COOKIE_DOMAIN`, y si conviven con las nuevas el navegador envía las dos, `cookie-parser`
+  coge la antigua (revocada) y el refresh lo trata como reutilización (revoca la familia, 401 cada
+  15 min durante hasta 7 días). Por eso, con `COOKIE_DOMAIN` definido, cada login, refresh, MFA y
+  logout borra también esas cookies antiguas con su mismo ámbito (`Domain` + `path` `/` y
+  `/api/v1/auth`) antes de poner las nuevas sin `Domain`; y el login del portal borra el
+  `csrf_token` antiguo host-only de `api.`. Test: `auth-cookies-legacy-domain.security-spec.ts`.
 - Cambio de contraseña de los profesionales (`POST /auth/change-password`, pantalla
   `/settings/security`): exige la contraseña actual y, con MFA activo, un código TOTP no usado
   (no acepta códigos de recuperación); OWNER/ADMIN/THERAPIST sin MFA reciben 403
