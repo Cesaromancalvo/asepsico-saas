@@ -9,7 +9,7 @@ import { hash } from 'bcryptjs';
 import { encryptField } from '../../../src/common/crypto/field-encryption';
 import { encryptAssessmentResult, encryptJsonField } from '../../../src/common/crypto/clinical-crypto';
 import { CLINICAL_SCALES } from '../../../src/patients/clinical-scales';
-import { DemoPatientSpec, DemoProcessSpec, SESSION_NOTES, SESSION_SUMMARIES } from './demo-dataset';
+import { DemoPatientSpec, DemoProcessSpec, SESSION_NOTES, SESSION_SUMMARIES, T } from './demo-dataset';
 
 const DAY = 24 * 60 * 60 * 1000;
 const SESSION_MINUTES = 50;
@@ -205,7 +205,7 @@ export async function writeDemoPatient(tx: Prisma.TransactionClient, ctx: DemoWr
       data: {
         patientId: patient.id, scaleCode: scale.code, scaleName: scale.name,
         answers: encryptJsonField(assessment.answers), result: encryptAssessmentResult({ totalScore, severity, riskFlag: false }),
-        interpretation: encryptField(interpretation)!, administeredAt: ago(assessment.daysAgo),
+        interpretation: encryptField(T(interpretation))!, administeredAt: ago(assessment.daysAgo),
       },
     });
     counts.assessments++;
