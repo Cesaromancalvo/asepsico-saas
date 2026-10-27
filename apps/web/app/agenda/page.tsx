@@ -864,7 +864,7 @@ export default function AgendaPage() {
                   <textarea
                     name="notes"
                     rows={3}
-                    placeholder="Información relevante para preparar la sesión..."
+                    placeholder="Ej.: traer el justificante; llega 10 min tarde"
                   />
                 </label>
               )}
