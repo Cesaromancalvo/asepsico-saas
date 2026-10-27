@@ -16,7 +16,7 @@
 ```
 navegador ──HTTPS──> Render Static Site (apps/web exportada, app.asepsico.es): solo HTML/JS
 navegador ──HTTPS──> api.asepsico.es
-navegador ──HTTPS──> Cloudflare ──> balanceador de Render (termina TLS) ──HTTP──> API NestJS
+navegador ──HTTPS──> borde de Cloudflare (subencargado de Render; termina TLS, inferido) ──> balanceador de Render ──HTTP──> API NestJS
                                                                    (servicio web asepsico-api, Frankfurt)
 API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 ```
@@ -32,20 +32,41 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 - Los ids de la query solo se aceptan con forma de cuid (`queryId` en `apps/web/lib/routes.ts`).
 - Las pantallas con id usan query string (`/patients/view/?id=…`, `/agenda/session/?id=…`, ver
   `apps/web/lib/routes.ts`). Las URL antiguas (`/patients/<id>/…`) las redirige el 404.
-- Render documenta que el puerto del servicio **no es accesible directamente desde Internet**: todo
-  el tráfico entra por su balanceador, que termina TLS y reenvía por HTTP. La IP real se lee de
-  `X-Forwarded-For`; Render **añade** a esa cabecera, no la reinicia, de modo que las entradas de
-  la izquierda las puede escribir el cliente.
-- Por eso la API confía en **exactamente un salto** (`TRUST_PROXY=1`): `req.ip` es la entrada más
-  a la derecha, la que pone el proxy de Render. Nunca `true` (la API se niega a arrancar): con
-  `true` `req.ip` sería la entrada más a la izquierda, inventable, y el `@Throttle` por IP de
-  `/auth/login`, `/auth/register` y `/auth/login/mfa` se esquivaría cambiando la cabecera.
+- **Quién termina TLS (revisión C4 de Argos, 26/10/2026):** la conexión del navegador con
+  `api.asepsico.es` entra por la red de **Cloudflare, Inc.** (EE. UU.), que Render usa delante de sus
+  servicios web y que figura en su lista de subencargados. Que haga falta confiar en los rangos de
+  Cloudflare para que `req.ip` coincida implica que Cloudflare añade `X-Forwarded-For`, y eso solo lo
+  hace un proxy HTTP que **descifra** la conexión: el TLS del cliente lo termina, con toda
+  probabilidad, el borde de Cloudflare (que puede estar fuera de la UE), no el balanceador de Render.
+  **Inferido, no verificado con documentación de Render** (pregunta abierta a Render). Consecuencia:
+  la conexión va cifrada desde el navegador, pero **no de extremo a extremo** hasta la API.
+- Render documenta que el puerto del servicio **no es accesible directamente desde Internet**. La IP
+  real se lee de `X-Forwarded-For`; cada proxy **añade** a esa cabecera, no la reinicia, de modo que
+  las entradas de la izquierda las puede escribir el cliente.
+- **Valor en producción desde el 26/10/2026:** `TRUST_PROXY` = `loopback` + los rangos publicados de
+  Cloudflare (lista en la tabla de variables). Express recorre `X-Forwarded-For` de derecha a
+  izquierda, se salta los saltos de confianza y `req.ip` es la primera IP que no es de Cloudflare: la
+  del cliente. Comprobación directa: **COINCIDE** el 26/10/2026. Nunca `true` (la API se niega a
+  arrancar): con `true` `req.ip` sería la entrada más a la izquierda, inventable, y el `@Throttle`
+  por IP de `/auth/login`, `/auth/register` y `/auth/login/mfa` se esquivaría cambiando la cabecera.
+- **Riesgo conocido M1 (Argos, A VERIFICAR, no bloquea el piloto demo; sí el primer paciente
+  real):** quien envíe la petición desde un Cloudflare Worker sale con una IP de Cloudflare, que es de
+  confianza, y puede poner un `X-Forwarded-For` inventado: `req.ip` sería esa IP inventada y podría
+  esquivar el límite por IP. Lo amortiguan el MFA obligatorio de los profesionales y el bloqueo por
+  cuenta del MFA; recepción y portal no tienen MFA obligatorio. Pendiente: probarlo con un Worker de
+  pruebas (Dora) y, si se confirma, límite por email normalizado en login y portal (Bruno).
+- **Revisión mensual de los rangos (B1):** el primer día laborable de cada mes, comparar
+  `https://www.cloudflare.com/ips-v4` y `/ips-v6` con el valor de `TRUST_PROXY` en Render. Si
+  Cloudflare añade un rango que no está en la lista, `req.ip` pasa a ser la IP de Cloudflare y todos
+  comparten contador (5 intentos/min bloquean el login de todos). Si cambia: actualizar la variable
+  (con confirmación del Jefe), redesplegar, repetir la comprobación directa y anotar fecha y
+  resultado (sin IPs) en el registro del piloto.
 - Si algún día se pone otro proxy delante (Cloudflare propio con dominio personalizado en modo
   proxied, un CDN…), el número de saltos cambia: ver el checklist de cambios de DNS/dominio.
 - Lo verificado en documentación oficial de Render es que el puerto no es accesible directamente
   y que la IP del cliente se lee de `X-Forwarded-For`. **No** está documentado cuántas entradas
-  añade la cadena Cloudflare → balanceador de Render: por eso `TRUST_PROXY=1` se confirma con la
-  comprobación directa de abajo, no se da por supuesto.
+  añade la cadena Cloudflare → balanceador de Render: por eso el valor de `TRUST_PROXY` se confirma
+  con la comprobación directa de abajo, no se da por supuesto.
 
 ### Web (Render Static Site)
 
@@ -93,13 +114,13 @@ API ──red privada de Render──> Render Postgres (PG18, Frankfurt)
 | `NODE_ENV` | `production` | Cookies `secure` y `trust proxy` por defecto. |
 | `WEB_ORIGIN` | `https://app.asepsico.es` | CORS con credenciales y enlaces de invitación. |
 | `COOKIE_DOMAIN` | `.asepsico.es` | Solo para `csrf_token` (la web lo lee). Las cookies de sesión son host-only de la API. Rompe cualquier web servida fuera de `asepsico.es`. |
-| `TRUST_PROXY` | `1` | Explícito aunque coincide con el valor por defecto en producción. |
+| `TRUST_PROXY` | `loopback,` + rangos de Cloudflare | Lista separada por comas, sin espacios: `loopback`, IPv4 `173.245.48.0/20, 103.21.244.0/22, 103.22.200.0/22, 103.31.4.0/22, 141.101.64.0/18, 108.162.192.0/18, 190.93.240.0/20, 188.114.96.0/20, 197.234.240.0/22, 198.41.128.0/17, 162.158.0.0/15, 104.16.0.0/13, 104.24.0.0/14, 172.64.0.0/13, 131.0.72.0/22` e IPv6 `2400:cb00::/32, 2606:4700::/32, 2803:f800::/32, 2405:b500::/32, 2405:8100::/32, 2a06:98c0::/29, 2c0f:f248::/32` (cloudflare.com/ips, consultado el 27/10/2026). Revisión mensual (B1). Comprobación directa: COINCIDE el 26/10/2026. |
 | `WAITLIST_SECRET` | secreto aleatorio (`openssl rand -base64 32`) | Obligatorio: sin él la API no arranca. **No se rota** (rompe la deduplicación y la supresión de las altas previas). Lista de espera (ver `docs/WAITLIST_API.md`). |
 | `WAITLIST_ALLOWED_ORIGINS` | vacío | = `https://asepsico.es,https://www.asepsico.es`. Solo afecta a `/public/waitlist`. |
 
 La API valida `TRUST_PROXY` al arrancar; un valor mal escrito hace fallar el despliegue (Render
 mantiene la versión anterior en marcha). El log de arranque muestra
-`trust proxy: 1 salto(s) de proxy de confianza`.
+`trust proxy: proxies de confianza: loopback, 173.245.48.0/20, …`.
 
 ### Comprobación manual tras cada despliegue (sin secretos)
 
@@ -135,8 +156,8 @@ No pegues en tickets ni en el repo las respuestas completas ni cabeceras con coo
 ### Comprobación directa de `req.ip` (bloqueante antes del piloto)
 
 Objetivo: confirmar que la IP que la API guarda es **la del operador**, no la de un proxy. Se hace
-tras el primer despliegue con `TRUST_PROXY=1` y tras cualquier cambio de DNS/dominio o de
-`TRUST_PROXY`.
+tras cualquier cambio de DNS/dominio o de `TRUST_PROXY` (también tras actualizar los rangos de
+Cloudflare en la revisión mensual).
 
 **Por qué también es RGPD:** `req.ip` es la IP que la API registra junto a cada sesión
 (`RefreshToken.ipAddress`, rellenado desde `meta()` en `apps/api/src/auth/auth.controller.ts`).
@@ -179,14 +200,13 @@ unset DB_IP MY_IP4 MY_IP6
 ```
 
 3. Interpretación:
-   - **COINCIDE** → `TRUST_PROXY=1` es correcto. Anotar en el registro del piloto: fecha,
-     "comprobación directa de req.ip: coincide, TRUST_PROXY=1". **Nunca anotar la IP.**
-   - **NO COINCIDE + ES DE CLOUDFLARE** → hay un salto más de los configurados (todos los usuarios
-     entrando por el mismo edge compartirían contador). Con confirmación del Jefe: poner
-     `TRUST_PROXY=2` en Render, redesplegar, repetir los pasos 1 y 2 de la comprobación anterior
-     (deben seguir en 429: con 2 saltos la entrada que escribe el cliente sigue sin ser de
-     confianza) y repetir esta comprobación hasta obtener COINCIDE. Rollback: volver a
-     `TRUST_PROXY=1`.
+   - **COINCIDE** → `TRUST_PROXY` es correcto. Anotar en el registro del piloto: fecha,
+     "comprobación directa de req.ip: coincide, TRUST_PROXY=loopback+Cloudflare". **Nunca anotar la IP.**
+   - **NO COINCIDE + ES DE CLOUDFLARE** → falta un rango de Cloudflare en la lista (todos los
+     usuarios entrando por ese borde compartirían contador). Con confirmación del Jefe: añadir los
+     rangos que falten de cloudflare.com/ips a `TRUST_PROXY` en Render, redesplegar, repetir los
+     pasos 1 y 2 de la comprobación anterior (deben seguir en 429) y repetir esta comprobación hasta
+     obtener COINCIDE. Rollback: volver al valor anterior de `TRUST_PROXY` (anotado antes del cambio).
    - **NO COINCIDE + NO ES DE CLOUDFLARE** (u otro resultado raro, p. ej. IP privada de Render) →
      no abrir el piloto; escalar a Dora/Argos con el resultado, sin la IP.
    - **SIN DATO** → el login no terminó o se usó otra cuenta; repetir el paso 1.
@@ -196,8 +216,8 @@ unset DB_IP MY_IP4 MY_IP6
 Antes de dar por cerrado cualquier cambio de dominio o DNS de la API:
 
 - [ ] ¿El dominio de la API pasa por un Cloudflare **propio** en modo *proxied* (nube naranja), un
-      CDN u otro proxy? Si es así, **añade un salto**: con `TRUST_PROXY=1` la API vería la IP de
-      ese proxy y todos los usuarios compartirían el límite de login.
+      CDN u otro proxy? Si es así, sus IPs tienen que estar en `TRUST_PROXY`: si no, la API vería la
+      IP de ese proxy y todos los usuarios compartirían el límite de login.
 - [ ] Repetir la comprobación manual (pasos 1 y 2) y la comprobación directa de `req.ip` antes de
       enrutar tráfico real por el dominio nuevo, y ajustar `TRUST_PROXY` según el resultado.
 - [ ] Actualizar `WEB_ORIGIN`/`COOKIE_DOMAIN` si cambia el dominio, y anotar el resultado (sin IPs).
@@ -359,16 +379,16 @@ ve quien esté en `PLATFORM_ADMIN_EMAILS` **y** tenga el MFA activo; para cualqu
 responde 404.
 
 > **NO rellenar `PLATFORM_ADMIN_EMAILS` en Render todavía.** Solo cuando se cumplan las CUATRO cosas:
-> 1. `/api/v1` ya **no** pasa por el proxy de Vercel (salida prevista 27–28/10). Mientras pase, la
->    API ve la IP del proxy (el límite de intentos no funciona por cliente) y los datos de la lista
->    viajarían por un encargado adicional no previsto.
+> 1. ~~`/api/v1` ya **no** pasa por el proxy de Vercel.~~ **Cumplida el 26/10/2026** (corte de la
+>    sesión 6: la web es un export estático en Render y llama directamente a `api.asepsico.es`).
+>    Pendiente aparte: apagar y borrar el proyecto de Vercel (A2, sesión 7).
 > 2. La landing ya publica la política **`lista-espera-v4`** (con la v3 publicada no se activa: dice
 >    que no hay panel web).
 > 3. La **comprobación directa de `req.ip`** (sección "Comprobación directa de `req.ip`") da
 >    **COINCIDE**, hecha **después** de apuntar `api.asepsico.es` y de quitar el proxy de Vercel, y
->    está anotada (fecha y resultado) en el registro del piloto. Si hubiera un proxy o CDN delante
->    de Render con `TRUST_PROXY=1`, `req.ip` sería la IP del borde y el límite de intentos de la
->    contraseña del panel no sería por cliente.
+>    está anotada (fecha y resultado) en el registro del piloto. **Cumplida el 26/10/2026** con
+>    `TRUST_PROXY` = loopback + rangos de Cloudflare. Si faltara un rango, `req.ip` sería la IP del
+>    borde y el límite de intentos de la contraseña del panel no sería por cliente.
 > 4. La CSP efectiva de la web no permite scripts inline sin hash: `npm run verify:static-site`
 >    da TODO OK contra `https://app.asepsico.es` (meta CSP por página, ver "Web (Render Static
 >    Site)").

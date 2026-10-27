@@ -259,17 +259,21 @@ Módulo `apps/api/src/platform/`; contrato en `packages/contracts/src/platform-w
   `PLATFORM_REAUTH_FAILED` `{ operation }`, `PLATFORM_ACCESS_DENIED` `{}` (usuario autenticado no
   admin). Nunca nombre, email, hash, herramientas ni contraseña en metadata ni en logs (test).
   Plazo de conservación de esta tabla: pendiente (Lex Psi, P7).
-- **NO rellenar `PLATFORM_ADMIN_EMAILS` en producción todavía.** Cuatro bloqueos, todos deben estar
-  resueltos antes:
-  1. **Proxy de Vercel:** mientras `/api/v1` pase por el proxy de Vercel (hasta la salida prevista
-     el 27–28/10), `req.ip` es la del proxy, así que el `ThrottlerGuard` (30/min la lista, 5/min la
-     supresión) no limita por cliente, y los datos descifrados de la lista pasarían por un encargado
-     adicional (Vercel) no previsto para este tratamiento.
+- **`PLATFORM_ADMIN_EMAILS` solo con los cuatro bloqueos resueltos:**
+  1. **Proxy de Vercel: resuelto el 26/10/2026.** La web es un export estático en Render Static Site
+     y llama directamente a `api.asepsico.es`; comprobación directa de `req.ip`: COINCIDE. Un test
+     (`apps/web/test/static-export.spec.ts`) y un paso de CI (`scripts/check-web-static-export.mjs`)
+     impiden que vuelvan `output: 'standalone'`, los `rewrites` o `API_INTERNAL_URL`. Pendiente:
+     apagar y borrar el proyecto de Vercel (A2).
+     Topología actual: navegador → borde de Cloudflare (subencargado de Render, EE. UU.; termina TLS,
+     inferido y no verificado) → balanceador de Render → API (Frankfurt). Riesgo conocido M1: con los
+     rangos de Cloudflare en `TRUST_PROXY`, una petición desde un Cloudflare Worker puede falsear
+     `req.ip` (ver `ops/PILOT_RUNBOOK.md`); no bloquea el piloto demo, sí el primer paciente real.
   2. **Política:** con la `lista-espera-v3` publicada no se puede activar (dice que no hay panel
      web). Primero se publica la `lista-espera-v4` en la landing.
   3. **IP del cliente:** comprobación directa de `req.ip` con resultado COINCIDE, hecha después de
-     apuntar `api.asepsico.es` y anotada en el registro del piloto (un proxy o CDN delante de Render
-     con `TRUST_PROXY=1` haría que `req.ip` fuera la del borde).
+     apuntar `api.asepsico.es` y anotada en el registro del piloto. Resuelto el 26/10/2026 con
+     `TRUST_PROXY` = loopback + rangos de Cloudflare (revisión mensual de los rangos).
   4. **CSP sin scripts inline sin hash:** `npm run verify:static-site` TODO OK contra la web
      (meta CSP con hashes por página; `ops/PILOT_RUNBOOK.md`).
 - Fase 2 (no implementada): exportación CSV y nota de seguimiento.

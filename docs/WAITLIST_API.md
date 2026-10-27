@@ -13,12 +13,12 @@ API = https://asepsico-api.onrender.com/api/v1   ← HOST A CONFIRMAR POR DORA (
   `apps/landing/public/js/config.js`), no escribirla en varios sitios: el host
   `asepsico-api.onrender.com` sale de los traspasos y **Dora debe confirmarlo** (o dar el
   dominio propio) antes de publicar. La misma URL va en la CSP.
-- Llamar **directamente** al servicio de Render, no a través del dominio de la app en Vercel: si
-  la petición pasara por el *rewrite* de Vercel, la API vería la IP de Vercel y el rate limit por
-  IP sería compartido por todos los visitantes.
-- Si Dora publica la API con dominio propio (p. ej. `https://api.asepsico.es`), cambiar la URL y la
-  CSP, y revisar `TRUST_PROXY` (un proxy más delante cambia el número de saltos; ver
-  `ops/PILOT_RUNBOOK.md`).
+- Llamar **directamente** a la API de Render. Hasta el 26/10/2026 la web de la app pasaba por un
+  *rewrite* de Vercel; desde entonces no hay ningún proxy propio delante de la API (ni la landing ni
+  la app lo usan).
+- `TRUST_PROXY` en producción es una **lista** (`loopback` + rangos de Cloudflare, que Render usa
+  delante de sus servicios), no un número de saltos. Si cambia el dominio o se añade otro proxy,
+  revisar la lista y repetir la comprobación directa de `req.ip` (ver `ops/PILOT_RUNBOOK.md`).
 
 ## CSP de la landing (Render → Settings → Headers)
 
