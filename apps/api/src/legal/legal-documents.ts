@@ -28,10 +28,12 @@ export const PENDING_LEGAL_MARKER = '[PENDIENTE DEL DESPACHO]';
 
 /**
  * Cualquier marcador sin rellenar en mayúsculas entre corchetes: [NIF], [DOMICILIO],
- * [EMAIL_CONTACTO], [PENDIENTE DEL DESPACHO]... Un texto que lo contenga es BORRADOR (en
- * producción, 503 LEGAL_TERMS_DRAFT): así nunca se acepta un texto con "[NIF]".
+ * [EMAIL_CONTACTO], [PENDIENTE DEL DESPACHO], también con guion, barra o cifras
+ * ([VERIFICAR-PAX], [A-IMPLANTAR], [ARGOS/PINKY], [D19])... Un texto que lo contenga es
+ * BORRADOR (en producción, 503 LEGAL_TERMS_DRAFT): así nunca se acepta un texto con "[NIF]" o
+ * "[VERIFICAR-PAX]".
  */
-export const UNFILLED_MARKER_RE = /\[[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ_ ]*\]/;
+export const UNFILLED_MARKER_RE = /\[[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ0-9_ /-]*\]/;
 
 /**
  * Datos del titular que NO pueden ir en git (el repositorio es público). Los pone el despliegue
@@ -55,7 +57,7 @@ export type LegalDocument = {
 
 const DEFINITIONS: Array<Pick<LegalDocument, 'type' | 'version' | 'title' | 'text'>> = [
   { type: 'PILOT_TERMS', version: 'demo-1.1', title: 'Condiciones de uso del piloto demo', text: PILOT_TERMS_TEXT },
-  { type: 'PRIVACY_PRODUCT', version: 'demo-1.1', title: 'Política de privacidad para profesionales (piloto demo)', text: PRIVACY_PRODUCT_TEXT },
+  { type: 'PRIVACY_PRODUCT', version: 'demo-1.2', title: 'Política de privacidad para profesionales (piloto demo)', text: PRIVACY_PRODUCT_TEXT },
 ];
 
 const NIF_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';

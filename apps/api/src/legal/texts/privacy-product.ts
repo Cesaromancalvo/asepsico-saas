@@ -1,4 +1,4 @@
-// Texto de Lex Psi (privacidad-profesionales-demo-v1.md, demo-1.1): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
+// Texto de Lex Psi (privacidad-profesionales-demo-v1.2.md, demo-1.2): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -6,7 +6,11 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.1 · En vigor desde el 17/10/2026
+Versión demo-1.2 · En vigor desde el 27/10/2026
+
+**Qué cambia respecto a la versión demo-1.1:** desde el 26/10/2026 la aplicación ya no usa Vercel.
+Ahora toda la aplicación la aloja Render, y la conexión entra por la red de distribución de un
+proveedor de Render con sede en Estados Unidos (apartados 5 y 6). El resto no cambia.
 
 Esta política explica cómo tratamos los datos de las **personas profesionales** (titulares de un
 espacio y miembros de su equipo) que participan en el **piloto demo** de AsePsico. En el piloto demo
@@ -79,23 +83,31 @@ opinión sin tu consentimiento expreso, que te pediríamos aparte.
 No cedemos tus datos a terceros, salvo obligación legal. Estos proveedores nos prestan servicios
 para que AsePsico funcione:
 
-- **Render Services, Inc. (Estados Unidos):** servidor de la aplicación y base de datos, alojados en
-  su región de Frankfurt (Alemania). Usa a su vez proveedores con sede en Estados Unidos. Trata los
-  datos con un acuerdo de tratamiento de datos que incluye las cláusulas contractuales tipo de la
-  Comisión Europea.
-- **Vercel Inc. (Estados Unidos):** aloja la parte web de la aplicación y hace llegar tus peticiones
-  al servidor, por lo que tus datos de acceso pasan por su infraestructura, que puede estar en
-  Estados Unidos y en otros países.
+- **Render Services, Inc. (Estados Unidos):** aloja toda la aplicación. El servidor y la base de
+  datos están en su región de Frankfurt (Alemania). La parte web se sirve mediante una red de
+  distribución global, y la conexión con el servidor entra por la red de distribución de un
+  proveedor de Render con sede en Estados Unidos, que puede estar fuera del Espacio Económico
+  Europeo. Por eso, tus datos de acceso (como tu email, tu contraseña y el código de verificación al
+  iniciar sesión) y lo que envías a la aplicación o recibes de ella pasan en tránsito por esa red, y
+  ese proveedor puede tener acceso a ellos para hacerlos llegar al servidor. Render usa a su vez
+  otros proveedores con sede en Estados Unidos y trata los datos con un acuerdo de tratamiento de
+  datos que incluye las cláusulas contractuales tipo de la Comisión Europea.
 - **Google (Gmail):** correo electrónico de AsePsico, para los emails de soporte y de la prueba.
 - Si la llamada de seguimiento se hace por videollamada, el proveedor que te indiquemos al
   proponértela.
 
+Hasta el 26/10/2026, la parte web de la aplicación la alojaba Vercel Inc. (Estados Unidos), por
+cuya infraestructura pasaban tus datos de acceso. Desde esa fecha ya no interviene.
+
 ## 6. Transferencias fuera del Espacio Económico Europeo
 
-Render Services, Inc., Vercel Inc. y Google LLC están adheridas al Marco de Privacidad de Datos
-UE-EE. UU., que la Comisión Europea reconoce como garantía adecuada (Decisión de Ejecución (UE)
-2023/1795). En el caso de Render, además, mediante las cláusulas contractuales tipo de la Comisión
-Europea. Puedes pedirnos más información sobre estas garantías en asepsico1@gmail.com.
+Render Services, Inc. y Google LLC están adheridas al Marco de Privacidad de Datos UE-EE. UU., que
+la Comisión Europea reconoce como garantía adecuada (Decisión de Ejecución (UE) 2023/1795). En el
+caso de Render, además, mediante las cláusulas contractuales tipo de la Comisión Europea.
+
+Render debe imponer a los proveedores que usa, incluido el de la red de distribución, las mismas
+obligaciones de protección de datos que asume con nosotros, y responde ante nosotros de que las
+cumplan. Puedes pedirnos más información sobre estas garantías en asepsico1@gmail.com.
 
 ## 7. Tus derechos
 
