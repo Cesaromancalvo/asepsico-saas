@@ -10,7 +10,6 @@ function CardTitle({icon,children}:{icon:IconName;children:React.ReactNode}){ret
 
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:4000/api/v1';
 type NotificationItem={id:string;title:string;body:string;status:string;createdAt:string;actionUrl?:string};
-type Pref={appointmentReminders:boolean;taskReminders:boolean;consentReminders:boolean;invoiceReminders:boolean;emailEnabled:boolean;smsEnabled:boolean;reminderHoursBefore:number};
 type PortalMessage={id:string;senderType:'PROFESSIONAL'|'PATIENT';body:string;createdAt:string};
 type PortalConversation={id:string;status:'OPEN'|'CLOSED'|'ARCHIVED';patientCanReply:boolean;messages:PortalMessage[]}|null;
 type PortalTask={id:string;title:string;instructions?:string;status:'PENDING'|'IN_PROGRESS'|'SUBMITTED'|'CHANGES_REQUESTED'|'COMPLETED';dueDate?:string;patientFeedback?:string;reviewComment?:string;submittedAt?:string;completedAt?:string};
@@ -23,7 +22,6 @@ export default function PortalPage(){
  const router=useRouter();
  const [data,setData]=useState<Dashboard|null>(null);
  const [items,setItems]=useState<NotificationItem[]>([]);
- const [pref,setPref]=useState<Pref|null>(null);
  const [conversation,setConversation]=useState<PortalConversation>(null);
  const [error,setError]=useState('');
  const [message,setMessage]=useState('');
@@ -36,13 +34,11 @@ export default function PortalPage(){
   if(!dashboard.ok)throw new Error(body.message||'No se pudo cargar el portal');
   setData(body);
   if(!body.mustChangePassword){
-   const [notifications,preferences,messages]=await Promise.all([
+   const [notifications,messages]=await Promise.all([
     fetch(`${API}/portal/notifications`,{credentials:'include'}),
-    fetch(`${API}/portal/notifications/preferences`,{credentials:'include'}),
     fetch(`${API}/portal/messages`,{credentials:'include'}),
    ]);
    if(notifications.ok)setItems(await notifications.json());
-   if(preferences.ok)setPref(await preferences.json());
    if(messages.ok){try{setConversation(await messages.json())}catch{setConversation(null)}}
   }
  }
@@ -87,14 +83,6 @@ export default function PortalPage(){
   if(!r.ok){setError(body.message||'No se pudo entregar la tarea');return}setMessage('Tarea entregada. Tu profesional la revisará.');await load();
  }
 
- async function savePreferences(){
-  if(!pref)return;setBusy(true);setMessage('');
-  const r=await fetch(`${API}/portal/notifications/preferences`,{method:'PATCH',credentials:'include',headers:{'content-type':'application/json','x-csrf-token':csrf()},body:JSON.stringify(pref)});
-  const body=await readJson(r);setBusy(false);
-  if(!r.ok){setError(body.message||'No se pudieron guardar las preferencias');return}
-  setPref(body);setMessage(body.smsEnabled===false&&pref.smsEnabled?'Preferencias guardadas. El SMS permanece desactivado porque no hay teléfono registrado.':'Preferencias guardadas.');
- }
-
  if(error&&!data)return <main className="portal-shell"><div className="agenda-error">{error}</div></main>;
  if(!data)return <main className="portal-shell"><p className="portal-loading" role="status">Cargando tu espacio…</p></main>;
  if(data.mustChangePassword)return <main className="portal-login"><section><span className="eyebrow">Seguridad de la cuenta</span><h1>Cambia tu contraseña temporal</h1><p>Para continuar, crea una contraseña personal que solo tú conozcas.</p>{error&&<div className="agenda-error">{error}</div>}<form onSubmit={changePassword}><label>Contraseña temporal<input name="currentPassword" type="password" autoComplete="current-password" required/></label><label>Nueva contraseña<input name="newPassword" type="password" minLength={12} autoComplete="new-password" required/></label><label>Repite la nueva contraseña<input name="confirmPassword" type="password" minLength={12} autoComplete="new-password" required/></label><button className="button primary" disabled={busy}>{busy?'Guardando…':'Cambiar contraseña y continuar'}</button></form><button className="button secondary" onClick={logout}>Cerrar sesión</button></section></main>;
@@ -109,5 +97,4 @@ export default function PortalPage(){
  <article className="portal-card"><CardTitle icon="file">Consentimientos</CardTitle>{data.consents.map(c=><div className="portal-item" key={c.id}><strong>{c.title}</strong><span>{c.status}</span></div>)}{!data.consents.length&&<EmptyState icon="file" title="No hay consentimientos disponibles." compact />}</article>
  <article className="portal-card"><CardTitle icon="wallet">Pagos</CardTitle>{data.invoices.map(i=><div className="portal-item" key={i.id}><strong>{i.invoiceNumber} · {money(i.totalCents,i.currency)}</strong><span>{chargeStatusLabel(i.status)} · Pendiente {money(i.totalCents-i.paidCents,i.currency)}</span></div>)}{!data.invoices.length&&<EmptyState icon="wallet" title="No tienes pagos registrados." compact />}</article>
  <article className="portal-card"><CardTitle icon="bell">Notificaciones</CardTitle>{items.map(n=><div className="portal-item" key={n.id}><strong>{n.title}</strong><span>{n.body}</span><small>{new Date(n.createdAt).toLocaleString('es-ES')}</small>{n.status!=='READ'&&<button className="button secondary" onClick={()=>mark(n.id)}>Marcar como leída</button>}</div>)}{!items.length&&<EmptyState icon="bell" title="No tienes notificaciones pendientes." compact />}</article>
- <article className="portal-card"><CardTitle icon="shield">Preferencias de avisos</CardTitle>{pref&&<div className="stack">{([['appointmentReminders','Citas'],['taskReminders','Tareas'],['consentReminders','Consentimientos'],['invoiceReminders','Pagos'],['emailEnabled','Correo electrónico'],['smsEnabled','SMS']] as const).map(([k,l])=><label className="patient" key={k}><span>{l}</span><input type="checkbox" checked={Boolean(pref[k])} onChange={e=>setPref({...pref,[k]:e.target.checked})}/></label>)}<label className="field">Horas de antelación<input type="number" min="1" max="168" value={pref.reminderHoursBefore} onChange={e=>setPref({...pref,reminderHoursBefore:Number(e.target.value)})}/></label><button className="button primary" onClick={savePreferences} disabled={busy}>{busy?'Guardando…':'Guardar preferencias'}</button></div>}</article>
  </section></main>}

@@ -105,7 +105,9 @@ export class BillingService {
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', workspaceId);
       const latest = await tx.invoice.findFirst({ where: { workspaceId }, orderBy: { sequence: 'desc' }, select: { sequence: true } });
       const sequence = (latest?.sequence ?? 0) + 1;
-      const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`;
+      // Referencia interna del cobro: AsePsico no emite facturas, así que el prefijo no puede
+      // parecer un número de factura (A2 pre-piloto). Los cobros antiguos conservan su «FAC-».
+      const invoiceNumber = `COB-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`;
       const invoice = await tx.invoice.create({
         data: {
           workspaceId, patientId: dto.patientId, sequence, invoiceNumber, currency: (dto.currency ?? 'EUR').toUpperCase(),
@@ -265,8 +267,8 @@ export class BillingService {
           audience: 'PATIENT',
           patientId: invoice.patientId,
           type: 'INVOICE_DUE',
-          title: `Factura ${invoice.invoiceNumber}`,
-          body: `Tienes disponible una factura por ${(invoice.totalCents / 100).toFixed(2)} EUR.`,
+          title: `Cobro ${invoice.invoiceNumber}`,
+          body: `Tienes disponible un cobro por ${(invoice.totalCents / 100).toFixed(2)} EUR.`,
           actionUrl: '/portal',
           status: 'SENT',
           scheduledAt: new Date(),
@@ -278,7 +280,7 @@ export class BillingService {
           status: 'SENT',
           readAt: null,
           sentAt: new Date(),
-          body: `Tienes disponible una factura por ${(invoice.totalCents / 100).toFixed(2)} EUR.`,
+          body: `Tienes disponible un cobro por ${(invoice.totalCents / 100).toFixed(2)} EUR.`,
         },
       });
 
