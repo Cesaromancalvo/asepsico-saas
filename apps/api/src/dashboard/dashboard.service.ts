@@ -44,7 +44,7 @@ export class DashboardService {
       ? { clinicalProcesses: { some: { workspaceId: user.workspaceId, therapistId: user.sub, status: 'ACTIVE' as const } } }
       : { id: { in: [] as string[] } };
 
-    const [sessions, patientCount, submittedTasks, unreadMessages, activeWithoutFuture, preferences] = await Promise.all([
+    const [sessions, patientCount, submittedTasks, unreadMessages, activeWithoutFuture] = await Promise.all([
       this.prisma.session.findMany({
         where: { workspaceId: user.workspaceId, startsAt: { gte: start, lte: end }, ...therapistFilter },
         orderBy: { startsAt: 'asc' },
@@ -80,14 +80,12 @@ export class DashboardService {
         select: { id: true, firstName: true, lastName: true, updatedAt: true },
         orderBy: { updatedAt: 'asc' }, take: 5,
       }),
-      this.prisma.notificationPreference.findUnique({ where: { userId: user.sub } }),
     ]);
 
     const checklist = [
       { key: 'profile', label: 'Perfil profesional configurado', done: Boolean(member.user.firstName && member.user.lastName), href: '/settings' },
       { key: 'patient', label: 'Primer paciente creado', done: patientCount > 0, href: '/patients?new=true' },
       { key: 'session', label: 'Primera cita programada', done: sessions.length > 0 || await this.prisma.session.count({ where: { workspaceId: user.workspaceId, ...therapistFilter } }) > 0, href: '/agenda?new=true' },
-      { key: 'notifications', label: 'Recordatorios revisados', done: Boolean(preferences), href: '/notifications' },
     ];
     const inferredStep = checklist.filter((item) => item.done).length;
     const onboarding = {
