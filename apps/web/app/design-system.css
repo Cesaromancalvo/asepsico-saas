@@ -101,6 +101,25 @@ h1,h2,h3{color:var(--ink);font-weight:600}
 .field input:focus,.field textarea:focus,.field select:focus,.patient-field textarea:focus,.portal-login input:focus{
   border-color:var(--violet);background:#fff;box-shadow:0 0 0 4px rgba(112,100,210,.16);outline:none}
 .patient-field>span{color:var(--ink);font-size:var(--fs-md);font-weight:500}
+/* Formularios en tarjeta de la agenda («Programar una cita») y de la biblioteca: mismo campo que .field, en rejilla. */
+.agenda-form-card{margin-bottom:20px}
+.agenda-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 16px;margin-top:20px}
+.agenda-form>label{display:grid;align-content:start;gap:8px;min-width:0;margin-bottom:14px;color:var(--ink);font-size:var(--fs-md);font-weight:500}
+.agenda-form input,.agenda-form select,.agenda-form textarea{
+  width:100%;min-width:0;min-height:48px;padding:12px 14px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);
+  color:var(--text);font-family:inherit;font-size:var(--fs-base);line-height:1.5;transition:border-color .15s ease,box-shadow .15s ease}
+.agenda-form textarea{min-height:96px;resize:vertical}
+.agenda-form input::placeholder,.agenda-form textarea::placeholder{color:#8A8996}
+.agenda-form input:hover,.agenda-form textarea:hover,.agenda-form select:hover{border-color:#BDB5E6}
+.agenda-form input:focus,.agenda-form textarea:focus,.agenda-form select:focus{border-color:var(--violet);background:#fff;box-shadow:0 0 0 4px rgba(112,100,210,.16);outline:none}
+.agenda-form input[readonly]{background:var(--surface-soft,#F6F5FB);color:var(--text-soft);cursor:default}
+.agenda-form input[readonly]:hover{border-color:var(--border-strong)}
+.agenda-form-notes{grid-column:1/-1;margin-bottom:14px}
+.agenda-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap;padding-top:4px}
+.agenda-form-actions .small-secondary,.agenda-form-actions .primary-action{min-height:44px;padding:0 18px;font-size:var(--fs-sm)}
+.agenda-form-actions .primary-action{flex:0 0 auto}
+@media(max-width:1000px){.agenda-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.agenda-form{grid-template-columns:minmax(0,1fr)}.agenda-form-actions{flex-direction:column-reverse;align-items:stretch}.agenda-form-actions>*{width:100%}}
 
 /* ---------- 5. Chips de estado ---------- */
 .ui-chip,.e1-badge,.patient-status{display:inline-flex;align-items:center;gap:6px;width:max-content;min-height:26px;padding:0 10px;
