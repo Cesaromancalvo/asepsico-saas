@@ -363,8 +363,10 @@ jobs:
       # Panel privado de la lista de espera (PLATFORM_ADMIN) con la app completa contra la BD del
       # servicio: 404 para no admins, no-store, supresión con contraseña, auditoría sin datos y
       # regresión multi-tenant de los endpoints clínicos. Crea sus propios datos ficticios.
+      # waitlist-phone-db: teléfono cifrado en reposo, borrado solo del teléfono (panel y CLI
+      # waitlist:set-phone) con auditoría y nada del teléfono en logs ni en PlatformAuditLog.
       - name: Platform admin waitlist panel tests (real PostgreSQL)
-        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern 'platform-admin-db'
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db)'
         env:
           RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
           RACE_DATABASE_REQUIRED: '1'
