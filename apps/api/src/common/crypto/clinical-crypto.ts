@@ -50,7 +50,7 @@ export const ENCRYPTED_TEXT_FIELDS = {
   // paciente puede pedirlos y no deben estar en claro en la BD).
   exceptionalAccessJustification: ['justification', 'notificationDeferredReason'],
   // Lista de espera pública (no clínica, sin workspace): datos de contacto de profesionales.
-  waitlistEntry: ['name', 'email', 'tools'],
+  waitlistEntry: ['name', 'email', 'tools', 'phone'],
   // Alta en el portal por QR fijo del profesional: la solicitud pendiente (datos de contacto e
   // identidad de alguien que aún no es paciente aceptado) y el token del QR (para reimprimirlo).
   portalSignupRequest: ['firstName', 'lastName', 'email', 'phone', 'birthDate'],

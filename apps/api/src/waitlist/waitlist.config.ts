@@ -33,14 +33,37 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  *    abogado humano). Mismas finalidades, bases y plazos que v3 y tampoco ofrece comunicaciones
  *    comerciales. La v3 queda archivada en /privacidad-lista-espera/v3/; se sigue aceptando solo durante
  *    la transición: retirarla cuando la landing publicada envíe lista-espera-v4.
+ *  - lista-espera-v5: 27/10/2026, teléfono OBLIGATORIO (decisión del Jefe del 27/10). Texto de Lex Psi
+ *    (borrador 1.0 del 27/10/2026; pendiente de revisión del abogado humano). Cambios sobre la v4:
+ *    se trata el teléfono (guardado en formato internacional E.164); la finalidad pasa a ser
+ *    contactar sobre el piloto «por email o por teléfono (llamada o SMS)», con la misma base jurídica
+ *    (consentimiento, art. 6.1.a RGPD; el consentimiento previo cubre las llamadas, art. 66.1.b LGTel);
+ *    el teléfono solo sirve para el piloto y la demo, no se cede ni se usa en grupos o listas de
+ *    difusión; cada llamada empieza diciendo quién llama y por qué, y se puede pedir no recibir más
+ *    llamadas: se borra SOLO el teléfono (waitlist:set-phone --clear o el panel) y se sigue por email;
+ *    el aviso interno de altas no lleva el teléfono; mismos plazos máximos, más el borrado a los 14
+ *    días tras un «no» al piloto. Sin comunicaciones comerciales. La v4 queda archivada en
+ *    /privacidad-lista-espera/v4/.
+ *
+ * Regla del teléfono por versión (WaitlistService): con lista-espera-v5 es obligatorio
+ * (WAITLIST_PHONE_REQUIRED / WAITLIST_PHONE_INVALID); con v2–v4 no se admite, porque su texto no lo
+ * informa (WAITLIST_PHONE_NOT_INFORMED).
+ *
+ * Transición a la v5 (orden obligatorio, spec §12): (1) desplegar esta API, que acepta v5 con
+ * teléfono y v2–v4 sin teléfono, así que la landing publicada (v4) sigue funcionando sin cambios;
+ * (2) Lex publica la v5 y archiva la v4; (3) la landing envía lista-espera-v5 con phone;
+ * (4) retirar v2, v3 y v4 de esta lista cuando la landing publicada ya envíe la v5.
  */
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'] as const;
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5'] as const;
 
 /**
  * Versiones cuya política no ofrece comunicaciones comerciales: un alta con ellas y
  * commercialConsentRequested=true es un 400 (no se registra una solicitud que el texto aceptado no recoge).
  */
-export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3', 'lista-espera-v4'];
+export const WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL: readonly string[] = ['lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5'];
+
+/** Versiones cuya política informa del teléfono y lo exige. Con cualquier otra, enviar phone es un 400. */
+export const WAITLIST_POLICY_VERSIONS_WITH_PHONE: readonly string[] = ['lista-espera-v5'];
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
