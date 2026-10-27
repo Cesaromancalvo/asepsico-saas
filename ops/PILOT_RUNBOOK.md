@@ -428,6 +428,37 @@ cuenta, como los del código de verificación) y no se puede deshacer (misma sup
 `waitlist:delete`). Cada consulta y cada supresión quedan en `PlatformAuditLog` sin datos
 personales (consulta por SQL de solo lectura si hace falta). No copies datos fuera del panel.
 
+**Teléfono (política `lista-espera-v5`).** El panel muestra el teléfono descifrado (enlace `tel:`)
+y el contador «Sin teléfono». El aviso por correo de altas nuevas **no** lo lleva. Si alguien pide
+que no le llamen más (también durante la llamada), borrar **solo el teléfono**, sin sacarle de la
+lista: desde el panel (acción «Borrar teléfono», pide tu contraseña, como la supresión;
+`POST /api/v1/admin/waitlist/:id/phone/delete`) o por CLI. Plazo máximo: un mes (política v5,
+apartado 7); mejor en el acto. Cada borrado queda en `PlatformAuditLog`
+(`PLATFORM_WAITLIST_PHONE_CLEARED`, sin el número).
+
+**`waitlist:set-phone`** (los apuntados v2–v4 que den su teléfono respondiendo al correo, **solo
+después de publicar la v5**, y correcciones). Desde el clon de despliegue, con las claves de
+producción en la propia orden y nunca el email ni el teléfono como argumentos:
+
+```bash
+read -rs PROD_DB_URL; read -rs WL_SECRET; read -rs FIELD_KEY   # las de la API en Render
+read -rs WL_EMAIL; read -rs WL_PHONE                            # no se muestran
+printf '%s\n%s\n' "$WL_EMAIL" "$WL_PHONE" | DATABASE_URL="$PROD_DB_URL" WAITLIST_SECRET="$WL_SECRET" FIELD_ENCRYPTION_KEY="$FIELD_KEY" npm run waitlist:set-phone
+# Borrar solo el teléfono:
+printf '%s\n' "$WL_EMAIL" | DATABASE_URL="$PROD_DB_URL" WAITLIST_SECRET="$WL_SECRET" npm run waitlist:set-phone -- --clear
+unset PROD_DB_URL WL_SECRET FIELD_KEY WL_EMAIL WL_PHONE
+```
+
+(Si la API usa el llavero `FIELD_ENCRYPTION_KEYS` + `FIELD_ENCRYPTION_ACTIVE_KID`, pasar esas en
+lugar de `FIELD_ENCRYPTION_KEY`; sin ninguna de ellas el CLI se niega a guardar.) Solo imprime
+«Teléfono guardado (cifrado).», «Teléfono borrado…», «no válido» o «no encontrada». Valida con la
+misma regla que la API y deja auditoría `PLATFORM_WAITLIST_PHONE_SET` / `_CLEARED` sin actor y sin
+datos. **Nunca** cambiar el teléfono con SQL a mano: se guardaría en claro. `waitlist:export` **no** incluye el
+teléfono salvo con `--with-phone` (úsalo solo si de verdad lo necesitas fuera del panel) y cada
+export queda en `PlatformAuditLog` (`PLATFORM_WAITLIST_EXPORTED`, solo recuento). Con
+`--with-phone`, la columna `phone` sale con un `'` delante (`'+34612345678`): es la protección contra fórmulas de
+Excel/Sheets; quitarlo al copiar.
+
 **Quitar el acceso:** borrar o vaciar `PLATFORM_ADMIN_EMAILS` en Render (redespliega) o desactivar
 el MFA de la cuenta. Si se sospecha que la cuenta exclusiva está comprometida: vaciar la variable
 primero, después cambiar la contraseña (cierra todas sus sesiones) y regenerar el MFA.

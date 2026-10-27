@@ -496,7 +496,13 @@
       rejected: 'No hemos podido apuntarte con esos datos. Revisa el formulario e inténtalo de nuevo.',
       tooMany: 'Has hecho demasiados intentos. Prueba de nuevo en unos minutos.',
       network: 'No hemos podido conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo en unos segundos. Si sigue sin funcionar, escríbenos a ' + email + '.',
-      generic: 'Algo ha fallado al enviar el formulario. Inténtalo de nuevo más tarde o escríbenos a ' + email + '.'
+      generic: 'Algo ha fallado al enviar el formulario. Inténtalo de nuevo más tarde o escríbenos a ' + email + '.',
+      phoneNotInformed: 'No hemos podido enviar el formulario por un error de la página. Recárgala e inténtalo de nuevo; si sigue fallando, escríbenos a ' + email + '.'
+    };
+    // Errores del teléfono (lista-espera-v5). Nunca repiten lo que ha escrito la persona.
+    var PHONE_MSG = {
+      required: 'Escribe tu teléfono: lo necesitamos para llamarte y contarte el piloto.',
+      invalid: 'Escribe un teléfono válido, por ejemplo 612 345 678 o +34 612 345 678.'
     };
 
     var token = null;
@@ -592,6 +598,7 @@
     function q(sel) { return form.querySelector(sel); }
     var inName = q('#wl-name');
     var inEmail = q('#wl-email');
+    var inPhone = q('#wl-phone');
     var inCount = q('#wl-count');
     var inToolOther = q('#wl-tool-other');
     var toolOtherWrap = form.querySelector('[data-wl-tool-other-wrap]');
@@ -634,6 +641,24 @@
       if (!show && inCount) { inCount.value = ''; setError(inCount, 'wl-count-err', ''); }
     }
 
+    // Teléfono: la misma regla que la API (apps/api/src/waitlist/waitlist-phone.ts), solo para avisar al
+    // momento; la API valida de nuevo y lo guarda en E.164. Se envía tal como se ha escrito.
+    var PHONE_MAX = 25;
+    var PHONE_ES = /^(6\d{8}|7[1-4]\d{7}|[89][1-8]\d{7})$/;
+    function phoneValid(raw) {
+      if (raw.length > PHONE_MAX) return false;
+      var c = raw.replace(/[\s.()-]/g, '');
+      if (!/^\+?\d+$/.test(c)) return false;
+      var intl = c.charAt(0) === '+' ? c.slice(1) : c.slice(0, 2) === '00' ? c.slice(2) : null;
+      if (intl === null) return PHONE_ES.test(c.length === 11 && c.slice(0, 2) === '34' ? c.slice(2) : c);
+      if (intl.slice(0, 2) === '34') return PHONE_ES.test(intl.slice(2));
+      return /^[1-9]\d{7,14}$/.test(intl);
+    }
+    function phoneError(kind) {
+      if (!inPhone) return;
+      setError(inPhone, 'wl-phone-err', kind ? PHONE_MSG[kind] : '');
+    }
+
     function validate() {
       var bad = [];
       var name = inName.value.trim().replace(/\s+/g, ' ');
@@ -650,6 +675,10 @@
       var mailMsg = !mail ? 'Escribe tu email.' :
         (mail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) ? 'Escribe un email válido, por ejemplo nombre@dominio.es.' : '';
       setError(inEmail, 'wl-email-err', mailMsg); if (mailMsg) bad.push(inEmail);
+
+      var phone = inPhone ? inPhone.value.trim() : '';
+      var phoneKind = !phone ? 'required' : phoneValid(phone) ? '' : 'invalid';
+      phoneError(phoneKind); if (phoneKind) bad.push(inPhone);
 
       var sitMsg = sit ? '' : 'Elige tu situación.';
       setError(situationGroup, 'wl-situation-err', sitMsg); if (sitMsg) bad.push(radios[0]);
@@ -673,6 +702,7 @@
       var payload = {
         name: name,
         email: mail,
+        phone: phone,
         situation: sit,
         privacyAccepted: true,
         privacyPolicyVersion: version,
@@ -726,6 +756,14 @@
       attempt(false).then(function (r) {
         if (r.status === 202) { say(''); showDone(); return; }
         if (r.status === 429) { say(MSG.tooMany, 'error'); return; }
+        var code = r.status === 400 && r.body && r.body.code;
+        if (code === 'WAITLIST_PHONE_REQUIRED' || code === 'WAITLIST_PHONE_INVALID') {
+          phoneError(code === 'WAITLIST_PHONE_REQUIRED' ? 'required' : 'invalid');
+          say(MSG.invalid, 'error');
+          if (inPhone) inPhone.focus();
+          return;
+        }
+        if (code === 'WAITLIST_PHONE_NOT_INFORMED') { say(MSG.phoneNotInformed, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
         say(MSG.generic, 'error');
       }, function (err) {
@@ -749,7 +787,7 @@
       r.addEventListener('change', function () { syncCount(); setError(situationGroup, 'wl-situation-err', ''); });
     });
     toolRadios.forEach(function (r) { r.addEventListener('change', syncToolOther); });
-    [inName, inEmail, inCount, inToolOther].forEach(function (el) {
+    [inName, inEmail, inPhone, inCount, inToolOther].forEach(function (el) {
       if (el) el.addEventListener('input', function () {
         if (el.getAttribute('aria-invalid') === 'true') setError(el, el.getAttribute('aria-describedby').split(' ').pop(), '');
       });

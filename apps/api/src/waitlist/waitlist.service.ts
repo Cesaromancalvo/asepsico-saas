@@ -5,7 +5,8 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
-import { WAITLIST_FORM_MIN_SECONDS, WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL } from './waitlist.config';
+import { normalizeWaitlistPhone } from './waitlist-phone';
+import { WAITLIST_FORM_MIN_SECONDS, WAITLIST_POLICY_VERSIONS_WITH_PHONE, WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL } from './waitlist.config';
 
 /** Respuesta única para alta nueva, alta repetida y honeypot: no revela si el email ya estaba. */
 export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
@@ -13,9 +14,10 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
 /**
  * Lista de espera pública. Fuera de cualquier workspace (no hay workspaceId: es anterior a tener
  * cuenta). Reglas:
- *  - name, email y tools se guardan cifrados (registro waitlistEntry en clinical-crypto.ts).
+ *  - name, email, tools y phone se guardan cifrados (registro waitlistEntry en clinical-crypto.ts).
+ *  - phone: obligatorio con la política v5 y prohibido con v2–v4 (phoneFor). Se guarda en E.164.
  *  - Deduplicación por emailHash (HMAC); una segunda alta no toca la fila y no lo revela.
- *  - Los logs no llevan nunca nombre, email, herramientas, hash ni IP: solo el tipo de evento.
+ *  - Los logs no llevan nunca nombre, email, teléfono, herramientas, hash ni IP: solo el tipo de evento.
  *  - No se guarda IP ni user-agent: el rate limit por IP vive solo en la memoria del throttler.
  */
 @Injectable()
@@ -40,6 +42,8 @@ export class WaitlistService {
       throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_COMMERCIAL_NOT_OFFERED', message: 'Esta versión de la política no incluye comunicaciones comerciales.' });
     }
 
+    const phone = this.phoneFor(dto);
+
     const token = checkFormToken(dto.formToken);
     if (token === 'too-fast') {
       this.logger.warn('Alta rechazada: formulario enviado demasiado rápido');
@@ -57,6 +61,7 @@ export class WaitlistService {
       email: dto.email.trim(),
       situation: dto.situation,
       tools: dto.tools ? dto.tools : null,
+      phone,
       professionalsCount: dto.professionalsCount ?? null,
       source: dto.source ?? null,
       privacyPolicyVersion: dto.privacyPolicyVersion,
@@ -92,5 +97,28 @@ export class WaitlistService {
       this.logger.warn('Aviso de lista de espera no programado');
     }
     return WAITLIST_ACCEPTED;
+  }
+
+  /**
+   * Regla del teléfono por versión de la política. Devuelve el teléfono en E.164 (v5) o null (v2–v4).
+   * Una cadena vacía cuenta como «no enviado». Los errores y los logs nombran el campo, nunca el valor.
+   */
+  private phoneFor(dto: CreateWaitlistEntryDto): string | null {
+    const sent = typeof dto.phone === 'string' && dto.phone !== '';
+    if (!WAITLIST_POLICY_VERSIONS_WITH_PHONE.includes(dto.privacyPolicyVersion)) {
+      if (!sent) return null;
+      this.logger.warn('Alta rechazada: teléfono con una versión de la política que no lo informa');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_NOT_INFORMED', message: 'Esta versión de la política no incluye el teléfono.' });
+    }
+    if (!sent) {
+      this.logger.warn('Alta rechazada: falta el teléfono');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_REQUIRED', message: 'El teléfono es obligatorio.' });
+    }
+    const phone = normalizeWaitlistPhone(dto.phone);
+    if (!phone) {
+      this.logger.warn('Alta rechazada: teléfono con formato no válido');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_INVALID', message: 'El teléfono no tiene un formato válido.' });
+    }
+    return phone;
   }
 }

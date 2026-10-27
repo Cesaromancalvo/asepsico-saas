@@ -1057,6 +1057,10 @@ model WaitlistEntry {
   situation                    WaitlistSituation?
   /// Texto libre cifrado: herramientas que usa hoy.
   tools                        String?
+  /// Cifrado (enc:v1/v2). Teléfono normalizado a E.164 (+34612345678). Obligatorio en las altas con la
+  /// política lista-espera-v5; null en las altas anteriores (v2–v4), tras la supresión y tras borrar solo
+  /// el teléfono (retirada del consentimiento para llamadas). Sin hash: no se busca ni se deduplica por él.
+  phone                        String?
   professionalsCount           Int?
   source                       WaitlistSource?
   privacyPolicyVersion         String

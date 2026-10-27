@@ -14,6 +14,9 @@
  *  7. mensajes: 429, fallo de red y validación sin red;
  *  8. "¿Qué usas hoy?": opciones, "Otra" con caja de máx. 100 caracteres, y sin campos commercialConsent*;
  *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex;
+ * 11. teléfono (lista-espera-v5): obligatorio, misma regla que la API, se envía tal como se escribe,
+ *     un mensaje distinto para cada code de la API (PHONE_REQUIRED, PHONE_INVALID, PHONE_NOT_INFORMED),
+ *     foco en el campo y nunca se repite el número en un mensaje;
  * 10. arranque en frío (tiempos escalados): mensajes a los 6 s y a los 20 s, timeout a los 90 s sin
  *     reintento, sin doble envío mientras espera, un único reintento tras un fallo de red y el envío
  *     espera al token que se está pidiendo desde la carga.
@@ -104,6 +107,7 @@ function buildDom() {
   };
   field('wl-name').setAttribute('aria-describedby', 'wl-name-err');
   field('wl-email').setAttribute('aria-describedby', 'wl-email-err');
+  field('wl-phone').setAttribute('aria-describedby', 'wl-phone-err');
   field('wl-count').setAttribute('aria-describedby', 'wl-count-err');
   field('wl-tool-other').setAttribute('aria-describedby', 'wl-tool-other-help wl-tool-other-err');
   const toolOtherWrap = form.add('[data-wl-tool-other-wrap]', new El('tool-other-wrap', { hidden: true }));
@@ -124,7 +128,7 @@ function buildDom() {
     for (const r of form.querySelectorAll('input[name="situation"]')) r.value = r.id.slice(4);
     for (const r of form.querySelectorAll('input[name="currentTool"]')) r.value = r.id.slice(5);
   };
-  for (const id of ['wl-name-err', 'wl-email-err', 'wl-situation-err', 'wl-count-err', 'wl-tool-other-err', 'wl-privacy-err']) {
+  for (const id of ['wl-name-err', 'wl-email-err', 'wl-phone-err', 'wl-situation-err', 'wl-count-err', 'wl-tool-other-err', 'wl-privacy-err']) {
     reg(new El(id, { hidden: true }));
   }
   const cta = doc.add('a[data-cta]', new El('cta'));
@@ -189,6 +193,7 @@ function fill(t, opts = {}) {
   const f = t.form;
   f.querySelector('#wl-name').value = 'Persona Ficticia';
   f.querySelector('#wl-email').value = opts.email || 'ficticia@example.com';
+  f.querySelector('#wl-phone').value = opts.phone !== undefined ? opts.phone : '612 345 678';
   f.querySelectorAll('input[name="situation"]')[0].checked = true;
   f.querySelector('#wl-privacy').checked = true;
   if (opts.tool) {
@@ -242,7 +247,8 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   if (p[0]) {
     check(p[0].at - tokenAt >= 1000, `2: se envió ${p[0].at - tokenAt} ms después del token (mínimo 1000)`);
     check(p[0].body.formToken === 'tok-espera', '2: no se envió el token recibido');
-    check(p[0].body.privacyPolicyVersion === 'lista-espera-v4', '2: privacyPolicyVersion distinto de lista-espera-v4');
+    check(p[0].body.privacyPolicyVersion === 'lista-espera-v5', '2: privacyPolicyVersion distinto de lista-espera-v5');
+    check(p[0].body.phone === '612 345 678', `11: el teléfono no se envió tal como se escribió ("${p[0].body.phone}")`);
     check(!Object.keys(p[0].body).some((k) => k.startsWith('commercialConsent')), '2: se envió un campo commercialConsent* (la casilla de novedades ya no existe)');
     check(p[0].body.tools === 'Otra: Un programa propio', `8: "Otra" con texto se envió como "${p[0].body.tools}"`);
     check(p[0].init.headers['Content-Type'] === 'application/json', '2: falta Content-Type JSON');
@@ -250,7 +256,7 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   check(t.done.hidden === false, '3: tras el 202 no se muestra el mensaje final');
   check(t.form.hidden === true, '3: tras el 202 el formulario sigue visible');
   check(t.toolOtherWrap.hidden === true, '3: tras el 202 la caja de "Otra" sigue visible');
-  for (const id of ['#wl-name', '#wl-email', '#wl-tool-other']) check(t.form.querySelector(id).value === '', `3: ${id} no quedó vacío tras el 202`);
+  for (const id of ['#wl-name', '#wl-email', '#wl-phone', '#wl-tool-other']) check(t.form.querySelector(id).value === '', `3: ${id} no quedó vacío tras el 202`);
   check(t.form.querySelector('#wl-privacy').checked === false, '3: la casilla de privacidad sigue marcada tras el 202');
   check(t.status.textContent === '', '3: el estado "Enviando…" no se limpió tras el 202');
   // Token descartado: un nuevo foco pide otro.
@@ -383,9 +389,15 @@ for (const [opts, expected] of [
   // Las versiones archivadas que acepta la API o enlaza la vigente tienen su página, con noindex.
   // Las posteriores a la que envía la landing (la API ya acepta la siguiente antes de que la landing la publique) no.
   const num = (x) => Number((x.match(/-v(\d+)$/) || [])[1]);
+  // Cada archivada se enlaza desde la vigente o desde una archivada posterior (cadena v5 → v4 → v3).
+  const pages = { [sent]: page };
+  for (const v of accepted.filter((x) => x !== sent && num(x) < num(sent))) {
+    try { pages[v] = readFileSync(join(pub, `privacidad-lista-espera/${v.replace('lista-espera-', '')}/index.html`), 'utf8'); } catch { /* falta */ }
+  }
   for (const v of accepted.filter((x) => x !== sent && num(x) < num(sent))) {
     const n = v.replace('lista-espera-', '');
-    check(page.includes(`href="/privacidad-lista-espera/${n}/"`), `9: la política vigente no enlaza la archivada /${n}/`);
+    const linked = Object.entries(pages).some(([k, html]) => num(k) > num(v) && html.includes(`href="/privacidad-lista-espera/${n}/"`));
+    check(linked, `9: ni la política vigente ni una archivada posterior enlazan la archivada /${n}/`);
     let old = '';
     try { old = readFileSync(join(pub, `privacidad-lista-espera/${n}/index.html`), 'utf8'); } catch { /* falta */ }
     check(old.includes(`Versión: ${v}`), `9: falta la política archivada ${v} en /privacidad-lista-espera/${n}/`);
@@ -429,9 +441,80 @@ for (const [opts, expected] of [
   check(t.done.hidden === false, '10: el envío tras esperar el token no terminó');
 }
 
+/* ---- 11. Teléfono (lista-espera-v5) ---- */
+const PHONE_REQUIRED = 'Escribe tu teléfono: lo necesitamos para llamarte y contarte el piloto.';
+const PHONE_INVALID = 'Escribe un teléfono válido, por ejemplo 612 345 678 o +34 612 345 678.';
+const phoneErr = () => doc.getElementById('wl-phone-err');
+{ // Regla del navegador = regla de la API (apps/api/src/waitlist/waitlist-phone.ts).
+  const ok = ['612345678', '612 345 678', '+34 612 345 678', '0034612345678', '34612345678', '(+34) 712-345-678',
+    '912.345.678', '+351 912 345 678', '+44 20 7946 0958', '0044 7911 123456'];
+  const ko = ['12345', '512345678', '702345678', '800123456', '901234567', '+34 512 345 678', '61234567a',
+    '+0 1234 5678', '+1234567', '612 345 678 ext 2', 'x'.repeat(26), '+1 234 567 890 123 456'];
+  for (const [value, valid] of [...ok.map((v) => [v, true]), ...ko.map((v) => [v, false])]) {
+    const t = load();
+    await sleep(10);
+    fill(t, { phone: value });
+    await submitAndWait(t, 500);
+    if (valid) check(posts(t).length === 1, `11: "${value}" es válido y no se envió`);
+    else {
+      check(posts(t).length === 0, `11: "${value}" no es válido y se envió`);
+      check(phoneErr().textContent === PHONE_INVALID, `11: "${value}" no mostró el error de formato`);
+      check(doc.activeElement && doc.activeElement.id === 'wl-phone', `11: con "${value}" el foco no fue al teléfono`);
+    }
+  }
+}
+{ // Vacío: error de obligatorio, foco en el teléfono, sin POST.
+  const t = load();
+  await sleep(10);
+  fill(t, { phone: '   ' });
+  await submitAndWait(t, 200);
+  check(posts(t).length === 0, '11: un teléfono vacío se envió');
+  check(phoneErr().textContent === PHONE_REQUIRED && phoneErr().hidden === false, '11: falta el error de teléfono obligatorio');
+  check(t.form.querySelector('#wl-phone').getAttribute('aria-invalid') === 'true', '11: el teléfono vacío no se marcó como inválido');
+  check(doc.activeElement && doc.activeElement.id === 'wl-phone', '11: el foco no fue al teléfono');
+  // Al escribir se quita el error.
+  const inp = t.form.querySelector('#wl-phone');
+  inp.value = '6'; inp.dispatch('input');
+  check(phoneErr().hidden === true && inp.getAttribute('aria-invalid') === null, '11: al escribir no se quitó el error del teléfono');
+}
+// Respuestas de la API: un mensaje distinto para cada code, sin repetir el número.
+for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['WAITLIST_PHONE_INVALID', PHONE_INVALID], ['WAITLIST_PHONE_NOT_INFORMED', null]]) {
+  const t = load();
+  t.net.queue.post.push({ status: 400, body: { statusCode: 400, code, message: 'phone' } });
+  await sleep(10);
+  fill(t, { phone: '+34 611 222 333' });
+  await submitAndWait(t);
+  const shown = `${t.status.textContent} ${phoneErr().textContent}`;
+  check(!/611|222|333/.test(shown), `11 (${code}): un mensaje repite el número`);
+  check(t.done.hidden === true, `11 (${code}): se mostró el mensaje de éxito`);
+  check(t.form.querySelector('#wl-phone').value === '+34 611 222 333', `11 (${code}): se borró el teléfono escrito`);
+  if (expected) {
+    check(phoneErr().textContent === expected, `11 (${code}): error del campo inesperado "${phoneErr().textContent}"`);
+    check(doc.activeElement && doc.activeElement.id === 'wl-phone', `11 (${code}): el foco no fue al teléfono`);
+    check(/Revisa los campos marcados/.test(t.status.textContent), `11 (${code}): falta el aviso general`);
+  } else {
+    check(phoneErr().hidden === true, `11 (${code}): se marcó el campo (es un fallo de la página, no de la persona)`);
+    check(/error de la página/.test(t.status.textContent), `11 (${code}): mensaje inesperado "${t.status.textContent}"`);
+  }
+}
+{ // El teléfono no se guarda en el navegador ni sale en la URL: solo viaja en el cuerpo del POST.
+  const t = load();
+  await sleep(10);
+  fill(t, { phone: '+34 699 888 777' });
+  await submitAndWait(t);
+  check(t.storageHits.length === 0, `11: se accedió a ${[...new Set(t.storageHits)].join(', ')}`);
+  for (const c of t.net.calls) check(!/699|888|777/.test(c.path), '11: el teléfono apareció en una URL');
+  check(posts(t).length === 1 && posts(t)[0].body.phone === '+34 699 888 777', '11: el teléfono no viajó en el cuerpo del POST');
+}
+{ // Sin analítica ni almacenamiento en el código de la landing (G6 de la política v5).
+  const js = configSrc + mainSrc;
+  check(!/localStorage\s*\.|sessionStorage\s*\.|indexedDB|document\.cookie|sendBeacon|plausible\(|gtag\(|dataLayer|history\.(push|replace)State/.test(js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')),
+    '11: la landing usa almacenamiento, analítica o cambia la URL');
+}
+
 if (failures.length) {
   for (const f of failures) console.error(`ERROR   ${f}`);
   console.error(`\ncheck-landing-form: ${failures.length} fallo(s).`);
   process.exit(1);
 }
-console.log('check-landing-form: OK (fetch simulado: token al cargar, minSeconds, 202, 400/413/415/429, reintentos, red con un reintento, arranque en frío (6/20/90 s), validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política).');
+console.log('check-landing-form: OK (fetch simulado: token al cargar, minSeconds, 202, 400/413/415/429, reintentos, red con un reintento, arranque en frío (6/20/90 s), validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política, teléfono v5).');

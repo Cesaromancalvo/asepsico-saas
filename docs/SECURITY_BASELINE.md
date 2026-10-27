@@ -194,6 +194,14 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   consentimiento separado y doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
+- Teléfono (política `lista-espera-v5`, 27/10/2026): obligatorio con v5 y rechazado con v2–v4
+  (`WAITLIST_PHONE_NOT_INFORMED`); normalizado a E.164 con una única función
+  (`waitlist-phone.ts`) y cifrado en reposo (registro `waitlistEntry`). Sin hash ni búsqueda por
+  teléfono. Nunca en logs, errores, `PlatformAuditLog` ni en el aviso por correo. Solo lo ve
+  PLATFORM_ADMIN con MFA en el panel. Se borra con la supresión y la purga, y se puede borrar
+  **solo el teléfono** (panel con contraseña o `waitlist:set-phone --clear`, auditado). El CLI
+  `waitlist:set-phone` lee email y teléfono por stdin, nunca por argumentos (tests
+  `waitlist-phone.security-spec.ts` y `waitlist-phone-db.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
   token. No se rota: rompe la deduplicación y `waitlist:delete` de las altas previas.
 - Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,

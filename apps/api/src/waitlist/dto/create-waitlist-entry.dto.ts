@@ -3,6 +3,7 @@ import { WaitlistSituation, WaitlistSource } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { Equals, IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS } from '../waitlist.config';
+import { WAITLIST_PHONE_MAX_INPUT_LENGTH } from '../waitlist-phone';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -22,6 +23,15 @@ export class CreateWaitlistEntryDto {
   @ApiProperty({ maxLength: 254 })
   @Transform(trim) @IsString() @MaxLength(254) @IsEmail()
   email!: string;
+
+  /**
+   * Teléfono tal como lo escribe la persona (la API lo valida y lo normaliza a E.164). Opcional para
+   * class-validator: la obligatoriedad depende de privacyPolicyVersion y la comprueba el servicio
+   * (v5: obligatorio; v2–v4: prohibido). Nunca se registra ni se devuelve en un error.
+   */
+  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'Obligatorio con lista-espera-v5; no se admite con v2–v4. Se guarda cifrado en E.164.' })
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(WAITLIST_PHONE_MAX_INPUT_LENGTH)
+  phone?: string;
 
   @ApiProperty({ enum: WaitlistSituation })
   @IsEnum(WaitlistSituation)

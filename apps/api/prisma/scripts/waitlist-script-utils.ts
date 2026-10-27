@@ -19,13 +19,36 @@ export function emailArg(args: string[]): string | undefined {
   return index >= 0 ? args[index + 1] : args.find((a) => a.startsWith('--email='))?.slice('--email='.length);
 }
 
+const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * true solo si DATABASE_URL apunta a una base de datos de este equipo (localhost, 127.0.0.1, ::1
+ * o *.localhost). Falla cerrado: una URL que no se puede leer, sin host o con el host en los
+ * parámetros (socket) cuenta como NO local.
+ */
+export function isLocalDatabaseUrl(raw: string | undefined): boolean {
+  if (!raw) return false;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (!/^postgres(ql)?:$/.test(url.protocol) || url.searchParams.has('host')) return false;
+  const host = url.hostname.toLowerCase();
+  return LOCAL_DB_HOSTS.has(host) || host.endsWith('.localhost');
+}
+
+/** Mensaje por defecto: los CLI que reciben el email con --email. */
+const EMAIL_ARG_HINT = 'Indica el email con --email <email>';
+
 /** Los CLI que buscan por email necesitan el MISMO WAITLIST_SECRET que la API. */
-export function assertEmailLookupConfig(args: string[], email: string | undefined): asserts email is string {
+export function assertEmailLookupConfig(args: string[], email: string | undefined, emailHint: string = EMAIL_ARG_HINT): asserts email is string {
   if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL');
   if (!process.env.WAITLIST_SECRET && !args.includes('--allow-dev-secret')) {
     throw new Error('Falta WAITLIST_SECRET (el de la API). Solo en local puede usarse el de desarrollo con --allow-dev-secret.');
   }
-  if (!email || !email.includes('@')) throw new Error('Indica el email con --email <email>');
+  if (!email || !email.includes('@')) throw new Error(emailHint);
 }
 
 /** Ejecuta un CLI con un PrismaClient y la gestión de errores sin datos personales. */

@@ -5,15 +5,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PlatformWaitlistResponse } from '@asepsico/contracts';
 import Sidebar from '@/components/Sidebar';
 import Icon, { EmptyState } from '@/components/Icon';
-import WaitlistSuppressDialog from '@/components/WaitlistSuppressDialog';
+import WaitlistSuppressDialog, { WaitlistDialogKind } from '@/components/WaitlistSuppressDialog';
 import { Counters, EntriesTable, EntryCard, FiltersBar } from '@/components/WaitlistPanelParts';
 import {
-  applyFilters, EMPTY_FILTERS, Entry, fieldView, Filters, formatSignupDate, hasFilters, loadPanel, plural, suppressEntry,
-  suppressErrorMessage, weekOptions, withoutEntry,
+  applyFilters, deletePhone, deletePhoneErrorMessage, EMPTY_FILTERS, Entry, fieldView, Filters, formatSignupDate, hasFilters,
+  loadPanel, plural, suppressEntry, suppressErrorMessage, weekOptions, withoutEntry, withoutPhone,
 } from '@/lib/platform-waitlist';
 
 type State = 'loading' | 'ready' | 'error' | 'notFound';
-type Target = { id: string; label: string; detail: string };
+type Target = { id: string; label: string; detail: string; kind: WaitlistDialogKind };
 
 /**
  * Panel privado de la lista de espera (solo PLATFORM_ADMIN; spec de Vega, MVP).
@@ -52,7 +52,17 @@ export default function WaitlistPanelPage() {
 
   if (state === 'notFound') notFound();
 
-  async function confirmSuppress(id: string, password: string): Promise<string | null> {
+  async function confirmAction(id: string, password: string): Promise<string | null> {
+    if (target?.kind === 'phone') {
+      try {
+        await deletePhone(id, password);
+        setData((current) => (current ? withoutPhone(current, id) : current));
+        setStatus('Teléfono borrado. El alta sigue en la lista, ahora sin teléfono.');
+        return null;
+      } catch (err) {
+        return deletePhoneErrorMessage(err);
+      }
+    }
     try {
       await suppressEntry(id, password);
       setData((current) => (current ? withoutEntry(current, id) : current));
@@ -63,15 +73,18 @@ export default function WaitlistPanelPage() {
     }
   }
 
-  function openSuppress(entry: Entry) {
+  function openDialog(entry: Entry, kind: WaitlistDialogKind) {
     const name = fieldView(entry, 'name');
     setStatus('');
     setTarget({
       id: entry.id,
+      kind,
       label: name.unreadable || name.text === '—' ? 'Alta sin nombre legible' : name.text,
       detail: `Alta del ${formatSignupDate(entry.createdAt)} · ${entry.privacyPolicyVersion}`,
     });
   }
+  const openSuppress = (entry: Entry) => openDialog(entry, 'entry');
+  const openDeletePhone = (entry: Entry) => openDialog(entry, 'phone');
 
   return (
     <div className="app-layout">
@@ -115,7 +128,7 @@ export default function WaitlistPanelPage() {
             {entries.length === 0 ? (
               <section className="dashboard-card wl-empty-card">
                 <EmptyState icon="inbox" title="Todavía no hay nadie en la lista">
-                  Cuando alguien se apunte desde el formulario de asepsico.es aparecerá aquí, con la fecha y cómo os ha conocido.
+                  Cuando alguien se apunte desde el formulario de asepsico.es aparecerá aquí, con la fecha, su teléfono y cómo os ha conocido.
                 </EmptyState>
               </section>
             ) : (
@@ -138,9 +151,9 @@ export default function WaitlistPanelPage() {
                   </EmptyState>
                 ) : (
                   <>
-                    <EntriesTable entries={visible} onSuppress={openSuppress} />
+                    <EntriesTable entries={visible} onSuppress={openSuppress} onDeletePhone={openDeletePhone} />
                     <ul className="wl-cards" aria-label="Altas">
-                      {visible.map((entry) => <EntryCard key={entry.id} entry={entry} onSuppress={openSuppress} />)}
+                      {visible.map((entry) => <EntryCard key={entry.id} entry={entry} onSuppress={openSuppress} onDeletePhone={openDeletePhone} />)}
                     </ul>
                   </>
                 )}
@@ -150,7 +163,7 @@ export default function WaitlistPanelPage() {
           </>
         )}
 
-        <WaitlistSuppressDialog target={target} onConfirm={confirmSuppress} onClose={() => setTarget(null)} />
+        <WaitlistSuppressDialog target={target} onConfirm={confirmAction} onClose={() => setTarget(null)} />
       </main>
     </div>
   );

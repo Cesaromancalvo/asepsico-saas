@@ -58,15 +58,22 @@ El token caduca a las 2 horas y no se puede usar hasta pasados `minSeconds` segu
 |---|---|---|---|
 | `name` | string | sí | 2–120 caracteres (se recortan espacios) |
 | `email` | string | sí | email válido, máx. 254 |
+| `phone` | string | **con `lista-espera-v5`, sí; con v2–v4, no se envía** | máx. 25 caracteres. Se envía tal como lo teclea la persona; la API lo valida y lo guarda cifrado en E.164 (`+34612345678`). Se ignoran espacios, puntos, guiones y paréntesis. España: 9 dígitos de móvil (`6xx`, `71x`–`74x`) o fijo geográfico (`8[1-8]x`, `9[1-8]x`), con o sin `+34`/`0034`/`34`; se rechazan `70x`, `80x` y `90x`. Internacional: `+` o `00`, prefijo distinto de 34 y 8–15 dígitos en total. v5 sin `phone` (o vacío) → 400 `WAITLIST_PHONE_REQUIRED`; formato no válido → 400 `WAITLIST_PHONE_INVALID`; `phone` no vacío con v2–v4 → 400 `WAITLIST_PHONE_NOT_INFORMED`. No es string o > 25 → 400 de validación genérico. Sin deduplicación por teléfono: un email ya apuntado que reenvía con teléfono recibe 202 y su fila no cambia |
 | `situation` | enum | sí | `SELF_EMPLOYED` (autónomo/a) · `PRACTICE` (consulta/clínica) · `STUDENT` · `OTHER` |
 | `tools` | string | no | máx. 500. Herramientas que usa hoy. La landing manda la opción elegida tal cual (`Doctoralia`, `Eholo`, `Excel / hojas de cálculo`, `Papel / agenda`, `Nada todavía`, `Otra`) o `Otra: <texto>` (texto de máx. 100). Sin caracteres de control (se admiten saltos de línea y tabulador) → si no, 400 |
 | `professionalsCount` | entero | no | 1–500 |
 | `source` | enum | no | `INSTAGRAM` · `COLLEAGUE` (un compañero) · `PROFESSIONAL_COLLEGE` (Colegio) · `SEARCH_ENGINE` (Google o Bing) · `OTHER` · `NOT_SAID` ("Prefiero no decirlo") |
 | `privacyAccepted` | boolean | sí | debe ser `true` |
-| `privacyPolicyVersion` | string | sí | la versión que muestra la página de privacidad: la landing envía `lista-espera-v4`. Durante la transición la API acepta `lista-espera-v2`, `lista-espera-v3` y `lista-espera-v4` (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`); cualquier otra (incluida `lista-espera-v1`) → 400. Se guarda tal cual. Al cambiar de versión: **desplegar primero la API y después la landing**, y retirar la anterior cuando la landing ya no la sirva |
+| `privacyPolicyVersion` | string | sí | la versión que muestra la página de privacidad: la landing envía `lista-espera-v5` con `phone` (desde el 27/10/2026; antes, `lista-espera-v4`). Durante la transición la API acepta `lista-espera-v2`, `lista-espera-v3`, `lista-espera-v4` y `lista-espera-v5` (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`); cualquier otra (incluida `lista-espera-v1`) → 400. Se guarda tal cual. Al cambiar de versión: **desplegar primero la API y después la landing**, y retirar la anterior cuando la landing ya no la sirva |
 | `commercialConsentRequested` | boolean | no | **la landing ya no lo envía** (se quitó la casilla de novedades): sin el campo, la API guarda `false`. Se sigue aceptando por compatibilidad. Antes: casilla opcional, desmarcada por defecto (texto según la política `lista-espera-v2` de Lex Psi). Solo registra la **solicitud** con fecha; **no es un consentimiento válido** hasta el doble opt-in por email. Cualquier campo `commercialConsent*` distinto de este → 400 **Con `lista-espera-v3` o `lista-espera-v4`, `true` → 400 `WAITLIST_COMMERCIAL_NOT_OFFERED`** (esas políticas no ofrecen comunicaciones comerciales; `false` o sin el campo, se acepta) |
 | `formToken` | string | sí | el del paso 1 |
 | `website` | string | no | honeypot: input de texto oculto con CSS (clase, no `style=`), `tabindex="-1"`, `autocomplete="off"`, `aria-hidden="true"`; siempre vacío |
+
+> **Pendiente (condición 3 de Argos, 27/10/2026): retirar `lista-espera-v2`, `lista-espera-v3` y
+> `lista-espera-v4` de `ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS` (y v3/v4 de
+> `WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL`) en cuanto la landing publicada envíe
+> `lista-espera-v5` con `phone`.** No antes: mientras la landing siga en v4, quitarlas haría que
+> todas las altas dieran 400. Las altas ya guardadas con v2–v4 no cambian.
 
 ## Respuestas
 
@@ -75,6 +82,9 @@ El token caduca a las 2 horas y no se puede usar hasta pasados `minSeconds` segu
 | `202` | `{ "status": "accepted" }` | Mensaje de éxito genérico ("Si los datos son correctos, te escribiremos…"). Es la misma respuesta para alta nueva, email ya apuntado y honeypot: no decir "ya estabas apuntado/a". **Una segunda alta con el mismo email no cambia nada** (ni datos ni casilla comercial): si alguien quiere corregir datos o retirar el consentimiento, que escriba al email de contacto |
 | `400` | `{ "statusCode": 400, "code": "WAITLIST_FORM_TOO_FAST", "message": "…" }` | Esperar `minSeconds` y reenviar automáticamente una vez |
 | `400` | `{ "statusCode": 400, "code": "WAITLIST_FORM_TOKEN_INVALID", "message": "…" }` | Pedir otro token, esperar `minSeconds` y reenviar una vez |
+| `400` | `{ "statusCode": 400, "code": "WAITLIST_PHONE_REQUIRED", "message": "…" }` | Error junto al campo teléfono: «Escribe tu teléfono: lo necesitamos para llamarte y contarte el piloto.» y foco en el campo |
+| `400` | `{ "statusCode": 400, "code": "WAITLIST_PHONE_INVALID", "message": "…" }` | Error junto al campo teléfono: «Escribe un teléfono válido, por ejemplo 612 345 678 o +34 612 345 678.» y foco en el campo |
+| `400` | `{ "statusCode": 400, "code": "WAITLIST_PHONE_NOT_INFORMED", "message": "…" }` | Fallo de la landing (envía `phone` con una política v2–v4): mensaje genérico de error. No debería ocurrir |
 | `400` | `{ "statusCode": 400, "message": ["email must be an email", …], "error": "Bad Request" }` | Error de validación (también si no se acepta la política). Validar antes en el navegador con las mismas reglas y mostrar un mensaje propio en español |
 | `413` | `{ "statusCode": 413, "message": "Payload Too Large" }` | No debería ocurrir con los límites de los campos. Mensaje genérico |
 | `415` | `{ "statusCode": 415, "message": "Unsupported Media Type" }` | Enviar siempre `Content-Type: application/json` |
@@ -94,12 +104,21 @@ Límites por IP: 5 envíos y 80 tokens cada 10 minutos.
 ## Gestión (César, por CLI)
 
 ```bash
-npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv   # fuera del repo; no sobrescribe
+npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv   # fuera del repo; no sobrescribe; SIN teléfono
+npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv --with-phone   # solo si hace falta el teléfono
 npm run waitlist:delete -- --email persona@example.com             # supresión
 npm run waitlist:purge -- --dry-run                                # purga por plazo (12 meses)
 npm run waitlist:confirm-commercial -- --email persona@example.com # tras su "Sí" por email
 npm run waitlist:withdraw-commercial -- --email persona@example.com
+printf '%s\n%s\n' "$WL_EMAIL" "$WL_PHONE" | npm run waitlist:set-phone       # registrar/corregir teléfono (por stdin)
+printf '%s\n' "$WL_EMAIL" | npm run waitlist:set-phone -- --clear           # borrar SOLO el teléfono
 ```
+
+`waitlist:set-phone` no acepta el email ni el teléfono como argumentos (quedarían en el historial y
+en la lista de procesos): se leen con `read -rs WL_EMAIL; read -rs WL_PHONE` y se pasan por stdin
+(o el CLI los pide sin mostrarlos si se lanza en una terminal). `--allow-dev-secret` solo se admite
+con una `DATABASE_URL` local (localhost, 127.0.0.1, ::1 o *.localhost). Cada export deja
+`PLATFORM_WAITLIST_EXPORTED` (recuento y si lleva teléfono) en `PlatformAuditLog`. Ver ops/PILOT_RUNBOOK.md.
 
 - **Claves de producción solo en ejecuciones puntuales**: `DATABASE_URL`, `WAITLIST_SECRET` y
   `FIELD_ENCRYPTION_*` se pasan en la propia línea de la orden (o en una subshell que se cierra al

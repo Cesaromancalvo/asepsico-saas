@@ -206,7 +206,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
   });
 
   it('transición v3 → v4: la API acepta v3 y v4 (y v2, aún en transición) y no otras', () => {
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4']);
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5']);
   });
 
   it.each(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('transición: %s → 202 y se guarda la versión enviada, tal cual', async (version) => {

@@ -107,6 +107,7 @@
          data-cta href="#apuntate">
         <span class="only-wide">Apúntate a la lista de espera</span><span class="only-narrow">Lista de espera</span>
       </a>
+      <a class="topbar__login" href="https://app.asepsico.es/login">Acceder<span class="visually-hidden"> (acceso para profesionales del piloto)</span></a>
     </div>
   </header>
 
@@ -641,6 +642,13 @@
                 <p class="sfield__err" id="wl-email-err" hidden></p>
               </div>
 
+              <div class="sfield">
+                <label for="wl-phone">Teléfono <span class="req" aria-hidden="true">*</span></label>
+                <input id="wl-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="25"
+                       spellcheck="false" placeholder="612 345 678" aria-describedby="wl-phone-err" data-wl-field="phone">
+                <p class="sfield__err" id="wl-phone-err" hidden></p>
+              </div>
+
               <fieldset class="sfield wl-choices" aria-describedby="wl-situation-err" data-wl-group="situation">
                 <legend class="sfield__title">¿Cuál es tu situación? <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></legend>
                 <div class="wl-choices__grid">
@@ -699,11 +707,11 @@
 
               <div class="wl-check">
                 <input id="wl-privacy" name="privacyAccepted" type="checkbox" required aria-describedby="wl-privacy-err" data-wl-field="privacyAccepted">
-                <label for="wl-privacy">He leído la <a data-form-privacy href="/privacidad-lista-espera/">política de privacidad</a> y acepto que se traten mis datos para gestionar la lista de espera y contactarme sobre el piloto de AsePsico. <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></label>
+                <label for="wl-privacy">He leído la <a data-form-privacy href="/privacidad-lista-espera/">política de privacidad</a> y acepto que se traten mis datos para gestionar la lista de espera y contactarme por email o por teléfono sobre el piloto de AsePsico. <span class="req" aria-hidden="true">*</span><span class="visually-hidden">(obligatorio)</span></label>
               </div>
               <p class="sfield__err wl-check__err" id="wl-privacy-err" hidden></p>
 
-              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos para gestionar la lista de espera y contactarte sobre el piloto, con tu consentimiento. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
+              <p class="wl-info"><strong>Protección de datos.</strong> Responsable: César Román Calvo (AsePsico). Usamos tus datos, también tu teléfono, para gestionar la lista de espera y contactarte por email o por teléfono sobre el piloto, con tu consentimiento. No los usamos para ofrecerte otras cosas ni los cedemos a nadie. Alojamos los datos en Render (base de datos en la UE; algunos datos técnicos pueden tratarse en EE. UU. con garantías adecuadas). Puedes acceder, rectificar, suprimir tus datos, oponerte a que te llamemos y ejercer tus demás derechos en <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>. <a data-form-privacy href="/privacidad-lista-espera/">Más información en la política de privacidad</a>. No incluyas datos de pacientes ni información de salud.</p>
 
               <button type="submit" class="btn btn--primary btn--lg wl-submit" data-wl-submit>Apuntarme a la lista de espera</button>
               <p class="wl-status" role="status" aria-live="polite" data-wl-status></p>
@@ -713,7 +721,7 @@
           <div class="waitlist__done" data-wl-done tabindex="-1" hidden>
             <svg class="icon waitlist__done-icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
             <h3 class="waitlist__done-title">Gracias</h3>
-            <p>Si te apuntas, solo te escribimos sobre tu solicitud y sobre el piloto.</p>
+            <p>Si te apuntas, solo te escribimos o te llamamos sobre tu solicitud y sobre el piloto.</p>
             <p class="small">Si quieres corregir algún dato o borrarlo, escríbenos a <a href="mailto:asepsico1@gmail.com">asepsico1@gmail.com</a>.</p>
           </div>
         </div>
@@ -823,6 +831,7 @@
           <li><a href="/privacidad/">Política de privacidad</a></li>
           <li><a data-form-privacy href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
           <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com" aria-describedby="contacto-aviso">Contacto</a></li>
+          <li><a href="https://app.asepsico.es/login">Acceso para profesionales del piloto</a></li>
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>
         </ul>
       </nav>

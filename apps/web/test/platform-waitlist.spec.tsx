@@ -8,8 +8,9 @@ jest.mock('next/navigation', () => ({ usePathname: () => '/', notFound: () => { 
 
 import { resetSessionRedirectForTests } from '../lib/api';
 import {
-  applyFilters, commercialLabel, EMPTY_FILTERS, fetchIsPlatformAdmin, fieldView, formatSignupDate, invalidatePlatformAdmin,
-  loadPanel, suppressEntry, suppressErrorMessage, weekLabel, withoutEntry,
+  applyFilters, commercialLabel, deletePhone, deletePhoneErrorMessage, EMPTY_FILTERS, fetchIsPlatformAdmin, fieldView,
+  formatSignupDate, invalidatePlatformAdmin, loadPanel, phoneView, suppressEntry, suppressErrorMessage, weekLabel, withoutEntry,
+  withoutPhone,
 } from '../lib/platform-waitlist';
 import { Counters, EntriesTable, EntryCard } from '../components/WaitlistPanelParts';
 import Sidebar from '../components/Sidebar';
@@ -46,11 +47,12 @@ const entry = (over: Partial<PlatformWaitlistEntryContract> = {}): PlatformWaitl
   isoWeek: '2026-W43',
   name: 'Profesional Ficticia Uno',
   email: 'ficticia.uno@example.com',
+  phone: '+34600000001',
   situation: 'SELF_EMPLOYED',
   professionalsCount: 1,
   tools: 'Agenda en papel ficticia',
   source: 'PROFESSIONAL_COLLEGE',
-  privacyPolicyVersion: 'lista-espera-v4',
+  privacyPolicyVersion: 'lista-espera-v5',
   commercial: { status: 'NONE', at: null },
   unreadableFields: [],
   ...over,
@@ -63,10 +65,11 @@ const panel = (): PlatformWaitlistResponse => ({
   entries: [
     entry(),
     entry({ id: 'wl-2', source: 'INSTAGRAM', situation: 'PRACTICE', name: null, unreadableFields: ['name'] }),
-    entry({ id: 'wl-3', isoWeek: '2026-W42', createdAt: '2026-10-18T21:30:00.000Z', source: null, situation: null, privacyPolicyVersion: 'lista-espera-v2', commercial: { status: 'REQUESTED_UNCONFIRMED', at: '2026-10-16T10:00:00.000Z' } }),
+    entry({ id: 'wl-3', isoWeek: '2026-W42', createdAt: '2026-10-18T21:30:00.000Z', source: null, situation: null, phone: null, privacyPolicyVersion: 'lista-espera-v2', commercial: { status: 'REQUESTED_UNCONFIRMED', at: '2026-10-16T10:00:00.000Z' } }),
   ],
   counters: {
     totalActive: 3,
+    withoutPhone: 1,
     weekly,
     bySource: { INSTAGRAM: 1, COLLEAGUE: 0, PROFESSIONAL_COLLEGE: 1, SEARCH_ENGINE: 0, OTHER: 0, NOT_SAID: 0, UNSPECIFIED: 1 },
     bySituation: { SELF_EMPLOYED: 1, PRACTICE: 1, STUDENT: 0, OTHER: 0, UNSPECIFIED: 1 },
@@ -195,6 +198,88 @@ describe('Suprimir alta con contraseña', () => {
     expect(next.counters.bySituation.PRACTICE).toBe(0);
     expect(next.counters.weekly.find((w) => w.isoWeek === '2026-W43')!.count).toBe(1);
     expect(next.unreadable).toBe(0);
+    expect(next.counters.withoutPhone).toBe(1);
+    // Suprimir un alta sin teléfono también baja el contador «Sin teléfono».
+    expect(withoutEntry(panel(), 'wl-3').counters.withoutPhone).toBe(0);
+  });
+});
+
+describe('Teléfono (lista-espera-v5)', () => {
+  it('se muestra agrupado con enlace tel: en E.164; los internacionales tal cual; null = «Sin teléfono»; no descifrable = «No legible»', () => {
+    expect(phoneView(entry())).toEqual({ kind: 'phone', text: '+34 600 000 001', href: 'tel:+34600000001' });
+    expect(phoneView(entry({ phone: '+351912345678' }))).toEqual({ kind: 'phone', text: '+351912345678', href: 'tel:+351912345678' });
+    expect(phoneView(entry({ phone: null }))).toEqual({ kind: 'none', text: 'Sin teléfono' });
+    expect(phoneView(entry({ phone: null, unreadableFields: ['phone'] }))).toEqual({ kind: 'unreadable', text: 'No legible' });
+    // Algo que no es E.164 nunca se convierte en un enlace.
+    expect(phoneView(entry({ phone: 'javascript:alert(1)' })).kind).toBe('unreadable');
+  });
+
+  it('tabla y tarjeta: enlace tel:, «Sin teléfono» y «Borrar solo el teléfono» solo si hay teléfono', () => {
+    const rows = [entry(), entry({ id: 'wl-sin', phone: null }), entry({ id: 'wl-ilegible', phone: null, unreadableFields: ['phone'] })];
+    const table = renderToStaticMarkup(<EntriesTable entries={rows} onSuppress={() => undefined} onDeletePhone={() => undefined} />);
+    expect(table).toContain('>Teléfono</th>');
+    expect(table).toContain('href="tel:+34600000001"');
+    expect(table).toContain('+34 600 000 001');
+    expect(table).toContain('Sin teléfono');
+    expect(table).toContain('No legible');
+    expect(table.match(/Borrar solo el teléfono/g)).toHaveLength(2); // con teléfono y con teléfono no legible
+    expect(renderToStaticMarkup(<EntryCard entry={entry()} onSuppress={() => undefined} onDeletePhone={() => undefined} />)).toContain('href="tel:+34600000001"');
+    expect(renderToStaticMarkup(<EntryCard entry={rows[1]} onSuppress={() => undefined} onDeletePhone={() => undefined} />)).not.toContain('Borrar solo el teléfono');
+  });
+
+  it('el contador «Sin teléfono» está junto a las altas activas', () => {
+    const html = renderToStaticMarkup(<Counters data={panel()} />);
+    expect(html).toContain('Sin teléfono');
+    expect(html).toMatch(/<strong>1<\/strong><small>Sin teléfono<\/small>/);
+  });
+
+  it('borrar solo el teléfono: POST /admin/waitlist/:id/phone/delete con contraseña y CSRF, 204', async () => {
+    mockFetch((path) => (path === '/admin/me' ? { status: 200, body: { platformAdmin: true } } : { status: 204 }));
+    await expect(deletePhone('wl-1', 'contraseña-ficticia')).resolves.toBeUndefined();
+    const del = requests.find((r) => r.path === '/admin/waitlist/wl-1/phone/delete')!;
+    expect(del.init.method).toBe('POST');
+    expect(del.init.cache).toBe('no-store');
+    expect(JSON.parse(String(del.init.body))).toEqual({ password: 'contraseña-ficticia' });
+    expect((del.init.headers as Record<string, string>)['X-CSRF-Token']).toBe('csrf-ficticio');
+    expect(requests[0].path).toBe('/admin/me');
+    expect(requests.some((r) => r.path === '/admin/waitlist/wl-1/delete')).toBe(false);
+  });
+
+  it('contraseña incorrecta (401 PLATFORM_REAUTH_FAILED) y 429: mensajes claros, sin reintentos', async () => {
+    mockFetch((path) => (path === '/admin/me'
+      ? { status: 200, body: { platformAdmin: true } }
+      : { status: 401, body: { statusCode: 401, code: 'PLATFORM_REAUTH_FAILED', message: 'No se ha podido confirmar' } }));
+    const wrong = await deletePhone('wl-1', 'mal').catch((err) => err);
+    expect(requests.filter((r) => r.path.endsWith('/phone/delete'))).toHaveLength(1);
+    expect(requests.some((r) => r.path === '/auth/refresh')).toBe(false);
+    expect(deletePhoneErrorMessage(wrong)).toBe('La contraseña no es correcta. No se ha borrado nada.');
+    mockFetch((path) => (path === '/admin/me' ? { status: 200, body: { platformAdmin: true } } : { status: 429, body: { message: 'ThrottlerException: Too Many Requests' } }));
+    const throttled = await deletePhone('wl-1', 'x').catch((err) => err);
+    expect(deletePhoneErrorMessage(throttled)).toContain('Espera un minuto');
+    expect(deletePhoneErrorMessage(new Error('red'))).toBe('No se ha podido borrar el teléfono. Comprueba la conexión y vuelve a intentarlo.');
+  });
+
+  it('tras borrar el teléfono, la fila sigue y queda «Sin teléfono»; el contador sube', () => {
+    const next = withoutPhone(panel(), 'wl-1');
+    expect(next.entries.map((e) => e.id)).toEqual(['wl-1', 'wl-2', 'wl-3']);
+    expect(next.entries[0].phone).toBeNull();
+    expect(next.counters.withoutPhone).toBe(2);
+    expect(next.counters.totalActive).toBe(3);
+    // Sin teléfono que borrar: no cambia nada.
+    expect(withoutPhone(panel(), 'wl-3')).toEqual(panel());
+    // Teléfono no legible: al borrarlo, la fila deja de contar como no legible si era lo único.
+    const data = panel();
+    data.entries[0] = { ...data.entries[0], phone: null, unreadableFields: ['phone'] };
+    data.unreadable = 2;
+    const cleaned = withoutPhone(data, 'wl-1');
+    expect(cleaned.entries[0].unreadableFields).toEqual([]);
+    expect(cleaned.unreadable).toBe(1);
+  });
+
+  it('el diálogo de borrar el teléfono dice que la persona sigue en la lista y pide la contraseña', () => {
+    const source = readFileSync(join(__dirname, '../components/WaitlistSuppressDialog.tsx'), 'utf8');
+    expect(source).toContain('Borrar solo el teléfono');
+    expect(source).toContain('Sigue en la lista de espera');
   });
 });
 
@@ -202,11 +287,12 @@ describe('"No legible", formato y filtros', () => {
   it('un campo que no se pudo descifrar se muestra como "No legible" sin romper la tabla ni las tarjetas', () => {
     const unreadable = entry({ name: null, email: null, tools: null, unreadableFields: ['name', 'email', 'tools'] });
     expect(fieldView(unreadable, 'name')).toEqual({ text: 'No legible', unreadable: true });
-    const table = renderToStaticMarkup(<EntriesTable entries={[unreadable, entry({ id: 'wl-ok' })]} onSuppress={() => undefined} />);
+    const table = renderToStaticMarkup(<EntriesTable entries={[unreadable, entry({ id: 'wl-ok' })]} onSuppress={() => undefined} onDeletePhone={() => undefined} />);
     expect(table.match(/No legible/g)).toHaveLength(3);
     expect(table).toContain('Profesional Ficticia Uno');
+    expect(table).toContain('href="tel:+34600000001"');
     expect(table.match(/<tr>/g)).toHaveLength(3); // cabecera + 2 filas
-    const card = renderToStaticMarkup(<EntryCard entry={unreadable} onSuppress={() => undefined} />);
+    const card = renderToStaticMarkup(<EntryCard entry={unreadable} onSuppress={() => undefined} onDeletePhone={() => undefined} />);
     expect(card.match(/No legible/g)).toHaveLength(3);
   });
 
