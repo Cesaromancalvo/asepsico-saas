@@ -23,6 +23,7 @@
     "portal-signup:purge": "npm --workspace @asepsico/api run portal-signup:purge --",
     "waitlist:confirm-commercial": "npm --workspace @asepsico/api run waitlist:confirm-commercial --",
     "waitlist:withdraw-commercial": "npm --workspace @asepsico/api run waitlist:withdraw-commercial --",
+    "waitlist:set-phone": "npm --workspace @asepsico/api run waitlist:set-phone --",
     "invites:create": "npm --workspace @asepsico/api run invites:create --",
     "db:seed-demo-workspace": "npm --workspace @asepsico/api run db:seed-demo-workspace --",
     "db:purge-demo-workspace": "npm --workspace @asepsico/api run db:purge-demo-workspace --",

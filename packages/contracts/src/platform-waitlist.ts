@@ -16,6 +16,11 @@
  *                                           → 401 PlatformReauthErrorResponse (contraseña incorrecta)
  *                                           → 404 alta inexistente o ya suprimida
  *                                           → 400 validación · 429 demasiados intentos
+ *  - POST /api/v1/admin/waitlist/:id/phone/delete  body PlatformWaitlistDeleteRequest
+ *                                           Borra SOLO el teléfono (la persona no quiere más llamadas;
+ *                                           sigue en la lista). Mismas respuestas que la supresión:
+ *                                           204 (también si ya no tenía teléfono) · 401
+ *                                           PlatformReauthErrorResponse · 404 · 400 · 429
  *
  * Para cualquiera que NO sea PLATFORM_ADMIN (también sin sesión, con MFA desactivado o con la
  * variable vacía) /admin/waitlist* responde 404 como una ruta que no existe: la web debe mostrar
@@ -50,7 +55,7 @@ export interface PlatformWaitlistCommercialContract {
 }
 
 /** Campos cifrados que pueden no poderse descifrar (la web muestra "No legible"). */
-export type PlatformWaitlistEncryptedField = 'name' | 'email' | 'tools';
+export type PlatformWaitlistEncryptedField = 'name' | 'email' | 'tools' | 'phone';
 
 /** Una alta ACTIVA (las suprimidas nunca se devuelven). Orden: más reciente primero. */
 export interface PlatformWaitlistEntryContract {
@@ -63,6 +68,14 @@ export interface PlatformWaitlistEntryContract {
   name: string | null;
   /** null si no se pudo descifrar (ver unreadableFields). */
   email: string | null;
+  /**
+   * E.164 sin espacios (+34612345678 o +351912345678): úsalo tal cual en el enlace tel:. La web lo
+   * agrupa para leerlo (+34 612 345 678). null = sin teléfono (altas v2–v4 o teléfono borrado) o no
+   * legible (entonces 'phone' está en unreadableFields).
+   * La API lo envía SIEMPRE. Es opcional en el tipo solo para no romper apps/web antes de que Fina
+   * adapte el panel: al hacerlo, quitar el «?».
+   */
+  phone?: string | null;
   situation: WaitlistSituation | null;
   professionalsCount: number | null;
   /** Texto descifrado (la web lo trunca a 60 caracteres con tooltip). null si no lo indicó o no es legible. */
@@ -89,6 +102,11 @@ export interface PlatformWaitlistWeekCount {
 export interface PlatformWaitlistCounters {
   /** Altas activas (deletedAt = null). */
   totalActive: number;
+  /**
+   * Altas activas sin teléfono (null de verdad; las de teléfono no legible no cuentan aquí).
+   * La API lo envía SIEMPRE; opcional en el tipo solo hasta que Fina adapte el panel (quitar el «?»).
+   */
+  withoutPhone?: number;
   /** Últimas 8 semanas ISO (lunes a domingo, Europe/Madrid), de la más antigua a la actual (incluida). Siempre 8 elementos. */
   weekly: PlatformWaitlistWeekCount[];
   /** Todas las claves siempre presentes (0 si no hay altas). UNSPECIFIED = no se indicó origen. */

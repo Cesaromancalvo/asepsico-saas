@@ -22,6 +22,7 @@
     "portal-signup:purge": "tsx prisma/scripts/portal-signup-purge.ts",
     "waitlist:confirm-commercial": "tsx prisma/scripts/waitlist-confirm-commercial.ts",
     "waitlist:withdraw-commercial": "tsx prisma/scripts/waitlist-withdraw-commercial.ts",
+    "waitlist:set-phone": "tsx prisma/scripts/waitlist-set-phone.ts",
     "invites:create": "tsx prisma/scripts/create-registration-invite.ts",
     "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
     "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts",

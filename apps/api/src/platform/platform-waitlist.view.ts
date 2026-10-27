@@ -6,16 +6,16 @@ type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHER';
 type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 export type PlatformWaitlistCommercialStatus = 'NONE' | 'REQUESTED_UNCONFIRMED' | 'VALID' | 'WITHDRAWN';
 export interface PlatformWaitlistCommercialContract { status: PlatformWaitlistCommercialStatus; at: string | null }
-export type PlatformWaitlistEncryptedField = 'name' | 'email' | 'tools';
+export type PlatformWaitlistEncryptedField = 'name' | 'email' | 'tools' | 'phone';
 export interface PlatformWaitlistEntryContract {
-  id: string; createdAt: string; isoWeek: string; name: string | null; email: string | null;
+  id: string; createdAt: string; isoWeek: string; name: string | null; email: string | null; phone: string | null;
   situation: WaitlistSituation | null; professionalsCount: number | null; tools: string | null;
   source: WaitlistSource | null; privacyPolicyVersion: string; commercial: PlatformWaitlistCommercialContract;
   unreadableFields: PlatformWaitlistEncryptedField[];
 }
 export interface PlatformWaitlistWeekCount { isoWeek: string; weekStart: string; count: number }
 export interface PlatformWaitlistCounters {
-  totalActive: number; weekly: PlatformWaitlistWeekCount[];
+  totalActive: number; withoutPhone: number; weekly: PlatformWaitlistWeekCount[];
   bySource: Record<WaitlistSource | 'UNSPECIFIED', number>; bySituation: Record<WaitlistSituation | 'UNSPECIFIED', number>;
 }
 export interface PlatformWaitlistResponse { entries: PlatformWaitlistEntryContract[]; counters: PlatformWaitlistCounters; unreadable: number; generatedAt: string }
@@ -33,7 +33,7 @@ export const PLATFORM_WAITLIST_WEEKS = 8;
 
 const SOURCES = ['INSTAGRAM', 'COLLEAGUE', 'PROFESSIONAL_COLLEGE', 'SEARCH_ENGINE', 'OTHER', 'NOT_SAID'] as const;
 const SITUATIONS = ['SELF_EMPLOYED', 'PRACTICE', 'STUDENT', 'OTHER'] as const;
-const ENCRYPTED: readonly PlatformWaitlistEncryptedField[] = ['name', 'email', 'tools'];
+const ENCRYPTED: readonly PlatformWaitlistEncryptedField[] = ['name', 'email', 'tools', 'phone'];
 const DAY_MS = 86_400_000;
 
 /** Columnas que se leen de WaitlistEntry (nunca emailHash). */
@@ -42,6 +42,7 @@ export const PLATFORM_WAITLIST_SELECT = {
   createdAt: true,
   name: true,
   email: true,
+  phone: true,
   situation: true,
   professionalsCount: true,
   tools: true,
@@ -59,6 +60,7 @@ export interface WaitlistRow {
   createdAt: Date;
   name: string | null;
   email: string | null;
+  phone: string | null;
   situation: string | null;
   professionalsCount: number | null;
   tools: string | null;
@@ -126,6 +128,7 @@ export function toEntry(raw: WaitlistRow): PlatformWaitlistEntryContract {
     isoWeek: madridIsoWeek(row.createdAt).isoWeek,
     name: readable('name'),
     email: readable('email'),
+    phone: readable('phone'),
     situation: (row.situation ?? null) as PlatformWaitlistEntryContract['situation'],
     professionalsCount: row.professionalsCount ?? null,
     tools: readable('tools'),
@@ -147,7 +150,9 @@ export function buildCounters(entries: PlatformWaitlistEntryContract[], now: Dat
     const i = weekIndex.get(entry.isoWeek);
     if (i !== undefined) weekly[i].count += 1;
   }
-  return { totalActive: entries.length, weekly, bySource, bySituation };
+  // Sin teléfono = null de verdad (altas v2–v4 o teléfono borrado), no las filas con el teléfono ilegible.
+  const withoutPhone = entries.filter((e) => e.phone === null && !e.unreadableFields.includes('phone')).length;
+  return { totalActive: entries.length, withoutPhone, weekly, bySource, bySituation };
 }
 
 export function buildWaitlistResponse(rows: WaitlistRow[], now: Date): PlatformWaitlistResponse {

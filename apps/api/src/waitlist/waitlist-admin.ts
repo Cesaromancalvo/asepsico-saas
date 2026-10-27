@@ -1,8 +1,10 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { decryptModel } from '../common/crypto/clinical-crypto';
+import { decryptModel, encryptModelData } from '../common/crypto/clinical-crypto';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../common/crypto/field-encryption';
+import { PLATFORM_AUDIT_ACTIONS, writePlatformAudit } from '../platform/platform-audit';
 import { hashWaitlistEmail } from './waitlist-crypto';
+import { normalizeWaitlistPhone } from './waitlist-phone';
 
 /**
  * Gestión de la lista de espera para César: por CLI (prisma/scripts/waitlist-*.ts) y, desde el
@@ -11,7 +13,7 @@ import { hashWaitlistEmail } from './waitlist-crypto';
  */
 
 export const WAITLIST_CSV_COLUMNS = [
-  'createdAt', 'name', 'email', 'situation', 'tools', 'professionalsCount', 'source',
+  'createdAt', 'name', 'email', 'phone', 'situation', 'tools', 'professionalsCount', 'source',
   'privacyPolicyVersion', 'privacyAcceptedAt',
   'commercialConsentRequested', 'commercialConsentRequestedAt',
   'commercialConsent', 'commercialConsentAt', 'commercialConsentWithdrawnAt',
@@ -35,7 +37,7 @@ export function waitlistCsv(rows: Row[]): { csv: string; unreadable: number } {
   const lines = [WAITLIST_CSV_COLUMNS.join(',')];
   for (const raw of rows) {
     const row = decryptModel('waitlistEntry', raw);
-    if ([row.name, row.email, row.tools].includes(DECRYPTION_FAILED_PLACEHOLDER)) unreadable++;
+    if ([row.name, row.email, row.tools, row.phone].includes(DECRYPTION_FAILED_PLACEHOLDER)) unreadable++;
     lines.push(WAITLIST_CSV_COLUMNS.map((column) => csvCell(row[column])).join(','));
   }
   return { csv: `${lines.join('\r\n')}\r\n`, unreadable };
@@ -70,6 +72,7 @@ function suppressedData(now: Date) {
     name: null,
     email: null,
     emailHash: null,
+    phone: null,
     tools: null,
     professionalsCount: null,
     situation: null,
@@ -159,4 +162,60 @@ export async function purgeWaitlist(prisma: PrismaClient, months: number, option
   if (options.dryRun) return prisma.waitlistEntry.count({ where });
   const result = await prisma.waitlistEntry.updateMany({ where, data: suppressedData(now) });
   return result.count;
+}
+
+type WaitlistTxDb = Pick<Prisma.TransactionClient, 'waitlistEntry' | 'platformAuditLog'>;
+
+/** Busca el id de la alta ACTIVA con ese email (por emailHash); nunca descifra ni devuelve datos. */
+async function activeEntryIdByEmail(db: Pick<Prisma.TransactionClient, 'waitlistEntry'>, email: string): Promise<string | null> {
+  const row = await db.waitlistEntry.findFirst({ where: { emailHash: hashWaitlistEmail(email), deletedAt: null }, select: { id: true } });
+  return row?.id ?? null;
+}
+
+export type SetPhoneResult = 'updated' | 'not-found' | 'invalid';
+
+/**
+ * Rectificación (art. 16) o alta del teléfono de una persona ya apuntada que lo da por email
+ * (los 3 apuntados v2–v4, spec §8 y P4 de Lex). Valida y normaliza con la MISMA regla que la API,
+ * lo cifra y escribe solo en la fila activa con ese email, con auditoría en PlatformAuditLog en la
+ * misma transacción (sin el teléfono ni el email). La versión de la política de la fila no cambia.
+ */
+export async function setWaitlistPhone(prisma: PrismaClient, email: string, rawPhone: string): Promise<SetPhoneResult> {
+  const phone = normalizeWaitlistPhone(rawPhone);
+  if (!phone) return 'invalid';
+  return prisma.$transaction(async (tx) => {
+    const id = await activeEntryIdByEmail(tx, email);
+    if (!id) return 'not-found';
+    const result = await tx.waitlistEntry.updateMany({ where: { id, deletedAt: null }, data: encryptModelData('waitlistEntry', { phone }) });
+    if (result.count !== 1) return 'not-found';
+    await writePlatformAudit(tx, { actorId: null, action: PLATFORM_AUDIT_ACTIONS.WAITLIST_PHONE_SET, entityType: 'WaitlistEntry', entityId: id, metadata: { source: 'cli' } });
+    return 'updated';
+  });
+}
+
+export type ClearPhoneResult = 'cleared' | 'no-phone' | 'not-found';
+
+/**
+ * Borra SOLO el teléfono de una alta activa por id (retirada del consentimiento para llamadas,
+ * apartado 3 de la política v5; bloqueo §3/L15 de Lex). La persona sigue en la lista. No escribe
+ * auditoría: la escribe quien llama, en la misma transacción (CLI o panel, con su actor).
+ */
+export async function clearWaitlistPhoneById(db: Pick<Prisma.TransactionClient, 'waitlistEntry'>, id: string): Promise<ClearPhoneResult> {
+  const result = await db.waitlistEntry.updateMany({ where: { id, deletedAt: null, phone: { not: null } }, data: { phone: null } });
+  if (result.count === 1) return 'cleared';
+  const exists = await db.waitlistEntry.count({ where: { id, deletedAt: null } });
+  return exists ? 'no-phone' : 'not-found';
+}
+
+/** La misma operación por email, para el CLI (waitlist:set-phone --clear), con auditoría transaccional. */
+export async function clearWaitlistPhoneByEmail(prisma: PrismaClient, email: string): Promise<ClearPhoneResult> {
+  return prisma.$transaction(async (tx: WaitlistTxDb) => {
+    const id = await activeEntryIdByEmail(tx, email);
+    if (!id) return 'not-found';
+    const result = await clearWaitlistPhoneById(tx, id);
+    if (result === 'cleared') {
+      await writePlatformAudit(tx, { actorId: null, action: PLATFORM_AUDIT_ACTIONS.WAITLIST_PHONE_CLEARED, entityType: 'WaitlistEntry', entityId: id, metadata: { source: 'cli' } });
+    }
+    return result;
+  });
 }
