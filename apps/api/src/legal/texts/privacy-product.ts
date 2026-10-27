@@ -6,7 +6,7 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.2 · En vigor desde el 28/10/2026
+Versión demo-1.2 · En vigor desde el 27/10/2026
 
 **Qué cambia respecto a la versión demo-1.1:** desde el 26/10/2026 la aplicación ya no usa Vercel.
 Ahora toda la aplicación la aloja Render, y la conexión entra por la red de distribución de un

@@ -371,7 +371,7 @@ describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.2) y d
   });
 
   it('en git solo quedan sin rellenar [NIF] y [DOMICILIO]; el resto de datos decididos ya está', () => {
-    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.2 · En vigor desde el 28/10/2026' };
+    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.2 · En vigor desde el 27/10/2026' };
     for (const doc of legalDocs.buildLegalDocuments({})) {
       // Cualquier cosa entre corchetes (no solo lo que reconoce UNFILLED_MARKER_RE): solo [NIF] y [DOMICILIO].
       const anyBrackets = [...new Set(doc.text.match(/\[[^\]\n]*\]/g) ?? [])].sort();
