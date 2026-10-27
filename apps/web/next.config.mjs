@@ -1,30 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  // Sitio estático (Render Static Site): `next build` genera apps/web/out. No hay servidor de
+  // Next: la web llama directamente a la API en NEXT_PUBLIC_API_URL (https://api.asepsico.es/api/v1
+  // en producción), sin proxy. Las rutas con id usan query string (ver lib/routes.ts).
+  output: 'export',
+  // Genera ruta/index.html en vez de ruta.html: cualquier hosting estático la sirve sin reglas.
+  trailingSlash: true,
   // @asepsico/contracts se publica como TypeScript sin compilar ("main": "src/index.ts"):
-  // Next debe transpilarlo aunque se resuelva desde node_modules (instalación de Vercel).
+  // Next debe transpilarlo aunque se resuelva desde node_modules.
   transpilePackages: ['@asepsico/contracts'],
-  // Páginas públicas del alta por QR: el token va en el fragmento, pero además sin referrer y sin indexar.
-  async headers() {
-    const publicSignup = [
-      { key: 'Referrer-Policy', value: 'no-referrer' },
-      { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
-    ];
-    // Panel privado de la lista de espera: que el navegador no guarde la página en caché.
-    const platformPanel = [
-      { key: 'Cache-Control', value: 'no-store' },
-      { key: 'Referrer-Policy', value: 'no-referrer' },
-      { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
-    ];
-    return [
-      ...['/portal/alta', '/portal/alta/:path*', '/portal/activar'].map((source) => ({ source, headers: publicSignup })),
-      ...['/admin', '/admin/:path*'].map((source) => ({ source, headers: platformPanel })),
-    ];
-  },
-  async rewrites() {
-    const target = process.env.API_INTERNAL_URL;
-    if (!target) return [];
-    return [{ source: '/api/v1/:path*', destination: `${target}/api/v1/:path*` }];
-  },
+  // Con `output: 'export'` Next no aplica headers() ni rewrites(): no hay servidor.
+  // - Cabeceras de las páginas públicas del alta por QR (/portal/alta, /portal/activar) y del panel
+  //   (/admin/*): Referrer-Policy no-referrer + X-Robots-Tag noindex, nofollow (+ Cache-Control
+  //   no-store en /admin/*). Se configuran en Render → Static Site → Headers (ops/PILOT_RUNBOOK.md).
+  // - Sin rewrite de /api/v1: la web llama a NEXT_PUBLIC_API_URL directamente.
 };
 export default nextConfig;

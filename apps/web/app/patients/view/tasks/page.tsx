@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
+import { patientHref, queryId } from '@/lib/routes';
 import TaskActions from '@/components/TaskActions';
 import TaskCardNotes from '@/components/TaskCardNotes';
 import { applyOptimistic, settleTaskUpdate } from '@/lib/task-update';
@@ -23,7 +24,7 @@ const fmt=(v?:string|null)=>v?new Intl.DateTimeFormat('es-ES',{day:'2-digit',mon
  * los controles de escritura; se remite a la ficha en solo lectura (revisión de Argos).
  */
 export default function PatientTasksPage(){
-  const {id:patientId}=useParams<{id:string}>();
+  const patientId = queryId(useSearchParams().get('id'));
   return <ClinicalSubpageGate patientId={patientId} section="Tareas"><PatientTasksPageContent/></ClinicalSubpageGate>;
 }
 
@@ -31,7 +32,7 @@ export default function PatientTasksPage(){
 const ACTION_NOTICE:Partial<Record<TaskStatus,string>>={PENDING:'Tarea asignada.',COMPLETED:'Tarea completada con tu devolución.',CHANGES_REQUESTED:'Cambios solicitados al paciente.',CANCELLED:'Tarea cancelada.',IN_PROGRESS:'Tarea reabierta.'};
 
 function PatientTasksPageContent(){
- const {id:patientId}=useParams<{id:string}>();
+ const patientId = queryId(useSearchParams().get('id'));
  const [patient,setPatient]=useState<Patient|null>(null),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[templates,setTemplates]=useState<Template[]>([]);
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState<'ALL'|TaskStatus>('ALL');
  const [selectedTemplate,setSelectedTemplate]=useState('');
@@ -62,7 +63,7 @@ function PatientTasksPageContent(){
  if(loading)return <div className="app-layout"><Sidebar/><main className="patient-tasks-page"><div className="patient-record-loading">Cargando flujo de tareas…</div></main></div>;
  if(!patient)return <div className="app-layout"><Sidebar/><main className="patient-tasks-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div></main></div>;
  return <div className="app-layout"><Sidebar syncText="Trabajo entre sesiones"/><main className="patient-tasks-page">
-  <header className="patient-plan-header"><div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Tareas terapéuticas</div><h1>Tareas de {patient.firstName} {patient.lastName}</h1><p>Asigna, recibe, revisa y cierra el trabajo terapéutico entre sesiones.</p></div></header>
+  <header className="patient-plan-header"><div><Link href={patientHref(patient.id)} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Tareas terapéuticas</div><h1>Tareas de {patient.firstName} {patient.lastName}</h1><p>Asigna, recibe, revisa y cierra el trabajo terapéutico entre sesiones.</p></div></header>
   {error&&<div className="agenda-error">{error}</div>}
   <section className="therapy-overview-grid"><article><span>En trabajo</span><strong>{pending}</strong><small>Asignadas o en curso</small></article><article><span>Por revisar</span><strong>{submitted}</strong><small>Entregadas por el paciente</small></article><article><span>Completadas</span><strong>{completed}</strong><small>Revisadas por el profesional</small></article><article><span>Total</span><strong>{tasks.length}</strong><small>Incluye borradores y canceladas</small></article></section>
   <div className="patient-tasks-layout"><section className="patient-record-card"><div className="patient-plan-section-heading"><div><span>01</span><div><h2>Nueva tarea</h2><p>Usa una plantilla o redacta una indicación personalizada.</p></div></div></div>

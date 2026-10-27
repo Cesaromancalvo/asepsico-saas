@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { fetchPatientClinicalAccess, isForbidden, isStaffWithProcessAccess, processLabel, therapistName, useViewer } from '../../lib/clinical';
 import Sidebar from '../../components/Sidebar';
+import { patientHref } from '@/lib/routes';
 
 type Conversation = {
   id: string;
@@ -190,7 +191,7 @@ export default function MessagesPage() {
           </aside>
           <article className="message-thread" aria-live="polite">
             {selected && metadataOnly ? <>
-              <header className="thread-header"><div><h2><Link href={`/patients/${selected.patient.id}`}>{selected.patient.firstName} {selected.patient.lastName}</Link></h2><p>Solo datos de gestión de la conversación</p></div></header>
+              <header className="thread-header"><div><h2><Link href={patientHref(selected.patient.id)}>{selected.patient.firstName} {selected.patient.lastName}</Link></h2><p>Solo datos de gestión de la conversación</p></div></header>
               <div className="e1-notice info" role="note"><div><strong>Solo su terapeuta puede leer los mensajes</strong><p>Puedes ver que la conversación existe, su estado y su última actividad, pero no su contenido.</p></div></div>
               <dl className="e1-meta">
                 <div><dt>Profesional</dt><dd>{professional?.patientId === selected.patient.id ? professional.name : 'Cargando…'}</dd></div>
@@ -199,7 +200,7 @@ export default function MessagesPage() {
               </dl>
               {viewer?.isClinician && <div className="e1-actions"><p className="muted" style={{ margin: 0 }}>¿Atendiste antes a este paciente? Puedes consultar los mensajes de tu tratamiento, en solo lectura.</p><button type="button" className="button secondary" onClick={openOwnHistory}>Ver mis mensajes anteriores</button></div>}
             </> : !thread ? <div className="empty-state"><strong>{loadingThread ? 'Cargando conversación…' : 'Selecciona una conversación'}</strong>{!loadingThread && <p>Aquí verás el historial completo.</p>}</div> : <>
-              <header className="thread-header"><div><h2><Link href={`/patients/${thread.patient.id}`}>{thread.patient.firstName} {thread.patient.lastName}</Link></h2><p>{thread.status === 'OPEN' ? 'Conversación abierta' : 'Conversación cerrada'} · {thread.patientCanReply ? 'El paciente puede responder' : 'Respuestas del paciente bloqueadas'}</p></div>{!readOnly && <div className="thread-actions">
+              <header className="thread-header"><div><h2><Link href={patientHref(thread.patient.id)}>{thread.patient.firstName} {thread.patient.lastName}</Link></h2><p>{thread.status === 'OPEN' ? 'Conversación abierta' : 'Conversación cerrada'} · {thread.patientCanReply ? 'El paciente puede responder' : 'Respuestas del paciente bloqueadas'}</p></div>{!readOnly && <div className="thread-actions">
                 <button className="button secondary" disabled={busy} onClick={() => updateConversation({ patientCanReply: !thread.patientCanReply })}>{thread.patientCanReply ? 'Bloquear respuestas' : 'Permitir respuestas'}</button>
                 <button className="button secondary" disabled={busy} onClick={() => updateConversation({ status: thread.status === 'OPEN' ? 'CLOSED' : 'OPEN' })}>{thread.status === 'OPEN' ? 'Cerrar conversación' : 'Reabrir conversación'}</button>
                 <button className="button secondary" disabled={busy} onClick={() => { if (window.confirm('La conversación dejará de aparecer en la bandeja, pero conservará su historial. ¿Archivar?')) updateConversation({ status: 'ARCHIVED' }).then(() => { setThread(null); setSelectedId(''); loadList(search); }); }}>Archivar</button>

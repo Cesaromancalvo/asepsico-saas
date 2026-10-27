@@ -232,7 +232,8 @@ describe('Condiciones de Argos', () => {
       const html = renderToStaticMarkup(createElement(ClinicalSubpageView, { mode: 'blocked', patientId: 'p1', section, children: protectedContent }));
       expect(html).not.toContain('NOTA CLÍNICA PRIVADA');
       expect(html).not.toMatch(/Editar|Eliminar|<textarea|<form/);
-      expect(html).toContain('href="/patients/p1"');
+      // Ruta estática (patientHref); fuera de `next build` Link puede quitar la barra final.
+      expect(html).toMatch(/href="\/patients\/view\/?\?id=p1"/);
       expect(html).toContain(`${section}: solo para quien atiende al paciente`);
     }
     // Solo con TREATING se monta el contenido.
@@ -240,13 +241,14 @@ describe('Condiciones de Argos', () => {
   });
 
   it('las dos subpáginas pasan por la puerta antes de montar su contenido', () => {
-    for (const page of ['app/patients/[id]/tasks/page.tsx', 'app/patients/[id]/assessments/page.tsx']) {
-      expect(source(page)).toMatch(/export default function \w+\(\)\{\s*const \{id:patientId\}=useParams<\{id:string\}>\(\);\s*return <ClinicalSubpageGate/);
+    for (const page of ['app/patients/view/tasks/page.tsx', 'app/patients/view/assessments/page.tsx']) {
+      // Export estático: el id llega por query y se valida con queryId (QueryIdGuard en el layout).
+      expect(source(page)).toMatch(/export default function \w+\(\)\{\s*const patientId = queryId\(useSearchParams\(\)\.get\('id'\)\);\s*return <ClinicalSubpageGate/);
     }
   });
 
   it('el proceso queda en solo lectura siempre que el acceso sea excepcional', () => {
-    expect(source('app/patients/[id]/processes/[processId]/page.tsx')).toContain('const readOnly = exceptional || !detail || detail.readOnly');
+    expect(source('app/patients/view/process/page.tsx')).toContain('const readOnly = exceptional || !detail || detail.readOnly');
   });
 
   it('el enlace de un aviso solo acepta rutas internas: nunca "//host" ni URLs absolutas', () => {

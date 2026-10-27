@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CurrentExceptionalAccessResponse } from '@asepsico/contracts';
 import Sidebar from '@/components/Sidebar';
@@ -13,6 +13,7 @@ import { useOpeningReasonPrompt } from '@/components/OpeningReasonPicker';
 import { api } from '@/lib/api';
 import { canManageProcess, changeProcessStatus, fetchConsultationReason, isAdminRole, isStaffWithProcessAccess, modalityLabel, processLabel, processTitle, therapistName, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
 import { OpeningCancelled, withOpeningReason } from '@/lib/exceptional-access';
+import { appHref, patientHref, processHref, sessionHref, queryId } from '@/lib/routes';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
@@ -63,7 +64,7 @@ function calculateAge(birthDate?:string|null) {
 }
 
 export default function PatientRecordPage(){
-  const { id:patientId }=useParams<{id:string}>();
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [history,setHistory]=useState<ClinicalHistory>(EMPTY_HISTORY);
   const [goals,setGoals]=useState<Goal[]>([]);
@@ -176,11 +177,11 @@ export default function PatientRecordPage(){
   const latestAssessment=assessments[0];
   const recentTimeline=timeline.slice(0,6);
   const nextAction=deliveredTasks[0]
-    ? { title:'Revisar una tarea entregada', detail:deliveredTasks[0].title, href:`/patients/${patientId}/tasks`, cta:'Revisar tarea' }
+    ? { title:'Revisar una tarea entregada', detail:deliveredTasks[0].title, href:patientHref(patientId, 'tasks'), cta:'Revisar tarea' }
     : pendingTasks[0]
-      ? { title:'Seguimiento entre sesiones', detail:`${pendingTasks[0].title}${pendingTasks[0].dueDate?` · vence ${formatDate(pendingTasks[0].dueDate)}`:''}`, href:`/patients/${patientId}/tasks`, cta:'Abrir tareas' }
+      ? { title:'Seguimiento entre sesiones', detail:`${pendingTasks[0].title}${pendingTasks[0].dueDate?` · vence ${formatDate(pendingTasks[0].dueDate)}`:''}`, href:patientHref(patientId, 'tasks'), cta:'Abrir tareas' }
       : patient?.summary.nextSession
-        ? { title:'Preparar la próxima sesión', detail:formatDate(patient.summary.nextSession.startsAt,true), href:`/agenda/${patient.summary.nextSession.id}`, cta:'Abrir sesión' }
+        ? { title:'Preparar la próxima sesión', detail:formatDate(patient.summary.nextSession.startsAt,true), href:sessionHref(patient.summary.nextSession.id), cta:'Abrir sesión' }
         : { title:'Programar el siguiente paso', detail:'No hay una cita ni una tarea pendiente.', href:`/agenda?patientId=${patientId}`, cta:'Programar cita' };
 
   function updateField(field:keyof ClinicalHistory,value:string){ setHistory(current=>({...current,[field]:value})); setSavedMessage('Cambios sin guardar'); }
@@ -207,7 +208,7 @@ export default function PatientRecordPage(){
   const reactivable=access.processes.filter(process=>(process.status==='PAUSED'||process.status==='DISCHARGED')&&canManageProcess(viewer,process));
   const processList=access.processes.length>0?<section className="patient-record-card patient-unified-main-card" aria-labelledby="patient-processes-heading"><div className="patient-unified-card-heading"><div><span>Procesos</span><h2 id="patient-processes-heading">Procesos clínicos</h2></div></div><ul className="e1-list">{access.processes.map(process=>{
     const readOnlyRow=process.canReadClinical&&process.status!=='ACTIVE';
-    return <li key={process.id} className="e1-row"><div><strong>{processTitle(process)}</strong><small>{therapistName(process.therapist)} · desde {formatDate(process.startedAt)}</small></div><div><span className={`e1-badge ${process.status==='ACTIVE'?'active':''}`}>{processLabel({status:process.status})}</span>{readOnlyRow&&<span className="e1-badge readonly">Solo lectura</span>}</div><div><Link href={`/patients/${patient.id}/processes/${process.id}`} className="button secondary" aria-label={`Abrir ${processTitle(process)}`}>Abrir</Link></div></li>;
+    return <li key={process.id} className="e1-row"><div><strong>{processTitle(process)}</strong><small>{therapistName(process.therapist)} · desde {formatDate(process.startedAt)}</small></div><div><span className={`e1-badge ${process.status==='ACTIVE'?'active':''}`}>{processLabel({status:process.status})}</span>{readOnlyRow&&<span className="e1-badge readonly">Solo lectura</span>}</div><div><Link href={processHref(patient.id, process.id)} className="button secondary" aria-label={`Abrir ${processTitle(process)}`}>Abrir</Link></div></li>;
   })}</ul></section>:null;
 
   return <div className="app-layout"><Sidebar syncText={savedMessage||'Ficha clínica protegida'}/><main className="patient-record-page patient-unified-page">
@@ -219,7 +220,7 @@ export default function PatientRecordPage(){
           <div className="patient-record-meta"><span className={`patient-status patient-status-${patient.status.toLowerCase()}`}>{STATUS_LABEL[patient.status]}</span>{age!==null&&<span>{age} años</span>}{patient.email&&<span>{patient.email}</span>}{patient.phone&&<span>{patient.phone}</span>}</div>
         </div></div>
       </div>
-      <div className="patient-record-actions"><Link href={`/agenda?patientId=${patient.id}`} className="button">Nueva cita</Link>{showClinical&&<Link href={`/patients/${patient.id}/tasks`} className="button secondary">Nueva tarea</Link>}</div>
+      <div className="patient-record-actions"><Link href={`/agenda?patientId=${patient.id}`} className="button">Nueva cita</Link>{showClinical&&<Link href={patientHref(patient.id, 'tasks')} className="button secondary">Nueva tarea</Link>}</div>
     </header>
 
     {error&&<div className="agenda-error">{error}</div>}
@@ -236,7 +237,7 @@ export default function PatientRecordPage(){
         <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{patient.summary.activeProcess?.frequency||'Frecuencia no definida'}</small></article>
       </section>
       {processList}
-      <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Gestión administrativa</h2></div></div><div className="patient-quick-links"><Link href={`/agenda?patientId=${patient.id}`}><strong>Agenda</strong><span>Programar o mover citas</span></Link><Link href={`/patients/${patient.id}/portal`}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
+      <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Gestión administrativa</h2></div></div><div className="patient-quick-links"><Link href={`/agenda?patientId=${patient.id}`}><strong>Agenda</strong><span>Programar o mover citas</span></Link><Link href={patientHref(patient.id, 'portal')}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
     </div> : view==='overview' ? <>
       <section className="patient-next-action"><div><span>Siguiente acción recomendada</span><h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div><Link href={nextAction.href} className="button">{nextAction.cta}</Link></section>
 
@@ -249,20 +250,20 @@ export default function PatientRecordPage(){
 
       <div className="patient-unified-grid">
         <section className="patient-record-card patient-unified-main-card">
-          <div className="patient-unified-card-heading"><div><span>Seguimiento terapéutico</span><h2>Qué está ocurriendo y qué sigue</h2></div><Link href={`/patients/${patient.id}/plan`}>Ver plan completo</Link></div>
+          <div className="patient-unified-card-heading"><div><span>Seguimiento terapéutico</span><h2>Qué está ocurriendo y qué sigue</h2></div><Link href={patientHref(patient.id, 'plan')}>Ver plan completo</Link></div>
           <div className="patient-followup-columns">
-            <div><h3>Objetivos activos</h3>{activeGoals.slice(0,3).map(goal=><article key={goal.id} className="patient-compact-item"><div><strong>{goal.title}</strong><small>{goal.targetDate?`Objetivo: ${formatDate(goal.targetDate)}`:'Sin fecha objetivo'}</small></div><span className={`priority-dot priority-${goal.priority}`}>{goal.priority===1?'Alta':goal.priority===2?'Media':'Baja'}</span></article>)}{activeGoals.length===0&&<div className="patient-empty-compact"><p>No hay objetivos activos.</p><Link href={`/patients/${patient.id}/plan`}>Definir primer objetivo</Link></div>}</div>
-            <div><h3>Tareas pendientes</h3>{pendingTasks.slice(0,3).map(task=><article key={task.id} className="patient-compact-item"><div><strong>{task.title}</strong><small>{task.dueDate?`Vence ${formatDate(task.dueDate)}`:'Sin fecha límite'}</small></div><span>{task.status==='IN_PROGRESS'?'En curso':'Pendiente'}</span></article>)}{pendingTasks.length===0&&<div className="patient-empty-compact"><p>No hay tareas pendientes.</p><Link href={`/patients/${patient.id}/tasks`}>Asignar una tarea</Link></div>}</div>
+            <div><h3>Objetivos activos</h3>{activeGoals.slice(0,3).map(goal=><article key={goal.id} className="patient-compact-item"><div><strong>{goal.title}</strong><small>{goal.targetDate?`Objetivo: ${formatDate(goal.targetDate)}`:'Sin fecha objetivo'}</small></div><span className={`priority-dot priority-${goal.priority}`}>{goal.priority===1?'Alta':goal.priority===2?'Media':'Baja'}</span></article>)}{activeGoals.length===0&&<div className="patient-empty-compact"><p>No hay objetivos activos.</p><Link href={patientHref(patient.id, 'plan')}>Definir primer objetivo</Link></div>}</div>
+            <div><h3>Tareas pendientes</h3>{pendingTasks.slice(0,3).map(task=><article key={task.id} className="patient-compact-item"><div><strong>{task.title}</strong><small>{task.dueDate?`Vence ${formatDate(task.dueDate)}`:'Sin fecha límite'}</small></div><span>{task.status==='IN_PROGRESS'?'En curso':'Pendiente'}</span></article>)}{pendingTasks.length===0&&<div className="patient-empty-compact"><p>No hay tareas pendientes.</p><Link href={patientHref(patient.id, 'tasks')}>Asignar una tarea</Link></div>}</div>
           </div>
         </section>
 
-        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{processLabel(patient.summary.activeProcess)}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{modalityLabel(patient.summary.activeProcess?.modality)||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl>{patient.summary.activeProcess&&<Link href={`/patients/${patient.id}/processes/${patient.summary.activeProcess.id}`} className="button secondary patient-card-button">Abrir proceso</Link>}</aside>
+        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Proceso actual</span><h2>{processLabel(patient.summary.activeProcess)}</h2></div></div><dl className="patient-process-details"><div><dt>Frecuencia</dt><dd>{patient.summary.activeProcess?.frequency||'No definida'}</dd></div><div><dt>Modalidad</dt><dd>{modalityLabel(patient.summary.activeProcess?.modality)||'No definida'}</dd></div><div><dt>Sesiones</dt><dd>{patient.summary.sessionCount}</dd></div><div><dt>Última sesión</dt><dd>{formatDate(patient.summary.lastSession?.startsAt)}</dd></div></dl>{patient.summary.activeProcess&&<Link href={processHref(patient.id, patient.summary.activeProcess.id)} className="button secondary patient-card-button">Abrir proceso</Link>}</aside>
 
         {processList}
 
-        <section className="patient-record-card patient-unified-main-card"><div className="patient-unified-card-heading"><div><span>Actividad reciente</span><h2>Línea temporal clínica</h2></div><Link href={`/patients/${patient.id}/plan`}>Ver todo</Link></div><div className="patient-mini-timeline">{recentTimeline.map(item=><article key={item.id}><span>{EVENT_LABEL[item.type]||'Evento'}</span><div><strong>{item.href?<Link href={item.href}>{item.title}</Link>:item.title}</strong><small>{formatDate(item.date,true)}{item.description?` · ${item.description}`:''}</small></div></article>)}{recentTimeline.length===0&&<p>No hay actividad registrada.</p>}</div></section>
+        <section className="patient-record-card patient-unified-main-card"><div className="patient-unified-card-heading"><div><span>Actividad reciente</span><h2>Línea temporal clínica</h2></div><Link href={patientHref(patient.id, 'plan')}>Ver todo</Link></div><div className="patient-mini-timeline">{recentTimeline.map(item=><article key={item.id}><span>{EVENT_LABEL[item.type]||'Evento'}</span><div><strong>{item.href?<Link href={appHref(item.href)}>{item.title}</Link>:item.title}</strong><small>{formatDate(item.date,true)}{item.description?` · ${item.description}`:''}</small></div></article>)}{recentTimeline.length===0&&<p>No hay actividad registrada.</p>}</div></section>
 
-        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Áreas del paciente</h2></div></div><div className="patient-quick-links"><Link href={`/patients/${patient.id}/plan`}><strong>Plan y evolución</strong><span>{goals.length} objetivos · {timeline.length} eventos</span></Link><Link href={`/patients/${patient.id}/tasks`}><strong>Tareas</strong><span>{pendingTasks.length} abiertas</span></Link><Link href={`/patients/${patient.id}/assessments`}><strong>Escalas</strong><span>{assessments.length} registradas</span></Link><Link href={`/patients/${patient.id}/resources`} className="resource-link"><strong>Recursos terapéuticos</strong><span>Biblioteca y materiales compartidos</span></Link><Link href={`/messages?patientId=${patient.id}`}><strong>Mensajes</strong><span>Conversación estructurada con el paciente</span></Link><Link href={`/patients/${patient.id}/documents`}><strong>Documentos e informes</strong><span>{documents.length} documentos</span></Link><Link href={`/patients/${patient.id}/portal`}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
+        <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Áreas del paciente</h2></div></div><div className="patient-quick-links"><Link href={patientHref(patient.id, 'plan')}><strong>Plan y evolución</strong><span>{goals.length} objetivos · {timeline.length} eventos</span></Link><Link href={patientHref(patient.id, 'tasks')}><strong>Tareas</strong><span>{pendingTasks.length} abiertas</span></Link><Link href={patientHref(patient.id, 'assessments')}><strong>Escalas</strong><span>{assessments.length} registradas</span></Link><Link href={patientHref(patient.id, 'resources')} className="resource-link"><strong>Recursos terapéuticos</strong><span>Biblioteca y materiales compartidos</span></Link><Link href={`/messages?patientId=${patient.id}`}><strong>Mensajes</strong><span>Conversación estructurada con el paciente</span></Link><Link href={patientHref(patient.id, 'documents')}><strong>Documentos e informes</strong><span>{documents.length} documentos</span></Link><Link href={patientHref(patient.id, 'portal')}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>
       </div>
     </> : <form className="patient-history-form patient-history-unified" onSubmit={saveHistory}>
       <div className="patient-history-toolbar"><div><span>Contenido profesional privado</span><h2>Historia clínica</h2><p>Esta información no se muestra al paciente.</p></div><button className="button" type="submit" disabled={saving||patient.status==='ARCHIVED'}>{saving?'Guardando…':'Guardar historia'}</button></div>

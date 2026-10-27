@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Icon from '@/components/Icon';
@@ -24,6 +24,7 @@ import {
   therapistName,
   useViewer,
 } from '@/lib/clinical';
+import { patientHref, processHref, sessionHref, queryId } from '@/lib/routes';
 
 /** GET /clinical-processes/:id (solo con acceso clínico). `internalNotes` solo llega a su autor. */
 type ProcessDetail = {
@@ -66,7 +67,9 @@ function readOnlyReason(detail: ProcessDetail, isAuthor: boolean, exceptional: b
 }
 
 export default function ProcessPage() {
-  const { id: patientId, processId } = useParams<{ id: string; processId: string }>();
+  const searchParams = useSearchParams();
+  const patientId = queryId(searchParams.get('id'));
+  const processId = queryId(searchParams.get('processId'));
   const router = useRouter();
   const viewer = useViewer();
   const [patient, setPatient] = useState<PatientHeader | null>(null);
@@ -222,7 +225,7 @@ export default function ProcessPage() {
     return (
       <div className="app-layout"><Sidebar /><main className="patient-record-page">
         <div className="agenda-error" role="alert">{error || 'No se pudo cargar el proceso'}</div>
-        <div className="e1-actions"><button type="button" className="button secondary" onClick={load}>Reintentar</button><Link href={`/patients/${patientId}`} className="button secondary">Volver a la ficha</Link></div>
+        <div className="e1-actions"><button type="button" className="button secondary" onClick={load}>Reintentar</button><Link href={patientHref(patientId)} className="button secondary">Volver a la ficha</Link></div>
       </main></div>
     );
   }
@@ -230,7 +233,7 @@ export default function ProcessPage() {
   if (state === 'no-module') {
     return (
       <div className="app-layout"><Sidebar /><main className="patient-record-page">
-        <Link href={`/patients/${patientId}`} className="patient-record-back">← Volver a la ficha{patient ? ` de ${patient.firstName} ${patient.lastName}` : ''}</Link>
+        <Link href={patientHref(patientId)} className="patient-record-back">← Volver a la ficha{patient ? ` de ${patient.firstName} ${patient.lastName}` : ''}</Link>
         <div className="patient-record-kicker">Proceso clínico</div>
         <h1>Proceso clínico</h1>
         <div className="e1-notice info" role="note"><div><strong>Gestión reservada al equipo clínico y a administración</strong><p>Los procesos clínicos los gestionan los profesionales y la administración de la consulta. Desde la ficha del paciente puedes seguir con su agenda y su portal.</p></div></div>
@@ -245,7 +248,7 @@ export default function ProcessPage() {
     <div className="app-layout"><Sidebar /><main className="patient-record-page">
       <header className="patient-record-header">
         <div>
-          <Link href={`/patients/${patientId}`} className="patient-record-back">← Volver a la ficha{patient ? ` de ${patient.firstName} ${patient.lastName}` : ''}</Link>
+          <Link href={patientHref(patientId)} className="patient-record-back">← Volver a la ficha{patient ? ` de ${patient.firstName} ${patient.lastName}` : ''}</Link>
           <div className="patient-record-kicker">Proceso clínico</div>
           <h1>{title}</h1>
           <div className="e1-actions" style={{ marginTop: 6 }}>
@@ -263,7 +266,7 @@ export default function ProcessPage() {
           <div>
             <strong>Contenido clínico reservado</strong>
             <p>Solo su terapeuta puede ver el contenido clínico de este proceso. Aquí tienes los datos de gestión.</p>
-            {canRequestExceptional && <p>Si necesitas consultarlo por un motivo legítimo, registra un acceso excepcional desde la <Link href={`/patients/${patientId}`}>ficha del paciente</Link>.</p>}
+            {canRequestExceptional && <p>Si necesitas consultarlo por un motivo legítimo, registra un acceso excepcional desde la <Link href={patientHref(patientId)}>ficha del paciente</Link>.</p>}
           </div>
         </div>
       )}
@@ -339,7 +342,7 @@ export default function ProcessPage() {
                   <li key={session.id} className="e1-row">
                     <div><strong>{formatDate(session.startsAt, true)}</strong></div>
                     <div><span className="e1-badge">{SESSION_STATUS[session.status] ?? session.status}</span></div>
-                    <div><Link href={`/agenda/${session.id}`} className="button secondary">Abrir sesión</Link></div>
+                    <div><Link href={sessionHref(session.id)} className="button secondary">Abrir sesión</Link></div>
                   </li>
                 ))}
               </ul>
@@ -378,7 +381,7 @@ export default function ProcessPage() {
                     throw new Error(`el proceso anterior sigue abierto (${err instanceof Error ? err.message : 'error'}); ciérralo desde su ficha`);
                   }
                 }}
-                onCreated={(created) => router.push(`/patients/${patientId}/processes/${created.id}`)}
+                onCreated={(created) => router.push(processHref(patientId, created.id))}
                 onCancel={() => setSwitching(false)}
               />
             )}

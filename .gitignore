@@ -3,6 +3,8 @@ node_modules/
 
 # Builds
 .next/
+# Export estático de la web (next build con output: 'export')
+apps/web/out/
 dist/
 coverage/
 
