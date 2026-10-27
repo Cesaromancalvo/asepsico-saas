@@ -45,7 +45,8 @@ describe('BillingService security and accounting invariants', () => {
     const service = new BillingService(prisma);
     const result:any = await service.create('ws-1', owner, { patientId:'patient-1', lines:[{description:'Sesión',quantity:2,unitPriceCents:6000,taxRateBps:2100}] } as any);
     expect(result.totalCents).toBe(14520);
-    expect(result.invoiceNumber).toBe('FAC-2026-0005');
+    expect(result.invoiceNumber).toBe(`COB-${new Date().getFullYear()}-0005`);
+    expect(result.invoiceNumber).not.toMatch(/FAC|factura/i);
     expect(prisma.__tx.auditLog.create).toHaveBeenCalled();
   });
 
