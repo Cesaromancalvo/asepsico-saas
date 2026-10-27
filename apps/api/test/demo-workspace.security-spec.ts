@@ -189,6 +189,8 @@ describe('Espacio demo: escrituras acotadas y marcadas', () => {
       expect(writer).toMatch(new RegExp(`${field}: encrypt`));
     }
     expect(writer).toMatch(/answers: encryptJsonField/);
+    // A7: la interpretación de las escalas sembradas también lleva la marca de ficción.
+    expect(writer).toMatch(/interpretation: encryptField\(T\(interpretation\)\)/);
     expect(writer).toMatch(/result: encryptAssessmentResult/);
   });
 });
