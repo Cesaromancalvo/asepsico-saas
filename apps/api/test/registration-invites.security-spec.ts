@@ -8,7 +8,7 @@ import { AuthController } from '../src/auth/auth.controller';
 import { RegisterDto, RegisterMemberDto } from '../src/auth/dto/register.dto';
 import { hashInviteToken, INVITE_TTL_MS } from '../src/auth/invite-token.util';
 import * as legalDocs from '../src/legal/legal-documents';
-import { assertTermsAccepted, LEGAL_TERMS_DRAFT, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
+import { assertTermsAccepted, LEGAL_TERMS_DRAFT, pendingLegalDocuments, TERMS_ACCEPTANCE_REQUIRED, TERMS_NOT_ACCEPTED } from '../src/legal/terms-acceptance';
 import { EnvironmentController, isDemoEnvironment } from '../src/health/environment.controller';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from '../src/auth/auth.service';
@@ -358,25 +358,29 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
 
 });
 
-describe('Textos del piloto demo (demo-1.1) y datos del titular fuera de git', () => {
+describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.2) y datos del titular fuera de git', () => {
   // Datos 100 % ficticios: DNI de ejemplo con letra de control válida y un domicilio inventado.
   const FAKE_NIF = '12345678Z';
   const FAKE_ADDRESS = 'Calle Ficticia 1, 00000 Ciudad Inventada';
   const filledEnv = { LEGAL_TITULAR_NIF: FAKE_NIF, LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any;
 
-  it('vigentes: PILOT_TERMS y PRIVACY_PRODUCT demo-1.1; DPA_ART28 fuera durante el demo', () => {
+  it('vigentes: PILOT_TERMS demo-1.1 y PRIVACY_PRODUCT demo-1.2; DPA_ART28 fuera durante el demo', () => {
     const docs = legalDocs.buildLegalDocuments({});
-    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.1']]);
+    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.2']]);
     expect(docs.map((d) => d.type)).not.toContain('DPA_ART28');
   });
 
   it('en git solo quedan sin rellenar [NIF] y [DOMICILIO]; el resto de datos decididos ya está', () => {
+    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.2 · En vigor desde el 28/10/2026' };
     for (const doc of legalDocs.buildLegalDocuments({})) {
-      const markers = [...new Set(doc.text.match(/\[[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ_ ]*\]/g) ?? [])].sort();
+      // Cualquier cosa entre corchetes (no solo lo que reconoce UNFILLED_MARKER_RE): solo [NIF] y [DOMICILIO].
+      const anyBrackets = [...new Set(doc.text.match(/\[[^\]\n]*\]/g) ?? [])].sort();
+      expect(anyBrackets).toEqual(['[DOMICILIO]', '[NIF]']);
+      const markers = [...new Set(doc.text.match(new RegExp(legalDocs.UNFILLED_MARKER_RE.source, 'g')) ?? [])].sort();
       expect(markers).toEqual(['[DOMICILIO]', '[NIF]']);
       expect(doc.text).not.toContain(legalDocs.PENDING_LEGAL_MARKER);
       expect(doc.text).toContain('asepsico1@gmail.com');
-      expect(doc.text).toContain('En vigor desde el 17/10/2026');
+      expect(doc.text).toContain(`Versión ${vigencia[doc.type]}`);
       expect(doc.text).not.toMatch(/INICIO TEXTO CARGABLE|FIN TEXTO CARGABLE|Notas de carga|Lo que debe confirmar Argos/);
     }
     const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
@@ -428,6 +432,39 @@ describe('Textos del piloto demo (demo-1.1) y datos del titular fuera de git', (
     expect(legalDocs.isDraftLegalText('Hola [FECHA_VIGENCIA]')).toBe(true);
     expect(legalDocs.isDraftLegalText('Hola [PENDIENTE DEL DESPACHO]')).toBe(true);
     expect(legalDocs.isDraftLegalText('Hola [Más información] y (BETA)')).toBe(false);
+  });
+
+  it('D19 de Lex: los marcadores con guion, barra o cifras ([VERIFICAR-PAX], [A-IMPLANTAR], [ARGOS/PINKY], [D19]) también son borrador', () => {
+    for (const marker of ['[VERIFICAR-PAX]', '[A-IMPLANTAR]', '[ARGOS/PINKY]', '[D19]', '[CRITERIO DISCUTIDO-LEVE]']) {
+      expect(legalDocs.isDraftLegalText(`Texto final ${marker} con marcador`)).toBe(true);
+    }
+    // Sin falsos positivos con texto normal entre corchetes o guiones fuera de ellos.
+    expect(legalDocs.isDraftLegalText('Ver [apartado 4] y UE-EE. UU. (art. 6.1-f)')).toBe(false);
+    expect(legalDocs.isDraftLegalText('Hola [-GUION-INICIAL]')).toBe(false);
+  });
+
+  it('privacidad demo-1.2: Vercel solo aparece en la frase histórica del §5 y la nota de cambios', () => {
+    const privacy = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PRIVACY_PRODUCT')!;
+    const historical = 'Hasta el 26/10/2026, la parte web de la aplicación la alojaba Vercel Inc. (Estados Unidos)';
+    const changeNote = 'desde el 26/10/2026 la aplicación ya no usa Vercel.';
+    expect(privacy.text).toContain(historical);
+    expect(privacy.text).toContain(changeNote);
+    expect(privacy.text.split(historical).join('').split(changeNote).join('')).not.toMatch(/vercel/i);
+    const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
+    expect(terms.text).not.toMatch(/vercel/i);
+  });
+
+  it('reaceptación: quien aceptó condiciones demo-1.1 y privacidad demo-1.1 solo tiene pendiente la privacidad', async () => {
+    const docs = legalDocs.buildLegalDocuments({});
+    const terms = docs.find((d) => d.type === 'PILOT_TERMS')!;
+    const rows = [
+      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PILOT_TERMS', version: terms.version, textHash: terms.textHash },
+      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PRIVACY_PRODUCT', version: 'demo-1.1', textHash: 'hash-de-la-version-anterior' },
+    ];
+    const findMany = jest.fn(async ({ where }: any) => rows.filter((r) => r.workspaceId === where.workspaceId && r.userId === where.userId
+      && where.OR.some((o: any) => o.documentType === r.documentType && o.version === r.version && o.textHash === r.textHash)));
+    const pending = await pendingLegalDocuments({ termsAcceptance: { findMany } } as any, 'ws-1', 'u-1', docs);
+    expect(pending.map((d) => [d.type, d.version])).toEqual([['PRIVACY_PRODUCT', 'demo-1.2']]);
   });
 
   it('el repositorio no contiene NIF ni domicilio: el texto en git deja los marcadores', () => {
