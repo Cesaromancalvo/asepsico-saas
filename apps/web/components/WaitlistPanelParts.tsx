@@ -3,7 +3,7 @@
 import type { PlatformWaitlistResponse } from '@asepsico/contracts';
 import Icon from './Icon';
 import {
-  commercialLabel, commercialTone, Entry, fieldView, Filters, formatSignupDate, plural, SITUATION_LABEL, SITUATION_ORDER,
+  commercialLabel, commercialTone, Entry, fieldView, Filters, formatSignupDate, hasPhone, phoneView, plural, SITUATION_LABEL, SITUATION_ORDER,
   situationKey, SituationKey, SOURCE_LABEL, SOURCE_ORDER, sourceKey, SourceKey, toggleValue, weekLabel, weekStartShort,
 } from '../lib/platform-waitlist';
 
@@ -23,6 +23,7 @@ export function Counters({ data }: { data: PlatformWaitlistResponse }) {
         <div className="dashboard-card metric-card metric-violet"><span><Icon name="users" /></span><div><strong>{counters.totalActive}</strong><small>Altas activas</small></div></div>
         <div className="dashboard-card metric-card metric-green"><span><Icon name="calendar" /></span><div><strong>{thisWeek}</strong><small>Esta semana</small></div></div>
         <div className="dashboard-card metric-card metric-blue"><span><Icon name="trend" /></span><div><strong>{last8}</strong><small>Últimas 8 semanas</small></div></div>
+        <div className="dashboard-card metric-card metric-neutral"><span><Icon name="phone" /></span><div><strong>{counters.withoutPhone}</strong><small>Sin teléfono</small></div></div>
         <div className={`dashboard-card metric-card ${data.unreadable > 0 ? 'metric-amber' : 'metric-neutral'}`}>
           <span><Icon name="info" /></span><div><strong>{data.unreadable}</strong><small>{data.unreadable === 1 ? 'Alta con datos no legibles' : 'Altas con datos no legibles'}</small></div>
         </div>
@@ -114,6 +115,21 @@ function Field({ entry, field, className }: { entry: Entry; field: 'name' | 'ema
   return <span className={[className, view.text === '—' ? 'wl-muted' : ''].filter(Boolean).join(' ') || undefined} title={view.title}>{view.text}</span>;
 }
 
+/** Enlace tel: con el número agrupado; «Sin teléfono» en gris; «No legible» como los demás campos. */
+function Phone({ entry, prominent }: { entry: Entry; prominent?: boolean }) {
+  const view = phoneView(entry);
+  if (view.kind === 'unreadable') return <span className="wl-unreadable" title="No se ha podido descifrar este dato">{view.text}</span>;
+  if (view.kind === 'none') return <span className="wl-muted wl-no-phone">{view.text}</span>;
+  return (
+    <a className={prominent ? 'wl-phone wl-phone-prominent' : 'wl-phone'} href={view.href}>
+      <Icon name="phone" size={prominent ? 18 : 16} />
+      <span>{view.text}</span>
+    </a>
+  );
+}
+
+type Actions = { onSuppress: (entry: Entry) => void; onDeletePhone: (entry: Entry) => void };
+
 function Commercial({ entry }: { entry: Entry }) {
   const tone = commercialTone(entry.commercial);
   const label = commercialLabel(entry.commercial);
@@ -136,7 +152,7 @@ function DateCell({ iso }: { iso: string }) {
   return <><span className="wl-date-day">{day}</span><span className="wl-date-time">{time}</span></>;
 }
 
-export function EntriesTable({ entries, onSuppress }: { entries: Entry[]; onSuppress: (entry: Entry) => void }) {
+export function EntriesTable({ entries, onSuppress, onDeletePhone }: { entries: Entry[] } & Actions) {
   return (
     <div className="wl-table-wrap">
       <table className="wl-table">
@@ -145,6 +161,7 @@ export function EntriesTable({ entries, onSuppress }: { entries: Entry[]; onSupp
           <tr>
             <th scope="col">Fecha de alta</th>
             <th scope="col">Persona</th>
+            <th scope="col">Teléfono</th>
             <th scope="col">Situación</th>
             <th scope="col" className="wl-num">Prof.</th>
             <th scope="col">Herramientas</th>
@@ -161,6 +178,14 @@ export function EntriesTable({ entries, onSuppress }: { entries: Entry[]; onSupp
               <td className="wl-person">
                 <Field entry={entry} field="name" className="wl-name" />
                 <Field entry={entry} field="email" className="wl-email" />
+              </td>
+              <td className="wl-phone-cell">
+                <Phone entry={entry} />
+                {hasPhone(entry) && (
+                  <button type="button" className="wl-delete-phone" onClick={() => onDeletePhone(entry)}>
+                    Borrar solo el teléfono<span className="sr-only"> del alta del {formatSignupDate(entry.createdAt)}</span>
+                  </button>
+                )}
               </td>
               <td>{SITUATION_LABEL[situationKey(entry)]}</td>
               <td className="wl-num"><Professionals entry={entry} /></td>
@@ -181,7 +206,7 @@ export function EntriesTable({ entries, onSuppress }: { entries: Entry[]; onSupp
   );
 }
 
-export function EntryCard({ entry, onSuppress }: { entry: Entry; onSuppress: (entry: Entry) => void }) {
+export function EntryCard({ entry, onSuppress, onDeletePhone }: { entry: Entry } & Actions) {
   return (
     <li className="wl-card">
       <div className="wl-card-top">
@@ -191,6 +216,7 @@ export function EntryCard({ entry, onSuppress }: { entry: Entry; onSuppress: (en
         </div>
         <span className="wl-card-date">{formatSignupDate(entry.createdAt)}</span>
       </div>
+      <div className="wl-card-phone"><Phone entry={entry} prominent /></div>
       <dl className="wl-card-grid">
         <div><dt>Situación</dt><dd>{SITUATION_LABEL[situationKey(entry)]}</dd></div>
         <div><dt>Profesionales</dt><dd><Professionals entry={entry} /></dd></div>
@@ -200,6 +226,11 @@ export function EntryCard({ entry, onSuppress }: { entry: Entry; onSuppress: (en
         <div className="wl-card-wide"><dt>Comunicaciones comerciales</dt><dd><Commercial entry={entry} /></dd></div>
       </dl>
       <div className="wl-card-actions">
+        {hasPhone(entry) && (
+          <button type="button" className="wl-delete-phone" onClick={() => onDeletePhone(entry)}>
+            Borrar solo el teléfono<span className="sr-only"> del alta del {formatSignupDate(entry.createdAt)}</span>
+          </button>
+        )}
         <button type="button" className="wl-suppress" onClick={() => onSuppress(entry)}>
           Suprimir alta<span className="sr-only"> del {formatSignupDate(entry.createdAt)}</span>
         </button>

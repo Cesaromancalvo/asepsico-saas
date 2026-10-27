@@ -16,7 +16,7 @@
 .wl-status{margin:0 0 16px}
 
 /* ---------- Contadores ---------- */
-.wl-metrics{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:var(--gap)}
+.wl-metrics{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:var(--gap)}
 .wl-metrics .metric-card:hover{transform:none;box-shadow:var(--shadow-sm)}
 .metric-card.metric-neutral>span{background:#F0EFF5;color:var(--text-soft)}
 .wl-breakdowns{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:var(--gap);margin-bottom:var(--gap)}
@@ -66,16 +66,17 @@
 .wl-week-filter{min-width:min(240px,100%);margin-left:auto}
 
 .wl-table-wrap{position:relative;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md)}
-.wl-table{width:100%;min-width:980px;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-sm)}
+.wl-table{width:100%;min-width:1000px;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-sm)}
 .wl-table th:nth-child(1){width:9%}
-.wl-table th:nth-child(2){width:21%}
-.wl-table th:nth-child(3){width:10%}
-.wl-table th:nth-child(4){width:4%}
-.wl-table th:nth-child(5){width:18%}
-.wl-table th:nth-child(6){width:10%}
-.wl-table th:nth-child(7){width:6%}
-.wl-table th:nth-child(8){width:13%}
+.wl-table th:nth-child(2){width:19%}
+.wl-table th:nth-child(3){width:15%}
+.wl-table th:nth-child(4){width:9%}
+.wl-table th:nth-child(5){width:4%}
+.wl-table th:nth-child(6){width:11%}
+.wl-table th:nth-child(7){width:8%}
+.wl-table th:nth-child(8){width:6%}
 .wl-table th:nth-child(9){width:9%}
+.wl-table th:nth-child(10){width:10%}
 .wl-date-day,.wl-date-time{display:block}
 .wl-date-time{color:var(--text-light);font-size:var(--fs-xs)}
 .wl-table .ui-chip{width:auto;min-height:24px;padding:4px 10px;line-height:1.3;white-space:normal}
@@ -103,6 +104,21 @@ td.wl-person>span{display:block}
 .wl-suppress{min-height:36px;padding:0 10px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--danger);font-family:inherit;font-size:var(--fs-sm);font-weight:600;cursor:pointer;transition:background .15s ease,border-color .15s ease}
 .wl-suppress:hover{border-color:#F2C9CE;background:var(--danger-soft)}
 .wl-suppress:focus-visible{outline:none;box-shadow:var(--focus)}
+/* Teléfono: enlace tel: (un toque abre el marcador en el móvil) y borrado solo del teléfono. */
+.wl-phone{display:inline-flex;align-items:center;gap:6px;min-height:32px;color:var(--violet-ink);font-weight:600;font-variant-numeric:tabular-nums;text-decoration:none;white-space:nowrap;border-radius:8px}
+.wl-phone:hover{text-decoration:underline;text-underline-offset:3px}
+.wl-phone:focus-visible{outline:none;box-shadow:var(--focus)}
+.wl-phone .ui-icon{flex:none}
+.wl-phone-cell>*{display:flex;width:max-content;max-width:100%}
+.wl-no-phone{font-size:var(--fs-sm)}
+.wl-delete-phone{min-height:32px;margin-top:2px;padding:0;border:0;background:none;color:var(--text-soft);font-family:inherit;font-size:var(--fs-xs);font-weight:500;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.wl-delete-phone:hover{color:var(--danger)}
+.wl-delete-phone:focus-visible{outline:none;box-shadow:var(--focus);border-radius:6px}
+.wl-card-phone{margin-top:10px}
+.wl-phone-prominent{min-height:44px;padding:0 14px;border:1px solid var(--border-strong);border-radius:12px;background:var(--tint);font-size:var(--fs-md)}
+.wl-phone-prominent:hover{text-decoration:none;border-color:var(--violet)}
+.wl-card-actions{flex-wrap:wrap;align-items:center;gap:8px 16px}
+.wl-card-actions .wl-delete-phone{min-height:36px;margin:0 auto 0 0}
 .wl-generated{margin:14px 0 0;color:var(--text-light);font-size:var(--fs-xs)}
 
 /* Tarjetas (móvil y tableta estrecha). */
@@ -138,6 +154,7 @@ td.wl-person>span{display:block}
 
 /* ---------- Responsive ---------- */
 @media(max-width:1180px){
+  .wl-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
   .wl-breakdowns{grid-template-columns:1fr 1fr}
   .wl-breakdowns>.wl-panel:first-child{grid-column:1/-1}
 }

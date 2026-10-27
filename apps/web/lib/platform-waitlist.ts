@@ -136,6 +136,30 @@ export function suppressErrorMessage(err: unknown): string {
   return 'No se ha podido suprimir el alta. Comprueba la conexión y vuelve a intentarlo.';
 }
 
+/**
+ * Borra SOLO el teléfono de un alta (la persona no quiere más llamadas; sigue en la lista). Misma
+ * reautenticación que la supresión: contraseña del PLATFORM_ADMIN, POST con CSRF y 204.
+ */
+export async function deletePhone(id: string, password: string): Promise<void> {
+  await api<PlatformMeResponse>('/admin/me', NO_STORE);
+  await api<void>(`/admin/waitlist/${encodeURIComponent(id)}/phone/delete`, {
+    method: 'POST',
+    cache: 'no-store',
+    body: JSON.stringify({ password }),
+  });
+}
+
+/** Mensaje para el diálogo de borrar el teléfono. Ni la contraseña ni el teléfono aparecen en él. */
+export function deletePhoneErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401 && err.code === 'PLATFORM_REAUTH_FAILED') return 'La contraseña no es correcta. No se ha borrado nada.';
+    if (err.status === 404) return 'Esta alta ya no existe: puede que se haya suprimido. Cierra y recarga la lista.';
+    if (err.status === 429) return err.message || 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentarlo.';
+    if (err.status === 400) return 'Escribe tu contraseña para confirmar.';
+  }
+  return 'No se ha podido borrar el teléfono. Comprueba la conexión y vuelve a intentarlo.';
+}
+
 /* ------------------------------- Formato ------------------------------- */
 
 const dateTime = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Madrid' });
@@ -176,6 +200,29 @@ export function fieldView(entry: Entry, field: PlatformWaitlistEncryptedField): 
   }
   return { text: value, unreadable: false };
 }
+
+export type PhoneView =
+  | { kind: 'phone'; text: string; href: string }
+  | { kind: 'none'; text: string }
+  | { kind: 'unreadable'; text: string };
+
+/**
+ * Teléfono para el panel. La API lo da en E.164 (+34612345678): el enlace usa ese valor tal cual
+ * (tel:+34612345678) y el texto se agrupa para leerlo (+34 612 345 678); los internacionales se
+ * muestran tal cual. null = «Sin teléfono»; no descifrable = «No legible».
+ */
+export function phoneView(entry: Entry): PhoneView {
+  if (entry.unreadableFields.includes('phone')) return { kind: 'unreadable', text: UNREADABLE };
+  const phone = entry.phone;
+  if (!phone) return { kind: 'none', text: 'Sin teléfono' };
+  // La API siempre lo da en E.164; si no, no se enlaza (se trata como no legible).
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return { kind: 'unreadable', text: UNREADABLE };
+  const es = /^\+34(\d{3})(\d{3})(\d{3})$/.exec(phone);
+  return { kind: 'phone', text: es ? `+34 ${es[1]} ${es[2]} ${es[3]}` : phone, href: `tel:${phone}` };
+}
+
+/** ¿Tiene algo que borrar? (un teléfono legible o uno que no se pudo descifrar). */
+export const hasPhone = (entry: Entry): boolean => phoneView(entry).kind !== 'none';
 
 export const sourceKey = (entry: Entry): SourceKey => entry.source ?? PLATFORM_WAITLIST_UNSPECIFIED;
 export const situationKey = (entry: Entry): SituationKey => entry.situation ?? PLATFORM_WAITLIST_UNSPECIFIED;
@@ -241,6 +288,7 @@ export function withoutEntry(data: PlatformWaitlistResponse, id: string): Platfo
   if (!removed) return data;
   const counters: PlatformWaitlistCounters = {
     totalActive: Math.max(0, data.counters.totalActive - 1),
+    withoutPhone: Math.max(0, data.counters.withoutPhone - (phoneView(removed).kind === 'none' ? 1 : 0)),
     weekly: data.counters.weekly.map((week) => (week.isoWeek === removed.isoWeek ? { ...week, count: Math.max(0, week.count - 1) } : week)),
     bySource: { ...data.counters.bySource, [sourceKey(removed)]: Math.max(0, data.counters.bySource[sourceKey(removed)] - 1) },
     bySituation: { ...data.counters.bySituation, [situationKey(removed)]: Math.max(0, data.counters.bySituation[situationKey(removed)] - 1) },
@@ -250,6 +298,20 @@ export function withoutEntry(data: PlatformWaitlistResponse, id: string): Platfo
     entries: data.entries.filter((entry) => entry.id !== id),
     counters,
     unreadable: data.unreadable - (removed.unreadableFields.length > 0 ? 1 : 0),
+  };
+}
+
+/** Tras borrar el teléfono: la fila queda «Sin teléfono» y los contadores se recalculan sin volver a pedir datos. */
+export function withoutPhone(data: PlatformWaitlistResponse, id: string): PlatformWaitlistResponse {
+  const target = data.entries.find((entry) => entry.id === id);
+  if (!target || !hasPhone(target)) return data;
+  const wasUnreadable = target.unreadableFields.length > 0;
+  const updated: Entry = { ...target, phone: null, unreadableFields: target.unreadableFields.filter((field) => field !== 'phone') };
+  return {
+    ...data,
+    entries: data.entries.map((entry) => (entry.id === id ? updated : entry)),
+    counters: { ...data.counters, withoutPhone: data.counters.withoutPhone + 1 },
+    unreadable: data.unreadable - (wasUnreadable && updated.unreadableFields.length === 0 ? 1 : 0),
   };
 }
 

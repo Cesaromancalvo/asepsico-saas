@@ -3,16 +3,36 @@
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
 import Icon from './Icon';
 
+/** 'entry' = suprimir el alta entera; 'phone' = borrar solo el teléfono (sigue en la lista). */
+export type WaitlistDialogKind = 'entry' | 'phone';
+
+const TEXTS: Record<WaitlistDialogKind, { title: string; warning: string; detail: string; submit: string; busy: string }> = {
+  entry: {
+    title: 'Suprimir esta alta',
+    warning: 'Vas a suprimir los datos de esta persona de la lista de espera. No se puede deshacer.',
+    detail: 'Se borran su nombre, su email, su teléfono y sus respuestas. Solo queda un registro sin datos personales para contar altas y bajas. Si vuelve a apuntarse, entrará como un alta nueva.',
+    submit: 'Suprimir definitivamente',
+    busy: 'Suprimiendo…',
+  },
+  phone: {
+    title: 'Borrar solo el teléfono',
+    warning: 'Vas a borrar el teléfono de esta persona. No se puede deshacer.',
+    detail: 'Sigue en la lista de espera con su nombre, su email y sus respuestas, y puedes seguir escribiéndole por email. Úsalo cuando te pida que no la llames más.',
+    submit: 'Borrar el teléfono',
+    busy: 'Borrando…',
+  },
+};
+
 type Props = {
-  /** Alta a suprimir (null = cerrado). `label` es lo que se enseña para reconocerla (nombre o fecha). */
-  target: { id: string; label: string; detail: string } | null;
+  /** Alta afectada (null = cerrado). `label` es lo que se enseña para reconocerla (nombre o fecha). */
+  target: { id: string; label: string; detail: string; kind?: WaitlistDialogKind } | null;
   /** Devuelve un mensaje de error para mostrarlo dentro del diálogo, o null si se ha suprimido. */
   onConfirm: (id: string, password: string) => Promise<string | null>;
   onClose: () => void;
 };
 
 /**
- * Confirmación de "Suprimir alta" del panel de la lista de espera. Pide la contraseña del
+ * Confirmación de "Suprimir alta" y de "Borrar solo el teléfono" del panel de la lista de espera. Pide la contraseña del
  * PLATFORM_ADMIN y explica que no se puede deshacer. <dialog> nativo con showModal(): foco
  * atrapado, Escape para cerrar (salvo mientras se envía) y foco de vuelta al botón que lo abrió.
  * La contraseña solo vive en el estado de este componente y se borra al cerrar.
@@ -29,6 +49,7 @@ export default function WaitlistSuppressDialog({ target, onConfirm, onClose }: P
   const descId = `${id}-desc`;
   const errorId = `${id}-error`;
   const open = target !== null;
+  const texts = TEXTS[target?.kind ?? 'entry'];
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -79,7 +100,7 @@ export default function WaitlistSuppressDialog({ target, onConfirm, onClose }: P
       <div className="agenda-modal-header">
         <div>
           <p className="eyebrow">Lista de espera</p>
-          <h2 id={titleId}>Suprimir esta alta</h2>
+          <h2 id={titleId}>{texts.title}</h2>
         </div>
         <button type="button" aria-label="Cerrar" disabled={busy} onClick={() => dialogRef.current?.close()}>×</button>
       </div>
@@ -92,8 +113,8 @@ export default function WaitlistSuppressDialog({ target, onConfirm, onClose }: P
       <div id={descId} className="wl-dialog-warning">
         <Icon name="info" size={18} />
         <div>
-          <p><strong>Vas a suprimir los datos de esta persona de la lista de espera. No se puede deshacer.</strong></p>
-          <p>Se borran su nombre, su email y sus respuestas. Solo queda un registro sin datos personales para contar altas y bajas. Si vuelve a apuntarse, entrará como un alta nueva.</p>
+          <p><strong>{texts.warning}</strong></p>
+          <p>{texts.detail}</p>
         </div>
       </div>
 
@@ -118,7 +139,7 @@ export default function WaitlistSuppressDialog({ target, onConfirm, onClose }: P
 
       <div className="agenda-modal-actions">
         <button type="button" className="agenda-cancel-button" disabled={busy} onClick={() => dialogRef.current?.close()}>Cancelar</button>
-        <button type="submit" className="button danger" disabled={busy || !password}>{busy ? 'Suprimiendo…' : 'Suprimir definitivamente'}</button>
+        <button type="submit" className="button danger" disabled={busy || !password}>{busy ? texts.busy : texts.submit}</button>
       </div>
     </form>}
   </dialog>;
