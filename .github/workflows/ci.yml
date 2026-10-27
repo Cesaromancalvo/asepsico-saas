@@ -87,6 +87,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Condición de Argos (revisión C4, A1): la web sale como export estático, sin rewrites ni
+      # API_INTERNAL_URL (el proxy /api/v1 de la etapa Vercel no puede volver). Sin red ni BD.
+      - name: Web build is a static export without API proxy
+        run: node scripts/check-web-static-export.mjs
+
   postgres-integration:
     name: PostgreSQL migrations and real HTTP smoke test
     runs-on: ubuntu-latest

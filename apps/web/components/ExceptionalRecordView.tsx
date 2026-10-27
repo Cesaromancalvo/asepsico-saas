@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { ClinicalProcessRow, processLabel, therapistName } from '@/lib/clinical';
 import { exceptionalAllowsExport } from '@/lib/exceptional-access';
+import { processHref } from '@/lib/routes';
 
 export type ReadOnlyHistory = Record<string, string | null | undefined>;
 type Goal = { id: string; title: string; status: string; targetDate?: string | null };
@@ -98,7 +99,7 @@ export default function ExceptionalRecordView({ patientId, reasonCode, history, 
               <li key={process.id} className="e1-row">
                 <div><strong>{processLabel({ status: process.status, modality: process.modality })}</strong><small>{therapistName(process.therapist)} · desde {formatDate(process.startedAt)}</small></div>
                 <div><span className="e1-badge readonly">Solo lectura</span></div>
-                <div><Link href={`/patients/${patientId}/processes/${process.id}`} className="button secondary" aria-label={`Abrir el proceso de ${therapistName(process.therapist)}`}>Abrir</Link></div>
+                <div><Link href={processHref(patientId, process.id)} className="button secondary" aria-label={`Abrir el proceso de ${therapistName(process.therapist)}`}>Abrir</Link></div>
               </li>
             ))}
           </ul>

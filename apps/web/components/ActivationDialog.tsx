@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { PortalSignupAcceptedContract } from '@asepsico/contracts';
 import ActivationHandoff from './ActivationHandoff';
+import { patientHref } from '@/lib/routes';
 
 type Props = {
   /** null = cerrado. */
@@ -64,10 +65,10 @@ export default function ActivationDialog({ result, personName, context, onClose 
           <ActivationHandoff activation={result.activation} origin={origin} />
           <p className="ps-dialog-foot">
             Este código no se volverá a mostrar. Si no llega a escanearlo, genera uno nuevo desde
-            {result.patientId ? <> el <Link href={`/patients/${result.patientId}/portal`}>portal del paciente</Link> en su ficha</> : ' el portal del paciente en su ficha'}.
+            {result.patientId ? <> el <Link href={patientHref(result.patientId, 'portal')}>portal del paciente</Link> en su ficha</> : ' el portal del paciente en su ficha'}.
           </p>
           <div className="agenda-modal-actions">
-            {result.patientId && <Link className="button secondary" href={`/patients/${result.patientId}`}>Abrir su ficha</Link>}
+            {result.patientId && <Link className="button secondary" href={patientHref(result.patientId)}>Abrir su ficha</Link>}
             <button type="button" className="button" onClick={() => dialogRef.current?.close()}>Hecho</button>
           </div>
         </>

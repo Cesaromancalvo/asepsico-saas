@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
+import { patientHref, queryId } from '@/lib/routes';
 
 type ScaleCode = 'PHQ9' | 'GAD7' | 'WHO5';
 type Patient = { id:string; firstName:string; lastName:string; status:string };
@@ -32,12 +33,12 @@ function fmt(value:string){return new Intl.DateTimeFormat('es-ES',{day:'2-digit'
  * los controles de escritura; se remite a la ficha en solo lectura (revisión de Argos).
  */
 export default function AssessmentsPage(){
-  const {id:patientId}=useParams<{id:string}>();
+  const patientId = queryId(useSearchParams().get('id'));
   return <ClinicalSubpageGate patientId={patientId} section="Escalas"><AssessmentsPageContent/></ClinicalSubpageGate>;
 }
 
 function AssessmentsPageContent(){
-  const {id:patientId}=useParams<{id:string}>();
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [items,setItems]=useState<Assessment[]>([]);
   const [catalog,setCatalog]=useState<Scale[]>([]);
@@ -84,7 +85,7 @@ function AssessmentsPageContent(){
   if(!patient)return <div className="app-layout"><Sidebar/><main className="assessment-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div></main></div>;
 
   return <div className="app-layout"><Sidebar syncText="Seguimiento clínico"/><main className="assessment-page">
-    <header className="patient-plan-header"><div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Escalas clínicas</div><h1>Escalas clínicas de {patient.firstName} {patient.lastName}</h1><p>Aplicación estructurada, puntuación automática y evolución longitudinal.</p></div><div className="patient-record-actions"><Link href={`/patients/${patient.id}/plan`} className="button secondary">Plan terapéutico</Link><Link href={`/patients/${patient.id}/tasks`} className="button secondary">Tareas</Link></div></header>
+    <header className="patient-plan-header"><div><Link href={patientHref(patient.id)} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Escalas clínicas</div><h1>Escalas clínicas de {patient.firstName} {patient.lastName}</h1><p>Aplicación estructurada, puntuación automática y evolución longitudinal.</p></div><div className="patient-record-actions"><Link href={patientHref(patient.id, 'plan')} className="button secondary">Plan terapéutico</Link><Link href={patientHref(patient.id, 'tasks')} className="button secondary">Tareas</Link></div></header>
     {error&&<div className="agenda-error">{error}</div>}
 
     <section className="assessment-summary-grid">{latest.map(({scale,last})=><article key={scale.code}><span>{scale.domain}</span><strong>{last?last.totalScore:'—'}</strong><h3>{scale.name}</h3><small>{last?`${last.severity} · ${fmt(last.administeredAt)}`:'Sin aplicaciones'}</small></article>)}</section>

@@ -5,7 +5,8 @@ import './portal-signup.css';
 import './platform-waitlist.css';
 import DemoBanner from '@/components/DemoBanner';
 
-export const metadata = { title: 'AsePsico', description: 'Sistema operativo para la práctica psicológica' };
+// referrer: además de la cabecera Referrer-Policy de Render (defensa en profundidad: el id va en la query).
+export const metadata = { title: 'AsePsico', description: 'Sistema operativo para la práctica psicológica', referrer: 'no-referrer' as const };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

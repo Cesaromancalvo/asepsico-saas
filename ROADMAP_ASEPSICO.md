@@ -181,7 +181,7 @@ Pendiente antes de invitar a nadie:
 - revisión operativa del espacio demo antes de la primera invitación (pendiente);
 - backlog de Argos: invalidar access tokens tras cambiar la contraseña (`tokenVersion`/`passwordChangedAt`; **resuelto en el Sprint 18, desplegado el 21/10/2026**) y `RegisterDto` con `MaxUtf8Bytes(72)`/`MinChars(12)`;
 - plan de la API: decisión pendiente (la API tarda unos 72 s en despertar tras un rato sin uso; la base de datos tiene desde el 16/10/2026 copias del proveedor y copias propias cifradas);
-- salida de Vercel antes del 31/10/2026;
+- salida de Vercel: **hecha el 26/10/2026** (web en Render Static Site, `app.asepsico.es`); pendiente apagar y borrar el proyecto de Vercel (paso 18 de la sesión 6, A2 de Argos);
 - acceso excepcional: **en `main` y desplegado con el Sprint 17** (19/10/2026).
 
 ### Sprint 17 — Acceso excepcional y reserva de citas desde el portal (entrega S4)

@@ -56,14 +56,17 @@ export function takeTokenFromLocation(win: LocationLike): string | null {
   return token;
 }
 
-/** Enlace que codifica el QR fijo del profesional. */
+/**
+ * Enlace que codifica el QR fijo del profesional. Con barra final: el sitio estático publica
+ * portal/alta/index.html y así no depende de que el hosting redirija /portal/alta.
+ */
 export function intakeUrl(origin: string, token: string): string {
-  return `${origin}/portal/alta#t=${token}`;
+  return `${origin}/portal/alta/#t=${token}`;
 }
 
 /** Enlace de activación (poner contraseña) que se entrega en persona. */
 export function activationUrl(origin: string, token: string): string {
-  return `${origin}/portal/activar#t=${token}`;
+  return `${origin}/portal/activar/#t=${token}`;
 }
 
 /** Edad cumplida hoy para una fecha AAAA-MM-DD (mismo cálculo que la API, en UTC). */

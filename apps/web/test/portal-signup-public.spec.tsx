@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import { renderToStaticMarkup } from 'react-dom/server';
 import QrPoster from '../components/QrPoster';
 import {
-  activatePortalAccount, PublicRequestError, sendSignupRequest, submitSignupRequest, takeTokenFromLocation, tokenFromHash,
+  activatePortalAccount, activationUrl, intakeUrl, PublicRequestError, sendSignupRequest, submitSignupRequest, takeTokenFromLocation, tokenFromHash,
 } from '../lib/portal-signup';
 
 /* Condiciones de Argos sobre las páginas públicas del alta por QR (feat/s5-web). */
@@ -103,5 +103,22 @@ describe('Cartel imprimible', () => {
     expect(html).not.toContain('app.example.test');
     expect(html).not.toMatch(/portal\/alta/);
     expect(html).not.toMatch(/Marta|Psicóloga|Ficticio/);
+  });
+});
+
+describe('Enlaces del QR y de activación (sitio estático)', () => {
+  it('llevan barra final antes del fragmento y el token solo en el fragmento', () => {
+    expect(intakeUrl('https://app.example.test', TOKEN)).toBe(`https://app.example.test/portal/alta/#t=${TOKEN}`);
+    expect(activationUrl('https://app.example.test', TOKEN)).toBe(`https://app.example.test/portal/activar/#t=${TOKEN}`);
+  });
+});
+
+describe('takeTokenFromLocation en el sitio estático (/portal/alta/ con barra)', () => {
+  it('lee el token y deja la ruta con barra final y sin fragmento', () => {
+    const win = fakeWindow({ pathname: '/portal/alta/', hash: `#t=${TOKEN}` });
+    expect(takeTokenFromLocation(win)).toBe(TOKEN);
+    expect(win.history.replaceState).toHaveBeenCalledWith(null, '', '/portal/alta/');
+    expect(win.location.pathname).toBe('/portal/alta/');
+    expect(win.location.hash).toBe('');
   });
 });

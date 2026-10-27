@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
 import { processLabel } from '@/lib/clinical';
+import { patientHref } from '@/lib/routes';
 
 type Patient = {
   id: string;
@@ -113,11 +114,11 @@ export default function FollowUpPage() {
                     </div>
                   </div>
                   <div className="follow-up-actions">
-                    <Link href={`/patients/${patient.id}/plan`} className="button">Plan y evolución</Link>
-                    <Link href={`/patients/${patient.id}/tasks`} className="button secondary">Tareas</Link>
-                    <Link href={`/patients/${patient.id}/assessments`} className="button secondary">Escalas</Link>
+                    <Link href={patientHref(patient.id, 'plan')} className="button">Plan y evolución</Link>
+                    <Link href={patientHref(patient.id, 'tasks')} className="button secondary">Tareas</Link>
+                    <Link href={patientHref(patient.id, 'assessments')} className="button secondary">Escalas</Link>
                     <Link href={`/agenda?patientId=${patient.id}`} className="button secondary">Sesiones</Link>
-                    <Link href={`/patients/${patient.id}`} className="button secondary">Ficha</Link>
+                    <Link href={patientHref(patient.id)} className="button secondary">Ficha</Link>
                   </div>
                 </article>
               ))}

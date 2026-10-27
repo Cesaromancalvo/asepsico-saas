@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ReactNode } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { patientHref } from '@/lib/routes';
 import { isStaffWithProcessAccess, PatientClinicalAccess, usePatientClinicalAccess, useViewer, Viewer } from '@/lib/clinical';
 
 export type SubpageMode = 'loading' | 'treating' | 'blocked';
@@ -26,13 +27,13 @@ export function ClinicalSubpageView({ mode, patientId, section, children }: { mo
     <div className="app-layout"><Sidebar /><main className="patient-record-page">
       {mode === 'loading' ? <div className="patient-record-loading" role="status">Cargando…</div> : (
         <>
-          <Link href={`/patients/${patientId}`} className="patient-record-back">← Volver a la ficha</Link>
+          <Link href={patientHref(patientId)} className="patient-record-back">← Volver a la ficha</Link>
           <div className="e1-notice info" role="note">
             <div>
               <strong>{section}: solo para quien atiende al paciente</strong>
               <p>Esta sección la usa el profesional que atiende al paciente. Si tienes un acceso excepcional, la información que puedes consultar está en la ficha, en solo lectura.</p>
             </div>
-            <div className="e1-notice-actions"><Link href={`/patients/${patientId}`} className="button secondary">Ir a la ficha</Link></div>
+            <div className="e1-notice-actions"><Link href={patientHref(patientId)} className="button secondary">Ir a la ficha</Link></div>
           </div>
         </>
       )}

@@ -17,12 +17,18 @@ export class PortalController {
   async login(@Body() dto:PortalLoginDto, @Res({passthrough:true}) res:Response) {
     const result = await this.service.login(dto);
     res.cookie('portal_access_token', result.accessToken, { httpOnly:true, secure:process.env.NODE_ENV==='production', sameSite:'lax', path:'/api/v1/portal', maxAge:30*60*1000 });
-    res.cookie('csrf_token', randomBytes(32).toString('base64url'), { httpOnly:false, secure:process.env.NODE_ENV==='production', sameSite:'lax', path:'/', maxAge:30*60*1000 });
+    // csrf_token con COOKIE_DOMAIN (p. ej. .asepsico.es): la web (app.) tiene que poder leerlo
+    // con document.cookie para reenviarlo en x-csrf-token. portal_access_token sigue host-only
+    // en la API: es httpOnly y solo lo necesita la API. Con COOKIE_DOMAIN se borra antes el
+    // csrf_token antiguo host-only de la API (de antes de COOKIE_DOMAIN): si conviviera con el
+    // nuevo, el navegador enviaría los dos y el double-submit podría comparar con el antiguo.
+    if (process.env.COOKIE_DOMAIN) res.clearCookie('csrf_token', { secure:process.env.NODE_ENV==='production', sameSite:'lax', path:'/' });
+    res.cookie('csrf_token', randomBytes(32).toString('base64url'), { httpOnly:false, secure:process.env.NODE_ENV==='production', sameSite:'lax', path:'/', domain:process.env.COOKIE_DOMAIN || undefined, maxAge:30*60*1000 });
     return { patient:result.patient, mustChangePassword:result.mustChangePassword };
   }
 
   @Post('portal/auth/logout') @UseGuards(CsrfGuard)
-  logout(@Res({passthrough:true}) res:Response) { res.clearCookie('portal_access_token',{path:'/api/v1/portal'}); res.clearCookie('csrf_token',{path:'/'}); return {ok:true}; }
+  logout(@Res({passthrough:true}) res:Response) { res.clearCookie('portal_access_token',{path:'/api/v1/portal'}); res.clearCookie('csrf_token',{path:'/',domain:process.env.COOKIE_DOMAIN || undefined}); return {ok:true}; }
 
   @Get('portal/dashboard') @UseGuards(PortalGuard)
   dashboard(@Req() req:any) { return this.service.dashboard(req.portalUser); }

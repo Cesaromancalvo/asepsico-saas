@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
+import { patientHref, queryId } from '@/lib/routes';
 
 type Patient = { id:string; firstName:string; lastName:string; status:string };
 type DocumentItem = { id:string; title:string; type:string; description?:string|null; fileName?:string|null; mimeType?:string|null; storageKey?:string|null; createdAt:string };
@@ -17,7 +18,7 @@ function fmt(value?:string|null){return value?new Intl.DateTimeFormat('es-ES',{d
 function label(value:string){return value.replaceAll('_',' ').toLowerCase().replace(/^./,c=>c.toUpperCase());}
 
 export default function PatientDocumentsPage(){
-  const {id:patientId}=useParams<{id:string}>();
+  const patientId = queryId(useSearchParams().get('id'));
   const [patient,setPatient]=useState<Patient|null>(null);
   const [documents,setDocuments]=useState<DocumentItem[]>([]);
   const [consents,setConsents]=useState<ConsentItem[]>([]);
@@ -71,7 +72,7 @@ export default function PatientDocumentsPage(){
   if(!patient)return <div className="app-layout"><Sidebar/><main className="documents-page"><div className="agenda-error">{error||'Paciente no encontrado'}</div></main></div>;
 
   return <div className="app-layout"><Sidebar syncText="Gestión documental"/><main className="documents-page">
-    <header className="patient-plan-header"><div><Link href={`/patients/${patient.id}`} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Documentos</div><h1>Documentos e informes de {patient.firstName} {patient.lastName}</h1><p>Registro documental, consentimientos y elaboración trazable de informes clínicos.</p></div><div className="patient-record-actions"><Link href={`/patients/${patient.id}/assessments`} className="button secondary">Escalas</Link><Link href={`/patients/${patient.id}/plan`} className="button secondary">Plan</Link></div></header>
+    <header className="patient-plan-header"><div><Link href={patientHref(patient.id)} className="patient-record-back">← Volver a la ficha clínica</Link><div className="patient-record-kicker">Ficha · Documentos</div><h1>Documentos e informes de {patient.firstName} {patient.lastName}</h1><p>Registro documental, consentimientos y elaboración trazable de informes clínicos.</p></div><div className="patient-record-actions"><Link href={patientHref(patient.id, 'assessments')} className="button secondary">Escalas</Link><Link href={patientHref(patient.id, 'plan')} className="button secondary">Plan</Link></div></header>
     {error&&<div className="agenda-error">{error}</div>}
 
     <section className="document-summary-grid"><article><span>Documentos</span><strong>{documents.length}</strong><small>Registros clínicos y administrativos</small></article><article><span>Consentimientos firmados</span><strong>{summary.signed}</strong><small>{summary.pending} pendientes</small></article><article><span>Informes finales</span><strong>{summary.final}</strong><small>{reports.length} informes totales</small></article></section>

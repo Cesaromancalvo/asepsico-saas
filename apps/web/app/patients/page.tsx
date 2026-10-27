@@ -27,6 +27,7 @@ import {
   usePatientClinicalAccess,
   useViewer,
 } from '@/lib/clinical';
+import { patientHref, processHref } from '@/lib/routes';
 
 type PatientStatus =
   | 'ACTIVE'
@@ -680,7 +681,7 @@ export default function PatientsPage() {
                           event.stopPropagation()
                         }
                       >
-                        <Link href={`/patients/${patient.id}`} className="button">Abrir ficha</Link>
+                        <Link href={patientHref(patient.id)} className="button">Abrir ficha</Link>
 
                         {patient.status ===
                           'ACTIVE' && (
@@ -851,7 +852,7 @@ export default function PatientsPage() {
 
                   {selectedPatient.summary.activeProcess && (
                     <Link
-                      href={`/patients/${selectedPatient.id}/processes/${selectedPatient.summary.activeProcess.id}`}
+                      href={processHref(selectedPatient.id, selectedPatient.summary.activeProcess.id)}
                       className="button secondary"
                       style={{ marginTop: 8 }}
                     >
