@@ -20,17 +20,17 @@ export type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHE
 export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 
 /**
- * Versión de la política que muestra (y envía) la landing. Debe estar entre las que acepta la API
- * (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta también lista-espera-v2 y v3).
- */
-export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v4';
-
-/**
- * Política con teléfono obligatorio (27/10/2026). La API ya la acepta. Cuando la landing la publique
- * (orden: API → Lex publica v5 → landing), WAITLIST_PRIVACY_POLICY_VERSION pasa a valer esto y la
- * landing envía `phone`. Con v2–v4 la landing NO debe enviar `phone` (400 WAITLIST_PHONE_NOT_INFORMED).
+ * Política con teléfono obligatorio (27/10/2026). Con ella la landing envía `phone`. Con v2–v4 NO se
+ * envía `phone` (400 WAITLIST_PHONE_NOT_INFORMED).
  */
 export const WAITLIST_PHONE_POLICY_VERSION = 'lista-espera-v5';
+
+/**
+ * Versión de la política que muestra (y envía) la landing: la v5 desde el 27/10/2026. Debe estar entre
+ * las que acepta la API (apps/api/src/waitlist/waitlist.config.ts, que durante la transición acepta
+ * también lista-espera-v2 a v4). Orden de despliegue: API → política v5 → landing.
+ */
+export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v5';
 
 export interface WaitlistFormTokenResponse {
   formToken: string;

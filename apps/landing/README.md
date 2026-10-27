@@ -18,8 +18,9 @@ apps/landing/
     index.html             <- la landing
     aviso-legal/index.html <- aviso legal (texto final de Argos)
     privacidad/index.html  <- política de privacidad y cookies (versión sin analítica)
-    privacidad-lista-espera/index.html    <- política de la lista de espera v4 (formulario propio)
-    privacidad-lista-espera/v3/index.html <- política v3 archivada (altas del 17/10 al 22/10/2026 con lista-espera-v3; la v4 la enlaza como versión anterior); noindex
+    privacidad-lista-espera/index.html    <- política de la lista de espera v5 (formulario propio, teléfono obligatorio)
+    privacidad-lista-espera/v4/index.html <- política v4 archivada (altas del 22/10 al 27/10/2026 con lista-espera-v4; la v5 la enlaza como versión anterior); noindex
+    privacidad-lista-espera/v3/index.html <- política v3 archivada (altas del 17/10 al 22/10/2026 con lista-espera-v3; la v4 archivada la enlaza); noindex
     privacidad-lista-espera/v2/index.html <- política v2 archivada (altas hechas con la versión lista-espera-v2; la vigente la enlaza en el apartado 4); noindex
     privacidad-lista-espera/v1/index.html <- política v1 (Google Forms), solo para la red de seguridad; noindex
     css/styles.css
@@ -107,9 +108,9 @@ incidencias de seguridad que afecten a datos siguen el protocolo de brechas (Lex
 | `FEATURES.ownWaitlistForm` | `true` | Formulario propio de la lista de espera (sección `#apuntate`), enviado con `fetch` a `WAITLIST_API_URL`. Todos los botones "Apúntate" llevan a esa sección (`href="#apuntate"` en el HTML) y ponen el foco en el primer campo. **Apagado = red de seguridad**: la sección desaparece, los botones vuelven a `FORM_URL` (Google Forms, pestaña nueva) y los enlaces de privacidad a `FORM_PRIVACY_URL_FALLBACK` (v1). Si se apaga, cambiar también a mano el enlace de privacidad dentro del Google Form a `/privacidad-lista-espera/v1/` |
 | (red de seguridad) | — | **Si se apaga `FEATURES.ownWaitlistForm`, en el mismo despliegue** hay que restaurar la mención a Google Forms en el apartado 5 de `/aviso-legal/` y el texto anterior del apartado 2 de `/privacidad/` (auditoría de Lex Psi, 12/10): si no, los dos textos dirían algo falso |
 | `WAITLIST_API_URL` | `https://asepsico-api.onrender.com/api/v1` | API de la lista de espera. Único sitio con la URL. Si cambia el host: CSP (`connect-src`) y `CONNECT_ORIGINS` de `scripts/check-landing.mjs` |
-| `WAITLIST_POLICY_VERSION` | `lista-espera-v4` | Se envía en `privacyPolicyVersion`. Tiene que coincidir con la versión visible en `/privacidad-lista-espera/` y estar entre las que acepta la API (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`: v2, v3 y v4 durante la transición). Al cambiarla, **desplegar primero la API y después la landing**; si no, el formulario devuelve 400 |
+| `WAITLIST_POLICY_VERSION` | `lista-espera-v5` | Se envía en `privacyPolicyVersion`. Tiene que coincidir con la versión visible en `/privacidad-lista-espera/` y estar entre las que acepta la API (`ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS`: v2 a v5 durante la transición). Con v5 el formulario envía `phone` (obligatorio, tal como lo escribe la persona; la API lo normaliza a E.164). El teléfono no se guarda en el navegador ni va a la URL ni a ninguna analítica. Al cambiarla, **desplegar primero la API y después la landing**; si no, el formulario devuelve 400 |
 | `FORM_URL` | formulario de Google Forms de la lista de espera | Solo se usa con `FEATURES.ownWaitlistForm: false` (sin JavaScript, los botones van a `#apuntate`, que muestra un aviso y el email de contacto) |
-| `FORM_PRIVACY_URL` | `/privacidad-lista-espera/` | Política de la lista de espera v4 (Lex Psi, 22/10/2026). Enlazada en el formulario, la FAQ 5, la llamada final y el pie, con `href` estático |
+| `FORM_PRIVACY_URL` | `/privacidad-lista-espera/` | Política de la lista de espera v5 (Lex Psi, 27/10/2026). Enlazada en el formulario, la FAQ 5, la llamada final y el pie, con `href` estático |
 | `FORM_PRIVACY_URL_FALLBACK` | `/privacidad-lista-espera/v1/` | Política v1 (Google Forms, texto del Jefe del 29/09). Solo se enlaza con el formulario propio apagado. `noindex` y fuera del sitemap |
 | `CONTACT_EMAIL` | `asepsico1@gmail.com` | También está escrito en los `mailto:` de las páginas (respaldo sin JavaScript) |
 | `POPUP_TITLE` | "Sé de los primeros en probar AsePsico" | Título del aviso al entrar. Mientras esté vacío, el aviso no se muestra aunque `FEATURES.leadPopup` esté encendido |
@@ -217,7 +218,7 @@ Comprobaciones para Dora tras el primer despliegue (auditoría SEO de Mou, C4 y 
 
 ## Sitemap
 
-La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`; `/privacidad-lista-espera/v1/`, `/v2/` y `/v3/` llevan `noindex` y quedan fuera), con `lastmod`
+La home, `/privacidad/` y `/privacidad-lista-espera/` (las tres sin `noindex`; `/privacidad-lista-espera/v1/`, `/v2/`, `/v3/` y `/v4/` llevan `noindex` y quedan fuera), con `lastmod`
 (cambiarlo solo cuando cambie el contenido). Nunca una URL con `noindex` (p. ej. `404.html`), oculta o
 que redirija. `/aviso-legal/` queda fuera hasta que Lex Psi decida si lleva `noindex` (domicilio).
 

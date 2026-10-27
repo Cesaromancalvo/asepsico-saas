@@ -915,3 +915,27 @@ img { max-width: 100%; height: auto; }
   .reveal { opacity: 1 !important; transform: none !important; }
   .topbar, .leadpop, .grain::before { display: none; }
 }
+
+/* Teléfono de la lista de espera (lista-espera-v5): línea legal pequeña bajo la ayuda */
+.sfield__legal { margin: -4px 0 0; font-size: .8125rem; line-height: 1.5; color: var(--ink-soft); }
+
+/* Acceso a la herramienta (cabecera): enlace secundario, el botón principal sigue siendo la lista de espera */
+.topbar__login {
+  display: inline-flex; align-items: center; min-height: 40px; padding: .45rem .9rem; border-radius: 999px;
+  border: 1.5px solid #8E8AA8; color: var(--ink); font-weight: 600; font-size: .9375rem; line-height: 1.2;
+  text-decoration: none; white-space: nowrap; background: rgba(255, 255, 255, .6);
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+/* Con «Acceder» la barra necesita más ancho: el menú de secciones se oculta antes (antes 1020 px) */
+@media (max-width: 1180px) { .topbar__nav { display: none; } }
+.topbar .btn--sm { white-space: nowrap; }
+.topbar__login:hover { background: var(--tint); border-color: var(--violet); color: var(--violet-ink); text-decoration: none; }
+@media (max-width: 480px) {
+  .topbar__inner { gap: .5rem; }
+  /* En móvil, solo texto: el botón de la lista de espera sigue entero y en una línea */
+  .topbar__login { border-color: transparent; background: none; padding: .45rem .4rem; text-decoration: underline; text-underline-offset: 3px; }
+  .topbar .btn--sm { padding: .45rem .85rem; white-space: nowrap; }
+}
+@media (max-width: 374px) {
+  .brand__name { display: none; }
+}

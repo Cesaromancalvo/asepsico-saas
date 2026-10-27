@@ -49,7 +49,8 @@ async function formToken(ip) {
 function payload(token, extra = {}) {
   return {
     name: NAME, email: EMAIL, situation: 'SELF_EMPLOYED', tools: 'Agenda ficticia de CI', professionalsCount: 1,
-    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v4', formToken: token, ...extra,
+    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v5', phone: '+34 600 000 001',
+    formToken: token, ...extra,
   };
 }
 
