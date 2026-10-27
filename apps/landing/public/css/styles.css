@@ -916,9 +916,6 @@ img { max-width: 100%; height: auto; }
   .topbar, .leadpop, .grain::before { display: none; }
 }
 
-/* Teléfono de la lista de espera (lista-espera-v5): línea legal pequeña bajo la ayuda */
-.sfield__legal { margin: -4px 0 0; font-size: .8125rem; line-height: 1.5; color: var(--ink-soft); }
-
 /* Acceso a la herramienta (cabecera): enlace secundario, el botón principal sigue siendo la lista de espera */
 .topbar__login {
   display: inline-flex; align-items: center; min-height: 40px; padding: .45rem .9rem; border-radius: 999px;

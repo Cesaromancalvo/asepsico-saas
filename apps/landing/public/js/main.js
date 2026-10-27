@@ -760,7 +760,7 @@
         if (code === 'WAITLIST_PHONE_REQUIRED' || code === 'WAITLIST_PHONE_INVALID') {
           phoneError(code === 'WAITLIST_PHONE_REQUIRED' ? 'required' : 'invalid');
           say(MSG.invalid, 'error');
-          inPhone.focus();
+          if (inPhone) inPhone.focus();
           return;
         }
         if (code === 'WAITLIST_PHONE_NOT_INFORMED') { say(MSG.phoneNotInformed, 'error'); return; }

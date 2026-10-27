@@ -107,7 +107,7 @@ function buildDom() {
   };
   field('wl-name').setAttribute('aria-describedby', 'wl-name-err');
   field('wl-email').setAttribute('aria-describedby', 'wl-email-err');
-  field('wl-phone').setAttribute('aria-describedby', 'wl-phone-help wl-phone-legal wl-phone-err');
+  field('wl-phone').setAttribute('aria-describedby', 'wl-phone-err');
   field('wl-count').setAttribute('aria-describedby', 'wl-count-err');
   field('wl-tool-other').setAttribute('aria-describedby', 'wl-tool-other-help wl-tool-other-err');
   const toolOtherWrap = form.add('[data-wl-tool-other-wrap]', new El('tool-other-wrap', { hidden: true }));
