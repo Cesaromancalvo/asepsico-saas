@@ -11,7 +11,7 @@ import { getJwtSecret } from '../src/auth/jwt-secret.util';
 import { encryptModelData } from '../src/common/crypto/clinical-crypto';
 import { decryptField } from '../src/common/crypto/field-encryption';
 import { getCurrentLegalDocuments } from '../src/legal/legal-documents';
-import { clearWaitlistPhoneByEmail, setWaitlistPhone } from '../src/waitlist/waitlist-admin';
+import { clearWaitlistPhoneByEmail, exportWaitlist, setWaitlistPhone } from '../src/waitlist/waitlist-admin';
 import { hashWaitlistEmail, issueFormToken } from '../src/waitlist/waitlist-crypto';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
 
@@ -202,6 +202,23 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
       expect(text).not.toContain(V4_EMAIL);
       expect(text).not.toMatch(/612.?000.?222|900123456/);
     }
+  });
+
+  it('export: sin teléfono por defecto, con --with-phone solo si se pide, y PLATFORM_WAITLIST_EXPORTED sin datos', async () => {
+    await setWaitlistPhone(prisma, V4_EMAIL, '612 000 222');
+    const before = new Date();
+    let plain = '';
+    let withPhone = '';
+    const a = await exportWaitlist(prisma, { write: (csv) => { plain = csv; } });
+    const b = await exportWaitlist(prisma, { withPhone: true, write: (csv) => { withPhone = csv; } });
+    expect(plain).not.toContain(PHONES[1]);
+    expect(plain.split('\r\n')[0]).not.toContain('phone');
+    expect(withPhone).toContain(`'${PHONES[1]}`);
+    const audit = await prisma.platformAuditLog.findMany({ where: { action: 'PLATFORM_WAITLIST_EXPORTED', createdAt: { gte: before } }, orderBy: { createdAt: 'asc' } });
+    expect(audit.map((x) => [x.actorId, x.entityId, x.metadata])).toEqual([[null, null, { count: a.count, withPhone: false }], [null, null, { count: b.count, withPhone: true }]]);
+    // Si escribir el archivo falla, no queda auditoría de un export que no ha ocurrido.
+    await expect(exportWaitlist(prisma, { write: () => { throw new Error('el archivo ya existe'); } })).rejects.toThrow('el archivo ya existe');
+    expect(await prisma.platformAuditLog.count({ where: { action: 'PLATFORM_WAITLIST_EXPORTED', createdAt: { gte: before } } })).toBe(2);
   });
 
   it('nada del teléfono (ni del email) en PlatformAuditLog ni en los logs de la app', async () => {

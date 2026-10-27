@@ -69,6 +69,12 @@ El token caduca a las 2 horas y no se puede usar hasta pasados `minSeconds` segu
 | `formToken` | string | sí | el del paso 1 |
 | `website` | string | no | honeypot: input de texto oculto con CSS (clase, no `style=`), `tabindex="-1"`, `autocomplete="off"`, `aria-hidden="true"`; siempre vacío |
 
+> **Pendiente (condición 3 de Argos, 27/10/2026): retirar `lista-espera-v2`, `lista-espera-v3` y
+> `lista-espera-v4` de `ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS` (y v3/v4 de
+> `WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL`) en cuanto la landing publicada envíe
+> `lista-espera-v5` con `phone`.** No antes: mientras la landing siga en v4, quitarlas haría que
+> todas las altas dieran 400. Las altas ya guardadas con v2–v4 no cambian.
+
 ## Respuestas
 
 | Estado | Cuerpo | Qué hacer en la landing |
@@ -98,7 +104,8 @@ Límites por IP: 5 envíos y 80 tokens cada 10 minutos.
 ## Gestión (César, por CLI)
 
 ```bash
-npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv   # fuera del repo; no sobrescribe
+npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv   # fuera del repo; no sobrescribe; SIN teléfono
+npm run waitlist:export -- --out ~/ruta/privada/lista-espera.csv --with-phone   # solo si hace falta el teléfono
 npm run waitlist:delete -- --email persona@example.com             # supresión
 npm run waitlist:purge -- --dry-run                                # purga por plazo (12 meses)
 npm run waitlist:confirm-commercial -- --email persona@example.com # tras su "Sí" por email
@@ -109,7 +116,9 @@ printf '%s\n' "$WL_EMAIL" | npm run waitlist:set-phone -- --clear           # bo
 
 `waitlist:set-phone` no acepta el email ni el teléfono como argumentos (quedarían en el historial y
 en la lista de procesos): se leen con `read -rs WL_EMAIL; read -rs WL_PHONE` y se pasan por stdin
-(o el CLI los pide sin mostrarlos si se lanza en una terminal). Ver ops/PILOT_RUNBOOK.md.
+(o el CLI los pide sin mostrarlos si se lanza en una terminal). `--allow-dev-secret` solo se admite
+con una `DATABASE_URL` local (localhost, 127.0.0.1, ::1 o *.localhost). Cada export deja
+`PLATFORM_WAITLIST_EXPORTED` (recuento y si lleva teléfono) en `PlatformAuditLog`. Ver ops/PILOT_RUNBOOK.md.
 
 - **Claves de producción solo en ejecuciones puntuales**: `DATABASE_URL`, `WAITLIST_SECRET` y
   `FIELD_ENCRYPTION_*` se pasan en la propia línea de la orden (o en una subshell que se cierra al

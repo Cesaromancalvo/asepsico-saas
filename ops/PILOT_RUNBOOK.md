@@ -453,8 +453,10 @@ unset PROD_DB_URL WL_SECRET FIELD_KEY WL_EMAIL WL_PHONE
 lugar de `FIELD_ENCRYPTION_KEY`; sin ninguna de ellas el CLI se niega a guardar.) Solo imprime
 «Teléfono guardado (cifrado).», «Teléfono borrado…», «no válido» o «no encontrada». Valida con la
 misma regla que la API y deja auditoría `PLATFORM_WAITLIST_PHONE_SET` / `_CLEARED` sin actor y sin
-datos. **Nunca** cambiar el teléfono con SQL a mano: se guardaría en claro. En `waitlist:export` la
-columna `phone` sale con un `'` delante (`'+34612345678`): es la protección contra fórmulas de
+datos. **Nunca** cambiar el teléfono con SQL a mano: se guardaría en claro. `waitlist:export` **no** incluye el
+teléfono salvo con `--with-phone` (úsalo solo si de verdad lo necesitas fuera del panel) y cada
+export queda en `PlatformAuditLog` (`PLATFORM_WAITLIST_EXPORTED`, solo recuento). Con
+`--with-phone`, la columna `phone` sale con un `'` delante (`'+34612345678`): es la protección contra fórmulas de
 Excel/Sheets; quitarlo al copiar.
 
 **Quitar el acceso:** borrar o vaciar `PLATFORM_ADMIN_EMAILS` en Render (redespliega) o desactivar

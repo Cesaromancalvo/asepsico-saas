@@ -12,12 +12,24 @@ import { normalizeWaitlistPhone } from './waitlist-phone';
  * compartida para poder probarla sin base de datos. Ninguna función registra valores personales.
  */
 
+/**
+ * Columnas del export por defecto: SIN teléfono (condición de Argos). El teléfono solo sale con
+ * --with-phone explícito (WAITLIST_CSV_COLUMNS_WITH_PHONE, justo después de email).
+ */
 export const WAITLIST_CSV_COLUMNS = [
-  'createdAt', 'name', 'email', 'phone', 'situation', 'tools', 'professionalsCount', 'source',
+  'createdAt', 'name', 'email', 'situation', 'tools', 'professionalsCount', 'source',
   'privacyPolicyVersion', 'privacyAcceptedAt',
   'commercialConsentRequested', 'commercialConsentRequestedAt',
   'commercialConsent', 'commercialConsentAt', 'commercialConsentWithdrawnAt',
 ] as const;
+
+export const WAITLIST_CSV_COLUMNS_WITH_PHONE = [
+  ...WAITLIST_CSV_COLUMNS.slice(0, WAITLIST_CSV_COLUMNS.indexOf('email') + 1),
+  'phone',
+  ...WAITLIST_CSV_COLUMNS.slice(WAITLIST_CSV_COLUMNS.indexOf('email') + 1),
+] as const;
+
+type CsvColumn = (typeof WAITLIST_CSV_COLUMNS_WITH_PHONE)[number];
 
 type Row = Record<string, unknown>;
 
@@ -32,13 +44,13 @@ export function csvCell(value: unknown): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export function waitlistCsv(rows: Row[]): { csv: string; unreadable: number } {
+export function waitlistCsv(rows: Row[], columns: readonly CsvColumn[] = WAITLIST_CSV_COLUMNS): { csv: string; unreadable: number } {
   let unreadable = 0;
-  const lines = [WAITLIST_CSV_COLUMNS.join(',')];
+  const lines = [columns.join(',')];
   for (const raw of rows) {
     const row = decryptModel('waitlistEntry', raw);
-    if ([row.name, row.email, row.tools, row.phone].includes(DECRYPTION_FAILED_PLACEHOLDER)) unreadable++;
-    lines.push(WAITLIST_CSV_COLUMNS.map((column) => csvCell(row[column])).join(','));
+    if (columns.some((column) => row[column] === DECRYPTION_FAILED_PLACEHOLDER)) unreadable++;
+    lines.push(columns.map((column) => csvCell(row[column])).join(','));
   }
   return { csv: `${lines.join('\r\n')}\r\n`, unreadable };
 }
@@ -57,13 +69,27 @@ export function resolveExportPath(out: string | undefined, repoRoot: string, cwd
   return target;
 }
 
-export async function exportWaitlist(prisma: PrismaClient) {
-  const rows = await prisma.waitlistEntry.findMany({
-    where: { deletedAt: null },
-    orderBy: { createdAt: 'asc' },
-    select: Object.fromEntries(WAITLIST_CSV_COLUMNS.map((c) => [c, true])) as Record<(typeof WAITLIST_CSV_COLUMNS)[number], true>,
-  });
-  return { ...waitlistCsv(rows), count: rows.length };
+/**
+ * Export del CLI waitlist:export. Lee las altas activas, genera el CSV, deja
+ * PLATFORM_WAITLIST_EXPORTED (solo recuento y si lleva teléfono; sin actor ni datos personales) y
+ * llama a `write` con el CSV, todo en la MISMA transacción: si escribir el archivo falla, no queda
+ * auditoría de un export que no ha ocurrido. Si falla el commit tras escribir, quien llama borra
+ * el archivo.
+ */
+export async function exportWaitlist(prisma: PrismaClient, options: { withPhone?: boolean; write?: (csv: string) => void } = {}) {
+  const withPhone = options.withPhone === true;
+  const columns = withPhone ? WAITLIST_CSV_COLUMNS_WITH_PHONE : WAITLIST_CSV_COLUMNS;
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.waitlistEntry.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: Object.fromEntries(columns.map((c) => [c, true])) as Record<CsvColumn, true>,
+    });
+    const result = waitlistCsv(rows, columns);
+    await writePlatformAudit(tx, { actorId: null, action: PLATFORM_AUDIT_ACTIONS.WAITLIST_EXPORTED, entityType: 'WaitlistEntry', metadata: { count: rows.length, withPhone } });
+    options.write?.(result.csv);
+    return { ...result, count: rows.length };
+  }, { timeout: 30_000 });
 }
 
 /** Lo que queda de una fila suprimida: ningún dato personal, ni siquiera el hash del email. */

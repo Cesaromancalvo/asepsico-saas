@@ -18,7 +18,9 @@ import { WaitlistService } from '../src/waitlist/waitlist.service';
 import { WaitlistNotifier, waitlistNotifyBody } from '../src/waitlist/waitlist-notifier';
 import { issueFormToken } from '../src/waitlist/waitlist-crypto';
 import { normalizeWaitlistPhone } from '../src/waitlist/waitlist-phone';
-import { deleteWaitlistEntry, purgeWaitlist, suppressWaitlistEntryById, WAITLIST_CSV_COLUMNS, waitlistCsv } from '../src/waitlist/waitlist-admin';
+import { deleteWaitlistEntry, exportWaitlist, purgeWaitlist, suppressWaitlistEntryById, WAITLIST_CSV_COLUMNS, WAITLIST_CSV_COLUMNS_WITH_PHONE, waitlistCsv } from '../src/waitlist/waitlist-admin';
+import { isLocalDatabaseUrl } from '../prisma/scripts/waitlist-script-utils';
+import { spawnSync } from 'node:child_process';
 import { WAITLIST_PATH, WAITLIST_POLICY_VERSIONS_WITH_PHONE } from '../src/waitlist/waitlist.config';
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 
@@ -248,14 +250,77 @@ describe('Supresión, purga y export con teléfono (criterio 8 y CSV)', () => {
     }
   });
 
-  it('el CSV lleva phone justo después de email, descifrado y con el + neutralizado', () => {
-    expect(WAITLIST_CSV_COLUMNS.indexOf('phone')).toBe(WAITLIST_CSV_COLUMNS.indexOf('email') + 1);
+  it('CSV por defecto SIN teléfono; con WAITLIST_CSV_COLUMNS_WITH_PHONE va justo después de email, descifrado y con el + neutralizado', () => {
+    expect(WAITLIST_CSV_COLUMNS).not.toContain('phone');
+    expect(WAITLIST_CSV_COLUMNS_WITH_PHONE.indexOf('phone')).toBe(WAITLIST_CSV_COLUMNS_WITH_PHONE.indexOf('email') + 1);
+    expect(WAITLIST_CSV_COLUMNS_WITH_PHONE.filter((c) => c !== 'phone')).toEqual([...WAITLIST_CSV_COLUMNS]);
     const row = encryptModelData('waitlistEntry', { createdAt: new Date('2026-10-27T10:00:00Z'), name: 'Persona Ficticia', email: EMAIL, phone: PHONE_E164, tools: null, privacyPolicyVersion: 'lista-espera-v5' });
-    const { csv, unreadable } = waitlistCsv([row]);
+    const plain = waitlistCsv([row]);
+    expect(plain.csv).not.toContain(PHONE_DIGITS);
+    expect(plain.csv.split('\r\n')[0]).not.toContain('phone');
+    const { csv, unreadable } = waitlistCsv([row], WAITLIST_CSV_COLUMNS_WITH_PHONE);
     expect(unreadable).toBe(0);
     expect(csv.split('\r\n')[1].split(',')[3]).toBe(`'${PHONE_E164}`);
-    const bad = waitlistCsv([{ ...row, phone: 'enc:v1:AAAA:BBBB:CCCC' }]);
-    expect(bad.unreadable).toBe(1);
+    expect(waitlistCsv([{ ...row, phone: 'enc:v1:AAAA:BBBB:CCCC' }], WAITLIST_CSV_COLUMNS_WITH_PHONE).unreadable).toBe(1);
+    expect(waitlistCsv([{ ...row, phone: 'enc:v1:AAAA:BBBB:CCCC' }]).unreadable).toBe(0); // sin la columna, no cuenta
+  });
+
+  it('waitlist:export solo lee phone con --with-phone y deja PLATFORM_WAITLIST_EXPORTED {count, withPhone} en la misma transacción', async () => {
+    const row = encryptModelData('waitlistEntry', { createdAt: new Date('2026-10-27T10:00:00Z'), name: 'Persona Ficticia', email: EMAIL, phone: PHONE_E164, privacyPolicyVersion: 'lista-espera-v5' });
+    const make = () => {
+      const tx = { waitlistEntry: { findMany: jest.fn(async () => [row]) }, platformAuditLog: { create: jest.fn(async () => ({})) } };
+      return { tx, prisma: { $transaction: jest.fn(async (fn: any) => fn(tx)) } as any };
+    };
+    for (const withPhone of [false, true]) {
+      const { tx, prisma } = make();
+      let written = '';
+      const res = await exportWaitlist(prisma, { withPhone, write: (csv) => { written = csv; } });
+      expect(res.count).toBe(1);
+      expect(Object.keys((tx.waitlistEntry.findMany.mock.calls[0] as any[])[0].select).includes('phone')).toBe(withPhone);
+      expect(written.includes(PHONE_E164)).toBe(withPhone);
+      const audit = (tx.platformAuditLog.create.mock.calls[0] as any[])[0].data;
+      expect(audit).toEqual({ actorId: null, action: 'PLATFORM_WAITLIST_EXPORTED', entityType: 'WaitlistEntry', entityId: null, metadata: { count: 1, withPhone } });
+      expect(JSON.stringify(audit)).not.toMatch(/612345678|telefono\.ficticio|Persona/);
+    }
+    // Si escribir el archivo falla, el error sale de la transacción (que se deshace con la auditoría).
+    const { prisma } = make();
+    await expect(exportWaitlist(prisma, { write: () => { throw new Error('EEXIST'); } })).rejects.toThrow('EEXIST');
+  });
+});
+
+describe('CLI waitlist:set-phone: --allow-dev-secret solo con BD local (condición de Argos)', () => {
+  it.each([
+    ['postgresql://u:p@localhost:5432/db', true],
+    ['postgresql://u:p@127.0.0.1/db', true],
+    ['postgresql://u:p@[::1]:5432/db', true],
+    ['postgres://u:p@db.localhost/db', true],
+    ['postgresql://u:p@dpg-ficticio.frankfurt-postgres.render.com/db', false],
+    ['postgresql://u:p@localhost.example.com/db', false],
+    ['postgresql://u:p@127.0.0.2/db', false],
+    ['postgresql://u:p@localhost/db?host=/tmp', false],
+    ['mysql://u:p@localhost/db', false],
+    ['no es una url', false],
+    ['', false],
+  ])('%j → local=%s', (url, local) => {
+    expect(isLocalDatabaseUrl(url)).toBe(local);
+  });
+
+  it('con una DATABASE_URL remota y --allow-dev-secret sale con error antes de leer o conectar, sin datos en la salida', () => {
+    const out = spawnSync(process.execPath, [require.resolve('tsx/cli'), join(__dirname, '..', 'prisma/scripts/waitlist-set-phone.ts'), '--allow-dev-secret'], {
+      input: `${EMAIL}\n+34 612 345 678\n`, encoding: 'utf8', timeout: 90_000,
+      // Host .invalid (RFC 2606): si el CLI intentara conectar, fallaría con otro mensaje.
+      env: { ...process.env, DATABASE_URL: 'postgresql://ficticio:ficticio@bd-remota.invalid:5432/asepsico', WAITLIST_SECRET: '', FIELD_ENCRYPTION_KEY: '' },
+    });
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toContain('--allow-dev-secret solo se admite con una DATABASE_URL local');
+    expect(`${out.stdout}${out.stderr}`).not.toMatch(/612.?345.?678|telefono\.ficticio/);
+  });
+
+  it('el mensaje de email de set-phone habla de stdin y del aviso oculto, no de --email', () => {
+    const cli = readFileSync(join(__dirname, '..', 'prisma/scripts/waitlist-set-phone.ts'), 'utf8');
+    expect(cli).toContain('assertEmailLookupConfig(args, email, EMAIL_STDIN_HINT)');
+    expect(cli).toMatch(/EMAIL_STDIN_HINT = '[^']*entrada estándar[^']*'/);
+    expect(cli).not.toContain('Indica el email con --email');
   });
 });
 

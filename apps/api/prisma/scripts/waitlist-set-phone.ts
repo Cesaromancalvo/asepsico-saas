@@ -15,16 +15,20 @@
  *   printf '%s\n' "$WL_EMAIL" | npm run waitlist:set-phone -- --clear
  *   unset WL_EMAIL WL_PHONE
  *
+ * --allow-dev-secret (claves de desarrollo) solo con una DATABASE_URL local: con cualquier otra, el
+ * CLI termina con error antes de conectar.
+ *
  * Entorno: DATABASE_URL, WAITLIST_SECRET (el de la API, para encontrar el email) y la clave de
  * cifrado de campos de la API (para cifrar el teléfono). Cada cambio queda en PlatformAuditLog
  * (sin actor, source 'cli') sin el teléfono ni el email. Por pantalla solo sale el resultado.
  */
 import { clearWaitlistPhoneByEmail, setWaitlistPhone } from '../../src/waitlist/waitlist-admin';
-import { assertEmailLookupConfig, runWaitlistCli } from './waitlist-script-utils';
+import { assertEmailLookupConfig, isLocalDatabaseUrl, runWaitlistCli } from './waitlist-script-utils';
 
 const args = process.argv.slice(2);
 const CLEAR = args.includes('--clear');
 const KNOWN = new Set(['--clear', '--allow-dev-secret']);
+const EMAIL_STDIN_HINT = 'Falta el email: se lee de la primera línea de la entrada estándar (printf … | npm run waitlist:set-phone) o, en una terminal, del aviso que no lo muestra. Nunca como argumento.';
 
 /** Lee una línea de una terminal sin mostrarla (modo raw). Ctrl+C cancela sin escribir nada. */
 function promptHidden(label: string): Promise<string> {
@@ -84,9 +88,13 @@ runWaitlistCli('waitlist:set-phone', async (prisma) => {
   if (unknown.length) {
     throw new Error('Argumentos no admitidos. El email y el teléfono se pasan por la entrada estándar, nunca en la orden (ver la cabecera del script).');
   }
+  // Condición de Argos: las claves de desarrollo solo contra una base de datos de este equipo. Se
+  // comprueba antes de leer nada y de conectar: con una BD remota, sale con error sin escribir.
+  if (args.includes('--allow-dev-secret') && !isLocalDatabaseUrl(process.env.DATABASE_URL)) {
+    throw new Error('--allow-dev-secret solo se admite con una DATABASE_URL local (localhost, 127.0.0.1, ::1 o *.localhost). Contra otra base de datos, usa WAITLIST_SECRET y la clave de cifrado de la API.');
+  }
   const { email, phone } = await readInputs();
-  if (!email.includes('@')) throw new Error('Falta el email (primera línea de la entrada estándar).');
-  assertEmailLookupConfig(args, email);
+  assertEmailLookupConfig(args, email, EMAIL_STDIN_HINT);
   if (!CLEAR && !phone) throw new Error('Falta el teléfono (segunda línea de la entrada estándar). Para borrarlo, usa --clear.');
   // Sin la clave de la API se cifraría con la de desarrollo y el panel lo mostraría como «No legible».
   if (!CLEAR && !process.env.FIELD_ENCRYPTION_KEY && !process.env.FIELD_ENCRYPTION_KEYS && !args.includes('--allow-dev-secret')) {

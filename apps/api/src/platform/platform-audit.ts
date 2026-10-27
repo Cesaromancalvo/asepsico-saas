@@ -9,6 +9,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 export const PLATFORM_AUDIT_ACTIONS = {
   WAITLIST_VIEWED: 'PLATFORM_WAITLIST_VIEWED',
   WAITLIST_ENTRY_SUPPRESSED: 'PLATFORM_WAITLIST_ENTRY_SUPPRESSED',
+  WAITLIST_EXPORTED: 'PLATFORM_WAITLIST_EXPORTED',
   WAITLIST_PHONE_SET: 'PLATFORM_WAITLIST_PHONE_SET',
   WAITLIST_PHONE_CLEARED: 'PLATFORM_WAITLIST_PHONE_CLEARED',
   REAUTH_FAILED: 'PLATFORM_REAUTH_FAILED',
@@ -20,6 +21,7 @@ export type PlatformAuditAction = (typeof PLATFORM_AUDIT_ACTIONS)[keyof typeof P
 type PlatformAuditMetadata =
   | { action: 'PLATFORM_WAITLIST_VIEWED'; metadata: { activeCount: number } }
   | { action: 'PLATFORM_WAITLIST_ENTRY_SUPPRESSED'; metadata: Record<string, never> }
+  | { action: 'PLATFORM_WAITLIST_EXPORTED'; metadata: { count: number; withPhone: boolean } }
   | { action: 'PLATFORM_WAITLIST_PHONE_SET'; metadata: { source: 'cli' } }
   | { action: 'PLATFORM_WAITLIST_PHONE_CLEARED'; metadata: { source: 'cli' | 'panel' } }
   | { action: 'PLATFORM_REAUTH_FAILED'; metadata: { operation: 'waitlist-delete' | 'waitlist-phone-delete' } }
