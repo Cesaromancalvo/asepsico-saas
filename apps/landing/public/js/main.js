@@ -497,7 +497,7 @@
       tooMany: 'Has hecho demasiados intentos. Prueba de nuevo en unos minutos.',
       network: 'No hemos podido conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo en unos segundos. Si sigue sin funcionar, escríbenos a ' + email + '.',
       generic: 'Algo ha fallado al enviar el formulario. Inténtalo de nuevo más tarde o escríbenos a ' + email + '.',
-      phoneNotInformed: 'No hemos podido enviar el formulario por un error de la página. Recárgala e inténtalo de nuevo; si sigue fallando, escríbenos a ' + email + '.'
+      policyRetired: 'La página se ha actualizado: recárgala y vuelve a enviar el formulario.'
     };
     // Errores del teléfono (lista-espera-v5). Nunca repiten lo que ha escrito la persona.
     var PHONE_MSG = {
@@ -763,7 +763,8 @@
           if (inPhone) inPhone.focus();
           return;
         }
-        if (code === 'WAITLIST_PHONE_NOT_INFORMED') { say(MSG.phoneNotInformed, 'error'); return; }
+        // Página antigua en caché con una política retirada (v1–v4): basta con recargar.
+        if (code === 'WAITLIST_POLICY_VERSION_RETIRED') { say(MSG.policyRetired, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
         say(MSG.generic, 'error');
       }, function (err) {
