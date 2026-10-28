@@ -365,8 +365,9 @@ jobs:
       # regresión multi-tenant de los endpoints clínicos. Crea sus propios datos ficticios.
       # waitlist-phone-db: teléfono cifrado en reposo, borrado solo del teléfono (panel y CLI
       # waitlist:set-phone) con auditoría y nada del teléfono en logs ni en PlatformAuditLog.
+      # users-set-password-db: CLI users:set-password (tokenVersion, --reset-mfa, solo ACTIVE, auditoría).
       - name: Platform admin waitlist panel tests (real PostgreSQL)
-        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db)'
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db|users-set-password-db)'
         env:
           RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
           RACE_DATABASE_REQUIRED: '1'

@@ -1,34 +1,31 @@
 /**
- * Cambia la contraseña de un PROFESIONAL (tabla User) desde la terminal del operador. La app aún
- * no permite que un profesional cambie la suya (solo existe el cambio del portal del paciente).
+ * Cambia la contraseña de un PROFESIONAL (tabla User) desde la terminal del operador, auditado.
  *
- *   DATABASE_URL="$DB_URL" npm run users:set-password -- --email persona@example.com
+ *   # Cuentas demo (por defecto solo acepta User.isDemo = true):
+ *   DATABASE_URL="$DB_URL" npm run users:set-password -- --email recepcion.demo.xxxx@example.test
+ *   DATABASE_URL="$DB_URL" npm run users:set-password -- --email terapeuta.demo.xxxx@example.test --reset-mfa
  *
- * - Antes de pedir la contraseña muestra el espacio y el rol de cada membresía de la cuenta y pide
- *   volver a escribir el correo; si no coincide, aborta (condición de Argos).
- * - Exige una terminal (TTY): la contraseña nueva se pide DOS veces sin eco. Ni por argumentos ni
- *   por tubería (`printf … |` la dejaría en el historial). Mínimo 14 caracteres, máximo 72 bytes.
- * - Mismo hash que el alta y el login (bcrypt, coste 12).
- * - Revoca TODOS los RefreshToken activos del usuario (cierra sus sesiones; el token de acceso
- *   que ya tenga un navegador caduca solo en ≤ 15 min).
- * - Deja un AuditLog `USER_PASSWORD_RESET_CLI` por espacio, sin datos personales.
+ *   # Profesional real del piloto (manual de onboarding §3.7): el correo se pide al ejecutar.
+ *   DATABASE_URL="$DB_URL" npm run users:set-password -- --allow-non-demo [--reset-mfa]
+ *
+ * - Muestra si la cuenta es demo y el espacio y el rol de cada membresía ACTIVE, y pide volver a
+ *   escribir el correo; si no coincide, aborta (condición de Argos). Con una cuenta real pide además
+ *   confirmar la verificación de identidad por videollamada.
+ * - Exige una terminal (TTY): la contraseña nueva se pide DOS veces sin eco. Nunca por argumentos ni
+ *   por tubería. Mínimo 14 caracteres, máximo 72 bytes. Opciones desconocidas (p. ej.
+ *   `--allow-dev-secret` o `--password`) abortan antes de conectar.
+ * - En una transacción: hash bcrypt coste 12, sube tokenVersion (los access tokens vivos dejan de
+ *   valer al momento), passwordChangedAt, desbloquea el MFA, con --reset-mfa borra el TOTP y los
+ *   códigos de recuperación, revoca todos los RefreshToken y audita en cada espacio activo.
  * - No imprime el correo, la contraseña ni el hash; los errores de Prisma salen sin argumentos.
  *
- * No necesita estar desplegado: se ejecuta desde un clon con `npm ci` y `npm run db:generate`,
- * como las migraciones. Entorno: solo DATABASE_URL.
+ * No necesita estar desplegado: se ejecuta desde un clon con `npm ci` y `npm run db:generate`.
+ * Entorno: solo DATABASE_URL.
  */
 import { PrismaClient } from '@prisma/client';
 import { describeScriptError } from './waitlist-script-utils';
 import { createInterface } from 'node:readline/promises';
-import { isValidEmailArg, PASSWORD_RESET_CLI_ACTION, runSetPasswordFlow, SetPasswordError } from './set-password/set-password-core';
-
-function arg(name: string): string | undefined {
-  const args = process.argv.slice(2);
-  const inline = args.find((a) => a.startsWith(`--${name}=`));
-  if (inline) return inline.slice(name.length + 3);
-  const i = args.indexOf(`--${name}`);
-  return i >= 0 ? args[i + 1] : undefined;
-}
+import { MFA_RESET_CLI_ACTION, parseCliArgs, PASSWORD_RESET_CLI_ACTION, runSetPasswordFlow, SetPasswordError } from './set-password/set-password-core';
 
 /** Lee una línea de un TTY sin eco (modo raw). Ctrl+C aborta sin cambiar nada. */
 function readHiddenFromTty(prompt: string): Promise<string> {
@@ -59,7 +56,7 @@ function readHiddenFromTty(prompt: string): Promise<string> {
   });
 }
 
-/** Línea visible (confirmación del correo). */
+/** Línea visible (correo, confirmaciones). */
 async function askVisible(prompt: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
   try {
@@ -70,16 +67,12 @@ async function askVisible(prompt: string): Promise<string> {
 }
 
 async function main() {
-  const email = arg('email');
-  if (!isValidEmailArg(email)) {
-    console.error('Uso: DATABASE_URL=… npm run users:set-password -- --email persona@example.com');
-    process.exit(1);
-  }
+  // Primero los argumentos: una opción desconocida aborta sin tocar la base de datos.
+  const options = parseCliArgs(process.argv.slice(2), process.env.DATABASE_URL);
   if (!process.env.DATABASE_URL) {
     console.error('Falta DATABASE_URL (léela con: read -rs DB_URL y pásala como DATABASE_URL="$DB_URL").');
     process.exit(1);
   }
-
   if (!process.stdin.isTTY) {
     console.error('Ejecútalo en una terminal interactiva: la contraseña no se acepta por tubería ni por argumentos. No se ha cambiado nada.');
     process.exit(1);
@@ -87,14 +80,14 @@ async function main() {
 
   const prisma = new PrismaClient();
   try {
-    const result = await runSetPasswordFlow(prisma, email, {
+    const result = await runSetPasswordFlow(prisma, options, {
       print: (line) => console.log(line),
       ask: askVisible,
       askHidden: readHiddenFromTty,
     });
-    console.log('Contraseña cambiada.');
-    console.log(`Sesiones revocadas: ${result.revokedSessions}. Registros de auditoría (${PASSWORD_RESET_CLI_ACTION}): ${result.auditedWorkspaces}.`);
-    console.log('Los navegadores con sesión abierta la pierden en 15 minutos como máximo.');
+    console.log('Contraseña cambiada. Accesos abiertos invalidados al momento.');
+    console.log(`Sesiones revocadas: ${result.revokedSessions}. Espacios auditados (${PASSWORD_RESET_CLI_ACTION}): ${result.auditedWorkspaces}.`);
+    if (result.mfaReset) console.log(`Verificación en dos pasos borrada (${MFA_RESET_CLI_ACTION}): la configurará en el siguiente acceso.`);
   } finally {
     await prisma.$disconnect();
   }
