@@ -2,7 +2,8 @@
 
 ## Decisiones
 - Monorepo con npm workspaces.
-- Web en Next.js App Router.
+- Web en Next.js App Router, publicada como export estático (sin servidor Next ni proxy hacia la API;
+  rutas con el id en la query, ver `apps/web/lib/routes.ts`). Sprint 19.
 - API modular en NestJS.
 - PostgreSQL y Prisma.
 - JWT Bearer para la primera vertical funcional.

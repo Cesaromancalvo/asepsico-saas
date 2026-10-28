@@ -37,6 +37,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 | Sprint 16 | Despliegue del piloto demo (sesión 3, 16–17/10/2026) | `SPRINT_16_DESPLIEGUE_PILOTO_DEMO.md` | Implementado (PR #19–#23 en `main`) | Revisión de Argos; PR #23: `test:security` 1174/1176 sin fallos, web 42/42, e2e Postgres 27/27; CI con 3 checks en verde en cada merge; copia previa restaurada (`pg_restore` código 0) | BETA (solo demo, sin datos reales) |
 | Sprint 17 | Acceso excepcional y reserva de citas desde el portal (entrega S4) | Sin documento propio (PR #28) | Implementado (PR #28 en `main`, 19/10/2026); desplegado el 19/10/2026 | Evidencia en el PR #28 (cifras de tests no recogidas en este roadmap); verificaciones en vivo en `postgres-integration`; migraciones de 30 a 33 | BETA (solo demo, sin datos reales) |
 | Sprint 18 | Alta en el portal con QR y baja de miembros del equipo (entrega S5) | `SPRINT_18_ALTA_PORTAL_QR_Y_BAJA_MIEMBRO.md` | Implementado (PR #34 en `main`, `346e1fe`); desplegado el 21/10/2026 | Argos aprobado; `test:security` 1448/1448 con PostgreSQL real, web 136/136, smoke y verificaciones en vivo del CI en verde, prueba manual HTTP 21/21; producción de 33 a 37 migraciones con copia previa; comprobaciones posteriores al despliegue sin datos reales | BETA (solo demo, sin datos reales); flujo completo del alta por QR y de la baja en el entorno pendiente |
+| Sprint 19 | Salida de Vercel, web estática y arreglos previos al piloto demo (27/10/2026) | `SPRINT_19_SALIDA_VERCEL_Y_ARREGLOS_PREPILOTO.md` | Implementado (PR #43–#47 en `main`, `1930b55`) | CI con los 2 checks en verde en cada PR y en `1930b55`; revisión de seguridad aprobada en #44, #45 y #47 y condiciones C4 incorporadas en #43; cifras de tests por suite no recogidas; ensayo de alta del piloto demo correcto el 27/10 (comunicado, sin acta en el repo) | BETA (solo demo, sin datos reales); comprobación en producción pendiente |
 
 ## Evidencia acumulada relevante
 
@@ -51,6 +52,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 - Sprint 14: **11 suites, 58/58 tests y 0 fallos**.
 - Sprint 16 (PR #23, cambio de contraseña): `test:security` **1174/1176 sin fallos**, web **42/42**, e2e con PostgreSQL **27/27**; tres checks del CI en verde en cada merge.
 - Sprint 18 (entrega S5): `test:security` con PostgreSQL real **1448/1448**, web **136/136**, smoke HTTP y verificaciones en vivo del CI en verde, prueba manual HTTP **21/21**.
+- Sprint 19 (PR #43–#47): `Typecheck, tests and build` y `PostgreSQL migrations and real HTTP smoke test` en verde en cada PR y en `1930b55`. Sin recuentos por suite.
 
 ### Backup y restauración
 
@@ -181,7 +183,7 @@ Pendiente antes de invitar a nadie:
 - revisión operativa del espacio demo antes de la primera invitación (pendiente);
 - backlog de Argos: invalidar access tokens tras cambiar la contraseña (`tokenVersion`/`passwordChangedAt`; **resuelto en el Sprint 18, desplegado el 21/10/2026**) y `RegisterDto` con `MaxUtf8Bytes(72)`/`MinChars(12)`;
 - plan de la API: decisión pendiente (la API tarda unos 72 s en despertar tras un rato sin uso; la base de datos tiene desde el 16/10/2026 copias del proveedor y copias propias cifradas);
-- salida de Vercel: **hecha el 26/10/2026** (web en Render Static Site, `app.asepsico.es`); pendiente apagar y borrar el proyecto de Vercel (paso 18 de la sesión 6, A2 de Argos);
+- salida de Vercel: **hecha el 26/10/2026** (web en Render Static Site, `app.asepsico.es`); export estático en `main` con el PR #43 (Sprint 19) y proyecto de Vercel **borrado el 27/10/2026** (comunicado, sin acta en el repo);
 - acceso excepcional: **en `main` y desplegado con el Sprint 17** (19/10/2026).
 
 ### Sprint 17 — Acceso excepcional y reserva de citas desde el portal (entrega S4)
@@ -211,6 +213,23 @@ Pendiente:
 - PR #33 (`4695ef7`): la web pública despierta la API al cargar y el formulario de la lista de espera aguanta el arranque en frío (antes se rendía a los 30 s y la API tarda unos 72 s en despertar).
 
 Fusionados en `main` el 20 y el 21/10 y desplegados el 21/10. Sus cifras de tests viven en cada PR y no se recogen aquí.
+
+### Entre el Sprint 18 y el Sprint 19 (sin documento de sprint propio)
+
+Fusionados en `main` del 21 al 24/10 los PR #35–#42: aviso y política `lista-espera-v4` de la lista de espera, SEO de la landing, arreglos de la pantalla de tareas, puertos SMTP alternativos y panel privado de la lista de espera (PLATFORM_ADMIN). Su detalle vive en los PR y en `docs/SECURITY_BASELINE.md`; no se marcan aquí como validados.
+
+### Sprint 19 — Salida de Vercel, web estática y arreglos previos al piloto demo (27/10/2026)
+
+Estado: **Implementado (PR #43–#47 en `main`, `1930b55`); BETA solo para demo (sin datos de pacientes reales)**. Documento: `SPRINT_19_SALIDA_VERCEL_Y_ARREGLOS_PREPILOTO.md`.
+
+- **#43:** la web de la app es un export estático (Render Static Site, `app.asepsico.es`) que llama directamente a la API, sin proxy de Vercel; rutas con id en la query y validadas; CSP con hashes por página; cookies de sesión host-only con limpieza de las antiguas; portal del paciente arreglado (`csrf_token` con `COOKIE_DOMAIN`, antes 403 desde `app.`).
+- **#44 y #45 (arreglos P0 antes del piloto):** cobros nuevos con `COB-`; marca «[Ejemplo ficticio]» en las escalas del espacio demo; portal sin preferencias de avisos por correo o SMS; «Primeros pasos» con 3 pasos; texto de subida de archivos; formulario de cita con estilos; ejemplo de notas no clínico.
+- **#46:** política de privacidad para profesionales `demo-1.2` (en vigor desde el 27/10/2026, sin Vercel).
+- **#47:** teléfono obligatorio en la lista de espera con la política `lista-espera-v5` (cifrado, borrado solo del teléfono, CLI `waitlist:set-phone`), botón «Acceder» en la landing y teléfono en el panel. Migración aditiva `20261027201255_waitlist_phone`.
+
+En el entorno (comunicado, sin acta en el repo): proyecto de Vercel borrado y ensayo de alta completo del piloto demo correcto el 27/10/2026.
+
+Pendiente: comprobación en producción de los criterios del documento del sprint; capturas del manual del piloto con las pantallas nuevas; procedimiento de restablecimiento de contraseña y MFA por soporte; riesgo M1 de `TRUST_PROXY` antes del primer paciente real; que la API genere las URL en el formato nuevo.
 
 ### Fase B — Hardening RGPD y preparación jurídica
 
