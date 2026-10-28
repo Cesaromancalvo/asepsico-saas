@@ -24,6 +24,10 @@ npm run dev:web
 - Swagger: http://localhost:4000/docs
 - Health: http://localhost:4000/api/v1/health
 
+La web (`apps/web`) se publica como **export estático** (`output: 'export'`): `npm run build`
+genera `apps/web/out` y no hay `next start`. La web llama directamente a `NEXT_PUBLIC_API_URL`.
+Para comprobar la web publicada (cabeceras y CSP): `npm run verify:static-site`.
+
 Cuenta demo local: `demo@asepsico.es`. La contraseña sale de `SEED_DEMO_PASSWORD` (en `.env`) o,
 si no la defines, el seed genera una aleatoria y la imprime una vez. El seed se niega a ejecutarse
 con `NODE_ENV=production` o contra una BD que no sea local (salvo `--allow-production-seed`) y,
