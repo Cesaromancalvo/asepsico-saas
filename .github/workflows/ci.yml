@@ -372,6 +372,15 @@ jobs:
           RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
           RACE_DATABASE_REQUIRED: '1'
 
+      # Transición de cookies (sesión 7): navegador con access/refresh antiguos con Domain=.asepsico.es
+      # y API con COOKIE_DOMAIN=.asepsico.es: login con MFA, refresh, CSRF, logout y portal sin 401/403.
+      # App completa contra la BD del servicio; crea sus propios datos ficticios.
+      - name: Auth cookie transition tests (real PostgreSQL)
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern 'auth-cookies-transition-db'
+        env:
+          RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
+          RACE_DATABASE_REQUIRED: '1'
+
       - name: Stop API
         if: always()
         shell: bash
