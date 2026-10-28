@@ -238,8 +238,11 @@ function requiredStep(job, name, command) {
 requiredStep('quality', 'Web unit tests', 'npm --workspace @asepsico/web run test -- --ci');
 requiredStep('postgres-integration', 'Session close and booking race tests (real PostgreSQL)',
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race)'");
-requiredStep('postgres-integration', 'Platform admin waitlist panel tests (real PostgreSQL)',
-  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db)'");
+const adminDbStep = requiredStep('postgres-integration', 'Platform admin waitlist panel tests (real PostgreSQL)',
+  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db|users-set-password-db)'");
+if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(adminDbStep.code) || !/RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/.test(adminDbStep.code)) {
+  throw new Error('El paso del panel, el teléfono y users:set-password necesita RACE_DATABASE_URL hacia el servicio y RACE_DATABASE_REQUIRED=1 (si no, se omitiría en silencio)');
+}
 const cookieStep = requiredStep('postgres-integration', 'Auth cookie transition tests (real PostgreSQL)',
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern 'auth-cookies-transition-db'");
 if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(cookieStep.code) || !/RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/.test(cookieStep.code)) {

@@ -28,6 +28,7 @@
     "db:seed-demo-workspace": "npm --workspace @asepsico/api run db:seed-demo-workspace --",
     "db:purge-demo-workspace": "npm --workspace @asepsico/api run db:purge-demo-workspace --",
     "db:migrate-exceptional-reasons": "npm --workspace @asepsico/api run db:migrate-exceptional-reasons --",
+    "users:set-password": "npm --workspace @asepsico/api run users:set-password --",
     "test:smoke": "node scripts/smoke-live.mjs",
     "db:migrate:ci": "npm --workspace @asepsico/api run prisma:migrate:deploy",
     "test:ci-config": "node scripts/verify-ci-postgres.mjs",

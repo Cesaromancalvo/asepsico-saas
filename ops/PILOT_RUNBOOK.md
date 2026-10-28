@@ -299,6 +299,40 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
 - Prueba de restauración: semanal durante el piloto.
 - Nunca guardar dumps en el repositorio Git.
 
+## Restablecer la contraseña o el MFA de un profesional (operador)
+
+El profesional puede cambiar su contraseña desde **Seguridad → Cambiar contraseña**, pero no hay
+«He olvidado mi contraseña». Para rotar las cuentas demo o restablecer el acceso de una profesional
+del piloto (manual de onboarding §3.7) se usa el CLI auditado, desde un clon con `npm ci` y
+`npm run db:generate` (no hace falta desplegarlo). **Nunca un `UPDATE` a mano.**
+
+```bash
+read -rs DB_URL && export DB_URL
+# Cuentas demo (por defecto solo acepta User.isDemo = true):
+DATABASE_URL="$DB_URL" npm run users:set-password -- --email recepcion.demo.xxxx@example.test
+DATABASE_URL="$DB_URL" npm run users:set-password -- --email terapeuta.demo.xxxx@example.test --reset-mfa
+# Profesional real del piloto (el correo se pide al ejecutar, no queda en el historial):
+DATABASE_URL="$DB_URL" npm run users:set-password -- --allow-non-demo [--reset-mfa]
+```
+
+- Muestra si la cuenta es demo y el espacio y el rol de cada membresía `ACTIVE`, y pide volver a
+  escribir el correo; si no coincide, aborta. Con una cuenta real pide además escribir `VERIFICADA`
+  (petición desde su correo registrado + videollamada en la que se la reconoce, §3.7). Después pide
+  la contraseña nueva dos veces sin mostrarla (mínimo 14 caracteres, máximo 72 bytes). Exige una
+  terminal: nunca por argumentos ni por tubería. Cualquier opción desconocida (`--password`,
+  `--allow-dev-secret`…) aborta antes de conectar.
+- En una transacción: hash bcrypt (coste 12), sube `tokenVersion` (los accesos abiertos dejan de
+  valer al momento), `passwordChangedAt`, pone a cero `mfaFailedAttempts` y `mfaLockedUntil`, revoca
+  todos los `RefreshToken` y deja un `AuditLog` `USER_PASSWORD_RESET_CLI` por espacio activo
+  (`entityId` = id del usuario, sin correo, IP ni secretos).
+- `--reset-mfa`: borra además el TOTP y los códigos de recuperación (`USER_MFA_RESET_CLI`). Con rol
+  OWNER, ADMIN o THERAPIST, la API responde `403 MFA_SETUP_REQUIRED` hasta que lo configure de nuevo
+  en el siguiente acceso. Orden en la llamada de §3.7: entra con la contraseña temporal, activa el
+  MFA y después cambia la contraseña en **Seguridad**.
+- La contraseña temporal se dice de palabra en la videollamada, nunca por escrito.
+- Si el cambio responde a una posible filtración, antes se revisa quién usó la cuenta y, si hay
+  accesos ajenos, se trata como incidente (sección siguiente).
+
 ## Incidente
 
 1. Detener la operación afectada sin borrar evidencias.
