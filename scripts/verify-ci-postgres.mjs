@@ -240,6 +240,11 @@ requiredStep('postgres-integration', 'Session close and booking race tests (real
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race)'");
 requiredStep('postgres-integration', 'Platform admin waitlist panel tests (real PostgreSQL)',
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db)'");
+const cookieStep = requiredStep('postgres-integration', 'Auth cookie transition tests (real PostgreSQL)',
+  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern 'auth-cookies-transition-db'");
+if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(cookieStep.code) || !/RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/.test(cookieStep.code)) {
+  throw new Error('El paso de transición de cookies necesita RACE_DATABASE_URL hacia el servicio y RACE_DATABASE_REQUIRED=1 (si no, se omitiría en silencio)');
+}
 requiredStep('postgres-integration', 'Verify assistant voids and reversals are audited in the workspace export (real PostgreSQL)',
   'node scripts/verify-billing-assistant-live.mjs');
 const landingStep = requiredStep('quality', 'Landing build fails closed without legal holder variables',

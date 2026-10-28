@@ -194,7 +194,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['sin aceptar la política (false)', { privacyAccepted: false }],
     ['sin el campo de aceptación', { privacyAccepted: undefined }],
     ['aceptación como texto', { privacyAccepted: 'true' }],
-    ['versión de política inexistente', { privacyPolicyVersion: 'lista-espera-v6' }],
+    ['versión de política inexistente (v6; la vigente es la v5)', { privacyPolicyVersion: 'lista-espera-v6' }],
     ['versión inventada', { privacyPolicyVersion: 'lista-espera-v99' }],
     ['versión v5 con mayúsculas', { privacyPolicyVersion: 'LISTA-ESPERA-V5' }],
     ['versión con espacios', { privacyPolicyVersion: ' lista-espera-v5' }],
@@ -207,6 +207,22 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
   it('solo se acepta la política vigente (v5); v1–v4 están retiradas', () => {
     expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5']);
     expect([...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4']);
+  });
+
+  // Aviso de Lex: la v5 (27/10) es la vigente y exige teléfono. Sin teléfono el 400 es por el
+  // teléfono (WAITLIST_PHONE_REQUIRED), no por la versión; con teléfono, 202 y se guarda v5.
+  it('v5 sin teléfono → 400 WAITLIST_PHONE_REQUIRED (la versión es válida; falta el teléfono) y sin create', async () => {
+    const { phone: _omit, ...body } = validBody({ privacyPolicyVersion: 'lista-espera-v5' });
+    const res = await post(app, body).expect(400);
+    expect(res.body.code).toBe('WAITLIST_PHONE_REQUIRED');
+    expect(JSON.stringify(res.body)).not.toContain(EMAIL);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('v5 con teléfono → 202 y se guarda lista-espera-v5', async () => {
+    await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v5', phone: '+34 612 000 555' })).expect(202);
+    expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(1);
+    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.privacyPolicyVersion).toBe('lista-espera-v5');
   });
 
   it.each(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('versión retirada %s → 400 WAITLIST_POLICY_VERSION_RETIRED, sin create y sin datos en la respuesta', async (version) => {
@@ -332,6 +348,17 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     prisma.waitlistEntry.create.mockClear();
     const res = await post(app, validBody({ website: 'https://spam.example' })).expect(202);
     expect(res.body).toEqual(ok.body);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  // Condición de Argos: el honeypot se comprueba ANTES que la versión. Un bot que rellena el
+  // honeypot con una versión retirada recibe el mismo 202 que una alta, no un 400 que le diga qué cambiar.
+  it('honeypot relleno con versión retirada (v4) → mismo 202, sin create y sin WAITLIST_POLICY_VERSION_RETIRED', async () => {
+    const ok = await post(app, validBody()).expect(202);
+    prisma.waitlistEntry.create.mockClear();
+    const res = await post(app, validBody({ website: 'https://spam.example', privacyPolicyVersion: 'lista-espera-v4' })).expect(202);
+    expect(res.body).toEqual(ok.body);
+    expect(JSON.stringify(res.body)).not.toContain('WAITLIST_POLICY_VERSION_RETIRED');
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 

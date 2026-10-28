@@ -63,6 +63,18 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     privacyPolicyVersion: 'lista-espera-v5', formToken: issueFormToken(Date.now() - 10_000),
   } as any);
 
+  /** App completa. El test de CSRF levanta la suya: el límite de 5/min por ruta e IP vive en memoria de cada app. */
+  const buildApp = async () => {
+    const { AppModule } = await import('../src/app.module');
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const instance = moduleRef.createNestApplication({ logger });
+    instance.setGlobalPrefix('api/v1');
+    instance.use(cookieParser());
+    instance.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    await instance.init();
+    return instance;
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     process.env.PLATFORM_ADMIN_EMAILS = ADMIN_EMAIL;
@@ -87,13 +99,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
       emailHash: hashWaitlistEmail(V4_EMAIL), situation: 'SELF_EMPLOYED', privacyPolicyVersion: 'lista-espera-v4', privacyAcceptedAt: new Date(),
     } })).id;
 
-    const { AppModule } = await import('../src/app.module');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication({ logger });
-    app.setGlobalPrefix('api/v1');
-    app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    await app.init();
+    app = await buildApp();
     jwt = new JwtService({ secret: getJwtSecret(), signOptions: { expiresIn: '15m' } });
   });
 
@@ -163,6 +169,35 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
       ['PLATFORM_REAUTH_FAILED', null, { operation: 'waitlist-phone-delete' }],
       ['PLATFORM_WAITLIST_PHONE_CLEARED', ids.v5, { source: 'panel' }],
     ]);
+  });
+
+  it('borrar SOLO el teléfono desde el panel: 403 sin cabecera CSRF (o con una que no coincide), aunque sea PLATFORM_ADMIN con la contraseña buena', async () => {
+    const email = `${run}-csrf@example.com`;
+    await v5(email, '+34 612 000 444');
+    const id = (await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } })).id;
+    const path = `/api/v1/admin/waitlist/${id}/phone/delete`;
+    const own = await buildApp();
+    try {
+      const auth = { Authorization: `Bearer ${adminToken()}` };
+      const attempts = [
+        { ...auth, Cookie: 'csrf_token=csrf-ficticio' }, // cookie sin cabecera
+        auth, // ni cookie ni cabecera
+        { ...auth, Cookie: 'csrf_token=csrf-ficticio', 'x-csrf-token': 'otro-valor-ficticio' }, // no coinciden
+      ];
+      for (const headers of attempts) {
+        const res = await request(own.getHttpServer()).post(path).set(headers).send({ password: ADMIN_PASSWORD }).expect(403);
+        expect(JSON.stringify(res.body)).not.toContain('612000444');
+      }
+      expect(decryptField((await rowOf(id)).phone)).toBe('+34612000444');
+      expect(await prisma.platformAuditLog.count({ where: { entityId: id, action: 'PLATFORM_WAITLIST_PHONE_CLEARED' } })).toBe(0);
+      // El fallo de CSRF no llega a comprobar la contraseña: no suma al bloqueo de la cuenta.
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: ids.admin } })).mfaFailedAttempts).toBe(0);
+      // Control: con CSRF correcto, la misma petición sí borra el teléfono (el 403 era por CSRF).
+      await request(own.getHttpServer()).post(path).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(204);
+      expect((await rowOf(id)).phone).toBeNull();
+    } finally {
+      await own.close();
+    }
   });
 
   it('borrar SOLO el teléfono por CLI (función): cleared, luego no-phone; auditoría sin actor', async () => {
