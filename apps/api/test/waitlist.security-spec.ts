@@ -195,7 +195,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['sin el campo de aceptación', { privacyAccepted: undefined }],
     ['aceptación como texto', { privacyAccepted: 'true' }],
     ['versión de política antigua (v1, Google Forms)', { privacyPolicyVersion: 'lista-espera-v1' }],
-    ['versión de política inexistente', { privacyPolicyVersion: 'lista-espera-v5' }],
+    ['versión de política inexistente (v6; la v5 ya existe)', { privacyPolicyVersion: 'lista-espera-v6' }],
     ['versión inventada', { privacyPolicyVersion: 'lista-espera-v99' }],
     ['versión v4 con mayúsculas', { privacyPolicyVersion: 'LISTA-ESPERA-V4' }],
     ['versión con espacios', { privacyPolicyVersion: ' lista-espera-v3' }],
@@ -205,7 +205,22 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
-  it('transición v3 → v4: la API acepta v3 y v4 (y v2, aún en transición) y no otras', () => {
+  // Aviso de Lex: la v5 (27/10) EXISTE y exige teléfono. Sin teléfono el 400 es por el teléfono
+  // (WAITLIST_PHONE_REQUIRED), no por la versión; con teléfono, 202 y se guarda v5.
+  it('v5 sin teléfono → 400 WAITLIST_PHONE_REQUIRED (la versión es válida; falta el teléfono) y sin create', async () => {
+    const res = await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v5' })).expect(400);
+    expect(res.body.code).toBe('WAITLIST_PHONE_REQUIRED');
+    expect(JSON.stringify(res.body)).not.toContain(EMAIL);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('v5 con teléfono → 202 y se guarda lista-espera-v5', async () => {
+    await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v5', phone: '+34 612 000 555' })).expect(202);
+    expect(prisma.waitlistEntry.create).toHaveBeenCalledTimes(1);
+    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.privacyPolicyVersion).toBe('lista-espera-v5');
+  });
+
+  it('transición a la v5: la API acepta v2, v3, v4 y v5 y no otras', () => {
     expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5']);
   });
 
