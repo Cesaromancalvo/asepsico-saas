@@ -17,7 +17,7 @@
  * 11. teléfono (lista-espera-v5): obligatorio, misma regla que la API, se envía tal como se escribe,
  *     un mensaje distinto para cada code de la API (PHONE_REQUIRED, PHONE_INVALID),
  *     foco en el campo y nunca se repite el número en un mensaje; POLICY_VERSION_RETIRED pide recargar
- *     sin marcar campos y PHONE_NOT_INFORMED (ya retirado) cae en el mensaje genérico de 400;
+ *     sin marcar campos y un code desconocido cae en el mensaje genérico de 400;
  * 10. arranque en frío (tiempos escalados): mensajes a los 6 s y a los 20 s, timeout a los 90 s sin
  *     reintento, sin doble envío mientras espera, un único reintento tras un fallo de red y el envío
  *     espera al token que se está pidiendo desde la carga.
@@ -479,7 +479,7 @@ const phoneErr = () => doc.getElementById('wl-phone-err');
   check(phoneErr().hidden === true && inp.getAttribute('aria-invalid') === null, '11: al escribir no se quitó el error del teléfono');
 }
 // Respuestas de la API: un mensaje distinto para cada code, sin repetir el número.
-for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['WAITLIST_PHONE_INVALID', PHONE_INVALID], ['WAITLIST_POLICY_VERSION_RETIRED', null], ['WAITLIST_PHONE_NOT_INFORMED', null]]) {
+for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['WAITLIST_PHONE_INVALID', PHONE_INVALID], ['WAITLIST_POLICY_VERSION_RETIRED', null], ['WAITLIST_CODE_DESCONOCIDO', null]]) {
   const t = load();
   t.net.queue.post.push({ status: 400, body: { statusCode: 400, code, message: 'phone' } });
   await sleep(10);
