@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { WaitlistSituation, WaitlistSource } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { Equals, IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
-import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS } from '../waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS } from '../waitlist.config';
 import { WAITLIST_PHONE_MAX_INPUT_LENGTH } from '../waitlist-phone';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -26,10 +26,10 @@ export class CreateWaitlistEntryDto {
 
   /**
    * Teléfono tal como lo escribe la persona (la API lo valida y lo normaliza a E.164). Opcional para
-   * class-validator: la obligatoriedad depende de privacyPolicyVersion y la comprueba el servicio
-   * (v5: obligatorio; v2–v4: prohibido). Nunca se registra ni se devuelve en un error.
+   * class-validator: la obligatoriedad la comprueba el servicio (WAITLIST_PHONE_REQUIRED, con un
+   * code propio para la landing). Nunca se registra ni se devuelve en un error.
    */
-  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'Obligatorio con lista-espera-v5; no se admite con v2–v4. Se guarda cifrado en E.164.' })
+  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'Obligatorio (lista-espera-v5). Se guarda cifrado en E.164.' })
   @IsOptional() @Transform(trim) @IsString() @MaxLength(WAITLIST_PHONE_MAX_INPUT_LENGTH)
   phone?: string;
 
@@ -54,8 +54,10 @@ export class CreateWaitlistEntryDto {
   @IsBoolean() @Equals(true, { message: 'privacyAccepted debe ser true' })
   privacyAccepted!: boolean;
 
+  // Pasan el DTO la vigente y las retiradas: estas últimas las rechaza el servicio con un code propio
+  // (WAITLIST_POLICY_VERSION_RETIRED). Cualquier otro valor → 400 de validación genérico.
   @ApiProperty({ enum: ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS })
-  @IsString() @IsIn([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS], { message: 'privacyPolicyVersion no es una versión vigente' })
+  @IsString() @IsIn([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, ...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS], { message: 'privacyPolicyVersion no es una versión vigente' })
   privacyPolicyVersion!: string;
 
   @ApiPropertyOptional({ description: 'Casilla opcional de comunicaciones comerciales. Solo registra la solicitud: el consentimiento válido requiere doble opt-in por email' })

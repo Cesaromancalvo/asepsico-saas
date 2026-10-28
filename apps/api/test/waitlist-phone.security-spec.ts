@@ -21,7 +21,7 @@ import { normalizeWaitlistPhone } from '../src/waitlist/waitlist-phone';
 import { deleteWaitlistEntry, exportWaitlist, purgeWaitlist, suppressWaitlistEntryById, WAITLIST_CSV_COLUMNS, WAITLIST_CSV_COLUMNS_WITH_PHONE, waitlistCsv } from '../src/waitlist/waitlist-admin';
 import { isLocalDatabaseUrl } from '../prisma/scripts/waitlist-script-utils';
 import { spawnSync } from 'node:child_process';
-import { WAITLIST_PATH, WAITLIST_POLICY_VERSIONS_WITH_PHONE } from '../src/waitlist/waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, WAITLIST_PATH } from '../src/waitlist/waitlist.config';
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 
 /**
@@ -119,8 +119,8 @@ describe('Normalización del teléfono (criterios 2, 3 y 6)', () => {
     expect(normalizeWaitlistPhone(' '.repeat(17) + '612345678')).toBeNull();
   });
 
-  it('solo la v5 informa del teléfono', () => {
-    expect([...WAITLIST_POLICY_VERSIONS_WITH_PHONE]).toEqual(['lista-espera-v5']);
+  it('la única versión aceptada es la v5, que informa del teléfono y lo exige', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5']);
   });
 });
 
@@ -171,22 +171,14 @@ describe('Alta pública con teléfono (POST /public/waitlist)', () => {
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
-  it.each(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('criterio 5: %s con phone → 400 WAITLIST_PHONE_NOT_INFORMED', async (version) => {
-    const res = await post(app, v5Body({ privacyPolicyVersion: version })).expect(400);
-    expect(res.body.code).toBe('WAITLIST_PHONE_NOT_INFORMED');
-    expect(JSON.stringify(res.body)).not.toContain(PHONE_DIGITS.slice(0, 5));
-    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-  });
-
-  it.each(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('transición: %s sin phone (la landing actual) → 202 con phone null', async (version) => {
+  it.each(['lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('versiones retiradas: %s con o sin phone → 400 WAITLIST_POLICY_VERSION_RETIRED, sin el teléfono en la respuesta', async (version) => {
+    const withPhone = await post(app, v5Body({ privacyPolicyVersion: version })).expect(400);
+    expect(withPhone.body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
+    expect(JSON.stringify(withPhone.body)).not.toContain(PHONE_DIGITS.slice(0, 5));
     const { phone: _omit, ...body } = v5Body({ privacyPolicyVersion: version });
-    await post(app, body).expect(202);
-    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.phone).toBeNull();
-  });
-
-  it('transición: v4 con phone vacío cuenta como no enviado → 202', async () => {
-    await post(app, v5Body({ privacyPolicyVersion: 'lista-espera-v4', phone: '' })).expect(202);
-    expect(prisma.waitlistEntry.create.mock.calls[0][0].data.phone).toBeNull();
+    expect((await post(app, body).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
+    expect((await post(app, v5Body({ privacyPolicyVersion: version, phone: '' })).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
   it('phone que no es cadena o de más de 25 caracteres → 400 de validación que nombra el campo, no el valor', async () => {

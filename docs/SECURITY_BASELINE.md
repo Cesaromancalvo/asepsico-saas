@@ -194,8 +194,9 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   consentimiento separado y doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
-- Teléfono (política `lista-espera-v5`, 27/10/2026): obligatorio con v5 y rechazado con v2–v4
-  (`WAITLIST_PHONE_NOT_INFORMED`); normalizado a E.164 con una única función
+- Teléfono (política `lista-espera-v5`, 27/10/2026): obligatorio. Desde el 28/10/2026 la API solo
+  acepta la v5: las altas nuevas con v1–v4 → 400 `WAITLIST_POLICY_VERSION_RETIRED` (las filas ya
+  guardadas con v2–v4 no cambian); normalizado a E.164 con una única función
   (`waitlist-phone.ts`) y cifrado en reposo (registro `waitlistEntry`). Sin hash ni búsqueda por
   teléfono. Nunca en logs, errores, `PlatformAuditLog` ni en el aviso por correo. Solo lo ve
   PLATFORM_ADMIN con MFA en el panel. Se borra con la supresión y la purga, y se puede borrar

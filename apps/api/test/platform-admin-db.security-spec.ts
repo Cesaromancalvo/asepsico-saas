@@ -211,10 +211,10 @@ describeDb('Panel privado de la lista de espera (PLATFORM_ADMIN, PostgreSQL real
     const email = `${run}-vuelve@example.com`;
     const again = entry({ emailHash: hashWaitlistEmail(email) });
     await prisma.waitlistEntry.create({ data: again });
-    await new WaitlistService(prisma as any).submit({ name: 'Persona Ficticia', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any);
+    await new WaitlistService(prisma as any).submit({ name: 'Persona Ficticia', email, phone: '+34 600 000 004', situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v5', formToken: issueFormToken(Date.now() - 10_000) } as any);
     expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email) } })).toBe(1); // repetida: no duplica
     await prisma.waitlistEntry.updateMany({ where: { emailHash: hashWaitlistEmail(email) }, data: { emailHash: null, deletedAt: new Date() } });
-    await new WaitlistService(prisma as any).submit({ name: 'Persona Ficticia', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000) } as any);
+    await new WaitlistService(prisma as any).submit({ name: 'Persona Ficticia', email, phone: '+34 600 000 004', situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v5', formToken: issueFormToken(Date.now() - 10_000) } as any);
     expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email), deletedAt: null } })).toBe(1);
   });
 
