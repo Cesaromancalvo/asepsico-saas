@@ -4,6 +4,7 @@ import {
   FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import Link from 'next/link';
@@ -12,7 +13,9 @@ import Sidebar from '../../components/Sidebar';
 import Icon from '../../components/Icon';
 import { api } from '@/lib/api';
 import { processLabel, useViewer } from '@/lib/clinical';
-import { sessionHref } from '@/lib/routes';
+import { queryId, sessionHref } from '@/lib/routes';
+import RescheduleSessionForm from '@/components/RescheduleSessionForm';
+import { canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from '@/lib/reschedule';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -151,6 +154,15 @@ function formatDateForInput(date: Date) {
   ].join('');
 }
 
+/** `?semana=AAAA-MM-DD` → lunes de esa semana (o null si no es una fecha válida). */
+function weekFromQuery(value: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime()) || date.getDate() !== day) return null;
+  return startOfWeek(date);
+}
+
 function sameDay(firstDate: Date, secondDate: Date) {
   return (
     firstDate.getFullYear() === secondDate.getFullYear() &&
@@ -197,6 +209,16 @@ export default function AgendaPage() {
 
   const [newSessionOpen, setNewSessionOpen] =
     useState(false);
+
+  // «Cambiar fecha u hora» desde la vista semanal y cita recién movida (se resalta).
+  const [reschedulingId, setReschedulingId] =
+    useState<string | null>(null);
+  const [movedId, setMovedId] =
+    useState<string | null>(null);
+  const formTopRef = useRef<HTMLDivElement>(null);
+  // Paciente pedido por URL (?patientId=…) a la espera de que cargue la lista.
+  const [requestedPatientId, setRequestedPatientId] =
+    useState('');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -263,6 +285,47 @@ export default function AgendaPage() {
   useEffect(() => {
     void loadAgenda();
   }, [weekStart, weekEnd]);
+
+  // Enlaces de otras pantallas: «Nueva cita» (?new=true), desde la ficha (?patientId=…) y
+  // «Ver en la agenda» tras mover una cita (?semana=AAAA-MM-DD). Se leen una vez al entrar.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const week = weekFromQuery(params.get('semana'));
+    if (week) setWeekStart(week);
+    const patientId = queryId(params.get('patientId'));
+    if (params.get('new') === 'true' || patientId) {
+      setNewSessionOpen(true);
+      if (patientId) setRequestedPatientId(patientId);
+    }
+    // Se limpia la URL: al cerrar el formulario y recargar, no vuelve a abrirse.
+    if (params.has('new') || params.has('patientId') || params.has('semana')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  // Preselecciona el paciente pedido en cuanto llega la lista (solo si está entre los activos).
+  useEffect(() => {
+    if (!requestedPatientId || loading) return;
+    if (patients.some((patient) => patient.id === requestedPatientId)) {
+      setSelectedPatientId(requestedPatientId);
+    }
+    setRequestedPatientId('');
+  }, [requestedPatientId, patients, loading]);
+
+  // Al abrir un formulario, se lleva a la vista (en el móvil queda por encima de la semana).
+  useEffect(() => {
+    if (newSessionOpen || reschedulingId) {
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      formTopRef.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+    }
+  }, [newSessionOpen, reschedulingId]);
+
+  // El resaltado de la cita movida se apaga solo.
+  useEffect(() => {
+    if (!movedId) return;
+    const timer = setTimeout(() => setMovedId(null), 8000);
+    return () => clearTimeout(timer);
+  }, [movedId]);
 
   function getPatientName(session: Session) {
     if (session.patient) {
@@ -501,6 +564,9 @@ export default function AgendaPage() {
     }
   }
 
+  const reschedulingSession =
+    sessions.find((session) => session.id === reschedulingId) ?? null;
+
   const weekLabel = `${weekStart.toLocaleDateString(
     'es-ES',
     {
@@ -599,6 +665,7 @@ export default function AgendaPage() {
               onClick={() => {
                 setError('');
                 setSuccessMessage('');
+                setReschedulingId(null);
                 setNewSessionOpen(true);
               }}
             >
@@ -637,6 +704,32 @@ export default function AgendaPage() {
           </div>
         )}
 
+        <div ref={formTopRef} className="agenda-form-anchor" />
+
+        {reschedulingSession && (
+          <RescheduleSessionForm<Session>
+            key={reschedulingSession.id}
+            session={reschedulingSession}
+            patientName={getPatientName(reschedulingSession)}
+            onCancel={() => setReschedulingId(null)}
+            onSaved={async (_updated, range, timeZone) => {
+              const movedSessionId = reschedulingSession.id;
+              setReschedulingId(null);
+              setError('');
+              setSuccessMessage(
+                `Cita de ${getPatientName(reschedulingSession)} movida al ${rescheduleNoticeDate(range.startsAt, timeZone)}. ${PENDING_REQUESTS_NOTICE}`,
+              );
+              setMovedId(movedSessionId);
+              const targetWeek = startOfWeek(new Date(range.startsAt));
+              if (targetWeek.getTime() !== weekStart.getTime()) {
+                setWeekStart(targetWeek); // recarga la semana de destino
+              } else {
+                await loadAgenda();
+              }
+            }}
+          />
+        )}
+
         {newSessionOpen && (
           <section className="dashboard-card agenda-form-card">
             <div className="card-heading">
@@ -667,6 +760,7 @@ export default function AgendaPage() {
                 <select
                   name="patientId"
                   required
+                  autoFocus
                   value={selectedPatientId}
                   onChange={(event) => {
                     setSelectedPatientId(
@@ -949,7 +1043,9 @@ export default function AgendaPage() {
                     daySessions.map((session) => (
                       <div
                         key={session.id}
-                        className={`agenda-session agenda-session-${session.status.toLowerCase()}`}
+                        className={`agenda-session agenda-session-${session.status.toLowerCase()}${
+                          movedId === session.id ? ' is-moved' : ''
+                        }`}
                       >
                         <button
                           type="button"
@@ -1076,6 +1172,22 @@ export default function AgendaPage() {
                         {session.status ===
                           'SCHEDULED' && (
                           <div className="agenda-session-actions">
+                            {canRescheduleSession(session, viewer) && (
+                              <button
+                                type="button"
+                                className="agenda-reschedule-button"
+                                aria-label={`Cambiar fecha u hora de la cita de ${getPatientName(session)}`}
+                                onClick={() => {
+                                  setError('');
+                                  setSuccessMessage('');
+                                  setNewSessionOpen(false);
+                                  setReschedulingId(session.id);
+                                }}
+                              >
+                                Cambiar fecha u hora
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() =>
