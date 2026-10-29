@@ -7,6 +7,8 @@ import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { isForbidden, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
 import { patientHref, processHref, queryId } from '@/lib/routes';
+import RescheduleSessionForm from "@/components/RescheduleSessionForm";
+import { agendaWeekHref, canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from "@/lib/reschedule";
 
 type Session = {
   id: string;
@@ -46,6 +48,9 @@ export default function SessionDetailPage() {
   const [error, setError] = useState("");
   const [forbidden, setForbidden] = useState(false);
   const [status, setStatus] = useState("");
+  const [rescheduling, setRescheduling] = useState(false);
+  // Tras mover la cita: aviso con enlace a la semana nueva de la agenda.
+  const [moved, setMoved] = useState<{ startsAt: string; timeZone: string } | null>(null);
 
   async function loadSession() {
     if (!sessionId) return;
@@ -112,6 +117,7 @@ export default function SessionDetailPage() {
   }
 
   const processStatus = session.clinicalProcess?.status ?? null;
+  const canReschedule = canRescheduleSession(session, viewer);
 
   return (
     <div className="app-layout"><Sidebar /><main className="patient-record-page e1-session-page">
@@ -127,6 +133,26 @@ export default function SessionDetailPage() {
 
       {error && <div className="agenda-error" role="alert">{error}</div>}
       <p className={status ? "patient-save-state" : undefined} role="status" aria-live="polite">{status}</p>
+      {moved && (
+        <div className="patient-save-state reschedule-done" role="status">
+          <span>Cita movida al {rescheduleNoticeDate(moved.startsAt, moved.timeZone)}. {PENDING_REQUESTS_NOTICE}</span>
+          <Link href={agendaWeekHref(moved.startsAt)} className="text-link">Ver en la agenda</Link>
+        </div>
+      )}
+
+      {rescheduling && (
+        <RescheduleSessionForm<Session>
+          session={session}
+          patientName={fullName(session.patient)}
+          onCancel={() => setRescheduling(false)}
+          onSaved={(updated, range, timeZone) => {
+            setSession((current) => (current ? { ...current, ...(updated ?? {}), startsAt: updated?.startsAt ?? range.startsAt, endsAt: updated?.endsAt ?? range.endsAt } : current));
+            setRescheduling(false);
+            setStatus("");
+            setMoved({ startsAt: updated?.startsAt ?? range.startsAt, timeZone });
+          }}
+        />
+      )}
 
       <div className="e1-stack">
         <section className="patient-record-card">
@@ -142,6 +168,9 @@ export default function SessionDetailPage() {
             <div><dt>Modalidad</dt><dd>{modalityLabel(session.clinicalProcess?.modality) ?? "No indicada"}</dd></div>
           </dl>
           <div className="e1-actions">
+            {canReschedule && !rescheduling && (
+              <button type="button" className="button" onClick={() => { setMoved(null); setRescheduling(true); }}>Cambiar fecha u hora</button>
+            )}
             {session.videoCallUrl && <a href={session.videoCallUrl} target="_blank" rel="noreferrer noopener" className="button">Abrir videollamada</a>}
             {session.patient && session.clinicalProcess && (
               <Link href={processHref(session.patient.id, session.clinicalProcess.id)} className="button secondary">Ver proceso</Link>
