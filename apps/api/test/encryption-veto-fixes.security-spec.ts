@@ -120,6 +120,8 @@ describe('B2: el marcador de "no se pudo descifrar" nunca se persiste encima del
       // Lock de la agenda del profesional y comprobación de solicitudes del portal pendientes.
       prisma.$executeRaw = jest.fn(async () => 1);
       prisma.appointmentRequest = { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) };
+      prisma.workspace = { findFirst: jest.fn(async () => ({ timeZone: 'Europe/Madrid' })) };
+      prisma.notification = { create: jest.fn(async () => ({})) };
       const service = new SessionsService(prisma);
       const before: any = await service.get('w1', owner, 's1');
       expect(before.notes).toBe(DECRYPTION_FAILED_PLACEHOLDER);
