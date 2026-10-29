@@ -33,6 +33,33 @@ export function patientHref(patientId: string, section?: PatientSection): string
   return `/patients/view/${section ? `${section}/` : ''}?id=${q(patientId)}`;
 }
 
+/** Valor de `?filtro=` que abre las tareas de un paciente en «Por revisar» (entregadas). */
+export const TASKS_TO_REVIEW_FILTER = 'por-revisar';
+
+/** Tareas entregadas de un paciente, con el filtro «Por revisar» ya puesto. */
+export function patientTasksToReviewHref(patientId: string): string {
+  return `${patientHref(patientId, 'tasks')}&filtro=${TASKS_TO_REVIEW_FILTER}`;
+}
+
+/** Pantalla con todas las tareas entregadas pendientes de revisar (de varios pacientes). */
+export const TASKS_TO_REVIEW_PAGE = '/follow-up/revisar/';
+
+/**
+ * Destino de la tarjeta «Tareas por revisar» de Mi jornada: con un solo paciente, sus tareas en
+ * «Por revisar»; con varios (o ninguno), la lista de tareas entregadas.
+ * `patientIds` sale de los avisos TASK_REVIEW del panel (ver taskReviewPatientId).
+ */
+export function tasksToReviewHref(patientIds: string[]): string {
+  const unique = Array.from(new Set(patientIds.map(queryId).filter(Boolean)));
+  return unique.length === 1 ? patientTasksToReviewHref(unique[0]) : TASKS_TO_REVIEW_PAGE;
+}
+
+/** Id del paciente de un aviso «Revisar tarea» (href antiguo `/patients/<id>/tasks`), o ''. */
+export function taskReviewPatientId(href: string): string {
+  const match = /^\/patients\/([^/?#]+)\/tasks(?:[/?#]|$)/.exec(href);
+  return match ? queryId(match[1]) : '';
+}
+
 export function processHref(patientId: string, processId: string): string {
   return `/patients/view/process/?id=${q(patientId)}&processId=${q(processId)}`;
 }
