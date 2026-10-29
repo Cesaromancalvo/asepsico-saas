@@ -25,6 +25,8 @@ import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view
 import { projectSelect } from '../patients/patient-view.util';
 import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
+import { rejectPendingRequestsOfSession } from '../scheduling/appointment-request-lifecycle.util';
+import { assertRescheduleTarget, rescheduleError } from './session-reschedule.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -69,7 +71,7 @@ async function lockActiveProcess(tx: Prisma.TransactionClient, workspaceId: stri
     data: { updatedAt: new Date() },
   });
   if (count === 0) {
-    throw new BadRequestException('Solo se pueden programar o mover sesiones de un proceso clínico activo');
+    throw rescheduleError(400, 'PROCESS_NOT_ACTIVE', 'Solo se pueden programar o mover sesiones de un proceso clínico activo');
   }
 }
 
@@ -89,7 +91,7 @@ async function assertSlotFree(
 ) {
   const conflict = await findScheduleConflict(tx, { workspaceId, therapistId, startsAt, endsAt, excludeSessionId, includeBlocks: false });
   if (conflict === 'SESSION') {
-    throw new BadRequestException('El profesional ya tiene una sesión en ese horario');
+    throw rescheduleError(400, 'SESSION_OVERLAP', 'El profesional ya tiene una sesión en ese horario');
   }
   if (conflict === 'REQUEST') {
     throw new ConflictException({
@@ -412,6 +414,21 @@ export class SessionsService {
     );
   }
 
+  /**
+   * «Mover cita»: PATCH /sessions/:id/reschedule (y el heredado PATCH /sessions/:id, que además
+   * admite notas). OWNER/ADMIN/ASSISTANT mueven cualquier cita del espacio; THERAPIST solo las suyas
+   * (403 auditado). Todo en una transacción con la agenda del profesional bloqueada (el mismo lock
+   * que el alta, la aprobación de solicitudes del portal y los bloqueos):
+   *  - la cita debe seguir SCHEDULED y no haber empezado; la hora nueva, en el futuro;
+   *  - el proceso sigue ACTIVO (fila bloqueada, serializa con su cierre);
+   *  - las solicitudes del portal pendientes sobre ESTA cita (cambio o cancelación) se rechazan con
+   *    "contacta con la consulta" (se referían a la hora antigua); el hueco que retenían se libera;
+   *  - sin solape con otra cita no cancelada del profesional (400) ni con una solicitud pendiente
+   *    de otro paciente (409). Las franjas y bloqueos de disponibilidad solo limitan el portal: desde
+   *    la agenda se puede citar fuera de ellas, igual que al crear;
+   *  - auditoría SESSION_RESCHEDULED con hora antigua y nueva, sin contenido clínico.
+   * No se envía correo ni SMS: el paciente ve la hora nueva en su portal.
+   */
   async reschedule(
     workspaceId: string,
     actor: AuthUser,
@@ -420,68 +437,71 @@ export class SessionsService {
   ) {
     assertStaffRole(actor);
     assertCanWriteSessionNotes(actor, dto);
-    const session = await this.get(
-      workspaceId,
-      actor,
-      id,
-    );
 
-    this.assertCanManage(
-      actor,
-      session.therapistId,
-    );
-
+    // Solo metadatos (sin notas ni descifrado): basta para decidir permisos.
+    const current = await this.prisma.session.findFirst({
+      where: { id, workspaceId },
+      select: { id: true, patientId: true, therapistId: true, clinicalProcessId: true, status: true, startsAt: true, endsAt: true },
+    });
+    if (!current) {
+      throw rescheduleError(404, 'SESSION_NOT_FOUND', 'Sesión no encontrada');
+    }
+    if (actor.role === 'THERAPIST' && current.therapistId !== actor.sub) {
+      await this.access.auditDenied(workspaceId, actor, 'session-reschedule', 'NOT_AUTHOR', current.patientId);
+      throw rescheduleError(403, 'NOT_OWN_SESSION', 'No puedes modificar sesiones de otro profesional');
+    }
     if (dto.notes !== undefined) {
-      await this.assertCanWriteNotesFor(workspaceId, actor, session.therapistId, session.patientId);
+      await this.assertCanWriteNotesFor(workspaceId, actor, current.therapistId, current.patientId);
     }
 
-    if (
-      session.status !==
-      SessionStatus.SCHEDULED
-    ) {
-      throw new BadRequestException(
-        'Solo se puede reprogramar una sesión que sigue programada',
-      );
+    const target = {
+      startsAt: dto.startsAt ? new Date(dto.startsAt) : current.startsAt,
+      endsAt: dto.endsAt ? new Date(dto.endsAt) : current.endsAt,
+    };
+    const moving = Boolean(dto.startsAt || dto.endsAt);
+    const now = new Date();
+    if (moving) {
+      assertRescheduleTarget(target, current, now);
     }
 
-    const startsAt = dto.startsAt
-      ? new Date(dto.startsAt)
-      : session.startsAt;
-
-    const endsAt = dto.endsAt
-      ? new Date(dto.endsAt)
-      : session.endsAt;
-
-    this.assertValidRange(
-      startsAt,
-      endsAt,
-    );
-
-    // Solo se reprograma dentro de un proceso ACTIVO (un proceso cerrado o de alta no recibe
-    // citas nuevas ni movidas). Comprobación y escritura en la misma transacción, con la agenda
-    // del profesional y la fila del proceso bloqueadas (ver lockActiveProcess).
     await this.prisma.$transaction(async (tx) => {
-      await lockTherapistSchedule(tx, workspaceId, session.therapistId);
-      await lockActiveProcess(tx, workspaceId, session.clinicalProcessId);
-      if (dto.startsAt || dto.endsAt) {
-        await assertSlotFree(tx, workspaceId, session.therapistId, startsAt, endsAt, id);
+      await lockTherapistSchedule(tx, workspaceId, current.therapistId);
+
+      // Relectura con el lock tomado: estado y hora de partida reales (la auditoría usa estos).
+      const locked = await tx.session.findFirst({
+        where: { id, workspaceId, therapistId: current.therapistId },
+        select: { status: true, startsAt: true, endsAt: true },
+      });
+      if (!locked) {
+        throw rescheduleError(404, 'SESSION_NOT_FOUND', 'Sesión no encontrada');
+      }
+      if (locked.status !== SessionStatus.SCHEDULED) {
+        throw rescheduleError(409, 'SESSION_NOT_SCHEDULED', 'Solo se puede mover una cita que sigue programada');
+      }
+      if (moving && locked.startsAt <= now) {
+        throw rescheduleError(409, 'SESSION_ALREADY_STARTED', 'No se puede mover una cita que ya ha empezado o ha pasado');
       }
 
-      // Las notas SOLO se escriben si llegan en el dto. Antes se re-cifraba session.notes (ya
-      // descifrado por get()): si el descifrado había fallado, se persistía el marcador
-      // "[No se pudo descifrar…]" encima del original y el dato se perdía para siempre.
-      // updateMany con workspaceId y compare-and-set del estado: acotado al workspace y sin
-      // mover una cita que se cerró entretanto.
+      await lockActiveProcess(tx, workspaceId, current.clinicalProcessId);
+
+      let rejectedRequestIds: string[] = [];
+      if (moving) {
+        rejectedRequestIds = await rejectPendingRequestsOfSession(tx, workspaceId, id, actor.sub);
+        await assertSlotFree(tx, workspaceId, current.therapistId, target.startsAt, target.endsAt, id);
+      }
+
+      // Las notas SOLO se escriben si llegan en el dto (nunca se re-cifra lo leído). updateMany con
+      // workspaceId y compare-and-set del estado: acotado al espacio y sin mover una cita cerrada.
       const { count } = await tx.session.updateMany({
         where: { id, workspaceId, status: SessionStatus.SCHEDULED },
         data: {
-          startsAt,
-          endsAt,
+          startsAt: target.startsAt,
+          endsAt: target.endsAt,
           ...(dto.notes !== undefined ? { notes: encryptField(dto.notes) } : {}),
         },
       });
       if (count === 0) {
-        throw new NotFoundException('Sesión no encontrada');
+        throw rescheduleError(409, 'SESSION_NOT_SCHEDULED', 'Solo se puede mover una cita que sigue programada');
       }
 
       await tx.auditLog.create({
@@ -491,9 +511,15 @@ export class SessionsService {
           action: 'SESSION_RESCHEDULED',
           entityType: 'Session',
           entityId: id,
+          // Solo metadatos de agenda: nunca notas ni contenido clínico.
           metadata: {
-            from: { startsAt: session.startsAt, endsAt: session.endsAt },
-            to: { startsAt, endsAt },
+            patientId: current.patientId,
+            therapistId: current.therapistId,
+            from: { startsAt: locked.startsAt.toISOString(), endsAt: locked.endsAt.toISOString() },
+            to: { startsAt: target.startsAt.toISOString(), endsAt: target.endsAt.toISOString() },
+            source: 'AGENDA',
+            rejectedRequestIds,
+            ...(dto.notes !== undefined ? { notesUpdated: true } : {}),
           },
         },
       });

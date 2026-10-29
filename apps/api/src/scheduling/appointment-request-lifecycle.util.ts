@@ -138,6 +138,32 @@ export async function rejectPendingRequestsOfTherapist(tx: Tx, workspaceId: stri
 }
 
 /**
+ * «Mover cita» desde la agenda: las solicitudes del portal PENDIENTES sobre esa cita (cambio o
+ * cancelación) se refieren a la hora antigua y ya no tienen sentido, así que pasan a REJECTED con
+ * "contacta con la consulta" en la misma transacción que el movimiento. El hueco que retenía un
+ * cambio pedido se libera. Auditoría por solicitud y aviso genérico al paciente (en el portal, sin
+ * correo ni SMS). Llamar con el lock de la agenda del profesional tomado.
+ */
+export async function rejectPendingRequestsOfSession(tx: Tx, workspaceId: string, sessionId: string, actorId: string) {
+  const pending = await tx.appointmentRequest.findMany({
+    where: { workspaceId, sessionId, status: 'PENDING', type: { in: ['RESCHEDULE', 'CANCEL'] } },
+    orderBy: { id: 'asc' },
+    select: PENDING_SELECT,
+  });
+  const changed = await closeRows(tx, workspaceId, pending, { status: 'REJECTED', rejectionReason: 'CONTACT_PRACTICE', resolvedById: actorId });
+  if (changed.length) {
+    await tx.auditLog.createMany({
+      data: changed.map((row) => ({
+        workspaceId, actorId, action: 'APPOINTMENT_REQUEST_REJECTED', entityType: 'AppointmentRequest', entityId: row.id,
+        metadata: { patientId: row.patientId, therapistId: row.therapistId, type: row.type, reason: 'CONTACT_PRACTICE', cause: 'SESSION_RESCHEDULED_BY_STAFF', sessionId },
+      })),
+    });
+    await notifyPatientOfRequestUpdates(tx, workspaceId, changed, 'REJECTED');
+  }
+  return changed.map((row) => row.id);
+}
+
+/**
  * Al aprobar una solicitud el hueco queda ocupado: las demás pendientes del mismo profesional que
  * se solapan con él ya no se podrán aprobar, así que se rechazan con SLOT_UNAVAILABLE en la misma
  * transacción (auditoría y aviso genérico al paciente).
