@@ -38,6 +38,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 | Sprint 17 | Acceso excepcional y reserva de citas desde el portal (entrega S4) | Sin documento propio (PR #28) | Implementado (PR #28 en `main`, 19/10/2026); desplegado el 19/10/2026 | Evidencia en el PR #28 (cifras de tests no recogidas en este roadmap); verificaciones en vivo en `postgres-integration`; migraciones de 30 a 33 | BETA (solo demo, sin datos reales) |
 | Sprint 18 | Alta en el portal con QR y baja de miembros del equipo (entrega S5) | `SPRINT_18_ALTA_PORTAL_QR_Y_BAJA_MIEMBRO.md` | Implementado (PR #34 en `main`, `346e1fe`); desplegado el 21/10/2026 | Argos aprobado; `test:security` 1448/1448 con PostgreSQL real, web 136/136, smoke y verificaciones en vivo del CI en verde, prueba manual HTTP 21/21; producción de 33 a 37 migraciones con copia previa; comprobaciones posteriores al despliegue sin datos reales | BETA (solo demo, sin datos reales); flujo completo del alta por QR y de la baja en el entorno pendiente |
 | Sprint 19 | Salida de Vercel, web estática y arreglos previos al piloto demo (27/10/2026) | `SPRINT_19_SALIDA_VERCEL_Y_ARREGLOS_PREPILOTO.md` | Implementado (PR #43–#47 en `main`, `1930b55`) | CI con los 2 checks en verde en cada PR y en `1930b55`; revisión de seguridad aprobada en #44, #45 y #47 y condiciones C4 incorporadas en #43; cifras de tests por suite no recogidas; ensayo de alta del piloto demo correcto el 27/10 (comunicado, sin acta en el repo) | BETA (solo demo, sin datos reales); comprobación en producción pendiente |
+| Sprint 20 | «Mover cita», contraseñas por soporte y cierre de la lista de espera v5 (28–30/10/2026) | `SPRINT_20_MOVER_CITA_Y_CIERRE_LISTA_ESPERA.md` | Implementado (PR #48–#52 en `main`, `4057655`); sin migraciones | PR #51: 1695 tests de seguridad con PostgreSQL real y 241 de web, build y punta a punta en verde; CI con los 2 checks en verde en el último commit de cada PR y en `4057655`; revisión de seguridad aprobada en #51 y #52 y condiciones incorporadas en #50; botón de mover cita presente en la web publicada (solo `GET`) | BETA (solo demo, sin datos reales) |
 
 ## Evidencia acumulada relevante
 
@@ -53,6 +54,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 - Sprint 16 (PR #23, cambio de contraseña): `test:security` **1174/1176 sin fallos**, web **42/42**, e2e con PostgreSQL **27/27**; tres checks del CI en verde en cada merge.
 - Sprint 18 (entrega S5): `test:security` con PostgreSQL real **1448/1448**, web **136/136**, smoke HTTP y verificaciones en vivo del CI en verde, prueba manual HTTP **21/21**.
 - Sprint 19 (PR #43–#47): `Typecheck, tests and build` y `PostgreSQL migrations and real HTTP smoke test` en verde en cada PR y en `1930b55`. Sin recuentos por suite.
+- Sprint 20 (PR #48–#52): según el PR #51, **1695** tests de seguridad con PostgreSQL real y **241** de web, build y punta a punta en verde. Dos checks del CI en verde en el último commit de cada PR y en el merge `4057655` (30/10/2026). Sin recuentos para #48, #50 y #52.
 
 ### Backup y restauración
 
@@ -230,6 +232,18 @@ Estado: **Implementado (PR #43–#47 en `main`, `1930b55`); BETA solo para demo 
 En el entorno (comunicado, sin acta en el repo): proyecto de Vercel borrado y ensayo de alta completo del piloto demo correcto el 27/10/2026.
 
 Pendiente: comprobación en producción de los criterios del documento del sprint; capturas del manual del piloto con las pantallas nuevas; procedimiento de restablecimiento de contraseña y MFA por soporte; riesgo M1 de `TRUST_PROXY` antes del primer paciente real; que la API genere las URL en el formato nuevo.
+
+### Sprint 20 — «Mover cita», contraseñas por soporte y cierre de la lista de espera v5 (28–30/10/2026)
+
+Estado: **Implementado (PR #48–#52 en `main`, `4057655`); BETA solo para demo (sin datos de pacientes reales)**. Documento: `SPRINT_20_MOVER_CITA_Y_CIERRE_LISTA_ESPERA.md`.
+
+- **#48:** pruebas pendientes del Sprint 19 (portal sin preferencias de avisos, CSRF del borrado del teléfono, transición de cookies con base de datos obligatoria en el CI).
+- **#49:** documento del Sprint 19 y roadmap.
+- **#50:** CLI `users:set-password` para restablecer contraseña y MFA por soporte (solo cuentas demo por defecto; cierra las sesiones abiertas y audita sin secretos).
+- **#51:** «Mover cita» (`PATCH /sessions/:id/reschedule`, contrato en `docs/SESSION_RESCHEDULE_API.md`) con botón «Cambiar fecha u hora» en la agenda y en el detalle de la cita; aviso al paciente solo dentro de su portal, sin correo ni SMS; «Nueva cita» abre el formulario y «Tareas por revisar» lleva a las tareas entregadas.
+- **#52:** la lista de espera solo acepta la política `lista-espera-v5`; v1–v4 responden `WAITLIST_POLICY_VERSION_RETIRED`.
+
+Pendiente: comprobación en producción de mover cita (movimiento, aviso en el portal, 403 sobre la cita de otro profesional) y del CLI sobre una cuenta demo; criterios del Sprint 19 aún abiertos; riesgo M1 de `TRUST_PROXY` antes del primer paciente real.
 
 ### Fase B — Hardening RGPD y preparación jurídica
 
