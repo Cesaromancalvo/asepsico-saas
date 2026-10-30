@@ -14,7 +14,7 @@
 1. Identity: registro, login, refresh tokens rotativos y JWT en cookie httpOnly.
 2. Workspace: creación de consulta y membresía inicial.
 3. Patients: CRUD con paginación, filtro por estado, flujo de transición de estados y soft delete/restore.
-4. Sessions (Agenda): programación de citas, detección de solapamientos por profesional, reprogramación y cierre (completada/cancelada/no-show), con control de acceso por rol.
+4. Sessions (Agenda): programación de citas, detección de solapamientos por profesional, reprogramación («Mover cita»: `PATCH /sessions/:id/reschedule`, contrato en `docs/SESSION_RESCHEDULE_API.md`) y cierre (completada/cancelada/no-show), con control de acceso por rol.
 5. Clinical Processes: episodio de tratamiento que agrupa sesiones de un paciente con un terapeuta (motivo, objetivos, notas internas, modalidad). Contiene el contenido clínico narrativo más sensible del sistema.
 6. Audit: registro de acciones sensibles.
 
