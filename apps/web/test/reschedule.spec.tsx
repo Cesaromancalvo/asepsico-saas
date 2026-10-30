@@ -101,7 +101,8 @@ describe('errores de la API', () => {
 
   it('sin código conocido usa el estado o el mensaje de la API', () => {
     expect(rescheduleErrorMessage(apiError(403))).toBe('No tienes permiso para mover esta cita.');
-    expect(rescheduleErrorMessage(apiError(400))).toBe('mensaje de la API');
+    // 400 de validación sin code: mensaje genérico, nunca el texto del servidor (nota b de Argos).
+    expect(rescheduleErrorMessage(apiError(400))).toBe('No se ha podido cambiar la cita. Revisa la fecha y la hora.');
     expect(rescheduleErrorMessage(new Error('red'))).toBe('No se pudo cambiar la cita. Revisa tu conexión y vuelve a intentarlo.');
   });
 });

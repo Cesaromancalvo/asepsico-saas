@@ -737,3 +737,4 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 .agenda-session.is-moved{border-color:var(--violet);box-shadow:0 0 0 3px rgba(112,100,210,.22)}
 .agenda-session-actions .agenda-reschedule-button{flex-basis:100%;border-color:#CFC8F1;background:var(--tint);color:var(--violet-ink);font-weight:600}
 .review-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.review-limit-note{margin:0 0 12px}

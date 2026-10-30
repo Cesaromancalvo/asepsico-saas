@@ -11,6 +11,9 @@ import { patientTasksToReviewHref, taskReviewPatientId } from '@/lib/routes';
 type AttentionItem = { id: string; type: string; title: string; subtitle: string; href: string };
 type DashboardAttention = { attention: AttentionItem[] };
 
+/** GET /dashboard devuelve como mucho 5 entregas (las que más tiempo llevan esperando). */
+const DASHBOARD_REVIEW_LIMIT = 5;
+
 /**
  * «Tareas por revisar»: tareas que los pacientes han entregado y esperan la revisión del
  * profesional. Destino de la tarjeta de Mi jornada cuando hay entregas de varios pacientes.
@@ -72,6 +75,12 @@ export default function TasksToReviewPage() {
             ) : items.length === 0 ? (
               <EmptyState icon="checkCircle" title="Todo revisado">No hay tareas entregadas pendientes de revisar.</EmptyState>
             ) : (
+              <>
+              {items.length >= DASHBOARD_REVIEW_LIMIT && (
+                <p className="reschedule-hint review-limit-note" role="note">
+                  Mostrando las {DASHBOARD_REVIEW_LIMIT} entregas que llevan más tiempo esperando. Puede haber más: las verás en las tareas de cada paciente.
+                </p>
+              )}
               <ul className="task-list review-task-list">
                 {items.map((item) => (
                   <li key={item.id}>
@@ -82,6 +91,7 @@ export default function TasksToReviewPage() {
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </section>
         )}

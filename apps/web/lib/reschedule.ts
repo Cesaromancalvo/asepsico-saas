@@ -112,6 +112,9 @@ const ERROR_MESSAGES: Record<SessionRescheduleErrorCode, string> = {
   SLOT_NOT_AVAILABLE: 'Hay una solicitud pendiente de otro paciente en esa franja. Apruébala o recházala en «Solicitudes de cita», o elige otra hora.',
 };
 
+/** Error genérico para los 400 de validación, que no traen code (nota b de Argos). */
+export const VALIDATION_ERROR_MESSAGE = 'No se ha podido cambiar la cita. Revisa la fecha y la hora.';
+
 /** Mensaje claro para la pantalla a partir del error de la API. */
 export function rescheduleErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
@@ -119,7 +122,8 @@ export function rescheduleErrorMessage(err: unknown): string {
     if (code && code in ERROR_MESSAGES) return ERROR_MESSAGES[code];
     if (err.status === 403) return 'No tienes permiso para mover esta cita.';
     if (err.status === 404) return ERROR_MESSAGES.SESSION_NOT_FOUND;
-    if (err.message) return err.message;
+    // 400 de validación del DTO (sin code): nunca se enseña el texto técnico del servidor.
+    if (err.status === 400) return VALIDATION_ERROR_MESSAGE;
   }
   return 'No se pudo cambiar la cita. Revisa tu conexión y vuelve a intentarlo.';
 }
