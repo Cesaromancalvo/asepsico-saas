@@ -26,8 +26,8 @@ const NAME = 'Profesional Ficticia Apuntada';
 const EMAIL = 'apuntada.ficticia@example.test';
 const TOOLS = 'Herramientas ficticias secretas';
 const entry = () => ({
-  name: NAME, email: EMAIL, situation: 'SELF_EMPLOYED', tools: TOOLS, source: 'INSTAGRAM', privacyAccepted: true,
-  privacyPolicyVersion: 'lista-espera-v3', formToken: issueFormToken(Date.now() - 10_000),
+  name: NAME, email: EMAIL, phone: '+34 600 000 003', situation: 'SELF_EMPLOYED', tools: TOOLS, source: 'INSTAGRAM', privacyAccepted: true,
+  privacyPolicyVersion: 'lista-espera-v5', formToken: issueFormToken(Date.now() - 10_000),
 }) as any;
 
 function setup(env: NodeJS.ProcessEnv, sendImpl: () => Promise<void> = async () => undefined) {

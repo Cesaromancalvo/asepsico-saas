@@ -6,7 +6,7 @@ import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
 import { normalizeWaitlistPhone } from './waitlist-phone';
-import { WAITLIST_FORM_MIN_SECONDS, WAITLIST_POLICY_VERSIONS_WITH_PHONE, WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL } from './waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, WAITLIST_FORM_MIN_SECONDS } from './waitlist.config';
 
 /** Respuesta única para alta nueva, alta repetida y honeypot: no revela si el email ya estaba. */
 export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
@@ -15,7 +15,8 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
  * Lista de espera pública. Fuera de cualquier workspace (no hay workspaceId: es anterior a tener
  * cuenta). Reglas:
  *  - name, email, tools y phone se guardan cifrados (registro waitlistEntry en clinical-crypto.ts).
- *  - phone: obligatorio con la política v5 y prohibido con v2–v4 (phoneFor). Se guarda en E.164.
+ *  - Solo se acepta la política vigente (v5); las retiradas (v1–v4) → 400 WAITLIST_POLICY_VERSION_RETIRED.
+ *  - phone: obligatorio (phoneFor). Se guarda en E.164.
  *  - Deduplicación por emailHash (HMAC); una segunda alta no toca la fila y no lo revela.
  *  - Los logs no llevan nunca nombre, email, teléfono, herramientas, hash ni IP: solo el tipo de evento.
  *  - No se guarda IP ni user-agent: el rate limit por IP vive solo en la memoria del throttler.
@@ -36,8 +37,15 @@ export class WaitlistService {
       return WAITLIST_ACCEPTED;
     }
 
-    // La política v3 ya no ofrece comunicaciones comerciales: no se registra una solicitud que no recoge.
-    if (dto.commercialConsentRequested === true && WAITLIST_POLICY_VERSIONS_WITHOUT_COMMERCIAL.includes(dto.privacyPolicyVersion)) {
+    // Solo la política vigente. El DTO deja pasar las retiradas (v1–v4) para darles este code propio;
+    // se comprueba aquí también por defensa en profundidad (el servicio no depende del ValidationPipe).
+    if (!(ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS as readonly string[]).includes(dto.privacyPolicyVersion)) {
+      this.logger.warn('Alta rechazada: versión de la política retirada o no vigente');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_POLICY_VERSION_RETIRED', message: 'Esta versión de la política ya no está vigente. Recarga la página y vuelve a enviar el formulario.' });
+    }
+
+    // Ninguna política vigente ofrece comunicaciones comerciales: no se registra una solicitud que no recoge.
+    if (dto.commercialConsentRequested === true) {
       this.logger.warn('Alta rechazada: casilla comercial con una versión de la política que no la ofrece');
       throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_COMMERCIAL_NOT_OFFERED', message: 'Esta versión de la política no incluye comunicaciones comerciales.' });
     }
@@ -55,7 +63,6 @@ export class WaitlistService {
     }
 
     const now = new Date();
-    const commercialConsentRequested = dto.commercialConsentRequested === true;
     const data = encryptModelData('waitlistEntry', {
       name: dto.name,
       email: dto.email.trim(),
@@ -66,10 +73,10 @@ export class WaitlistService {
       source: dto.source ?? null,
       privacyPolicyVersion: dto.privacyPolicyVersion,
       privacyAcceptedAt: now,
-      // Solo la SOLICITUD (casilla marcada). El consentimiento válido (commercialConsent/At) lo
-      // fija únicamente waitlist:confirm-commercial tras el doble opt-in por email.
-      commercialConsentRequested,
-      commercialConsentRequestedAt: commercialConsentRequested ? now : null,
+      // La política vigente no ofrece comunicaciones comerciales (true ya se ha rechazado arriba). Las
+      // columnas siguen por las altas v2 y el consentimiento válido solo lo fija waitlist:confirm-commercial.
+      commercialConsentRequested: false,
+      commercialConsentRequestedAt: null,
     });
 
     // Solo CREATE (nunca upsert): una segunda alta con el mismo email no cambia nada de la fila
@@ -100,16 +107,11 @@ export class WaitlistService {
   }
 
   /**
-   * Regla del teléfono por versión de la política. Devuelve el teléfono en E.164 (v5) o null (v2–v4).
-   * Una cadena vacía cuenta como «no enviado». Los errores y los logs nombran el campo, nunca el valor.
+   * Teléfono obligatorio (política v5). Devuelve el teléfono en E.164. Una cadena vacía cuenta como
+   * «no enviado». Los errores y los logs nombran el campo, nunca el valor.
    */
-  private phoneFor(dto: CreateWaitlistEntryDto): string | null {
+  private phoneFor(dto: CreateWaitlistEntryDto): string {
     const sent = typeof dto.phone === 'string' && dto.phone !== '';
-    if (!WAITLIST_POLICY_VERSIONS_WITH_PHONE.includes(dto.privacyPolicyVersion)) {
-      if (!sent) return null;
-      this.logger.warn('Alta rechazada: teléfono con una versión de la política que no lo informa');
-      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_NOT_INFORMED', message: 'Esta versión de la política no incluye el teléfono.' });
-    }
     if (!sent) {
       this.logger.warn('Alta rechazada: falta el teléfono');
       throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_REQUIRED', message: 'El teléfono es obligatorio.' });
