@@ -29,7 +29,7 @@ const checks = [
   ['verificación de concurrencia MFA (condicionada a que exista el script)', /node scripts\/verify-mfa-concurrency\.mjs/],
   ['verificación en vivo del acceso excepcional (modo rápido de CI)', /node scripts\/verify-exceptional-access-live\.mjs[\s\S]*?QA_CONCURRENCY_ROUNDS:\s*'3'/],
   ['verificación en vivo de la reserva de citas', /node scripts\/verify-reserva-citas-live\.mjs/],
-  ['test de carrera session-close-race en postgres-integration', /--testPathPattern '\(session-close-race\|booking-race\)'/],
+  ['tests con BD real (carreras, «Mover cita» y avisos del dashboard) en postgres-integration', /--testPathPattern '\(session-close-race\|booking-race\|session-reschedule\|dashboard-task-review\)'/],
   ['RACE_DATABASE_URL hacia el Postgres del servicio', /RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/],
   ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
 ];
@@ -90,13 +90,15 @@ if (inviteIndex < 0 || inviteIndex < smokeIndex) {
 }
 // El test de carrera necesita la BD migrada y debe vivir en postgres-integration (no en quality).
 const postgresJobIndex = workflow.indexOf('postgres-integration:');
-const raceIndex = workflow.indexOf("--testPathPattern '(session-close-race|booking-race)'");
+const raceIndex = workflow.indexOf("--testPathPattern '(session-close-race|booking-race|session-reschedule|dashboard-task-review)'");
 if (raceIndex < postgresJobIndex || raceIndex < migrateIndex) {
   throw new Error('session-close-race debe ejecutarse en el job postgres-integration, después de db:migrate:ci');
 }
-const raceSpec = readFileSync('apps/api/test/session-close-race.security-spec.ts', 'utf8');
-if (!/RACE_DATABASE_REQUIRED === '1' && !url\) \{\s*\n\s*throw/.test(raceSpec)) {
-  throw new Error('session-close-race debe fallar (no omitirse) cuando RACE_DATABASE_REQUIRED=1 y falta RACE_DATABASE_URL');
+for (const spec of ['session-close-race', 'booking-race', 'session-reschedule', 'dashboard-task-review']) {
+  const raceSpec = readFileSync(`apps/api/test/${spec}.security-spec.ts`, 'utf8');
+  if (!/RACE_DATABASE_REQUIRED === '1' && !url\) \{\s*\n\s*throw/.test(raceSpec)) {
+    throw new Error(`${spec} debe fallar (no omitirse) cuando RACE_DATABASE_REQUIRED=1 y falta RACE_DATABASE_URL`);
+  }
 }
 // Reinicio de la API para el 428 (PR #20): `npm run start` deja colgando sh → nest → node dist/main
 // y en Ubuntu dash no reenvía SIGTERM. Matar solo el PID de npm dejaba viva la API vieja en :4000 y
@@ -237,7 +239,7 @@ function requiredStep(job, name, command) {
 }
 requiredStep('quality', 'Web unit tests', 'npm --workspace @asepsico/web run test -- --ci');
 requiredStep('postgres-integration', 'Session close and booking race tests (real PostgreSQL)',
-  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race)'");
+  "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race|session-reschedule|dashboard-task-review)'");
 const adminDbStep = requiredStep('postgres-integration', 'Platform admin waitlist panel tests (real PostgreSQL)',
   "npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(platform-admin-db|waitlist-phone-db|users-set-password-db)'");
 if (!/RACE_DATABASE_REQUIRED:\s*'1'/.test(adminDbStep.code) || !/RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/.test(adminDbStep.code)) {

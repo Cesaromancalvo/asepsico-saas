@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import ClinicalSubpageGate from '@/components/ClinicalSubpageGate';
 import { api } from '@/lib/api';
-import { patientHref, queryId } from '@/lib/routes';
+import { patientHref, queryId, TASKS_TO_REVIEW_FILTER } from '@/lib/routes';
 import TaskActions from '@/components/TaskActions';
 import TaskCardNotes from '@/components/TaskCardNotes';
 import { applyOptimistic, settleTaskUpdate } from '@/lib/task-update';
@@ -32,9 +32,12 @@ export default function PatientTasksPage(){
 const ACTION_NOTICE:Partial<Record<TaskStatus,string>>={PENDING:'Tarea asignada.',COMPLETED:'Tarea completada con tu devolución.',CHANGES_REQUESTED:'Cambios solicitados al paciente.',CANCELLED:'Tarea cancelada.',IN_PROGRESS:'Tarea reabierta.'};
 
 function PatientTasksPageContent(){
- const patientId = queryId(useSearchParams().get('id'));
+ const searchParams = useSearchParams();
+ const patientId = queryId(searchParams.get('id'));
+ // «Tareas por revisar» (Mi jornada) llega con ?filtro=por-revisar: se abre en las entregadas.
+ const initialFilter = searchParams.get('filtro')===TASKS_TO_REVIEW_FILTER?'SUBMITTED':'ALL';
  const [patient,setPatient]=useState<Patient|null>(null),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[templates,setTemplates]=useState<Template[]>([]);
- const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState<'ALL'|TaskStatus>('ALL');
+ const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState<'ALL'|TaskStatus>(initialFilter);
  const [selectedTemplate,setSelectedTemplate]=useState('');
  // Acciones sobre la lista: tarea en curso de guardar, aviso y error junto a la propia lista.
  const [busyTask,setBusyTask]=useState<string|null>(null),[notice,setNotice]=useState(''),[listError,setListError]=useState('');
@@ -69,7 +72,7 @@ function PatientTasksPageContent(){
   <div className="patient-tasks-layout"><section className="patient-record-card"><div className="patient-plan-section-heading"><div><span>01</span><div><h2>Nueva tarea</h2><p>Usa una plantilla o redacta una indicación personalizada.</p></div></div></div>
    <form className="therapy-goal-form" onSubmit={createTask}><label><span>Plantilla</span><select value={selectedTemplate} onChange={e=>setSelectedTemplate(e.target.value)}><option value="">Tarea personalizada</option>{templates.map(t=><option key={t.id} value={t.id}>{t.title}</option>)}</select></label><label><span>Título</span><input name="title" required minLength={2} maxLength={180} key={`title-${selectedTemplate}`} defaultValue={selected?.title||''}/></label><label><span>Instrucciones</span><textarea name="instructions" maxLength={5000} key={`instructions-${selectedTemplate}`} defaultValue={selected?.instructions||''}/></label><div className="task-form-row"><label><span>Fecha orientativa</span><input type="date" name="dueDate"/></label><label><span>Objetivo asociado</span><select name="therapyGoalId" defaultValue=""><option value="">Sin objetivo asociado</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></label></div><div className="patient-record-actions task-form-actions"><button className="button secondary" name="action" value="draft" disabled={saving}>Guardar borrador</button><button className="button" name="action" value="assign" disabled={saving||patient.status==='ARCHIVED'}>{saving?'Guardando…':'Asignar al paciente'}</button></div></form>
   </section>
-  <section className="patient-record-card"><div className="task-list-heading"><div><h2>Seguimiento</h2><p>El paciente entrega; el profesional valida el cierre.</p></div><div className="timeline-filters"><button className={filter==='ALL'?'active':''} onClick={()=>setFilter('ALL')}>Todas</button><button className={filter==='SUBMITTED'?'active':''} onClick={()=>setFilter('SUBMITTED')}>Por revisar</button><button className={filter==='IN_PROGRESS'?'active':''} onClick={()=>setFilter('IN_PROGRESS')}>En curso</button><button className={filter==='COMPLETED'?'active':''} onClick={()=>setFilter('COMPLETED')}>Completadas</button></div></div>
+  <section className="patient-record-card"><div className="task-list-heading"><div><h2>Seguimiento</h2><p>El paciente entrega; el profesional valida el cierre.</p></div><div className="timeline-filters"><button type="button" aria-pressed={filter==='ALL'} className={filter==='ALL'?'active':''} onClick={()=>setFilter('ALL')}>Todas</button><button type="button" aria-pressed={filter==='SUBMITTED'} className={filter==='SUBMITTED'?'active':''} onClick={()=>setFilter('SUBMITTED')}>Por revisar</button><button type="button" aria-pressed={filter==='IN_PROGRESS'} className={filter==='IN_PROGRESS'?'active':''} onClick={()=>setFilter('IN_PROGRESS')}>En curso</button><button type="button" aria-pressed={filter==='COMPLETED'} className={filter==='COMPLETED'?'active':''} onClick={()=>setFilter('COMPLETED')}>Completadas</button></div></div>
    <div className="task-list-feedback" aria-live="polite">{notice&&<div className="patient-save-state" role="status">{notice}</div>}</div>
    {listError&&<div className="agenda-error" role="alert">{listError}</div>}
    <div className="therapeutic-task-list">{visible.map(task=>{const busy=busyTask===task.id;return <article key={task.id} className={`therapeutic-task-card task-${task.status.toLowerCase()}`} aria-busy={busy}><div className="task-card-main"><div className="therapy-goal-top"><span className={`task-status task-status-${task.status.toLowerCase()}`}>{LABEL[task.status]}</span>{task.dueDate&&<span className="task-date">Fecha objetivo {fmt(task.dueDate)}</span>}{task.therapyGoal&&<span className="task-goal">{task.therapyGoal.title}</span>}</div><h3>{task.title}</h3>{task.instructions&&<p>{task.instructions}</p>}

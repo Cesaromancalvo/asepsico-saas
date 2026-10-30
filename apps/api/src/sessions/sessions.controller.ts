@@ -25,7 +25,7 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { PatientAgendaQueryDto } from './dto/patient-agenda-query.dto';
 import { PatientAgendaService } from './patient-agenda.service';
-import { RescheduleSessionDto } from './dto/reschedule-session.dto';
+import { RescheduleSessionDto, RescheduleSessionTimesDto } from './dto/reschedule-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
 import { SessionsService } from './sessions.service';
 
@@ -93,6 +93,25 @@ export class SessionsController {
     );
   }
 
+  /**
+   * «Mover cita» a otra fecha, hora o duración. OWNER/ADMIN/ASSISTANT: cualquier cita del espacio;
+   * THERAPIST: solo las suyas. Contrato y códigos de error en packages/contracts/src/session-reschedule.ts.
+   */
+  @Patch(':id/reschedule')
+  move(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RescheduleSessionTimesDto,
+  ) {
+    return this.sessions.reschedule(
+      user.workspaceId,
+      user,
+      id,
+      { startsAt: dto.startsAt, endsAt: dto.endsAt },
+    );
+  }
+
+  /** Heredado (mismas reglas que /reschedule; admite además notas). La web usa /reschedule. */
   @Patch(':id')
   reschedule(
     @CurrentUser() user: AuthUser,

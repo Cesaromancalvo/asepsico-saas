@@ -24,6 +24,7 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
     appointmentRequest: [], availabilityBlock: [], therapistAvailability: [], clinicalProcessPrivateNote: [],
     portalIntakeLink: [], portalSignupRequest: [], portalActivationToken: [],
+    workspace: [],
     ...seed,
   } as Store;
 

@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
 import Icon, { EmptyState } from '../components/Icon';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
-import { appHref, patientHref, sessionHref } from '@/lib/routes';
+import { appHref, patientHref, patientTasksToReviewHref, sessionHref, taskReviewPatientId, tasksToReviewHref } from '@/lib/routes';
 
 type DashboardData = {
   professional: { firstName: string; lastName: string; role: string };
@@ -131,6 +131,12 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
   }
 
   const next = data.nextSession;
+  // «Tareas por revisar» lleva a las tareas entregadas con el filtro «Por revisar».
+  const reviewPatientIds = data.attention.filter((item) => item.type === 'TASK_REVIEW').map((item) => taskReviewPatientId(item.href));
+  const attentionHref = (item: DashboardData['attention'][number]) => {
+    const reviewPatientId = item.type === 'TASK_REVIEW' ? taskReviewPatientId(item.href) : '';
+    return reviewPatientId ? patientTasksToReviewHref(reviewPatientId) : appHref(item.href);
+  };
 
   return (
     <div className="app-layout">
@@ -195,7 +201,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
 
         <section className="dashboard-metrics" aria-label="Resumen de jornada">
           <Link href="/agenda" className="dashboard-card metric-card metric-violet"><span><Icon name="calendar" /></span><div><strong>{data.summary.sessionsToday}</strong><small>Sesiones hoy</small></div></Link>
-          <Link href="/follow-up" className="dashboard-card metric-card metric-green"><span><Icon name="clipboard" /></span><div><strong>{data.summary.pendingReviews}</strong><small>Tareas por revisar</small></div></Link>
+          <Link href={tasksToReviewHref(reviewPatientIds)} className="dashboard-card metric-card metric-green"><span><Icon name="clipboard" /></span><div><strong>{data.summary.pendingReviews}</strong><small>Tareas por revisar</small></div></Link>
           <Link href="/messages" className="dashboard-card metric-card metric-blue"><span><Icon name="message" /></span><div><strong>{data.summary.unreadMessages}</strong><small>Mensajes nuevos</small></div></Link>
           <Link href="/follow-up" className="dashboard-card metric-card metric-amber"><span><Icon name="trend" /></span><div><strong>{data.summary.followUps}</strong><small>Seguimientos</small></div></Link>
         </section>
@@ -220,7 +226,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
               <div className="card-heading"><div><p className="eyebrow">REQUIERE ATENCIÓN</p><h2>Próximas acciones</h2></div><span className="task-count">{data.attention.length}</span></div>
               <div className="task-list">
                 {data.attention.length ? data.attention.map((item) => (
-                  <Link key={item.id} href={appHref(item.href)} className="task-row"><span className={`task-checkbox task-${item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'review' : 'follow'}`}><Icon name={item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'clipboard' : 'trend'} size={16} /></span><span><strong>{item.title}</strong><small>{item.subtitle}</small></span><Icon name="chevronRight" size={16} /></Link>
+                  <Link key={item.id} href={attentionHref(item)} className="task-row"><span className={`task-checkbox task-${item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'review' : 'follow'}`}><Icon name={item.type === 'MESSAGE' ? 'message' : item.type === 'TASK_REVIEW' ? 'clipboard' : 'trend'} size={16} /></span><span><strong>{item.title}</strong><small>{item.subtitle}</small></span><Icon name="chevronRight" size={16} /></Link>
                 )) : <EmptyState icon="checkCircle" title="Todo al día" compact>No hay acciones pendientes.</EmptyState>}
               </div>
             </section>
