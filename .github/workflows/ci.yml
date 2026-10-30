@@ -355,8 +355,10 @@ jobs:
       # Incluye la doble reserva del portal y las altas solapadas de la agenda (advisory locks e
       # índice único del hueco retenido): booking-race.
       # Y «Mover cita» (session-reschedule): movimientos simultáneos al mismo hueco y mover vs. crear.
+      # Y «Tareas por revisar» (dashboard-task-review, condición de Argos): GET /dashboard no da
+      # avisos TASK_REVIEW a OWNER/ADMIN no clínicos ni a ASSISTANT aunque haya tareas entregadas.
       - name: Session close and booking race tests (real PostgreSQL)
-        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race|session-reschedule)'
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race|session-reschedule|dashboard-task-review)'
         env:
           RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
           RACE_DATABASE_REQUIRED: '1'
