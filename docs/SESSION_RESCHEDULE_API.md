@@ -66,7 +66,7 @@ Los errores de validación del DTO (400) no llevan `code`: traen `message` como 
   recibe el aviso genérico del portal (sin fecha, hora ni nombre). Si el movimiento falla, siguen
   pendientes.
 - **Aviso dentro del portal** al paciente, en la misma transacción: «Tu cita ha cambiado: nueva
-  fecha martes, 3 de noviembre, 19:30» (día y hora en la zona del espacio). Va por `patientId`, así
+  fecha martes, 12 de enero, 19:30» (día y hora en la zona del espacio). Va por `patientId`, así
   que lo ven las cuentas activas de ese paciente (él o su tutor) en `GET /portal/notifications`. Sin
   profesional, proceso, tipo de sesión ni ningún dato clínico. Tipo `SYSTEM`, sin migración.
 - No se envía correo ni SMS (no se crea ningún `NotificationDelivery`). El paciente ve también la

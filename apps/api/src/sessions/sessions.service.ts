@@ -64,7 +64,7 @@ function assertCanWriteSessionNotes(actor: Pick<AuthUser, 'role'>, dto: { notes?
  */
 async function lockActiveProcess(tx: Prisma.TransactionClient, workspaceId: string, clinicalProcessId: string | null | undefined) {
   if (!clinicalProcessId) {
-    throw new BadRequestException('La sesión no pertenece a ningún proceso clínico activo');
+    throw rescheduleError(400, 'PROCESS_NOT_ACTIVE', 'La sesión no pertenece a ningún proceso clínico activo');
   }
   const { count } = await tx.clinicalProcess.updateMany({
     where: { id: clinicalProcessId, workspaceId, status: 'ACTIVE' },

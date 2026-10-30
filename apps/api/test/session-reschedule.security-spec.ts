@@ -321,19 +321,15 @@ describe('Mover cita: PATCH heredado sin hora nueva', () => {
 describe('Mover cita: aviso al paciente en el portal', () => {
   it('crea un aviso SOLO para ese paciente, con día y hora en la zona del espacio y sin datos clínicos', async () => {
     const prisma = seed();
-    // 3 de noviembre de 2026, 18:30 UTC = 19:30 en Madrid (CET).
-    const target = new Date('2026-11-03T18:30:00Z');
-    jest.useFakeTimers({ now: new Date('2026-10-29T09:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
-    try {
-      await service(prisma).reschedule(WS, actor('assistant', 'ASSISTANT'), 'ses-a', body(target));
-    } finally {
-      jest.useRealTimers();
-    }
+    // 12 de enero de 2027, 18:30 UTC = 19:30 en Madrid (CET). Fecha fija lejos de las citas de la
+    // semilla (relativas a hoy) para que el test no dependa del día en que se ejecuta.
+    const target = new Date('2027-01-12T18:30:00Z');
+    await service(prisma).reschedule(WS, actor('assistant', 'ASSISTANT'), 'ses-a', body(target));
     const notices = prisma.__store.notification;
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ workspaceId: WS, audience: 'PATIENT', patientId: 'pat-1', status: 'SENT', actionUrl: '/portal', title: 'Tu cita ha cambiado' });
     expect(notices[0].userId).toBeUndefined();
-    expect(notices[0].body).toBe('Tu cita ha cambiado: nueva fecha martes, 3 de noviembre, 19:30.');
+    expect(notices[0].body).toBe('Tu cita ha cambiado: nueva fecha martes, 12 de enero, 19:30.');
     const json = JSON.stringify(notices);
     for (const forbidden of [NOTES_MARK, SUMMARY_MARK, 'Proceso ficticio', 'Profesional', 'INDIVIDUAL', 't-a', 'proc-a']) expect(json).not.toContain(forbidden);
     // Ningún envío fuera del portal.
