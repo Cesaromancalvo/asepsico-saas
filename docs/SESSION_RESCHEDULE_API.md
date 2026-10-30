@@ -21,7 +21,8 @@ Content-Type: application/json   (cookie de sesión + cabecera CSRF, como el res
   sin notas ni título del proceso).
 
 `PATCH /sessions/:id` sigue existiendo (heredado, admite además `notes`) con las mismas reglas; la web
-no lo usa.
+no lo usa. Sin `startsAt` ni `endsAt` (cuerpo vacío o solo notas) → 400 `NO_CHANGE`, sin auditoría
+ni aviso; las notas se editan con `PATCH /sessions/:id/notes`.
 
 ## Permisos
 
@@ -39,7 +40,7 @@ Todo filtrado por `workspaceId`: una cita de otro espacio es 404 `SESSION_NOT_FO
 |---|---|---|
 | 400 | `INVALID_RANGE` | fin <= inicio, fecha no válida o más de 12 h |
 | 400 | `START_IN_PAST` | la hora nueva ya ha pasado |
-| 400 | `NO_CHANGE` | la hora nueva es la misma que la actual |
+| 400 | `NO_CHANGE` | la hora nueva es la misma que la actual, o no se indica hora (PATCH heredado) |
 | 400 | `SESSION_OVERLAP` | el profesional ya tiene otra cita no cancelada que se solapa |
 | 400 | `PROCESS_NOT_ACTIVE` | el proceso clínico de la cita ya no está activo |
 | 403 | `NOT_OWN_SESSION` | THERAPIST con la cita de otro profesional |
@@ -64,4 +65,9 @@ Los errores de validación del DTO (400) no llevan `code`: traen `message` como 
   se audita (`APPOINTMENT_REQUEST_REJECTED`, `cause: SESSION_RESCHEDULED_BY_STAFF`) y el paciente
   recibe el aviso genérico del portal (sin fecha, hora ni nombre). Si el movimiento falla, siguen
   pendientes.
-- No se envía correo ni SMS. El paciente ve la hora nueva en las próximas citas de su portal.
+- **Aviso dentro del portal** al paciente, en la misma transacción: «Tu cita ha cambiado: nueva
+  fecha martes, 12 de enero, 19:30» (día y hora en la zona del espacio). Va por `patientId`, así
+  que lo ven las cuentas activas de ese paciente (él o su tutor) en `GET /portal/notifications`. Sin
+  profesional, proceso, tipo de sesión ni ningún dato clínico. Tipo `SYSTEM`, sin migración.
+- No se envía correo ni SMS (no se crea ningún `NotificationDelivery`). El paciente ve también la
+  hora nueva en las próximas citas de su portal.

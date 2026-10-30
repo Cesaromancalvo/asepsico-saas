@@ -26,7 +26,7 @@ import { projectSelect } from '../patients/patient-view.util';
 import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 import { rejectPendingRequestsOfSession } from '../scheduling/appointment-request-lifecycle.util';
-import { assertRescheduleTarget, rescheduleError } from './session-reschedule.util';
+import { assertRescheduleTarget, notifyPatientOfReschedule, rescheduleError } from './session-reschedule.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -64,7 +64,7 @@ function assertCanWriteSessionNotes(actor: Pick<AuthUser, 'role'>, dto: { notes?
  */
 async function lockActiveProcess(tx: Prisma.TransactionClient, workspaceId: string, clinicalProcessId: string | null | undefined) {
   if (!clinicalProcessId) {
-    throw new BadRequestException('La sesión no pertenece a ningún proceso clínico activo');
+    throw rescheduleError(400, 'PROCESS_NOT_ACTIVE', 'La sesión no pertenece a ningún proceso clínico activo');
   }
   const { count } = await tx.clinicalProcess.updateMany({
     where: { id: clinicalProcessId, workspaceId, status: 'ACTIVE' },
@@ -458,11 +458,13 @@ export class SessionsService {
       startsAt: dto.startsAt ? new Date(dto.startsAt) : current.startsAt,
       endsAt: dto.endsAt ? new Date(dto.endsAt) : current.endsAt,
     };
-    const moving = Boolean(dto.startsAt || dto.endsAt);
-    const now = new Date();
-    if (moving) {
-      assertRescheduleTarget(target, current, now);
+    // Sin hora nueva (cuerpo vacío o solo notas en el PATCH heredado) no hay nada que mover: 400
+    // NO_CHANGE y ni auditoría ni aviso. Las notas se editan con PATCH /sessions/:id/notes.
+    if (!dto.startsAt && !dto.endsAt) {
+      throw rescheduleError(400, 'NO_CHANGE', 'Indica la fecha y hora nuevas de la cita');
     }
+    const now = new Date();
+    assertRescheduleTarget(target, current, now);
 
     await this.prisma.$transaction(async (tx) => {
       await lockTherapistSchedule(tx, workspaceId, current.therapistId);
@@ -478,17 +480,17 @@ export class SessionsService {
       if (locked.status !== SessionStatus.SCHEDULED) {
         throw rescheduleError(409, 'SESSION_NOT_SCHEDULED', 'Solo se puede mover una cita que sigue programada');
       }
-      if (moving && locked.startsAt <= now) {
+      if (locked.startsAt <= now) {
         throw rescheduleError(409, 'SESSION_ALREADY_STARTED', 'No se puede mover una cita que ya ha empezado o ha pasado');
+      }
+      if (locked.startsAt.getTime() === target.startsAt.getTime() && locked.endsAt.getTime() === target.endsAt.getTime()) {
+        throw rescheduleError(400, 'NO_CHANGE', 'La cita ya está a esa hora');
       }
 
       await lockActiveProcess(tx, workspaceId, current.clinicalProcessId);
 
-      let rejectedRequestIds: string[] = [];
-      if (moving) {
-        rejectedRequestIds = await rejectPendingRequestsOfSession(tx, workspaceId, id, actor.sub);
-        await assertSlotFree(tx, workspaceId, current.therapistId, target.startsAt, target.endsAt, id);
-      }
+      const rejectedRequestIds = await rejectPendingRequestsOfSession(tx, workspaceId, id, actor.sub);
+      await assertSlotFree(tx, workspaceId, current.therapistId, target.startsAt, target.endsAt, id);
 
       // Las notas SOLO se escriben si llegan en el dto (nunca se re-cifra lo leído). updateMany con
       // workspaceId y compare-and-set del estado: acotado al espacio y sin mover una cita cerrada.
@@ -523,6 +525,8 @@ export class SessionsService {
           },
         },
       });
+
+      await notifyPatientOfReschedule(tx, { workspaceId, patientId: current.patientId, sessionId: id, startsAt: target.startsAt, endsAt: target.endsAt, now });
     });
 
     return this.get(

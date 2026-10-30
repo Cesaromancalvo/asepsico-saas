@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { DEFAULT_TIME_ZONE, isValidTimeZone } from '../scheduling/time-zone.util';
 
 /**
  * «Mover cita» (PATCH /sessions/:id/reschedule): errores con `code` estable para la web y
@@ -44,4 +46,40 @@ export function assertRescheduleTarget(
   if (startsAt.getTime() === current.startsAt.getTime() && endsAt.getTime() === current.endsAt.getTime()) {
     throw rescheduleError(400, 'NO_CHANGE', 'La cita ya está a esa hora');
   }
+}
+
+/** «martes, 3 de noviembre, 19:30» en la zona horaria del espacio. */
+export function formatAppointmentLabel(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('es-ES', {
+    timeZone, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date);
+}
+
+/**
+ * Aviso DENTRO del portal al paciente (y a su tutor: los avisos del portal van por patientId y los
+ * leen las cuentas activas de ese paciente). Solo día y hora nuevos en la zona del espacio: sin
+ * profesional, proceso, tipo de sesión ni ningún dato clínico. Nunca correo ni SMS: se guarda como
+ * SENT sin NotificationDelivery. Misma transacción que el movimiento.
+ */
+export async function notifyPatientOfReschedule(
+  tx: Prisma.TransactionClient,
+  params: { workspaceId: string; patientId: string; sessionId: string; startsAt: Date; endsAt: Date; now: Date },
+) {
+  const workspace = await tx.workspace.findFirst({ where: { id: params.workspaceId }, select: { timeZone: true } });
+  const timeZone = isValidTimeZone(workspace?.timeZone) ? workspace!.timeZone : DEFAULT_TIME_ZONE;
+  await tx.notification.create({
+    data: {
+      workspaceId: params.workspaceId,
+      audience: 'PATIENT',
+      patientId: params.patientId,
+      type: 'SYSTEM',
+      title: 'Tu cita ha cambiado',
+      body: `Tu cita ha cambiado: nueva fecha ${formatAppointmentLabel(params.startsAt, timeZone)}.`,
+      actionUrl: '/portal',
+      status: 'SENT',
+      scheduledAt: params.now,
+      sentAt: params.now,
+      dedupeKey: `session-rescheduled:${params.sessionId}:${params.startsAt.toISOString()}:${params.endsAt.toISOString()}:${params.now.getTime()}`,
+    },
+  });
 }

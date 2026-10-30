@@ -279,8 +279,10 @@ describe('Mover cita: solicitudes del portal', () => {
     expect(rejected[0].metadata).toMatchObject({ cause: 'SESSION_RESCHEDULED_BY_STAFF', sessionId: 'ses-a' });
     expect(audits(prisma, 'SESSION_RESCHEDULED')[0].metadata.rejectedRequestIds.sort()).toEqual(['req-cancel', 'req-move']);
     // Aviso genérico en el portal (sin fecha, hora ni nombre); ningún correo.
-    const notices = prisma.__store.notification.filter((n: any) => n.audience === 'PATIENT');
+    const notices = prisma.__store.notification.filter((n: any) => n.type === 'APPOINTMENT_REQUEST_UPDATE');
     expect(notices).toHaveLength(2);
+    // Más el aviso de la hora nueva (uno solo).
+    expect(prisma.__store.notification.filter((n: any) => n.title === 'Tu cita ha cambiado')).toHaveLength(1);
     for (const notice of notices) expect(`${notice.title} ${notice.body}`).not.toMatch(/\d{1,2}:\d{2}|Paciente|Ficticio/);
   });
 
@@ -298,6 +300,68 @@ describe('Mover cita: solicitudes del portal', () => {
     // La cancelación pendiente de esta cita NO se ha rechazado (rollback de la transacción).
     expect(prisma.__store.appointmentRequest.find((r: any) => r.id === 'req-cancel').status).toBe('PENDING');
     expect(audits(prisma, 'APPOINTMENT_REQUEST_REJECTED')).toHaveLength(0);
+  });
+});
+
+describe('Mover cita: PATCH heredado sin hora nueva', () => {
+  it.each([
+    ['body vacío', {}],
+    ['solo notas', { notes: 'Nota ficticia' }],
+  ])('%s en el PATCH heredado: 400 NO_CHANGE, sin auditoría ni aviso', async (_label, dto) => {
+    const prisma = seed();
+    const error = await service(prisma).reschedule(WS, actor('t-a', 'THERAPIST'), 'ses-a', dto as any).then(() => null, (e) => e);
+    expect(statusOf(error)).toBe(400);
+    expect(codeOf(error)).toBe('NO_CHANGE');
+    expect(audits(prisma, 'SESSION_RESCHEDULED')).toHaveLength(0);
+    expect(prisma.session.updateMany).not.toHaveBeenCalled();
+    expect(prisma.__store.notification).toHaveLength(0);
+  });
+});
+
+describe('Mover cita: aviso al paciente en el portal', () => {
+  it('crea un aviso SOLO para ese paciente, con día y hora en la zona del espacio y sin datos clínicos', async () => {
+    const prisma = seed();
+    // 12 de enero de 2027, 18:30 UTC = 19:30 en Madrid (CET). Fecha fija lejos de las citas de la
+    // semilla (relativas a hoy) para que el test no dependa del día en que se ejecuta.
+    const target = new Date('2027-01-12T18:30:00Z');
+    await service(prisma).reschedule(WS, actor('assistant', 'ASSISTANT'), 'ses-a', body(target));
+    const notices = prisma.__store.notification;
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ workspaceId: WS, audience: 'PATIENT', patientId: 'pat-1', status: 'SENT', actionUrl: '/portal', title: 'Tu cita ha cambiado' });
+    expect(notices[0].userId).toBeUndefined();
+    expect(notices[0].body).toBe('Tu cita ha cambiado: nueva fecha martes, 12 de enero, 19:30.');
+    const json = JSON.stringify(notices);
+    for (const forbidden of [NOTES_MARK, SUMMARY_MARK, 'Proceso ficticio', 'Profesional', 'INDIVIDUAL', 't-a', 'proc-a']) expect(json).not.toContain(forbidden);
+    // Ningún envío fuera del portal.
+    expect(prisma.__store.notificationDelivery ?? []).toHaveLength(0);
+  });
+
+  it('el aviso se lee por el portal del paciente (o su tutor) y no por el de otro paciente ni otro espacio', async () => {
+    const { NotificationsService } = await import('../src/notifications/notifications.service');
+    const prisma = seed();
+    prisma.__store.patientPortalAccount = [
+      { id: 'acc-p1', workspaceId: WS, patientId: 'pat-1', isActive: true },
+      { id: 'acc-p1-tutor', workspaceId: WS, patientId: 'pat-1', isActive: true, accessorType: 'GUARDIAN' },
+      { id: 'acc-p2', workspaceId: WS, patientId: 'pat-2', isActive: true },
+      { id: 'acc-ws2', workspaceId: WS2, patientId: 'pat-ws2', isActive: true },
+    ];
+    for (const name of ['patientPortalAccount']) {
+      prisma[name] = { findFirst: jest.fn(async ({ where }: any) => prisma.__store[name].find((r: any) => Object.entries(where).every(([k, v]) => r[k] === v)) ?? null) };
+    }
+    await service(prisma).reschedule(WS, actor('owner', 'OWNER'), 'ses-a', body(at(10)));
+    const notifications = new NotificationsService(prisma);
+    const read = (workspaceId: string, patientId: string, portalAccountId: string) => notifications.listPatient({ workspaceId, patientId, portalAccountId });
+    const titles = (rows: any[]) => rows.map((r) => r.title);
+    expect(titles(await read(WS, 'pat-1', 'acc-p1'))).toContain('Tu cita ha cambiado');
+    expect(titles(await read(WS, 'pat-1', 'acc-p1-tutor'))).toContain('Tu cita ha cambiado');
+    expect(titles(await read(WS, 'pat-2', 'acc-p2'))).not.toContain('Tu cita ha cambiado');
+    expect(titles(await read(WS2, 'pat-ws2', 'acc-ws2'))).not.toContain('Tu cita ha cambiado');
+  });
+
+  it('si el movimiento falla, no hay aviso', async () => {
+    const prisma = seed();
+    await failMove(prisma, actor('owner', 'OWNER'), 'ses-a', plus(at(4), 20));
+    expect(prisma.__store.notification).toHaveLength(0);
   });
 });
 
