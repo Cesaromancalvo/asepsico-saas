@@ -56,6 +56,29 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
 
   afterAll(async () => { await prisma?.$disconnect(); });
 
+  it('(3) si el aviso falla dentro de close(), se deshacen el estado de la cita y la auditoría', async () => {
+    const start = new Date(Math.ceil((Date.now() + 20 * DAY) / HOUR) * HOUR);
+    const process = await prisma.clinicalProcess.findFirstOrThrow({ where: { workspaceId: ids.ws, patientId: ids.patient } });
+    const session = await prisma.session.create({ data: { workspaceId: ids.ws, patientId: ids.patient, therapistId: ids.therapistA, clinicalProcessId: process.id, startsAt: start, endsAt: new Date(start.getTime() + 50 * 60_000) } });
+    // Cliente real con un único fallo: notification.createMany dentro de la transacción.
+    const failing: any = new Proxy(prisma, {
+      get(target: any, key) {
+        if (key !== '$transaction') return target[key];
+        return (cb: any) => target.$transaction((tx: any) => cb(new Proxy(tx, {
+          get(inner: any, k) {
+            if (k !== 'notification') return inner[k];
+            return { ...inner.notification, createMany: async () => { throw new Error('fallo simulado del aviso'); } };
+          },
+        })));
+      },
+    });
+    await expect(new SessionsService(failing).close(ids.ws, actor('assistant', 'ASSISTANT'), session.id, 'CANCELLED' as any)).rejects.toThrow('fallo simulado del aviso');
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: session.id } })).status).toBe('SCHEDULED');
+    expect(await prisma.auditLog.count({ where: { workspaceId: ids.ws, entityId: session.id, action: 'SESSION_STATUS_CHANGED' } })).toBe(0);
+    expect(await prisma.notification.count({ where: { workspaceId: ids.ws, dedupeKey: { startsWith: `appointment-change:session:${session.id}:` } } })).toBe(0);
+    await prisma.session.delete({ where: { id: session.id } });
+  });
+
   it('recepción mueve la cita, el paciente pide cancelar y OWNER rechaza: cada aviso a quien toca, con nombre solo al leer', async () => {
     const notifications = new NotificationsService(prisma as any);
     const target = new Date(Math.ceil((Date.now() + 12 * DAY) / HOUR) * HOUR);

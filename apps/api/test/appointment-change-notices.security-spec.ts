@@ -5,6 +5,7 @@ import { PortalBookingService, PortalUser } from '../src/scheduling/portal-booki
 import { AppointmentRequestsService } from '../src/scheduling/appointment-requests.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
+import { APPOINTMENT_CHANGES } from '../src/notifications/appointment-change-notice.util';
 
 /**
  * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10):
@@ -73,6 +74,7 @@ function seed() {
     availabilityBlock: [],
     appointmentRequest: [],
     patientPortalAccount: [{ id: 'acc-p1', workspaceId: WS, patientId: 'p1', isActive: true }],
+    notificationDelivery: [],
   } as any);
 }
 
@@ -332,5 +334,74 @@ describe('Seguridad de la bandeja del personal', () => {
     for (const call of prisma.notification.createMany.mock.calls) {
       for (const row of [].concat(call[0].data)) expect((row as any).workspaceId).toBe(WS);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------------------------
+describe('Condiciones de Argos', () => {
+  /** Los 7 tipos de cambio, repartidos en tres escenarios (cada uno con su base de datos). */
+  async function allSevenChanges() {
+    const a = seed();
+    const { req: withdrawn } = await portalReschedule(a);
+    await booking(a).withdraw(portal(), withdrawn.id); // PATIENT_REQUESTED_RESCHEDULE + PATIENT_WITHDREW_REQUEST
+    const b = seed();
+    const { req: approved } = await portalReschedule(b);
+    await requests(b).approve(assistant, approved.id); // REQUEST_APPROVED
+    await sessions(b).reschedule(WS, owner, 'ses-1', moveBody as any); // RESCHEDULED_BY_STAFF
+    await sessions(b).close(WS, assistant, 'ses-1', 'CANCELLED'); // CANCELLED_BY_STAFF
+    const c = seed();
+    const cancel: any = await booking(c).cancelRequest(portal(), { sessionId: 'ses-1' }); // PATIENT_REQUESTED_CANCEL
+    await requests(c).reject(owner, cancel.id, { reason: 'CONTACT_PRACTICE' } as any); // REQUEST_REJECTED
+    return [a, b, c];
+  }
+
+  it('M1: los 7 tipos no generan NotificationDelivery y el texto guardado (lo único que podría salir por correo) no lleva nombre, iniciales ni horas', async () => {
+    const dbs = await allSevenChanges();
+    const notices = dbs.flatMap((db) => professional(db).filter((n) => n.metadata?.appointmentChange));
+    expect([...new Set(notices.map((n) => n.metadata.appointmentChange.change))].sort()).toEqual([...APPOINTMENT_CHANGES].sort());
+    for (const db of dbs) {
+      expect(db.__store.notificationDelivery).toHaveLength(0);
+      expect(db.notificationDelivery.create).not.toHaveBeenCalled();
+      expect(db.notificationDelivery.createMany).not.toHaveBeenCalled();
+    }
+    for (const n of notices) {
+      const outbound = `${n.title}\n${n.body}`;
+      expect(outbound).not.toMatch(/Paciente|Uno/);
+      expect(outbound).not.toMatch(/\bP\.?\s?U\.?\b/); // iniciales
+      expect(outbound).not.toMatch(/\d{1,2}:\d{2}/);
+      expect(outbound).not.toMatch(/\b20\d\d\b|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre/i);
+    }
+  });
+
+  it('(2) un OWNER o ASSISTANT que pasa a THERAPIST ve genéricos los avisos de citas que no son suyas', async () => {
+    const prisma = seed();
+    await portalReschedule(prisma); // aviso a owner-1 y assistant-1 sobre una cita de t-a
+    for (const sub of ['owner-1', 'assistant-1']) {
+      const before: any[] = await notifications(prisma).listProfessional(staff(sub, sub === 'owner-1' ? 'OWNER' : 'ASSISTANT'));
+      expect(before[0].body).toContain('Paciente Uno');
+      const after: any[] = await notifications(prisma).listProfessional(staff(sub, 'THERAPIST'));
+      expect(after).toHaveLength(1);
+      expect(after[0].body).toBe('Un paciente ha pedido cambiar una cita. Revísala en la agenda.');
+      expect(after[0].appointmentChange).toMatchObject({ patient: null, from: null, to: null, sessionId: null, requestId: null });
+      expect(JSON.stringify(after[0])).not.toMatch(/Paciente|Uno/);
+    }
+  });
+
+  it('(4) GET /portal/notifications nunca devuelve avisos PROFESSIONAL, aunque lleven el patientId del paciente', async () => {
+    const dbs = await allSevenChanges();
+    let seen = 0;
+    for (const db of dbs) {
+      expect(professional(db).some((n) => n.patientId === 'p1')).toBe(true);
+      const list: any[] = await notifications(db).listPatient(portal());
+      seen += list.length;
+      for (const n of list) {
+        expect(n.audience).toBe('PATIENT');
+        expect(n.userId).toBeUndefined();
+        expect(n.metadata?.appointmentChange).toBeUndefined();
+      }
+      for (const call of db.notification.findMany.mock.calls) expect(call[0].where.audience).toBe('PATIENT');
+    }
+    // El paciente sí ve los suyos (respuesta de solicitudes, cita movida).
+    expect(seen).toBeGreaterThan(0);
   });
 });
