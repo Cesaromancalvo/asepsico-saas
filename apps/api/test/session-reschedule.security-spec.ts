@@ -325,7 +325,8 @@ describe('Mover cita: aviso al paciente en el portal', () => {
     // semilla (relativas a hoy) para que el test no dependa del día en que se ejecuta.
     const target = new Date('2027-01-12T18:30:00Z');
     await service(prisma).reschedule(WS, actor('assistant', 'ASSISTANT'), 'ses-a', body(target));
-    const notices = prisma.__store.notification;
+    // El aviso al profesional (lo ha movido recepción) se prueba en appointment-change-notices.
+    const notices = prisma.__store.notification.filter((n: any) => n.audience === 'PATIENT');
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ workspaceId: WS, audience: 'PATIENT', patientId: 'pat-1', status: 'SENT', actionUrl: '/portal', title: 'Tu cita ha cambiado' });
     expect(notices[0].userId).toBeUndefined();
