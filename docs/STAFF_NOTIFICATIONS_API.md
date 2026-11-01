@@ -79,3 +79,25 @@ Todo va filtrado por `workspaceId` **y** `userId` del token, también al marcar 
   OWNER, ADMIN y recepción ven las del espacio (solo datos de agenda); un THERAPIST solo las de sus
   citas. El paciente se busca por id **y** `workspaceId`, y sin borrar.
 - La respuesta es una lista blanca de campos: nunca `metadata`, `patientId`, `userId` ni `dedupeKey`.
+
+## Envíos externos futuros (correo): regla obligatoria (condición M1 de Argos)
+
+Si algún día estos avisos se envían fuera de la app (correo, SMS, push), el envío **solo** puede usar el
+`title` y el `body` **guardados** en `Notification`, que son genéricos. **Nunca** `metadata`, ni el texto
+enriquecido que compone `enrichAppointmentChanges` para `GET /notifications`, ni `appointmentChange`.
+Lo bloquea el test «M1» de `appointment-change-notices.security-spec.ts`: para los 7 tipos de cambio,
+no se crea ningún `NotificationDelivery` y el texto guardado no lleva nombre, iniciales ni horas.
+
+## Supresión y retención (condición M2 de Argos)
+
+- Los avisos del personal llevan `patientId` y deben borrarse con el paciente (por `patientId` **y**
+  `workspaceId`). Hoy **no existe** un flujo de supresión o purga del paciente: archivar solo marca
+  `deletedAt`, y mientras tanto el nombre ya no se muestra (la lectura busca el paciente sin borrar).
+  **Pendiente:** cuando se cree la supresión o purga del paciente, debe incluir
+  `notification.deleteMany({ where: { workspaceId, patientId } })` en su transacción.
+- **Retención propuesta: 90 días** para los avisos del personal (leídos o no), aplicada con un job
+  periódico en otra rama. Todavía no está implementado.
+- Importación de pacientes (B1): un paciente importado con avisos ya **no se puede deshacer**
+  (`patient-import-revert.service.ts` cuenta los `Notification` con su `patientId`). Mover o cancelar
+  su cita desde la agenda, o que pida un cambio en el portal, le crea avisos. Ver
+  `docs/producto/importacion-pacientes-csv.md`.

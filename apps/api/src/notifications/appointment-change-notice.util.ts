@@ -14,6 +14,15 @@ import { DEFAULT_TIME_ZONE, isValidTimeZone } from '../scheduling/time-zone.util
  * El nombre del paciente y las fechas legibles se componen AL LEER (GET /notifications), con el
  * control de acceso de agenda del lector en ese momento: si el paciente ya no existe, o el lector
  * es un THERAPIST y la cita no es suya, se devuelve el texto genérico.
+ *
+ * REGLA PARA ENVÍOS EXTERNOS FUTUROS (correo, SMS, push; condición M1 de Argos): un envío fuera de la
+ * app SOLO puede usar el title/body GUARDADOS (genéricos). NUNCA metadata, ni el texto enriquecido
+ * de enrichAppointmentChanges, ni appointmentChange: eso es solo para la bandeja dentro de la app.
+ * Lo bloquea el test «M1» de appointment-change-notices.security-spec.ts.
+ *
+ * Supresión: estos avisos llevan patientId y deben borrarse con el paciente (workspaceId +
+ * patientId) cuando exista la purga del paciente; retención propuesta de 90 días (pendiente, ver
+ * docs/STAFF_NOTIFICATIONS_API.md). Su existencia impide deshacer una importación de ese paciente.
  */
 
 export const APPOINTMENT_CHANGES = [
@@ -148,6 +157,9 @@ export function renderAppointmentChange(meta: AppointmentChangeMeta, patientName
 }
 
 /**
+ * SOLO para GET /notifications (bandeja dentro de la app). Nunca para correo ni otro envío externo:
+ * ese envío usaría el title/body guardados (ver la regla M1 al principio del archivo).
+ *
  * Añade a cada aviso de cambio de cita `appointmentChange` (estructurado) y su `body` con nombre y
  * fechas, si el lector puede verlo:
  *  - OWNER / ADMIN / ASSISTANT: agenda de todo el espacio (solo datos de agenda).

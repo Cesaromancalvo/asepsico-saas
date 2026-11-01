@@ -178,7 +178,10 @@ El usuario puede corregir el fichero y volver a subirlo en cualquier momento ant
   duplicado, que se aplican también contra el propio lote anterior).
 - **Deshacer el lote:** durante **7 días**, el importador puede deshacer un lote. Solo se eliminan
   los pacientes del lote **sin actividad posterior** (sin citas, notas, tareas, mensajes, documentos
-  ni cuenta de portal); los demás se listan como "no se pueden deshacer". Se audita como
+  ni cuenta de portal, **ni avisos** en la app); los demás se listan como "no se pueden deshacer".
+  Desde los avisos de cambio de cita al personal (`docs/STAFF_NOTIFICATIONS_API.md`), mover o cancelar
+  una cita de un paciente importado, o que pida un cambio desde el portal, le crea avisos y su
+  importación ya no se puede deshacer. Se audita como
   `PATIENT_IMPORT_BATCH_REVERTED`. Es un borrado de altas erróneas del propio usuario, no un borrado
   de historia clínica.
 
