@@ -3,6 +3,7 @@ import './design-system.css';
 import './exceptional-access.css';
 import './portal-signup.css';
 import './platform-waitlist.css';
+import './staff-notifications.css';
 import DemoBanner from '@/components/DemoBanner';
 
 // referrer: además de la cabecera Referrer-Policy de Render (defensa en profundidad: el id va en la query).

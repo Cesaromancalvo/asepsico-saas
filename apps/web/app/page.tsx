@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
+import AppointmentChangesCard from '../components/AppointmentChangesCard';
 import Icon, { EmptyState } from '../components/Icon';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
 import { appHref, patientHref, patientTasksToReviewHref, sessionHref, taskReviewPatientId, tasksToReviewHref } from '@/lib/routes';
@@ -222,6 +223,7 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
           </section>
 
           <aside className="dashboard-side">
+            <AppointmentChangesCard />
             <section className="dashboard-card attention-card">
               <div className="card-heading"><div><p className="eyebrow">REQUIERE ATENCIÓN</p><h2>Próximas acciones</h2></div><span className="task-count">{data.attention.length}</span></div>
               <div className="task-list">

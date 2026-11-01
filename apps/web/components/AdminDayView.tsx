@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { ROLE_LABEL, Viewer } from '@/lib/clinical';
 import Icon, { EmptyState } from '@/components/Icon';
+import AppointmentChangesCard from '@/components/AppointmentChangesCard';
 import { sessionHref } from '@/lib/routes';
 
 /*
@@ -31,7 +32,7 @@ type SessionRow = {
 };
 type Invoice = { id: string; invoiceNumber: string; status: string; totalCents: number; paidCents: number; dueDate?: string | null; patient: Person };
 type BillingSummary = { outstandingCents: number; overdueCount: number };
-type Notice = { id: string; type: string; title: string; createdAt: string };
+type Notice = { id: string; type: string; title: string; createdAt: string; appointmentChange?: unknown };
 type Block<T> = { state: 'loading' | 'ready' | 'error' | 'forbidden'; data: T | null };
 
 const STATUS_LABEL: Record<SessionRow['status'], string> = {
@@ -101,7 +102,9 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
     .filter((x) => OPEN_INVOICE.has(x.status) && x.totalCents > x.paidCents)
     .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'))
     .slice(0, 5);
-  const adminNotices = (notices.data ?? []).filter((x) => !NON_ADMIN_NOTICES.has(x.type)).slice(0, 5);
+  // Los cambios de cita tienen su propio bloque («Cambios de agenda»): aquí no se repiten.
+  const unreadNotices = (notices.data ?? []).filter((x) => !NON_ADMIN_NOTICES.has(x.type));
+  const adminNotices = unreadNotices.filter((x) => !x.appointmentChange).slice(0, 5);
   const billingHidden = summary.state === 'forbidden' && invoices.state === 'forbidden';
   const greeting = viewer.firstName ? `Buenos días, ${viewer.firstName}` : 'Buenos días';
   const roleLabel = viewer.role ? ROLE_LABEL[viewer.role] : null;
@@ -146,7 +149,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
         )}
         <Link href="/notifications" className="dashboard-card metric-card metric-blue">
           <span><Icon name="bell" /></span>
-          <div><strong>{notices.state === 'ready' ? adminNotices.length : '–'}</strong><small>Avisos sin leer</small></div>
+          <div><strong>{notices.state === 'ready' ? unreadNotices.length : '–'}</strong><small>Avisos sin leer</small></div>
         </Link>
       </section>
 
@@ -194,6 +197,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
         </section>
 
         <aside className="dashboard-side">
+          <AppointmentChangesCard reception />
           {!billingHidden && (
             <section className="dashboard-card attention-card" aria-labelledby="admin-billing-title">
               <div className="card-heading">
