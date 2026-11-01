@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { UpdateNotificationPreferencesDto } from './dto/notification.dto';
 import { sendDeferredNoticeReminders } from '../exceptional-access/exceptional-access-register.service';
 import { routeToActiveMembers } from '../workspace-members/notification-recipients.util';
+import { enrichAppointmentChanges } from './appointment-change-notice.util';
 
 @Injectable()
 export class NotificationsService {
@@ -10,11 +11,23 @@ export class NotificationsService {
   private p() { return this.prisma as any; }
 
   async listProfessional(actor:any, unreadOnly=false) {
-    return this.p().notification.findMany({
+    const rows=await this.p().notification.findMany({
       where:{ workspaceId:actor.workspaceId, audience:'PROFESSIONAL', userId:actor.sub, ...(unreadOnly?{status:{not:'READ'}}:{}) },
       orderBy:{ createdAt:'desc' }, take:100,
-      select:{ id:true,type:true,title:true,body:true,actionUrl:true,status:true,scheduledAt:true,sentAt:true,readAt:true,createdAt:true },
+      // patientId y metadata solo se leen para componer los avisos de cambio de cita; no se devuelven.
+      select:{ id:true,type:true,title:true,body:true,actionUrl:true,status:true,scheduledAt:true,sentAt:true,readAt:true,createdAt:true,patientId:true,metadata:true },
     });
+    return enrichAppointmentChanges(this.prisma,actor,rows);
+  }
+  /** Contador para la campana: avisos sin leer del propio usuario en su espacio. */
+  async unreadCountProfessional(actor:any) {
+    const unread=await this.p().notification.count({ where:{ workspaceId:actor.workspaceId, audience:'PROFESSIONAL', userId:actor.sub, status:{not:'READ'} } });
+    return { unread };
+  }
+  /** Marca como leídos todos los avisos del propio usuario en su espacio. */
+  async markAllProfessionalRead(actor:any) {
+    const result=await this.p().notification.updateMany({ where:{ workspaceId:actor.workspaceId, audience:'PROFESSIONAL', userId:actor.sub, status:{not:'READ'} }, data:{status:'READ',readAt:new Date()} });
+    return { ok:true, updated:result.count };
   }
   async listPatient(portal:any) {
     await this.assertPortal(portal);

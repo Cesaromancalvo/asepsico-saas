@@ -7,6 +7,7 @@ import { ListAppointmentRequestsQueryDto, RejectAppointmentRequestDto } from './
 import { expireDueRequests, notifyPatientOfRequestUpdates, rejectOverlappingPendingRequests } from './appointment-request-lifecycle.util';
 import { findScheduleConflict, lockTherapistSchedule } from './schedule-lock.util';
 import { bookingConflict, slotNotAvailable } from './booking-config.util';
+import { notifyStaffOfAppointmentChange, slot } from '../notifications/appointment-change-notice.util';
 
 /**
  * Vista administrativa de las solicitudes: fecha, hora, paciente (nombre), profesional y tipo.
@@ -86,6 +87,10 @@ export class AppointmentRequestsService {
       if (!patient) throw bookingConflict('PATIENT_NOT_ACTIVE', 'El paciente ya no está activo.');
       await this.lockActiveProcess(tx, request);
 
+      // Hora de la cita antes de aprobar (para el aviso al profesional): solo inicio y fin.
+      const original = request.sessionId
+        ? await tx.session.findFirst({ where: { id: request.sessionId, workspaceId }, select: { startsAt: true, endsAt: true } })
+        : null;
       let sessionId = request.sessionId;
       if (request.type === 'NEW') {
         sessionId = await this.createSession(tx, actor, request);
@@ -107,6 +112,7 @@ export class AppointmentRequestsService {
         },
       });
       await notifyPatientOfRequestUpdates(tx, workspaceId, [{ id, patientId: request.patientId }], 'APPROVED');
+      await this.notifyTherapistOfResolution(tx, actor, request, 'REQUEST_APPROVED', sessionId, original);
       if (request.type !== 'CANCEL' && request.startsAt && request.endsAt) {
         await rejectOverlappingPendingRequests(tx, workspaceId, { therapistId: request.therapistId, startsAt: request.startsAt, endsAt: request.endsAt, excludeRequestId: id, actorId: actor.sub });
       }
@@ -120,6 +126,9 @@ export class AppointmentRequestsService {
     const workspaceId = actor.workspaceId;
     const request = await this.findForActor(actor, id);
     await this.prisma.$transaction(async (tx) => {
+      const original = request.sessionId
+        ? await tx.session.findFirst({ where: { id: request.sessionId, workspaceId }, select: { startsAt: true, endsAt: true } })
+        : null;
       const { count } = await tx.appointmentRequest.updateMany({
         where: { id, workspaceId, status: 'PENDING' },
         data: { status: 'REJECTED', rejectionReason: dto.reason, heldStartsAt: null, resolvedAt: new Date(), resolvedById: actor.sub },
@@ -132,11 +141,34 @@ export class AppointmentRequestsService {
         },
       });
       await notifyPatientOfRequestUpdates(tx, workspaceId, [{ id, patientId: request.patientId }], 'REJECTED');
+      await this.notifyTherapistOfResolution(tx, actor, request, 'REQUEST_REJECTED', request.sessionId, original);
     });
     return this.getView(workspaceId, id);
   }
 
   // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Si resuelve alguien que no es el profesional de la solicitud (recepción, OWNER, ADMIN), aviso en
+   * la app al profesional con el resultado. Si resuelve él mismo, nada (nunca se avisa al autor).
+   */
+  private async notifyTherapistOfResolution(
+    tx: Prisma.TransactionClient,
+    actor: AuthUser,
+    request: RequestRow,
+    change: 'REQUEST_APPROVED' | 'REQUEST_REJECTED',
+    sessionId: string | null,
+    original: { startsAt: Date; endsAt: Date } | null,
+  ) {
+    await notifyStaffOfAppointmentChange(tx, {
+      workspaceId: request.workspaceId, patientId: request.patientId, actorId: actor.sub, recipients: [request.therapistId],
+      dedupeBase: `appointment-request:${request.id}:${change === 'REQUEST_APPROVED' ? 'approved' : 'rejected'}`,
+      meta: {
+        change, therapistId: request.therapistId, sessionId, requestId: request.id, requestType: request.type,
+        from: slot(original?.startsAt, original?.endsAt), to: slot(request.startsAt, request.endsAt),
+      },
+    });
+  }
 
   private scope(actor: AuthUser) {
     return actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {};

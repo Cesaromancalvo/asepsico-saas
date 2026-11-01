@@ -27,6 +27,7 @@ import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clin
 import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
 import { rejectPendingRequestsOfSession } from '../scheduling/appointment-request-lifecycle.util';
 import { assertRescheduleTarget, notifyPatientOfReschedule, rescheduleError } from './session-reschedule.util';
+import { notifyStaffOfAppointmentChange, slot } from '../notifications/appointment-change-notice.util';
 
 const THERAPIST_CAPABLE_ROLES = [
   'OWNER',
@@ -527,6 +528,16 @@ export class SessionsService {
       });
 
       await notifyPatientOfReschedule(tx, { workspaceId, patientId: current.patientId, sessionId: id, startsAt: target.startsAt, endsAt: target.endsAt, now });
+      // Si la mueve otra persona (recepción, OWNER, ADMIN), aviso en la app al profesional de la
+      // cita. Si la mueve él mismo, no (notifyStaffOfAppointmentChange nunca avisa al autor).
+      await notifyStaffOfAppointmentChange(tx, {
+        workspaceId, patientId: current.patientId, actorId: actor.sub, recipients: [current.therapistId],
+        dedupeBase: `appointment-change:session:${id}:rescheduled:${now.getTime()}`,
+        meta: {
+          change: 'RESCHEDULED_BY_STAFF', therapistId: current.therapistId, sessionId: id, requestId: null, requestType: null,
+          from: slot(locked.startsAt, locked.endsAt), to: slot(target.startsAt, target.endsAt),
+        },
+      });
     });
 
     return this.get(
@@ -642,39 +653,33 @@ export class SessionsService {
       );
     }
 
-    // updateMany con workspaceId y compare-and-set del estado: nunca solo por id.
-    const { count: closedCount } =
-      await this.prisma.session.updateMany({
-        where: {
-          id,
-          workspaceId,
-          status: SessionStatus.SCHEDULED,
-        },
-
+    // Cambio de estado, auditoría y aviso en una sola transacción. updateMany con workspaceId y
+    // compare-and-set del estado: nunca solo por id.
+    await this.prisma.$transaction(async (tx) => {
+      const { count: closedCount } = await tx.session.updateMany({
+        where: { id, workspaceId, status: SessionStatus.SCHEDULED },
+        data: { status: target },
+      });
+      if (closedCount === 0) {
+        throw new BadRequestException('La sesión ya está cerrada');
+      }
+      await tx.auditLog.create({
         data: {
-          status: target,
+          workspaceId, actorId: actor.sub, action: 'SESSION_STATUS_CHANGED', entityType: 'Session', entityId: id,
+          metadata: { from: SessionStatus.SCHEDULED, to: target },
         },
       });
-
-    if (closedCount === 0) {
-      throw new BadRequestException('La sesión ya está cerrada');
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId,
-        actorId: actor.sub,
-        action:
-          'SESSION_STATUS_CHANGED',
-        entityType: 'Session',
-        entityId: id,
-
-        metadata: {
-          from:
-            SessionStatus.SCHEDULED,
-          to: target,
-        },
-      },
+      // Cancelación hecha por otra persona (recepción, OWNER, ADMIN): aviso en la app al profesional.
+      if (target === SessionStatus.CANCELLED) {
+        await notifyStaffOfAppointmentChange(tx, {
+          workspaceId, patientId: session.patientId, actorId: actor.sub, recipients: [session.therapistId],
+          dedupeBase: `appointment-change:session:${id}:cancelled`,
+          meta: {
+            change: 'CANCELLED_BY_STAFF', therapistId: session.therapistId, sessionId: id, requestId: null, requestType: null,
+            from: slot(session.startsAt, session.endsAt), to: null,
+          },
+        });
+      }
     });
 
     return this.get(

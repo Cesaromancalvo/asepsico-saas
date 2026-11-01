@@ -274,3 +274,4 @@ export interface PortalAppointmentRequestContract {
 /** GET /clinical-processes/:id: true si hay notas internas archivadas de un profesional anterior (nunca su contenido). */
 export interface ClinicalProcessPreviousAuthorNotesFlag { hasPreviousAuthorNotes: boolean; }
 export * from './session-reschedule';
+export * from './staff-notifications';

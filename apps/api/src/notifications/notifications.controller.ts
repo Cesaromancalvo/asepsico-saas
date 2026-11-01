@@ -12,6 +12,10 @@ export class NotificationsController {
 
   @Get('notifications') @UseGuards(JwtAuthGuard)
   list(@CurrentUser() user:AuthUser, @Query('unreadOnly') unreadOnly?:string) { return this.service.listProfessional(user, unreadOnly==='true'); }
+  @Get('notifications/unread-count') @UseGuards(JwtAuthGuard)
+  unreadCount(@CurrentUser() user:AuthUser) { return this.service.unreadCountProfessional(user); }
+  @Post('notifications/read-all') @UseGuards(JwtAuthGuard, CsrfGuard)
+  markAllRead(@CurrentUser() user:AuthUser) { return this.service.markAllProfessionalRead(user); }
   @Get('notifications/preferences') @UseGuards(JwtAuthGuard)
   preferences(@CurrentUser() user:AuthUser) { return this.service.getProfessionalPreferences(user); }
   @Patch('notifications/preferences') @UseGuards(JwtAuthGuard, CsrfGuard)
