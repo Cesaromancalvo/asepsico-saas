@@ -345,7 +345,7 @@ export default function AgendaPage() {
     const node = document.getElementById(`cita-${movedId}`);
     if (!node) return;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    node.scrollIntoView({ block: 'center', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
   }, [movedId, loading, sessions]);
 
   // El resaltado de la cita movida se apaga solo.
