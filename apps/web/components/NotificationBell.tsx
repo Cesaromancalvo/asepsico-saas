@@ -144,7 +144,8 @@ export function NotificationPanel({ bell, id }: { bell: BellState; id: string })
   return createPortal(<PanelContent bell={bell} id={id} />, document.body);
 }
 
-function PanelContent({ bell, id }: { bell: BellState; id: string }) {
+/** Contenido del desplegable (exportado para los tests de componente; la app usa NotificationPanel). */
+export function PanelContent({ bell, id }: { bell: BellState; id: string }) {
   const router = useRouter();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
