@@ -6,6 +6,7 @@ import { PortalCancelRequestDto, PortalCreateRequestDto, PortalRescheduleRequest
 import { computeSlots, findGridSlot, Interval } from './slot-calculator';
 import { findScheduleConflict, lockPatientBooking, lockTherapistSchedule } from './schedule-lock.util';
 import { expireDueRequests, notifyProfessionalOfRequest } from './appointment-request-lifecycle.util';
+import { agendaManagers, notifyStaffOfAppointmentChange, slot as noticeSlot } from '../notifications/appointment-change-notice.util';
 import { BookingSettings, bookingConflict, isUniqueViolation, loadBookingConfig, slotNotAvailable, tooManyRequests } from './booking-config.util';
 
 /** Sesión del portal ya validada por PortalGuard. Los ids salen del token, nunca del cliente. */
@@ -136,14 +137,30 @@ export class PortalBookingService {
   async withdraw(portal: PortalUser, requestId: string) {
     const { workspaceId, patientId } = portal;
     return this.prisma.$transaction(async (tx) => {
+      const before = await tx.appointmentRequest.findFirst({
+        where: { id: requestId, workspaceId, patientId, status: 'PENDING' },
+        select: { therapistId: true, type: true, sessionId: true, startsAt: true, endsAt: true },
+      });
       const { count } = await tx.appointmentRequest.updateMany({
         where: { id: requestId, workspaceId, patientId, status: 'PENDING' },
         data: { status: 'WITHDRAWN', heldStartsAt: null, resolvedAt: new Date() },
       });
-      if (!count) throw new NotFoundException('Solicitud no encontrada');
+      if (!count || !before) throw new NotFoundException('Solicitud no encontrada');
       await tx.auditLog.create({
         data: { workspaceId, actorId: null, action: 'APPOINTMENT_REQUEST_WITHDRAWN', entityType: 'AppointmentRequest', entityId: requestId, metadata: { patientId, cause: 'PATIENT', accessorType: portal.accessorType, portalAccountId: portal.portalAccountId } },
       });
+      // Retirar un cambio o cancelación pedidos sobre una cita: avisa a quien recibió la solicitud.
+      if (before.type !== 'NEW' && before.sessionId) {
+        const session = await tx.session.findFirst({ where: { id: before.sessionId, workspaceId, patientId }, select: { startsAt: true, endsAt: true } });
+        await notifyStaffOfAppointmentChange(tx, {
+          workspaceId, patientId, actorId: null, recipients: [before.therapistId, ...(await agendaManagers(tx, workspaceId))],
+          dedupeBase: `appointment-request:${requestId}:withdrawn`,
+          meta: {
+            change: 'PATIENT_WITHDREW_REQUEST', therapistId: before.therapistId, sessionId: before.sessionId, requestId, requestType: before.type,
+            from: noticeSlot(session?.startsAt, session?.endsAt), to: noticeSlot(before.startsAt, before.endsAt),
+          },
+        });
+      }
       return tx.appointmentRequest.findFirstOrThrow({ where: { id: requestId, workspaceId, patientId }, select: PORTAL_REQUEST_SELECT });
     });
   }
@@ -152,7 +169,7 @@ export class PortalBookingService {
 
   private async request(
     portal: PortalUser,
-    input: { type: 'NEW' | 'RESCHEDULE' | 'CANCEL'; therapistId: string; startsAt?: Date; session?: { id: string; startsAt: Date; clinicalProcessId: string | null } },
+    input: { type: 'NEW' | 'RESCHEDULE' | 'CANCEL'; therapistId: string; startsAt?: Date; session?: { id: string; startsAt: Date; endsAt: Date; clinicalProcessId: string | null } },
   ) {
     const { workspaceId, patientId } = portal;
     const bookable = await this.resolveBookable(portal, input.therapistId);
@@ -232,7 +249,21 @@ export class PortalBookingService {
             },
           },
         });
-        await notifyProfessionalOfRequest(tx, workspaceId, therapistId, created.id);
+        if (input.type === 'NEW' || !input.session) {
+          await notifyProfessionalOfRequest(tx, workspaceId, therapistId, created.id);
+        } else {
+          // Cambio o cancelación de una cita que ya existe: aviso al profesional y a quienes
+          // gestionan la agenda (OWNER, ADMIN, recepción). Solo datos de agenda.
+          await notifyStaffOfAppointmentChange(tx, {
+            workspaceId, patientId, actorId: null, recipients: [therapistId, ...(await agendaManagers(tx, workspaceId))],
+            dedupeBase: `appointment-request:${created.id}:created`,
+            meta: {
+              change: input.type === 'CANCEL' ? 'PATIENT_REQUESTED_CANCEL' : 'PATIENT_REQUESTED_RESCHEDULE',
+              therapistId, sessionId: input.session.id, requestId: created.id, requestType: input.type,
+              from: noticeSlot(input.session.startsAt, input.session.endsAt), to: noticeSlot(slot?.startsAt, slot?.endsAt),
+            },
+          });
+        }
         return created.id;
       });
       return this.prisma.appointmentRequest.findFirstOrThrow({ where: { id, workspaceId, patientId }, select: PORTAL_REQUEST_SELECT });
@@ -262,7 +293,7 @@ export class PortalBookingService {
   private async ownChangeableSession(portal: PortalUser, sessionId: string) {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, workspaceId: portal.workspaceId, patientId: portal.patientId, status: 'SCHEDULED', startsAt: { gt: new Date() } },
-      select: { id: true, startsAt: true, therapistId: true, clinicalProcessId: true },
+      select: { id: true, startsAt: true, endsAt: true, therapistId: true, clinicalProcessId: true },
     });
     if (!session) throw new NotFoundException('Cita no encontrada');
     return session;

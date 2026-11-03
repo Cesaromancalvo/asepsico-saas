@@ -219,8 +219,10 @@ function sessionsPrisma() {
     },
     patient: { findFirst: jest.fn(async () => patientRow()) },
     clinicalProcess: { findFirst: jest.fn(async () => processRow()), findMany: jest.fn(async () => [processRow()]) },
-    workspaceMember: { findFirst: jest.fn(async () => ({ role: 'THERAPIST' })) },
+    workspaceMember: { findFirst: jest.fn(async () => ({ role: 'THERAPIST' })), findMany: jest.fn(async () => [{ userId: 'therapist-1' }]) },
     auditLog: { create: jest.fn(async () => ({})) },
+    // Aviso en la app al profesional cuando otra persona cancela su cita.
+    notification: { createMany: jest.fn(async () => ({ count: 1 })) },
   };
   prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
   return prisma;
@@ -301,6 +303,10 @@ describe('GET /sessions/:id y escrituras de notas por rol', () => {
     expect(result).not.toHaveProperty('internalSummary');
     expect(prisma.session.update).not.toHaveBeenCalled();
     expect(prisma.session.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
+    // Aviso al profesional: texto genérico guardado, sin notas ni nombre del paciente.
+    const notice = prisma.notification.createMany.mock.calls[0][0].data[0];
+    expect(notice).toMatchObject({ workspaceId: 'ws-1', audience: 'PROFESSIONAL', userId: 'therapist-1', title: 'Cita cancelada' });
+    expect(JSON.stringify(notice)).not.toMatch(/notes|internalSummary|Ficticio/);
   });
 
   it('el THERAPIST autor que trata al paciente en PATCH /sessions/:id/notes escribe acotado al workspace', async () => {
