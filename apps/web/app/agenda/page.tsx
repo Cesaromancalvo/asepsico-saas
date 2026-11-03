@@ -16,6 +16,7 @@ import { processLabel, useViewer } from '@/lib/clinical';
 import { queryId, sessionHref } from '@/lib/routes';
 import RescheduleSessionForm from '@/components/RescheduleSessionForm';
 import { canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from '@/lib/reschedule';
+import { AGENDA_FOCUS_EVENT, takeAgendaFocus } from '@/lib/agenda-focus';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -319,6 +320,33 @@ export default function AgendaPage() {
       formTopRef.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
     }
   }, [newSessionOpen, reschedulingId]);
+
+  // «Ver en la agenda» desde un aviso: la cita llega en memoria (nunca por la URL). Se abre su
+  // semana y se resalta como una cita recién movida. También si la agenda ya estaba abierta.
+  useEffect(() => {
+    const applyFocus = () => {
+      const focus = takeAgendaFocus();
+      if (!focus) return;
+      setMovedId(focus.sessionId);
+      setWeekStart((current) => {
+        const target = startOfWeek(new Date(focus.startsAt));
+        return target.getTime() === current.getTime() ? current : target;
+      });
+    };
+    applyFocus();
+    window.addEventListener(AGENDA_FOCUS_EVENT, applyFocus);
+    return () => window.removeEventListener(AGENDA_FOCUS_EVENT, applyFocus);
+  }, []);
+
+  // La cita resaltada se lleva a la vista en cuanto está pintada (en el móvil la semana se desplaza
+  // en horizontal).
+  useEffect(() => {
+    if (!movedId || loading) return;
+    const node = document.getElementById(`cita-${movedId}`);
+    if (!node) return;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, [movedId, loading, sessions]);
 
   // El resaltado de la cita movida se apaga solo.
   useEffect(() => {
@@ -1043,6 +1071,7 @@ export default function AgendaPage() {
                     daySessions.map((session) => (
                       <div
                         key={session.id}
+                        id={`cita-${session.id}`}
                         className={`agenda-session agenda-session-${session.status.toLowerCase()}${
                           movedId === session.id ? ' is-moved' : ''
                         }`}

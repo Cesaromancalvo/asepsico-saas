@@ -9,6 +9,7 @@ import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, us
 import { invalidateTermsStatus, useTermsStatus } from '../lib/legal';
 import { invalidatePlatformAdmin, PANEL_PATH, usePlatformAdmin } from '../lib/platform-waitlist';
 import Icon, { IconName } from './Icon';
+import { BellButton, NotificationPanel, useNotificationBell } from './NotificationBell';
 type SidebarProps = {
   syncText?: string;
 };
@@ -118,6 +119,10 @@ export default function Sidebar({
       window.removeEventListener(PENDING_REQUESTS_EVENT, refresh);
     };
   }, [viewer?.role, pathname]);
+  // Campana de avisos (cambios de cita y demás avisos propios). Mismo estado para los dos botones
+  // (barra lateral y barra superior del móvil) y un solo desplegable.
+  const bell = useNotificationBell(Boolean(viewer?.role), pathname);
+  const bellPanelId = 'avisos-desplegable';
   const items = navigation.filter((item) =>
     (!item.adminOnly || isAdminRole(viewer?.role)) &&
     (!item.processAccess || isStaffWithProcessAccess(viewer?.role)) &&
@@ -145,14 +150,18 @@ export default function Sidebar({
     }
   }
   return (
+    <>
     <aside className="sidebar">
-      <Link href="/" className="sidebar-brand">
-        <div className="brand-mark" aria-hidden="true">A</div>
-        <div>
-          <strong>AsePsico</strong>
-          <span>{viewer?.workspaceName || 'Tu consulta'}</span>
-        </div>
-      </Link>
+      <div className="sidebar-top">
+        <Link href="/" className="sidebar-brand">
+          <div className="brand-mark" aria-hidden="true">A</div>
+          <div>
+            <strong>AsePsico</strong>
+            <span>{viewer?.workspaceName || 'Tu consulta'}</span>
+          </div>
+        </Link>
+        {viewer?.role && <BellButton bell={bell} placement="sidebar" controlsId={bellPanelId} />}
+      </div>
       <nav className="sidebar-nav">
         {items.map((item) => (
           <Link
@@ -214,5 +223,15 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+    {/* Móvil: la barra lateral es la barra inferior; marca y campana van en esta barra superior. */}
+    <div className="mobile-topbar">
+      <Link href="/" className="mobile-topbar-brand">
+        <span className="brand-mark" aria-hidden="true">A</span>
+        <span>{viewer?.workspaceName || 'AsePsico'}</span>
+      </Link>
+      {viewer?.role && <BellButton bell={bell} placement="topbar" controlsId={bellPanelId} />}
+    </div>
+    <NotificationPanel bell={bell} id={bellPanelId} />
+    </>
   );
 }

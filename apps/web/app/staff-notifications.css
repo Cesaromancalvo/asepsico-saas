@@ -1,0 +1,95 @@
+/* ==========================================================================
+   Avisos del personal: campana (barra lateral / barra superior del móvil), desplegable y bloque
+   «Cambios de agenda» de Mi jornada. Tokens del design system (design-system.css).
+   ========================================================================== */
+
+/* ---------- Campana ---------- */
+.sidebar-top{display:flex;align-items:center;gap:6px}
+.sidebar-top .sidebar-brand{flex:1;min-width:0}
+.bell-button{position:relative;display:inline-grid;flex:none;width:40px;height:40px;place-items:center;padding:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text-soft);cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease}
+.bell-button:hover{background:var(--tint);border-color:var(--border-strong);color:var(--violet-ink)}
+.bell-button:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:2px}
+.bell-button[aria-expanded="true"]{background:var(--tint-2);border-color:var(--mauve);color:var(--violet-ink)}
+.bell-button.has-unread{color:var(--violet-ink)}
+.bell-badge{position:absolute;top:-6px;right:-6px;display:inline-grid;min-width:20px;height:20px;padding:0 5px;place-items:center;border:2px solid var(--surface);border-radius:999px;background:var(--violet);color:#fff;font-size:11px;font-weight:700;line-height:1}
+@media(max-width:900px){
+  .sidebar-top{flex-direction:column;gap:12px}
+  .sidebar-top .sidebar-brand{flex:none}
+}
+
+/* Barra superior propia del móvil (la barra lateral pasa abajo y no cabe la campana) */
+.mobile-topbar{display:none}
+@media(max-width:700px){
+  .sidebar-top .bell-sidebar{display:none}
+  .mobile-topbar{position:sticky;z-index:40;top:var(--demo-banner-height,0px);display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:8px 16px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .mobile-topbar-brand{display:flex;min-width:0;align-items:center;gap:10px;color:var(--ink);font-size:var(--fs-md);font-weight:600;text-decoration:none}
+  .mobile-topbar-brand>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mobile-topbar-brand .brand-mark{display:inline-grid;flex:none;width:32px;height:32px;place-items:center;border-radius:10px;font-size:var(--fs-md)}
+  .bell-topbar{width:44px;height:44px}
+}
+
+/* ---------- Desplegable ---------- */
+.bell-panel{position:fixed;z-index:70;top:calc(var(--demo-banner-height,0px) + 16px);left:276px;display:flex;width:400px;max-width:calc(100vw - 24px);max-height:calc(100vh - var(--demo-banner-height,0px) - 32px);flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:var(--shadow-lg)}
+@media(max-width:1120px){.bell-panel{left:244px}}
+@media(max-width:900px){.bell-panel{left:96px}}
+@media(max-width:700px){
+  .bell-panel{top:calc(var(--demo-banner-height,0px) + 60px);right:8px;left:8px;width:auto;max-width:none;max-height:calc(100dvh - var(--demo-banner-height,0px) - 60px - 88px)}
+}
+.bell-panel-header{display:flex;align-items:center;gap:8px;padding:14px 12px 12px 18px;border-bottom:1px solid var(--border)}
+.bell-panel-header h2{flex:1;margin:0;color:var(--ink);font-size:var(--fs-lg);font-weight:600}
+.bell-panel-header h2:focus{outline:none}
+.bell-panel-header h2:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:2px;border-radius:6px}
+.bell-mark-all{min-height:36px;padding:0 8px;border:0;border-radius:8px;background:transparent;cursor:pointer}
+.bell-mark-all:disabled{color:var(--text-light);cursor:default;text-decoration:none}
+.bell-close{display:inline-grid;width:36px;height:36px;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;color:var(--text-soft);cursor:pointer}
+.bell-close:hover{background:var(--tint);color:var(--ink)}
+.bell-mark-all:focus-visible,.bell-close:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:1px}
+.bell-panel-body{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.bell-state{display:grid;gap:6px;justify-items:start;margin:0;padding:20px 18px;color:var(--text-soft);font-size:var(--fs-sm)}
+.bell-state strong{color:var(--ink)}
+.bell-state p{margin:0}
+.bell-panel-body .ui-empty{margin:12px}
+.bell-error{margin:10px 14px 0;padding:8px 12px;border-radius:10px;background:var(--danger-soft);color:var(--danger);font-size:var(--fs-sm)}
+.bell-list{margin:0;padding:6px;list-style:none}
+.bell-item{display:grid;gap:6px;border-radius:12px}
+.bell-item+.bell-item{margin-top:2px}
+.bell-item.is-unread{background:var(--surface-soft)}
+.bell-item-main{display:flex;width:100%;align-items:flex-start;gap:10px;padding:12px;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;text-align:left}
+button.bell-item-main{cursor:pointer}
+button.bell-item-main:hover{background:var(--tint)}
+button.bell-item-main:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:-3px}
+.bell-dot{flex:none;width:8px;height:8px;margin-top:8px;border-radius:50%;background:transparent}
+.bell-dot.is-unread{background:var(--violet)}
+.bell-item-copy{display:grid;min-width:0;gap:4px}
+.bell-item-copy>strong{color:var(--ink);font-size:var(--fs-sm);font-weight:600}
+.bell-item-body{color:var(--text);font-size:var(--fs-sm);line-height:1.45;overflow-wrap:anywhere}
+.bell-item-copy small{display:flex;flex-wrap:wrap;align-items:center;gap:2px;color:var(--text-light);font-size:var(--fs-xs)}
+.bell-item-action{display:inline-flex;align-items:center;gap:2px;color:var(--violet-ink);font-weight:600}
+.bell-item-read{justify-self:start;margin:0 0 10px 30px}
+.bell-panel-footer{padding:12px 18px;border-top:1px solid var(--border);background:var(--surface-soft)}
+
+/* ---------- Mi jornada: «Cambios de agenda» ---------- */
+.agenda-change-row{display:grid;gap:6px;padding:12px 0;border-bottom:1px solid var(--border)}
+.agenda-change-row:last-of-type{border-bottom:0}
+.agenda-change-row p{margin:0;color:var(--text);font-size:var(--fs-sm);line-height:1.45;overflow-wrap:anywhere}
+.agenda-change-row small{color:var(--text-light);font-size:var(--fs-xs)}
+.agenda-change-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.agenda-change-actions>*{flex:1 1 auto;justify-content:center;padding:0 12px;white-space:nowrap}
+.agenda-change-actions .small-primary,.agenda-change-actions .small-secondary{display:inline-flex;align-items:center;gap:6px;min-height:40px}
+.agenda-changes-card .bell-error{margin:0 0 8px}
+.agenda-changes-more{display:inline-block;margin-top:8px}
+.notice-agenda-link{display:block;margin:6px 0 4px;padding:0;border:0;background:transparent;cursor:pointer}
+
+@media(prefers-reduced-motion:reduce){.bell-button{transition:none}}
+
+/* ---------- Portal del paciente: avisos sin leer arriba ---------- */
+.portal-unread-notice{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--mauve);border-radius:16px;background:var(--tint);color:var(--ink);text-decoration:none;box-shadow:var(--shadow-sm)}
+.portal-unread-notice:hover{background:var(--tint-2)}
+.portal-unread-notice:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:2px}
+.portal-unread-notice>span:nth-child(2){display:grid;flex:1;min-width:0;gap:2px}
+.portal-unread-notice strong{font-size:var(--fs-md);font-weight:600}
+.portal-unread-notice small{color:var(--text-soft);font-size:var(--fs-sm);line-height:1.45;overflow-wrap:anywhere}
+.portal-unread-notice>.ui-icon{flex:none;color:var(--violet-ink)}
+.portal-unread-icon{display:inline-grid;flex:none;width:36px;height:36px;place-items:center;border-radius:12px;background:var(--surface);color:var(--violet-ink)}
+.portal-notifications{scroll-margin-top:calc(var(--demo-banner-height,0px) + 12px)}
+.portal-notifications .portal-item .button{min-height:44px}
