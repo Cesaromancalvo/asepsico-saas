@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { WaitlistSituation, WaitlistSource } from '@prisma/client';
+import { WaitlistContactPreference, WaitlistSituation, WaitlistSource } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { Equals, IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS } from '../waitlist.config';
@@ -25,11 +25,20 @@ export class CreateWaitlistEntryDto {
   email!: string;
 
   /**
-   * Teléfono tal como lo escribe la persona (la API lo valida y lo normaliza a E.164). Opcional para
-   * class-validator: la obligatoriedad la comprueba el servicio (WAITLIST_PHONE_REQUIRED, con un
-   * code propio para la landing). Nunca se registra ni se devuelve en un error.
+   * Preferencia de contacto (lista-espera-v6): obligatoria en la v6 y sin valor por defecto. Opcional
+   * para class-validator: la obligatoriedad por versión la comprueba el servicio
+   * (WAITLIST_CONTACT_PREFERENCE_REQUIRED / _NOT_OFFERED). Un valor que no sea del enum → 400 genérico.
    */
-  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'Obligatorio (lista-espera-v5). Se guarda cifrado en E.164.' })
+  @ApiPropertyOptional({ enum: WaitlistContactPreference, description: 'Obligatoria en lista-espera-v6, sin valor por defecto; no admitida en v5.' })
+  @IsOptional() @IsEnum(WaitlistContactPreference)
+  contactPreference?: WaitlistContactPreference;
+
+  /**
+   * Teléfono tal como lo escribe la persona (la API lo valida y lo normaliza a E.164). Opcional para
+   * class-validator: la regla por versión y preferencia la comprueba el servicio (codes propios para
+   * la landing). Nunca se registra ni se devuelve en un error.
+   */
+  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'v6: obligatorio con PHONE_AND_EMAIL y prohibido con EMAIL_ONLY. v5 (transición): obligatorio. Se guarda cifrado en E.164.' })
   @IsOptional() @Transform(trim) @IsString() @MaxLength(WAITLIST_PHONE_MAX_INPUT_LENGTH)
   phone?: string;
 
@@ -54,8 +63,9 @@ export class CreateWaitlistEntryDto {
   @IsBoolean() @Equals(true, { message: 'privacyAccepted debe ser true' })
   privacyAccepted!: boolean;
 
-  // Pasan el DTO la vigente y las retiradas: estas últimas las rechaza el servicio con un code propio
-  // (WAITLIST_POLICY_VERSION_RETIRED). Cualquier otro valor → 400 de validación genérico.
+  // Pasan el DTO la vigente (v6), la de transición (v5) y las retiradas: el servicio rechaza las
+  // retiradas, y la v5 fuera de la transición, con un code propio (WAITLIST_POLICY_VERSION_RETIRED).
+  // Cualquier otro valor → 400 de validación genérico.
   @ApiProperty({ enum: ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS })
   @IsString() @IsIn([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, ...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS], { message: 'privacyPolicyVersion no es una versión vigente' })
   privacyPolicyVersion!: string;

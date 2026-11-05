@@ -25,7 +25,8 @@ import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, WAITLIST_PATH } from '../src
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 
 /**
- * Teléfono obligatorio en la lista de espera (política lista-espera-v5). Datos 100 % ficticios.
+ * Teléfono de la lista de espera cuando es obligatorio (v6 con PHONE_AND_EMAIL; las reglas de la v5
+ * en transición están en waitlist-v6.security-spec.ts). Datos 100 % ficticios.
  * Criterios 1–7 y 10 de la spec de Vega, y §G de Lex (regla por versión, nada en logs ni aviso).
  */
 
@@ -37,13 +38,15 @@ const PHONE = '612 345 678';
 const PHONE_E164 = '+34612345678';
 const PHONE_DIGITS = '612345678';
 
+/** Alta v6 con «Por teléfono y por email»: el teléfono es obligatorio y se valida igual que en la v5. */
 const v5Body = (overrides: Record<string, unknown> = {}) => ({
   name: 'Profesional Ficticia Telefono',
   email: EMAIL,
   phone: PHONE,
   situation: 'SELF_EMPLOYED',
   privacyAccepted: true,
-  privacyPolicyVersion: 'lista-espera-v5',
+  privacyPolicyVersion: 'lista-espera-v6',
+  contactPreference: 'PHONE_AND_EMAIL',
   formToken: issueFormToken(Date.now() - 10_000),
   ...overrides,
 });
@@ -119,8 +122,8 @@ describe('Normalización del teléfono (criterios 2, 3 y 6)', () => {
     expect(normalizeWaitlistPhone(' '.repeat(17) + '612345678')).toBeNull();
   });
 
-  it('la única versión aceptada es la v5, que informa del teléfono y lo exige', () => {
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5']);
+  it('versiones que pasan el filtro: la v6 y la v5 (esta solo en transición, ver waitlist-v6.security-spec)', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5', 'lista-espera-v6']);
   });
 });
 
@@ -139,13 +142,14 @@ describe('Alta pública con teléfono (POST /public/waitlist)', () => {
     await app.close();
   });
 
-  it('criterio 1: v5 con teléfono → 202, se guarda cifrado y al descifrar vale E.164', async () => {
+  it('criterio 1: v6 PHONE_AND_EMAIL con teléfono → 202, se guarda cifrado y al descifrar vale E.164', async () => {
     await post(app, v5Body()).expect(202);
     const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
     expect(data.phone).toMatch(ENC);
     expect(JSON.stringify(data)).not.toContain(PHONE_DIGITS);
     expect(decryptField(data.phone)).toBe(PHONE_E164);
-    expect(data.privacyPolicyVersion).toBe('lista-espera-v5');
+    expect(data.privacyPolicyVersion).toBe('lista-espera-v6');
+    expect(data.contactPreference).toBe('PHONE_AND_EMAIL');
   });
 
   it.each(['+34 612 345 678', '0034612345678', '34612345678', '(+34) 612-345-678', '  612 345 678  '])('criterio 2: %j → +34612345678', async (phone) => {
@@ -165,7 +169,7 @@ describe('Alta pública con teléfono (POST /public/waitlist)', () => {
     expect(decryptField(prisma.waitlistEntry.create.mock.calls[0][0].data.phone)).toBe('+351912345678');
   });
 
-  it.each([['sin phone', undefined], ['cadena vacía', ''], ['solo espacios', '   ']])('criterio 4: v5 %s → 400 WAITLIST_PHONE_REQUIRED', async (_label, phone) => {
+  it.each([['sin phone', undefined], ['cadena vacía', ''], ['solo espacios', '   ']])('criterio 4: v6 PHONE_AND_EMAIL %s → 400 WAITLIST_PHONE_REQUIRED', async (_label, phone) => {
     const res = await post(app, v5Body({ phone })).expect(400);
     expect(res.body.code).toBe('WAITLIST_PHONE_REQUIRED');
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
@@ -238,7 +242,7 @@ describe('Supresión, purga y export con teléfono (criterio 8 y CSV)', () => {
     ]) {
       const p = updateManyPrisma();
       await run(p);
-      expect(p.waitlistEntry.updateMany.mock.calls[0][0].data).toMatchObject({ phone: null, name: null, email: null, emailHash: null, deletedAt: expect.any(Date) });
+      expect(p.waitlistEntry.updateMany.mock.calls[0][0].data).toMatchObject({ phone: null, contactPreference: null, name: null, email: null, emailHash: null, deletedAt: expect.any(Date) });
     }
   });
 
