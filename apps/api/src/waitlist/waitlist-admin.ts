@@ -227,13 +227,15 @@ export type ClearPhoneResult = 'cleared' | 'no-phone' | 'not-found';
 /**
  * Borra SOLO el teléfono de una alta activa por id (retirada del consentimiento para llamadas,
  * apartado 3 de la política v5 y apartados 3 y 7 de la v6; L15 de Lex) y deja la preferencia en
- * EMAIL_ONLY («pasamos a contactarte solo por email»). La persona sigue en la lista. También corrige
- * una fila sin teléfono que aún dijera PHONE_AND_EMAIL. No escribe auditoría: la escribe quien llama,
- * en la misma transacción (CLI o panel, con su actor).
+ * EMAIL_ONLY («pasamos a contactarte solo por email»). La persona sigue en la lista.
+ * Solo cuenta como borrado ('cleared') si la fila TENÍA teléfono: con una fila sin teléfono devuelve
+ * 'no-phone', no escribe nada y quien llama no audita WAITLIST_PHONE_CLEARED (condición 3 de Argos,
+ * v6). El invariante «teléfono ⇔ PHONE_AND_EMAIL» lo mantienen la migración, el alta, set-phone y esta
+ * función. No escribe auditoría: la escribe quien llama, en la misma transacción (CLI o panel).
  */
 export async function clearWaitlistPhoneById(db: Pick<Prisma.TransactionClient, 'waitlistEntry'>, id: string): Promise<ClearPhoneResult> {
   const result = await db.waitlistEntry.updateMany({
-    where: { id, deletedAt: null, OR: [{ phone: { not: null } }, { contactPreference: { not: WaitlistContactPreference.EMAIL_ONLY } }, { contactPreference: null }] },
+    where: { id, deletedAt: null, phone: { not: null } },
     data: { phone: null, contactPreference: WaitlistContactPreference.EMAIL_ONLY },
   });
   if (result.count === 1) return 'cleared';

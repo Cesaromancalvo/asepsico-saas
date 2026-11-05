@@ -175,6 +175,13 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     expect(row.emailHash).toBe(hashWaitlistEmail(V5_EMAIL));
 
     await http().post(path).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(204); // idempotente
+    // Condición 3 de Argos (v6): una fila sin teléfono con PHONE_AND_EMAIL (incoherente a propósito)
+    // no cuenta como borrado: ni cambia ni se audita PLATFORM_WAITLIST_PHONE_CLEARED.
+    await prisma.waitlistEntry.update({ where: { id: ids.v5 }, data: { contactPreference: 'PHONE_AND_EMAIL' } });
+    expect(await clearWaitlistPhoneByEmail(prisma, V5_EMAIL)).toBe('no-phone');
+    expect((await rowOf(ids.v5)).contactPreference).toBe('PHONE_AND_EMAIL');
+    expect(await prisma.platformAuditLog.count({ where: { entityId: ids.v5, action: 'PLATFORM_WAITLIST_PHONE_CLEARED', actorId: null } })).toBe(0);
+    await prisma.waitlistEntry.update({ where: { id: ids.v5 }, data: { contactPreference: 'EMAIL_ONLY' } });
 
     const audit = await prisma.platformAuditLog.findMany({ where: { actorId: ids.admin, action: { in: ['PLATFORM_REAUTH_FAILED', 'PLATFORM_WAITLIST_PHONE_CLEARED'] } }, orderBy: { createdAt: 'asc' } });
     expect(audit.map((a) => [a.action, a.entityId, a.metadata])).toEqual([

@@ -246,7 +246,9 @@ jobs:
 
       # Lista de espera pública: alta cifrada, deduplicación (también simultánea), Origin, tipo
       # de contenido, envío demasiado rápido y rate limit por IP. Usa IPs 203.0.113.x vía
-      # X-Forwarded-For (TRUST_PROXY=loopback) y borra las filas que crea. Tarda ~5 s.
+      # X-Forwarded-For (TRUST_PROXY=loopback) y borra las filas que crea. Tarda ~10 s.
+      # Política v6: las dos preferencias de contacto y la v5 FUERA de plazo (la API arranca sin
+      # WAITLIST_V5_ACCEPTED_UNTIL); la v5 en plazo se comprueba tras reiniciar la API, más abajo.
       - name: Verify public waitlist (real PostgreSQL)
         run: node scripts/verify-waitlist.mjs
 
@@ -291,6 +293,9 @@ jobs:
             echo "La API anterior sigue respondiendo en :4000: no se puede reiniciar con las condiciones nuevas" >&2
             exit 1
           fi
+          # Transición de la política lista-espera-v5 abierta 3 días (máx. 7): la comprueba el paso
+          # «Verify public waitlist with the v5 transition open». Reiniciar también vacía el throttle.
+          export WAITLIST_V5_ACCEPTED_UNTIL="$(date -u -d '+3 days' '+%Y-%m-%dT%H:%M:%SZ')"
           setsid npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/asepsico-api.pid"
           for attempt in {1..60}; do
@@ -314,6 +319,14 @@ jobs:
         run: npm run test:smoke
         env:
           ASEPSICO_SMOKE_EXPECT_TERMS_428: '1'
+
+      # Política v6 con la transición de la v5 ABIERTA (la API se reinició arriba con
+      # WAITLIST_V5_ACCEPTED_UNTIL a +3 días): v5 con teléfono → 202 guardada como v5 y
+      # PHONE_AND_EMAIL; v5 sin teléfono → 400 WAITLIST_PHONE_REQUIRED (nunca un alta v5 sin teléfono).
+      - name: Verify public waitlist with the v5 transition open (real PostgreSQL)
+        run: node scripts/verify-waitlist.mjs
+        env:
+          WAITLIST_VERIFY_V5_WINDOW: open
 
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta

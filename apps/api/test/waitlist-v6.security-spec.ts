@@ -287,13 +287,19 @@ describe('L15 y set-phone mantienen la preferencia coherente (sin la preferencia
     return { tx, prisma: { $transaction: jest.fn(async (fn: any) => fn(tx)) } as any };
   };
 
-  it('borrar el teléfono (panel y CLI) deja phone = null y EMAIL_ONLY, y también corrige filas sin teléfono con otra preferencia', async () => {
+  it('borrar el teléfono (panel y CLI) deja phone = null y EMAIL_ONLY, y solo actúa sobre filas CON teléfono', async () => {
     const { tx } = txPrisma(1);
     expect(await clearWaitlistPhoneById(tx as any, 'cl0000000000000000000001')).toBe('cleared');
     const args = tx.waitlistEntry.updateMany.mock.calls[0][0] as any;
     expect(args.data).toEqual({ phone: null, contactPreference: 'EMAIL_ONLY' });
-    expect(args.where).toMatchObject({ id: 'cl0000000000000000000001', deletedAt: null });
-    expect(args.where.OR).toEqual(expect.arrayContaining([{ phone: { not: null } }, { contactPreference: { not: 'EMAIL_ONLY' } }]));
+    expect(args.where).toEqual({ id: 'cl0000000000000000000001', deletedAt: null, phone: { not: null } });
+  });
+
+  it('condición 3 de Argos: fila activa SIN teléfono (aunque diga PHONE_AND_EMAIL) → no-phone, sin escribir ni auditar', async () => {
+    const { tx, prisma } = txPrisma(0, 1);
+    expect(await clearWaitlistPhoneById(tx as any, 'cl0000000000000000000001')).toBe('no-phone');
+    expect(await clearWaitlistPhoneByEmail(prisma, EMAIL)).toBe('no-phone');
+    expect(tx.platformAuditLog.create).not.toHaveBeenCalled();
   });
 
   it('CLI --clear: auditoría sin teléfono, email ni preferencia', async () => {

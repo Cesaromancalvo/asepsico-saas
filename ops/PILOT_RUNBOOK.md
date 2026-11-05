@@ -497,6 +497,54 @@ Excel/Sheets; quitarlo al copiar.
 el MFA de la cuenta. Si se sospecha que la cuenta exclusiva está comprometida: vaciar la variable
 primero, después cambiar la contraseña (cierra todas sus sesiones) y regenerar el MFA.
 
+### Política `lista-espera-v6`: despliegue y comprobación posterior (condición 2 de Argos)
+
+La v6 añade `contactPreference` (`PHONE_AND_EMAIL` / `EMAIL_ONLY`) con la migración
+`20261105184816_waitlist_contact_preference`, que rellena las filas activas (con teléfono →
+`PHONE_AND_EMAIL`; sin teléfono → `EMAIL_ONLY`). Orden:
+
+1. En Render (servicio de la API), `WAITLIST_V5_ACCEPTED_UNTIL` = fecha de publicación de la v6 +
+   7 días como máximo, ISO 8601 con zona (p. ej. `2026-11-13T23:59:59+01:00`). Si se pone más de 7
+   días o mal escrita, la API **no arranca**. Sin la variable, la v5 queda retirada desde el
+   despliegue (válido si web y API salen a la vez y la página no queda en caché).
+2. Desplegar la API (`prisma migrate deploy` aplica la migración).
+3. **Comprobación posterior, antes de publicar la landing** (solo lectura, mismo patrón que la de
+   `req.ip`). Las dos cifras deben ser `0`:
+
+```bash
+read -rs PROD_DB_URL
+printf '%s\n' \
+  'SELECT count(*) FROM "WaitlistEntry" WHERE "deletedAt" IS NULL AND "contactPreference" IS NULL;' \
+  'SELECT count(*) FROM "WaitlistEntry" WHERE "deletedAt" IS NULL AND (("phone" IS NULL) <> ("contactPreference" = '"'"'EMAIL_ONLY'"'"'));' \
+  | PGOPTIONS='-c default_transaction_read_only=on' psql "$PROD_DB_URL" -X -q -At
+unset PROD_DB_URL
+```
+
+   - La 1.ª cuenta filas activas sin preferencia (p. ej. un alta v5 guardada por la API antigua
+     entre la migración y el arranque de la nueva). Si no es `0`, repetir **solo** el relleno de la
+     migración, que es idempotente y únicamente toca filas activas sin preferencia (no cambia
+     teléfonos ni versiones):
+
+```bash
+read -rs PROD_DB_URL
+printf '%s\n' 'UPDATE "WaitlistEntry" SET "contactPreference" = CASE WHEN "phone" IS NOT NULL THEN '"'"'PHONE_AND_EMAIL'"'"'::"WaitlistContactPreference" ELSE '"'"'EMAIL_ONLY'"'"'::"WaitlistContactPreference" END WHERE "deletedAt" IS NULL AND "contactPreference" IS NULL;' \
+  | psql "$PROD_DB_URL" -X -q -v ON_ERROR_STOP=1
+unset PROD_DB_URL
+```
+
+     y volver a lanzar la comprobación.
+   - La 2.ª cuenta filas que rompen el invariante «teléfono ⇔ `PHONE_AND_EMAIL`». No debería salir
+     nunca: si no es `0`, **no** corregir a mano; avisar a Bruno y a Argos.
+4. Publicar la landing (formulario v6 y política v6 en el **mismo** despliegue; la v5 queda en
+   `/privacidad-lista-espera/v5/`).
+5. Cumplido el plazo: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (redespliega) y, en el código,
+   pasar `lista-espera-v5` a `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS`.
+
+Con la v6, «Borrar teléfono» (panel o `waitlist:set-phone -- --clear`) deja además la preferencia en
+«solo email»; en una fila que ya no tiene teléfono no cambia nada ni deja auditoría.
+`waitlist:set-phone` (solo cuando la persona da su teléfono por escrito para que la llamemos) pone la
+preferencia en «teléfono y email».
+
 ### Tarea programada: purga por plazo de conservación
 
 | Cuándo | Qué |
