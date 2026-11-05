@@ -644,6 +644,12 @@
       if (show) inPhone.setAttribute('required', '');
       else { inPhone.removeAttribute('required'); inPhone.value = ''; phoneError(''); }
     }
+    // Las preguntas opcionales van plegadas (<details>): si una tiene un error, se despliega antes de
+    // poner el foco en ella para que se vea.
+    var optionalBox = form.querySelector('[data-wl-optional]');
+    function revealFolded(el) {
+      if (optionalBox && !optionalBox.open && (el === inCount || el === inToolOther)) optionalBox.open = true;
+    }
     // "Otra" muestra una caja corta para escribir cuál; con cualquier otra opción se oculta y se vacía.
     function syncToolOther() {
       if (!toolOtherWrap || !inToolOther) return;
@@ -721,7 +727,7 @@
       var privMsg = inPrivacy.checked ? '' : 'Para apuntarte, marca la casilla de privacidad: es obligatoria.';
       setError(inPrivacy, 'wl-privacy-err', privMsg); if (privMsg) bad.push(inPrivacy);
 
-      if (bad.length) { bad[0].focus(); return null; }
+      if (bad.length) { revealFolded(bad[0]); bad[0].focus(); return null; }
 
       var payload = {
         name: name,

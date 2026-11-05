@@ -63,8 +63,9 @@ export interface WaitlistSubmitRequest {
    */
   phone?: string;
   /**
-   * Opcional, máx. 500. La landing manda una opción ("Doctoralia", "Eholo", "Excel / hojas de cálculo",
-   * "Papel / agenda", "Nada todavía", "Otra") o "Otra: <texto>" (texto de máx. 100).
+   * Opcional, máx. 500. La landing manda una opción ("Un programa de gestión de consultas",
+   * "Excel / hojas de cálculo", "Papel / agenda", "Nada todavía", "Otra") o "Otra: <texto>" (texto de
+   * máx. 100). Las altas antiguas pueden tener las opciones anteriores, con nombres de terceros.
    */
   tools?: string;
   /** Opcional, entero 1–500. */

@@ -12,7 +12,9 @@
  *  5. WAITLIST_FORM_TOO_FAST reintenta una vez con el mismo token; WAITLIST_FORM_TOKEN_INVALID pide otro;
  *  6. todas las peticiones con credentials: 'omit' y sin tocar localStorage, sessionStorage ni cookies;
  *  7. mensajes: 429, fallo de red y validación sin red;
- *  8. "¿Qué usas hoy?": opciones, "Otra" con caja de máx. 100 caracteres, y sin campos commercialConsent*;
+ *  8. "¿Qué usas hoy?": opciones genéricas sin marcas de terceros (las mismas en index.html), "Otra" con caja
+ *     de máx. 100 caracteres, y sin campos commercialConsent*; las preguntas opcionales van plegadas en un
+ *     <details> sin nada obligatorio dentro y se despliegan si una de ellas tiene un error;
  *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex;
  * 11. teléfono (con «Por teléfono y por email», lista-espera-v6): obligatorio, misma regla que la API, se envía tal como se escribe,
  *     un mensaje distinto para cada code de la API (PHONE_REQUIRED, PHONE_INVALID),
@@ -38,7 +40,8 @@ const configSrc = readFileSync(join(pub, 'js/config.js'), 'utf8');
 const mainSrc = readFileSync(join(pub, 'js/main.js'), 'utf8');
 const API = 'https://asepsico-api.onrender.com/api/v1';
 
-const TOOL_OPTIONS = ['Doctoralia', 'Eholo', 'Excel / hojas de cálculo', 'Papel / agenda', 'Nada todavía', 'Otra'];
+const TOOL_OPTIONS = ['Un programa de gestión de consultas', 'Excel / hojas de cálculo', 'Papel / agenda', 'Nada todavía', 'Otra'];
+const indexSrc = readFileSync(join(pub, 'index.html'), 'utf8');
 const failures = [];
 const check = (cond, msg) => { if (!cond) failures.push(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -120,6 +123,7 @@ function buildDom() {
   field('wl-count').setAttribute('aria-describedby', 'wl-count-err');
   field('wl-tool-other').setAttribute('aria-describedby', 'wl-tool-other-help wl-tool-other-err');
   const toolOtherWrap = form.add('[data-wl-tool-other-wrap]', new El('tool-other-wrap', { hidden: true }));
+  const optional = form.add('[data-wl-optional]', new El('optional', { open: false }));
   field('wl-source');
   field('wl-website');
   field('wl-privacy');
@@ -142,7 +146,7 @@ function buildDom() {
     reg(new El(id, { hidden: true }));
   }
   const cta = doc.add('a[data-cta]', new El('cta'));
-  return { section, form, done, countWrap, toolOtherWrap, group, phoneWrap, contactGroup, cta, status: section.querySelector('[data-wl-status]') };
+  return { section, form, done, countWrap, toolOtherWrap, optional, group, phoneWrap, contactGroup, cta, status: section.querySelector('[data-wl-status]') };
 }
 
 /* ---- fetch falso: cola de respuestas por ruta y registro de llamadas ---- */
@@ -353,10 +357,30 @@ for (const [opts, expected] of [
   check(posts(t).length === 0, '8: "Otra" con más de 100 caracteres se envió');
   check(t.form.querySelector('#wl-tool-other').getAttribute('aria-invalid') === 'true', '8: "Otra" larga no se marcó como inválida');
   // Al cambiar a otra opción, la caja se oculta y se vacía.
-  const r = t.form.querySelectorAll('input[name="currentTool"]').find((x) => x.value === 'Eholo');
+  const r = t.form.querySelectorAll('input[name="currentTool"]').find((x) => x.value === 'Nada todavía');
   for (const x of t.form.querySelectorAll('input[name="currentTool"]')) x.checked = false;
   r.checked = true; r.dispatch('change');
   check(t.toolOtherWrap.hidden === true && t.form.querySelector('#wl-tool-other').value === '', '8: al dejar "Otra" la caja no se ocultó ni se vació');
+}
+{ // Un error en una pregunta plegada la despliega antes de poner el foco en ella.
+  const t = load();
+  t.form.dispatch('focusin');
+  await sleep(10);
+  fill(t, { tool: 'Otra', toolOther: 'x'.repeat(101) });
+  check(t.optional.open === false, '8: las preguntas opcionales empiezan plegadas');
+  await submitAndWait(t);
+  check(t.optional.open === true, '8: un error en una pregunta opcional no desplegó el bloque');
+  check(doc.activeElement && doc.activeElement.id === 'wl-tool-other', '8: el foco no fue a la pregunta opcional con error');
+}
+{ // index.html: las mismas opciones que aquí, sin marcas de terceros, y el bloque plegado sin nada obligatorio.
+  const values = [...indexSrc.matchAll(/name="currentTool" value="([^"]+)"/g)].map((m) => m[1]);
+  check(JSON.stringify(values) === JSON.stringify(TOOL_OPTIONS), `8: las opciones de index.html (${values.join(' | ')}) no coinciden con las esperadas`);
+  check(!/Doctoralia|Eholo|Clinic ?Cloud|Psicoagenda|Mentes ?Abiertas/i.test(indexSrc.replace(/<!--[\s\S]*?-->/g, '')), '8: index.html nombra un programa de terceros');
+  const fold = (indexSrc.match(/<details class="wl-optional"[\s\S]*?<\/details>/) || [''])[0];
+  check(/<summary[^>]*>Preguntas opcionales/.test(fold), '8: falta el bloque plegado "Preguntas opcionales"');
+  check(/id="wl-count"/.test(fold) && /name="currentTool"/.test(fold), '8: el número de profesionales y la herramienta actual deben ir en el bloque plegado');
+  check(!/\brequired\b|class="req"/.test(fold), '8: hay un campo obligatorio dentro del bloque plegado');
+  check(!/id="wl-source"/.test(fold), '8: "¿Cómo nos has conocido?" debe quedar a la vista, fuera del bloque plegado');
 }
 
 /* ---- 7. Red caída (un reintento automático) y validación sin red ---- */
@@ -549,6 +573,7 @@ const contactErr = () => doc.getElementById('wl-contact-err');
   check(html.includes('contactarte sobre el piloto por email y, si lo eliges, por teléfono, con tu consentimiento.') && !html.includes('también tu teléfono'), '12: la primera capa no tiene el texto de Lex §2.4');
   check(html.includes('Si te apuntas, solo te contactamos sobre tu solicitud y sobre el piloto.') && !html.includes('te escribimos o te llamamos'), '12: la pantalla de gracias no tiene el texto de Lex §2.5');
   check(!/¿Prefieres no darlo\?/.test(html), '12: sigue la línea D.1 de la v5 («¿Prefieres no darlo?»)');
+  check(html.includes('<li>Solo te contactamos sobre tu solicitud y sobre el piloto: por email y, si lo eliges, por teléfono.</li>'), '12: el paso 1 de «Qué pasa después» no tiene el texto v6 de Lex (§3.1)');
 }
 { // Al cargar: teléfono oculto. Sin elegir preferencia: error en el grupo, foco y sin POST.
   const t = load();
