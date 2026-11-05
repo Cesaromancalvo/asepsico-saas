@@ -27,9 +27,9 @@
       {
         "@type": "Person",
         "@id": "https://asepsico.es/#cesar",
-        "name": "César Román",
+        "name": "César Román Calvo",
         "url": "https://asepsico.es/#quienes-somos",
-        "description": "Psicólogo y fundador de AsePsico."
+        "description": "Graduado en Psicología y fundador de AsePsico."
       },
       {
         "@type": "WebSite",
@@ -499,6 +499,7 @@
                 </a>
                 <a class="btn btn--outline" href="#como-funciona">Ver cómo funciona</a>
               </div>
+              <p class="savings__pdf"><a href="/recursos/mapa-semana-consulta/">Mapa de tu semana de consulta (PDF para imprimir)</a></p>
             </div>
           </div>
 
@@ -617,7 +618,21 @@
         <div class="waitlist__intro">
           <span class="pilot__tag">Lista de espera</span>
           <h2 id="apuntate-titulo" class="display display--md">Apúntate a la lista de espera</h2>
-          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados. Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</p>
+          <p class="lead">El piloto es gratuito y para un grupo reducido de psicólogos seleccionados.</p>
+
+          <div class="next-steps" role="group" aria-labelledby="next-steps-title">
+            <h3 id="next-steps-title" class="next-steps__title">Qué pasa después de apuntarte</h3>
+            <ol class="next-steps__list">
+              <!-- Con la política lista-espera-v6 (teléfono opcional, rama de Bruno) este paso pasa a ser el texto
+                   definitivo de Lex: "Solo te contactamos sobre tu solicitud y sobre el piloto: por email y, si lo
+                   eliges, por teléfono." Mientras el teléfono sea obligatorio (v5), se usa la frase ya publicada. -->
+              <li>Si te apuntas, solo te escribimos o te llamamos sobre tu solicitud y sobre el piloto.</li>
+              <li>Elegimos a un grupo reducido de psicólogos entre quienes se apuntan a la lista de espera.</li>
+              <li>A cambio te pedimos que lo uses de verdad y nos cuentes qué te sobra y qué te falta.</li>
+            </ol>
+            <p class="next-steps__free"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>El piloto es gratuito: no te pedimos tarjeta ni datos de pago.</p>
+          </div>
+
           <p class="small">Los campos marcados con <span aria-hidden="true">*</span><span class="visually-hidden">asterisco</span> son obligatorios.</p>
         </div>
 
@@ -660,33 +675,6 @@
                 <p class="sfield__err" id="wl-situation-err" hidden></p>
               </fieldset>
 
-              <div class="sfield" data-wl-count-wrap>
-                <label for="wl-count">¿Cuántos profesionales sois? <span class="opt">(opcional)</span></label>
-                <input id="wl-count" name="professionalsCount" type="number" inputmode="numeric" min="1" max="500" step="1"
-                       autocomplete="off" aria-describedby="wl-count-err" data-wl-field="professionalsCount">
-                <p class="sfield__err" id="wl-count-err" hidden></p>
-              </div>
-
-              <fieldset class="sfield wl-choices" data-wl-group="tool">
-                <legend>¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></legend>
-                <div class="wl-choices__grid">
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Doctoralia"> Doctoralia</label>
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Eholo"> Eholo</label>
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Excel / hojas de cálculo"> Excel / hojas de cálculo</label>
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Papel / agenda"> Papel / agenda</label>
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Nada todavía"> Nada todavía</label>
-                  <label class="wl-choice"><input type="radio" name="currentTool" value="Otra"> Otra</label>
-                </div>
-              </fieldset>
-
-              <div class="sfield" data-wl-tool-other-wrap hidden>
-                <label for="wl-tool-other">¿Cuál? <span class="opt">(opcional)</span></label>
-                <p class="sfield__help" id="wl-tool-other-help">No incluyas datos de pacientes.</p>
-                <input id="wl-tool-other" name="currentToolOther" type="text" maxlength="100" autocomplete="off"
-                       aria-describedby="wl-tool-other-help wl-tool-other-err" data-wl-field="currentToolOther">
-                <p class="sfield__err" id="wl-tool-other-err" hidden></p>
-              </div>
-
               <div class="sfield">
                 <label for="wl-source">¿Cómo nos has conocido? <span class="opt">(opcional)</span></label>
                 <select id="wl-source" name="source" data-wl-field="source">
@@ -699,6 +687,37 @@
                   <option value="NOT_SAID">Prefiero no decirlo</option>
                 </select>
               </div>
+
+              <details class="wl-optional" data-wl-optional>
+                <summary class="wl-optional__summary">Preguntas opcionales<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg></summary>
+                <div class="wl-optional__body">
+                  <div class="sfield" data-wl-count-wrap>
+                    <label for="wl-count">¿Cuántos profesionales sois? <span class="opt">(opcional)</span></label>
+                    <input id="wl-count" name="professionalsCount" type="number" inputmode="numeric" min="1" max="500" step="1"
+                           autocomplete="off" aria-describedby="wl-count-err" data-wl-field="professionalsCount">
+                    <p class="sfield__err" id="wl-count-err" hidden></p>
+                  </div>
+
+                  <fieldset class="sfield wl-choices" data-wl-group="tool">
+                    <legend>¿Qué usas hoy para gestionar tu consulta? <span class="opt">(opcional)</span></legend>
+                    <div class="wl-choices__grid">
+                      <label class="wl-choice"><input type="radio" name="currentTool" value="Un programa de gestión de consultas"> Un programa de gestión de consultas</label>
+                      <label class="wl-choice"><input type="radio" name="currentTool" value="Excel / hojas de cálculo"> Excel / hojas de cálculo</label>
+                      <label class="wl-choice"><input type="radio" name="currentTool" value="Papel / agenda"> Papel / agenda</label>
+                      <label class="wl-choice"><input type="radio" name="currentTool" value="Nada todavía"> Nada todavía</label>
+                      <label class="wl-choice"><input type="radio" name="currentTool" value="Otra"> Otra</label>
+                    </div>
+                  </fieldset>
+
+                  <div class="sfield" data-wl-tool-other-wrap hidden>
+                    <label for="wl-tool-other">¿Cuál? <span class="opt">(opcional)</span></label>
+                    <p class="sfield__help" id="wl-tool-other-help">No incluyas datos de pacientes.</p>
+                    <input id="wl-tool-other" name="currentToolOther" type="text" maxlength="100" autocomplete="off"
+                           aria-describedby="wl-tool-other-help wl-tool-other-err" data-wl-field="currentToolOther">
+                    <p class="sfield__err" id="wl-tool-other-err" hidden></p>
+                  </div>
+                </div>
+              </details>
 
               <div class="wl-hp" aria-hidden="true">
                 <label for="wl-website">Deja este campo vacío</label>
@@ -731,16 +750,22 @@
     <section class="section section--soft" id="quienes-somos" aria-labelledby="quienes-titulo">
       <div class="container narrow about reveal">
         <figure class="about__figure">
+          <!-- Hueco para la foto opcional (decide el Jefe). Si se añade: quitar los metadatos EXIF (GPS, cámara),
+               nada que sugiera ejercicio clínico (diván, bata, pacientes), cuadrada, al menos 480 x 480 px, y sustituir
+               el logo por:
+               <img class="about__photo" src="/img/cesar-roman-calvo.jpg" width="240" height="240"
+                    alt="César Román Calvo, fundador de AsePsico" loading="lazy" decoding="async"> -->
           <img class="about__logo" src="/img/logo-192.png" width="120" height="120" alt="Logotipo de AsePsico" loading="lazy">
-          <figcaption>César Román · AsePsico</figcaption>
+          <figcaption><span class="about__name">César Román Calvo</span><span class="about__role">Fundador de AsePsico</span></figcaption>
         </figure>
-        <div>
+        <div class="about__text">
           <h2 id="quienes-titulo" class="display display--sm">Quiénes somos</h2>
-          <p class="lead">Soy César Román, psicólogo, y llevo unos meses construyendo AsePsico.</p>
+          <p class="lead">Soy César Román Calvo, graduado en Psicología y fundador de AsePsico. Llevo unos meses construyéndolo.</p>
+          <p class="about__quote">Hablas con quien lo construye.</p>
           <p>Entre una sesión y otra se dan tareas, llegan respuestas y quedan cosas por revisar, y todo eso puede acabar repartido entre mensajes y papeles sueltos.</p>
           <p>Lo que pasa entre sesiones también es parte del trabajo.</p>
           <p>Por eso AsePsico está pensado para el seguimiento entre sesiones: tareas que el paciente hace y entrega desde su portal, y que tú revisas y le devuelves.</p>
-          <p>Todavía no está abierto al público: empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
+          <p>Todavía no está abierto al público. Empezamos con un piloto para construir AsePsico con los psicólogos que lo usen.</p>
           <p>Si te interesa, <a data-cta href="#apuntate">apúntate a la lista de espera</a>.</p>
         </div>
       </div>
@@ -830,6 +855,7 @@
           <li><a href="/aviso-legal/">Aviso legal</a></li>
           <li><a href="/privacidad/">Política de privacidad</a></li>
           <li><a data-form-privacy href="/privacidad-lista-espera/">Privacidad de la lista de espera</a></li>
+          <li><a href="/recursos/mapa-semana-consulta/">Mapa de tu semana de consulta (PDF)</a></li>
           <li data-contact><a data-contact-link href="mailto:asepsico1@gmail.com" aria-describedby="contacto-aviso">Contacto</a></li>
           <li><a href="https://app.asepsico.es/login">Acceso para profesionales del piloto</a></li>
           <li data-feature="instagram" hidden><a href="https://www.instagram.com/asepsico/" target="_blank" rel="noopener noreferrer">Instagram @asepsico<span class="visually-hidden"> (se abre en una pestaña nueva)</span></a></li>

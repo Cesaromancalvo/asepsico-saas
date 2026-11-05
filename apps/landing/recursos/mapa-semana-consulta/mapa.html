@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es-ES"><head><meta charset="utf-8">
+<title>Mapa de tu semana de consulta</title>
+<meta name="author" content="AsePsico">
+<link rel="stylesheet" href="mapa.css">
+</head>
+<body>
+<!-- Fuente del PDF publicado en /recursos/mapa-semana-consulta.pdf. Se genera con render.sh (Chrome sin
+     interfaz). Textos: Mou (conversion-web 03/11) con el visto bueno y el pie de Lex (§3.3). Sin campos
+     rellenables, sin JavaScript y sin enlaces con parámetros. Si se cambia el texto, sube la versión del pie. -->
+
+<section class="page">
+  <div class="top">
+    <div class="brand"><img src="../../public/img/logo-192.png" alt=""><b>AsePsico</b></div>
+    <div class="stamp"><strong>Plantilla para imprimir</strong><br>Versión 1 · noviembre de 2026</div>
+  </div>
+
+  <div class="hero">
+    <p class="kicker">Para una semana</p>
+    <h1>Mapa de tu semana de consulta</h1>
+    <p class="sub">Lo que pasa entre sesiones también es parte del trabajo.</p>
+  </div>
+
+  <div class="how">
+    <div><span class="n">1</span><p><b>Cada día</b>, escribe cuántas horas dedicas a cada tarea. Puedes usar decimales (0,5 es media hora).</p></div>
+    <div><span class="n">2</span><p><b>Deja en blanco</b> lo que no hagas.</p></div>
+    <div><span class="n">3</span><p><b>Al final de la semana</b>, suma cada fila y pasa los totales a la página 2.</p></div>
+  </div>
+
+  <table class="week">
+    <colgroup><col class="task"><col><col><col><col><col><col><col><col class="tot"></colgroup>
+    <thead>
+      <tr><th class="task" scope="col">Tarea</th><th scope="col">Lun</th><th scope="col">Mar</th><th scope="col">Mié</th><th scope="col">Jue</th><th scope="col">Vie</th><th scope="col">Sáb</th><th scope="col">Dom</th><th class="tot" scope="col">Total</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Agenda, citas y recordatorios</th><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td class="tot"><span class="unit">h</span></td></tr>
+      <tr><th scope="row">Preparar sesiones, notas e informes</th><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td class="tot"><span class="unit">h</span></td></tr>
+      <tr><th scope="row">Material y seguimiento entre sesiones</th><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td class="tot"><span class="unit">h</span></td></tr>
+      <tr><th scope="row">Papeleo, facturas y gestoría</th><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td class="tot"><span class="unit">h</span></td></tr>
+    </tbody>
+    <tfoot>
+      <tr><th scope="row">Total del día</th><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td><span class="unit">h</span></td><td class="tot"><span class="unit">h</span></td></tr>
+    </tfoot>
+  </table>
+
+  <p class="warn">Es una cuenta con las horas que tú escribes, no una medición. Que una tarea esté en la lista no significa que AsePsico la haga por ti.</p>
+
+  <div class="foot">
+    <span><b>No apuntes en esta hoja nombres ni datos de pacientes.</b> · AsePsico · asepsico.es · Mapa de tu semana de consulta, versión 1 (noviembre de 2026)</span>
+    <span class="pg">1 / 2</span>
+  </div>
+</section>
+
+<section class="page">
+  <div class="top">
+    <div class="brand"><img src="../../public/img/logo-192.png" alt=""><b>AsePsico</b></div>
+    <div class="stamp"><strong>Mapa de tu semana de consulta</strong><br>Versión 1 · noviembre de 2026</div>
+  </div>
+
+  <div class="hero">
+    <h2>Tu semana, en una cuenta</h2>
+  </div>
+
+  <div class="totals">
+    <div><b>Agenda, citas y recordatorios</b><p class="fill"><span></span>h a la semana</p></div>
+    <div><b>Preparar sesiones, notas e informes</b><p class="fill"><span></span>h a la semana</p></div>
+    <div><b>Material y seguimiento entre sesiones</b><p class="fill"><span></span>h a la semana</p></div>
+    <div><b>Papeleo, facturas y gestoría</b><p class="fill"><span></span>h a la semana</p></div>
+  </div>
+  <div class="grand"><b>Total de la semana</b><p class="fill"><span></span>h</p></div>
+  <p class="cta">Haz la cuenta en <strong>asepsico.es</strong></p>
+
+  <p class="warn">Es una cuenta con las horas que tú escribes, no una medición. Que una tarea esté en la lista no significa que AsePsico la haga por ti.</p>
+
+  <div class="notes">
+    <h2>Notas</h2>
+    <div class="lines"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="closing">
+    <div>
+      <p>Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología, pensado para el seguimiento entre sesiones. Todavía no está abierto al público. Piloto gratuito para psicólogos: apúntate a la lista de espera.</p>
+      <p class="sign">César Román Calvo, graduado en Psicología y fundador de AsePsico.</p>
+    </div>
+    <span class="web">asepsico.es</span>
+  </div>
+
+  <div class="foot">
+    <span><b>No apuntes en esta hoja nombres ni datos de pacientes.</b> · AsePsico · asepsico.es · Mapa de tu semana de consulta, versión 1 (noviembre de 2026)</span>
+    <span class="pg">2 / 2</span>
+  </div>
+</section>
+</body></html>

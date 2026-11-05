@@ -671,6 +671,42 @@ img { max-width: 100%; height: auto; }
   .waitlist__intro { position: sticky; top: calc(var(--header-h) + 32px); }
 }
 .waitlist__intro .display { margin: 0 0 .4em; }
+
+/* Qué pasa después de apuntarte: pasos numerados encima del formulario */
+.next-steps {
+  margin: 4px 0 20px; padding: 20px 20px 16px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 1px 2px rgba(61, 61, 71, .04);
+}
+.next-steps__title { font-size: 1.0625rem; margin: 0 0 14px; }
+.next-steps__list { list-style: none; counter-reset: paso; display: grid; gap: 12px; }
+.next-steps__list li {
+  counter-increment: paso; position: relative; padding-left: 40px; min-height: 28px;
+  font-size: .9375rem; line-height: 1.55;
+}
+.next-steps__list li::before {
+  content: counter(paso); position: absolute; left: 0; top: -1px; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--tint-2); color: var(--violet-ink);
+  font-weight: 700; font-size: .875rem; line-height: 1;
+}
+.next-steps__free {
+  display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 0; padding-top: 14px;
+  border-top: 1px solid var(--line); font-size: .9375rem; font-weight: 500; color: var(--ink);
+}
+.next-steps__free .icon { color: var(--green); margin-top: .15em; }
+
+/* Preguntas opcionales plegadas (details/summary: accesible con teclado y sin JavaScript) */
+.wl-optional { border: 1px dashed #B9B4D6; border-radius: 12px; background: var(--paper); }
+.wl-optional[open] { border-style: solid; border-color: var(--line); }
+.wl-optional__summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 52px; padding: 10px 16px; font-weight: 600; border-radius: 12px;
+}
+.wl-optional__summary::-webkit-details-marker { display: none; }
+.wl-optional__summary:hover { color: var(--violet-ink); }
+.wl-optional__summary .icon { color: var(--violet-ink); transition: transform .3s var(--ease-out); }
+.wl-optional[open] .wl-optional__summary .icon { transform: rotate(180deg); }
+.wl-optional__body { display: grid; gap: 22px; padding: 4px 16px 18px; min-width: 0; }
+.wl-optional__body [hidden] { display: none; }
 .waitlist__box {
   min-width: 0; background: #fff; border: 1px solid rgba(112, 100, 210, .35); border-radius: 24px;
   padding: clamp(20px, 4vw, 40px); box-shadow: var(--shadow-lg);
@@ -738,13 +774,24 @@ img { max-width: 100%; height: auto; }
 
 /* Quiénes somos */
 .about { display: flex; gap: 40px; align-items: flex-start; }
-.about__figure { margin: 0; flex: none; text-align: center; }
+.about__figure { margin: 0; flex: none; text-align: center; width: 160px; }
 .about__logo { width: 120px; height: 120px; flex: none; border-radius: 28px; background: linear-gradient(150deg, var(--tint) 0%, var(--blush) 100%); padding: 14px; }
-.about__figure figcaption { margin-top: 10px; font-size: .875rem; font-weight: 600; color: var(--ink); }
+/* Hueco para la foto opcional de César (ver el comentario en index.html). */
+.about__photo { display: block; width: 160px; height: 160px; object-fit: cover; border-radius: 28px; margin: 0 auto; box-shadow: var(--shadow); }
+.about__figure figcaption { margin-top: 12px; display: grid; gap: 2px; line-height: 1.35; }
+.about__name { font-size: .9375rem; font-weight: 600; color: var(--ink); }
+.about__role { font-size: .8125rem; color: var(--ink-soft); }
+.about__text { min-width: 0; }
+.about__quote {
+  margin: 0 0 1em; padding: 4px 0 4px 16px; border-left: 4px solid var(--violet);
+  font-size: 1.125rem; font-weight: 600; color: var(--violet-ink); letter-spacing: -.005em;
+}
 @media (max-width: 599px) {
   .about { flex-direction: column; gap: 16px; }
-  .about__figure { text-align: left; }
-  .about__logo { width: 88px; height: 88px; }
+  .about__figure { text-align: left; width: auto; display: flex; align-items: center; gap: 14px; }
+  .about__figure figcaption { margin-top: 0; }
+  .about__logo { width: 72px; height: 72px; border-radius: 20px; padding: 10px; }
+  .about__photo { width: 88px; height: 88px; border-radius: 20px; margin: 0; }
 }
 
 /* Preguntas frecuentes */
@@ -936,3 +983,32 @@ img { max-width: 100%; height: auto; }
 @media (max-width: 374px) {
   .brand__name { display: none; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Recursos descargables (/recursos/…)                                 */
+/* ------------------------------------------------------------------ */
+.resource { padding: 48px 0 80px; }
+.resource .back { display: inline-block; margin-bottom: 24px; }
+.resource .pilot__tag { display: table; }
+.resource__title { font-size: clamp(2rem, 1.4rem + 2.6vw, 3rem); letter-spacing: -.02em; margin-bottom: .3em; text-wrap: balance; }
+.resource .lead { margin-bottom: .6em; }
+.resource__download {
+  margin: 28px 0 40px; padding: clamp(20px, 4vw, 32px); background: #fff; border: 1px solid rgba(112, 100, 210, .35);
+  border-radius: 24px; box-shadow: var(--shadow-lg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
+}
+.resource__download .small { margin: 0; color: var(--ink-soft); }
+@media (max-width: 479px) { .resource__download .btn { width: 100%; justify-content: center; padding: .9rem 1.1rem; font-size: 1rem; white-space: nowrap; } }
+.resource__block h2 { font-size: 1.375rem; }
+.resource__tasks { margin: 16px 0 20px; }
+.resource__warn {
+  padding: 12px 16px; border-left: 4px solid var(--violet); background: var(--tint);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.resource__closing {
+  margin-top: 40px; padding: clamp(20px, 4vw, 32px); border-radius: var(--radius); background: var(--tint);
+  border: 1px solid var(--tint-2);
+}
+.resource__closing p { margin-bottom: 16px; }
+
+/* Enlace al mapa desde la calculadora */
+.savings__pdf { margin: 16px 0 0; font-size: .9375rem; }

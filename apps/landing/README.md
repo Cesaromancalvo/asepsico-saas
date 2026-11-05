@@ -14,6 +14,8 @@ apps/landing/
   data/cambios.json        <- estado, incidencias y novedades (lo único que se edita para publicar un aviso)
   build.mjs                <- build de publicación: public/ → dist/ rellenando [[NIF]] y [[DOMICILIO]]
   borradores/              <- bloques NO publicados (p. ej. la calculadora); fuera de public/
+  recursos/mapa-semana-consulta/ <- fuente del PDF descargable (mapa.html + mapa.css) y render.sh, que lo genera con
+                              Chrome sin interfaz y limpia los metadatos (limpiar-pdf.mjs); fuera de public/
   public/                  <- directorio que se publica
     index.html             <- la landing
     aviso-legal/index.html <- aviso legal (texto final de Argos)
@@ -29,6 +31,8 @@ apps/landing/
     estado/index.html      <- estado del servicio e incidencias (marcador [[ESTADO]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
     cambios/index.html     <- cambios y avisos previos (marcador [[CAMBIOS]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
     404.html               <- página de error propia (noindex, fuera del sitemap)
+    recursos/mapa-semana-consulta/index.html <- página del recurso "Mapa de tu semana de consulta" (en el sitemap)
+    recursos/mapa-semana-consulta.pdf        <- el PDF (2 páginas A4, etiquetado, sin JavaScript, formularios ni enlaces). Descarga directa, sin pedir email: nunca poner un formulario delante
     fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
     img/                   <- logo y og-image.png (1200x630)
     favicon.ico, favicon.png, apple-touch-icon.png, robots.txt, sitemap.xml
