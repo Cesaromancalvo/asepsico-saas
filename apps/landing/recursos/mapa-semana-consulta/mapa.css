@@ -1,0 +1,124 @@
+/* Mapa de tu semana de consulta (PDF A4 para imprimir). Mismo estilo que los PDF del kit post-demo
+   (base.css): Poppins, morado #7064D2, franja superior en degradado y pie fino. Las fuentes son las
+   autoalojadas de la landing (subconjunto latino, licencia OFL). */
+@font-face { font-family: 'Poppins'; font-weight: 400; src: url('../../public/fonts/poppins-regular-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Poppins'; font-weight: 500; src: url('../../public/fonts/poppins-medium-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Poppins'; font-weight: 600; src: url('../../public/fonts/poppins-semibold-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Poppins'; font-weight: 700; src: url('../../public/fonts/poppins-bold-latin.woff2') format('woff2'); }
+
+:root {
+  --pur: #7064D2;
+  --pur-d: #5548B8;
+  --pur-50: #F4F2FC;
+  --pur-100: #E9E6F9;
+  --ink: #2F2F38;
+  --ink-2: #55555F;
+  --ink-3: #8A8A94;
+  --line: #E4E2EE;
+  --rule: #C9C6D9;
+}
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #fff; }
+body {
+  font-family: 'Poppins', sans-serif; color: var(--ink); font-size: 9.6pt; line-height: 1.5;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.page {
+  width: 210mm; height: 297mm; padding: 15mm 16mm 12mm; position: relative; overflow: hidden;
+  page-break-after: always; display: flex; flex-direction: column;
+}
+.page:last-child { page-break-after: auto; }
+.page::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4.5mm;
+  background: linear-gradient(90deg, var(--pur) 0%, #9A90E4 100%);
+}
+.top { display: flex; justify-content: space-between; align-items: center; }
+.brand { display: flex; align-items: center; gap: 3mm; }
+.brand img { height: 9mm; }
+.brand b { font-weight: 600; font-size: 14pt; letter-spacing: -0.2px; }
+.stamp { font-size: 8pt; color: var(--ink-3); text-align: right; line-height: 1.35; }
+.stamp strong { color: var(--ink-2); font-weight: 500; }
+
+.hero { margin-top: 9mm; }
+.kicker { font-size: 8pt; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--pur); }
+h1 { font-weight: 700; font-size: 26pt; letter-spacing: -0.7px; line-height: 1.08; margin-top: 1.5mm; }
+.sub { font-size: 11.5pt; color: var(--ink-2); font-weight: 500; margin-top: 2.5mm; }
+h2 { font-weight: 600; font-size: 12pt; color: var(--pur-d); letter-spacing: -0.1px; margin-bottom: 2.5mm; }
+
+.how {
+  margin-top: 7mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm;
+}
+.how div { background: var(--pur-50); border: 0.3mm solid var(--pur-100); border-radius: 2.5mm; padding: 3mm 3.4mm; }
+.how .n {
+  display: inline-flex; width: 6mm; height: 6mm; border-radius: 50%; background: var(--pur); color: #fff;
+  font-weight: 700; font-size: 8.5pt; align-items: center; justify-content: center; margin-bottom: 1.5mm;
+}
+.how p { font-size: 8.6pt; color: var(--ink-2); line-height: 1.42; }
+.how b { color: var(--ink); font-weight: 600; }
+
+table.week { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 8mm; table-layout: fixed; }
+table.week th, table.week td { border-bottom: 0.3mm solid var(--rule); }
+table.week thead th {
+  font-size: 8.4pt; font-weight: 600; color: var(--pur-d); text-align: center; padding: 0 0 2mm;
+  border-bottom: 0.5mm solid var(--pur);
+}
+table.week thead th.task { text-align: left; }
+table.week col.task { width: 52mm; }
+table.week col.tot { width: 19mm; }
+table.week tbody th {
+  text-align: left; font-weight: 600; font-size: 9pt; line-height: 1.3; padding: 0 3mm 0 0; height: 23mm;
+}
+table.week tbody th small { display: block; font-weight: 400; font-size: 7.4pt; color: var(--ink-3); margin-top: 0.6mm; }
+table.week tbody td { border-left: 0.3mm solid var(--line); }
+table.week tbody td.tot, table.week thead th.tot { background: var(--pur-50); }
+table.week tbody td.tot { border-left: 0.5mm solid var(--pur); }
+table.week tfoot th, table.week tfoot td { height: 15mm; border-bottom: 0; vertical-align: bottom; }
+table.week tfoot th { vertical-align: middle; }
+table.week tfoot th { text-align: left; font-size: 9pt; font-weight: 600; color: var(--pur-d); }
+table.week tfoot td { border-left: 0.3mm solid var(--line); border-bottom: 0.5mm solid var(--pur); }
+table.week tfoot td.tot { background: var(--pur-100); border-left: 0.5mm solid var(--pur); }
+.unit { display: block; text-align: right; padding: 0 1.6mm 1.2mm 0; font-size: 7pt; color: var(--ink-3); }
+table.week td { vertical-align: bottom; }
+
+.warn {
+  margin-top: 7mm; padding: 3mm 4mm; border-left: 1mm solid var(--pur); background: var(--pur-50);
+  border-radius: 0 2.5mm 2.5mm 0; font-size: 9pt; color: var(--ink); line-height: 1.45;
+}
+
+.totals { margin-top: 8mm; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4mm; }
+.totals div {
+  border: 0.3mm solid var(--line); border-radius: 2.5mm; padding: 3.2mm 3.6mm 3mm;
+  display: flex; flex-direction: column; gap: 4mm; min-height: 24mm;
+}
+.totals b { font-weight: 600; font-size: 9.2pt; line-height: 1.3; }
+.totals .fill { margin-top: auto; display: flex; align-items: flex-end; gap: 2mm; font-size: 8pt; color: var(--ink-3); }
+.totals .fill span { flex: 1; border-bottom: 0.3mm solid var(--rule); height: 5mm; }
+.grand {
+  margin-top: 4mm; display: flex; align-items: center; justify-content: space-between; gap: 6mm;
+  background: var(--pur); color: #fff; border-radius: 3mm; padding: 4.5mm 6mm;
+}
+.grand b { font-size: 12pt; font-weight: 600; }
+.grand .fill { display: flex; align-items: flex-end; gap: 2mm; width: 60mm; font-size: 9pt; }
+.grand .fill span { flex: 1; border-bottom: 0.4mm solid rgba(255, 255, 255, .85); height: 7mm; }
+.cta { margin-top: 4mm; font-size: 10pt; font-weight: 500; color: var(--ink-2); }
+.cta strong { color: var(--pur-d); font-weight: 600; }
+
+.notes { margin-top: 8mm; }
+.notes .lines span { display: block; border-bottom: 0.3mm solid var(--rule); height: 8mm; }
+
+.closing {
+  margin-top: 8mm; display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: center;
+  border: 0.3mm solid var(--pur-100); border-radius: 3mm; padding: 5mm 6mm; background: var(--pur-50);
+}
+.closing p { font-size: 9.4pt; color: var(--ink); line-height: 1.5; }
+.closing .sign { margin-top: 2.5mm; font-size: 8.4pt; color: var(--ink-2); }
+.closing .web { font-weight: 700; font-size: 13pt; color: var(--pur-d); white-space: nowrap; }
+
+.foot {
+  margin-top: auto; padding-top: 3.5mm; border-top: 0.3mm solid var(--line);
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm;
+  font-size: 7.8pt; color: var(--ink-3); line-height: 1.4;
+}
+.foot b { color: var(--ink); font-weight: 600; }
+.foot .pg { white-space: nowrap; }

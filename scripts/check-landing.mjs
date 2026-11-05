@@ -94,6 +94,15 @@ let scanned = 0;
 for (const full of files) {
   const rel = relative(root, full).split('\\').join('/');
   const ext = extname(full).toLowerCase();
+  // PDF descargables: sin JavaScript, formularios, enlaces ni acciones (se descargan sin pedir datos).
+  if (ext === '.pdf') {
+    const pdf = readFileSync(full).toString('latin1');
+    for (const bad of ['/JavaScript', '/JS', '/AcroForm', '/URI', '/Launch', '/SubmitForm', '/OpenAction']) {
+      if (new RegExp(`${bad.replace('/', '\\/')}\\b`).test(pdf)) problems.push(`${rel}  el PDF contiene ${bad}`);
+    }
+    scanned += 1;
+    continue;
+  }
   if (!TEXT_EXTENSIONS.has(ext) || IGNORED_FILES.has(rel)) continue;
   scanned += 1;
   const raw = readFileSync(full, 'utf8');
