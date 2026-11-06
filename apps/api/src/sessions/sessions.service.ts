@@ -21,7 +21,7 @@ import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
-import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT } from './session-view.util';
+import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole } from './session-view.util';
 import { projectSelect } from '../patients/patient-view.util';
 import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
@@ -167,6 +167,9 @@ export class SessionsService {
         : {}),
     };
 
+    // Recepción (ASSISTANT): sin la relación clinicalProcess (ni modalidad ni estado del proceso).
+    const select = isReceptionRole(actor.role) ? SESSION_RECEPTION_SELECT : SESSION_LIST_SELECT;
+
     const [data, total] = await Promise.all([
       this.prisma.session.findMany({
         where,
@@ -177,7 +180,7 @@ export class SessionsService {
         take: pageSize,
 
         // Listado: solo metadatos (sin notes, internalSummary ni título del proceso).
-        select: SESSION_LIST_SELECT,
+        select,
       }),
 
       this.prisma.session.count({
@@ -188,7 +191,7 @@ export class SessionsService {
     return {
       // La proyección se aplica también a la respuesta (lista blanca) como defensa en
       // profundidad, por si una consulta futura trae la fila completa.
-      data: data.map((row) => projectSelect<typeof row>(row, SESSION_LIST_SELECT)),
+      data: data.map((row) => projectSelect<typeof row>(row, select)),
       meta: {
         page,
         pageSize,
@@ -208,17 +211,18 @@ export class SessionsService {
   ) {
     assertStaffRole(actor);
 
-    // Roles no clínicos (ASSISTANT): solo metadatos de la sesión, sin notes, internalSummary
-    // ni título del proceso. Lista blanca también sobre la respuesta.
+    // Roles no clínicos (ASSISTANT): solo metadatos de agenda, sin notes, internalSummary ni
+    // nada del proceso clínico (ni título, ni modalidad, ni frecuencia, ni estado). Lista blanca
+    // también sobre la respuesta.
     if (!isClinicalRole(actor)) {
       const summary = await this.prisma.session.findFirst({
         where: { id, workspaceId },
-        select: SESSION_ADMIN_DETAIL_SELECT,
+        select: SESSION_RECEPTION_SELECT,
       });
       if (!summary) {
         throw new NotFoundException('Sesión no encontrada');
       }
-      return projectSelect<typeof summary>(summary, SESSION_ADMIN_DETAIL_SELECT);
+      return projectSelect<typeof summary>(summary, SESSION_RECEPTION_SELECT);
     }
 
     const session =

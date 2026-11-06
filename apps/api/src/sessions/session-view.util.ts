@@ -37,9 +37,27 @@ export const SESSION_LIST_SELECT = {
 } as const satisfies Prisma.SessionSelect;
 
 /**
- * Detalle de sesión (GET /sessions/:id y respuestas de POST/PATCH) para roles NO clínicos
- * (ASSISTANT): los mismos metadatos que el listado, más la frecuencia del proceso. Sin notes,
- * internalSummary ni título del proceso.
+ * Cita vista por recepción (ASSISTANT), en listados (GET /sessions, agenda del paciente) y en el
+ * detalle (GET /sessions/:id y respuestas de POST/PATCH). Regla dura 2: ASSISTANT no accede a
+ * ClinicalProcess, así que no recibe la relación clinicalProcess (ni título, ni modalidad, ni
+ * frecuencia, ni estado del proceso). Solo el clinicalProcessId escalar (dato de enlace, sin
+ * contenido) y los metadatos de agenda: cuándo, con quién, tipo de cita, lugar y enlace.
+ */
+export const SESSION_RECEPTION_SELECT = {
+  ...SESSION_SUMMARY_SELECT,
+  patient: { select: { id: true, firstName: true, lastName: true } },
+  therapist: { select: { id: true, firstName: true, lastName: true } },
+} as const satisfies Prisma.SessionSelect;
+
+/** ASSISTANT (o cualquier rol no clínico) → vista de recepción, sin la relación clinicalProcess. */
+export function isReceptionRole(role: string | undefined | null): boolean {
+  return !['OWNER', 'ADMIN', 'THERAPIST'].includes(role ?? '');
+}
+
+/**
+ * Detalle de sesión (GET /sessions/:id) para OWNER/ADMIN que no tratan al paciente: los mismos
+ * metadatos que el listado, más la frecuencia del proceso. Sin notes, internalSummary ni título
+ * del proceso. ASSISTANT usa SESSION_RECEPTION_SELECT.
  */
 export const SESSION_ADMIN_DETAIL_SELECT = {
   ...SESSION_SUMMARY_SELECT,

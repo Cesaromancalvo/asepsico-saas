@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import Icon from '../../components/Icon';
 import { api } from '@/lib/api';
-import { processLabel, useViewer } from '@/lib/clinical';
+import { isStaffWithProcessAccess, processLabel, useViewer } from '@/lib/clinical';
 import { queryId, sessionHref } from '@/lib/routes';
 import RescheduleSessionForm from '@/components/RescheduleSessionForm';
 import { canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from '@/lib/reschedule';
@@ -80,7 +80,8 @@ type Session = {
     lastName: string;
   };
 
-  // Sin título: puede revelar contenido clínico y la agenda la usa también ASSISTANT.
+  // Sin título: puede revelar contenido clínico. A ASSISTANT (recepción) la API no le envía
+  // clinicalProcess en absoluto (ni modalidad ni estado), solo clinicalProcessId.
   clinicalProcess?: {
     id: string;
     modality: TherapyModality;
@@ -198,6 +199,9 @@ export default function AgendaPage() {
   // que además trata al paciente (proceso ACTIVO). A cualquier otro la API le respondería 403 y
   // no crearía la cita, así que el campo solo se ofrece en ese caso (ver canWriteNotes).
   const viewer = useViewer();
+  // Recepción (ASSISTANT) no ve nada del proceso clínico (regla dura 2). Mientras se carga el
+  // usuario, por defecto oculto. Solo es una pista de UI: la API ya no se lo envía.
+  const showProcessInfo = isStaffWithProcessAccess(viewer?.role);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
 
@@ -831,6 +835,7 @@ export default function AgendaPage() {
                 />
               </label>
 
+              {showProcessInfo && (
               <label>
                 <span>Modalidad</span>
 
@@ -846,6 +851,7 @@ export default function AgendaPage() {
                   }
                 />
               </label>
+              )}
 
               {selectedPatient && !activeProcess && (
                 <div
@@ -876,11 +882,17 @@ export default function AgendaPage() {
                   }}
                 >
                   La sesión se asociará al proceso
-                  clínico actual del paciente (
-                  <strong>
-                    {processLabel(activeProcess)}
-                  </strong>
-                  ).
+                  clínico actual del paciente
+                  {showProcessInfo && (
+                    <>
+                      {' '}(
+                      <strong>
+                        {processLabel(activeProcess)}
+                      </strong>
+                      )
+                    </>
+                  )}
+                  .
                 </div>
               )}
 
@@ -1143,7 +1155,7 @@ export default function AgendaPage() {
                             </div>
                           </div>
 
-                          {session.clinicalProcess && (
+                          {showProcessInfo && session.clinicalProcess && (
                             <p className="agenda-session-notes">
                               {processLabel(
                                 session.clinicalProcess,
@@ -1151,7 +1163,8 @@ export default function AgendaPage() {
                             </p>
                           )}
 
-                          {!session.clinicalProcess && (
+                          {/* Recepción no recibe clinicalProcess: el aviso solo cuando de verdad no hay proceso. */}
+                          {!session.clinicalProcess && !session.clinicalProcessId && (
                             <p className="agenda-session-notes">
                               Sin proceso clínico
                               asociado

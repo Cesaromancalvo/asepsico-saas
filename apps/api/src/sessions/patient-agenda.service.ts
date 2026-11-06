@@ -6,7 +6,7 @@ import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 import { projectSelect } from '../patients/patient-view.util';
 import { PatientAgendaQueryDto } from './dto/patient-agenda-query.dto';
-import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT } from './session-view.util';
+import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole } from './session-view.util';
 
 /** Roles con vista administrativa de la agenda (todas las citas del paciente, sin contenido). */
 const ADMINISTRATIVE_ROLES = ['OWNER', 'ADMIN', 'ASSISTANT'];
@@ -80,9 +80,14 @@ export class PatientAgendaService {
     });
 
     type BusyRow = Prisma.SessionGetPayload<{ select: typeof SESSION_BUSY_SELECT }>;
+    type ReceptionRow = Prisma.SessionGetPayload<{ select: typeof SESSION_RECEPTION_SELECT }>;
     const isUpcoming = (row: { status: SessionStatus; startsAt: Date }) =>
       row.status === SessionStatus.SCHEDULED && new Date(row.startsAt).getTime() >= now.getTime();
     const toItem = (row: (typeof rows)[number]) => {
+      // Recepción (ASSISTANT): sin la relación clinicalProcess (regla dura 2).
+      if (view === 'ADMINISTRATIVE' && isReceptionRole(actor.role)) {
+        return { ...projectSelect<ReceptionRow>(row, SESSION_RECEPTION_SELECT), visibility: 'FULL' as PatientAgendaVisibility };
+      }
       if (view === 'ADMINISTRATIVE' || row.therapistId === actor.sub) {
         return { ...projectSelect<typeof row>(row, SESSION_LIST_SELECT), visibility: 'FULL' as PatientAgendaVisibility };
       }
