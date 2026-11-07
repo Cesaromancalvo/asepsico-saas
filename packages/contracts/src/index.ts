@@ -275,3 +275,4 @@ export interface PortalAppointmentRequestContract {
 export interface ClinicalProcessPreviousAuthorNotesFlag { hasPreviousAuthorNotes: boolean; }
 export * from './session-reschedule';
 export * from './staff-notifications';
+export * from './staff-email-preferences';

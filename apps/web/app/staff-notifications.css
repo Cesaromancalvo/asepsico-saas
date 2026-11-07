@@ -93,3 +93,15 @@ button.bell-item-main:focus-visible{outline:3px solid rgba(112,100,210,.45);outl
 .portal-unread-icon{display:inline-grid;flex:none;width:36px;height:36px;place-items:center;border-radius:12px;background:var(--surface);color:var(--violet-ink)}
 .portal-notifications{scroll-margin-top:calc(var(--demo-banner-height,0px) + 12px)}
 .portal-notifications .portal-item .button{min-height:44px}
+
+/* ---------- Mi cuenta → Avisos por email (N4) ---------- */
+.ep-privacy{margin:0 0 10px;padding:12px 14px;border-radius:14px;background:var(--tint);color:var(--ink);font-size:var(--fs-sm);line-height:1.5}
+.ep-scope{margin:0 0 16px;font-size:var(--fs-sm);line-height:1.5}
+.ep-empty{margin:0;color:var(--text-soft)}
+.ep-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.ep-row{display:grid;gap:6px;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--surface-soft)}
+.ep-row-main{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.ep-switch{min-height:44px;line-height:1.35}
+.ep-hint{margin:0;color:var(--text-soft);font-size:var(--fs-sm);line-height:1.45}
+.ep-error{margin:0}
+.ep-back{margin-top:16px;font-size:var(--fs-sm)}

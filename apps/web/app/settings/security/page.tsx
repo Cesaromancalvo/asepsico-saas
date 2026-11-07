@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import { useViewer } from '@/lib/clinical';
 import { api, ApiError, refreshSession } from '@/lib/api';
+import { EMAIL_NOTIFICATIONS_PATH } from '@/lib/email-preferences';
 
 type SetupResponse = { qrCodeDataUrl: string; secret: string };
 type ConfirmResponse = { recoveryCodes: string[] };
@@ -128,11 +129,17 @@ export default function SecurityPage() {
       <main className="patient-record-page">
         <header className="patient-record-header">
           <div>
-            <span className="eyebrow">Seguridad</span>
+            <span className="eyebrow">Mi cuenta</span>
             <h1>Seguridad de la cuenta</h1>
             <p>Tu contraseña y la verificación en dos pasos: además de la contraseña, un código de tu móvil.</p>
           </div>
         </header>
+
+        <section className="patient-card" aria-labelledby="ep-link-title">
+          <h2 id="ep-link-title">Avisos por email</h2>
+          <p>Elige si quieres un correo cuando hay novedades del portal, como solicitudes de cita o cancelaciones. El correo no incluye datos de pacientes.</p>
+          <Link href={EMAIL_NOTIFICATIONS_PATH} className="button secondary">Configurar avisos por email</Link>
+        </section>
 
         {(viewer?.role === 'OWNER' || viewer?.role === 'ADMIN') && (
           <section className="patient-card" aria-labelledby="xa-link-title">
