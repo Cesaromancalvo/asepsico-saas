@@ -177,6 +177,20 @@ if (!/finally\s*\{[\s\S]*?\/portal-account`,\s*\{\s*method:\s*'DELETE'/.test(smo
   throw new Error('El smoke debe desactivar las cuentas de portal (DELETE portal-account) en un finally');
 }
 
+// Condición 2 de Argos (fix/pacientes-recepcion-sin-proceso): el smoke real comprueba lo que ve
+// recepción (ASSISTANT) del proceso clínico. Con ENROLL_MFA prepara sus datos con Prisma, así que
+// necesita DATABASE_URL en el job (si faltara, el smoke falla en vez de omitir el paso).
+if (!/console\.log\('9b\/11[^\n]*await checkReceptionProcessView\(stamp\);/.test(smoke) ||
+    !/assert\(process\.env\.DATABASE_URL,/.test(smoke)) {
+  throw new Error('El smoke debe ejecutar checkReceptionProcessView (vista de recepción del proceso clínico) y exigir DATABASE_URL');
+}
+{
+  const job = workflow.slice(workflow.indexOf('postgres-integration:'));
+  if (!/^\s{6}DATABASE_URL:\s*postgresql:\/\//m.test(job.slice(0, job.indexOf('steps:')))) {
+    throw new Error('El job postgres-integration debe definir DATABASE_URL a nivel de job (la usa el smoke para la vista de recepción)');
+  }
+}
+
 // La API exige MFA a OWNER/ADMIN/THERAPIST: sin este flujo el smoke muere con 403 en el paso 2.
 if (!/\/auth\/mfa\/setup/.test(smoke) || !/\/auth\/mfa\/confirm/.test(smoke) || !/\/auth\/refresh/.test(smoke)) {
   throw new Error('El smoke test no contempla el MFA obligatorio (mfa/setup + mfa/confirm + refresh)');

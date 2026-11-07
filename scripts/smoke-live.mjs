@@ -35,6 +35,14 @@
 //                               opcional del mismo workspace para comprobar el 403 del motivo de
 //                               consulta. Sin ellas, esa comprobación se omite con aviso.
 //
+//   DATABASE_URL                Con ASEPSICO_SMOKE_ENROLL_MFA=1 (BD desechable) es OBLIGATORIA: el
+//                               paso «Recepción sin metadatos del proceso clínico» crea con Prisma
+//                               dos consultas ficticias propias (OWNER, ASSISTANT y dos THERAPIST;
+//                               y otra consulta con un paciente) y comprueba por HTTP lo que ve
+//                               recepción (condición 2 de Argos, fix/pacientes-recepcion-sin-proceso).
+//                               Sin ENROLL_MFA (piloto) ese paso se omite con aviso. Los datos que
+//                               crea se quedan en la BD desechable.
+//
 //   ASEPSICO_SMOKE_EXPECT_TERMS_428=1  Comprueba el 428 de condiciones nuevas con una cuenta que YA
 //                               existe (condición de Argos): tras el login, una ruta protegida
 //                               debe responder 428 TERMS_ACCEPTANCE_REQUIRED; la cuenta acepta
@@ -84,7 +92,7 @@ const cookies = new Map();
 function cookieHeader(jar = cookies) { return [...jar].map(([k, v]) => `${k}=${v}`).join('; '); }
 function capture(res, jar = cookies) { const values = res.headers.getSetCookie?.() || []; for (const raw of values) { const [pair] = raw.split(';'); const i = pair.indexOf('='); jar.set(pair.slice(0, i), pair.slice(i + 1)); } }
 // Petición que devuelve { status, data } sin lanzar: para comprobar respuestas de error (403/404).
-async function rawReq(path, { method = 'GET', body, jar = cookies } = {}) { const headers = {}; if (jar.size) headers.cookie = cookieHeader(jar); if (body !== undefined) headers['content-type'] = 'application/json'; if (!['GET', 'HEAD'].includes(method)) { const csrf = jar.get('csrf_token'); if (csrf) headers['x-csrf-token'] = decodeURIComponent(csrf); } const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); capture(res, jar); const data = await res.json().catch(() => ({})); return { status: res.status, ok: res.ok, data }; }
+async function rawReq(path, { method = 'GET', body, jar = cookies, ip } = {}) { const headers = {}; if (ip) headers['x-forwarded-for'] = ip; if (jar.size) headers.cookie = cookieHeader(jar); if (body !== undefined) headers['content-type'] = 'application/json'; if (!['GET', 'HEAD'].includes(method)) { const csrf = jar.get('csrf_token'); if (csrf) headers['x-csrf-token'] = decodeURIComponent(csrf); } const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); capture(res, jar); const data = await res.json().catch(() => ({})); return { status: res.status, ok: res.ok, data }; }
 async function req(path, options = {}) { const { method = 'GET' } = options; const { ok, status, data } = await rawReq(path, options); if (!ok) throw new Error(`${method} ${path}: ${status} ${JSON.stringify(data)}`); return data; }
 function assert(value, message) { if (!value) throw new Error(message); }
 
@@ -270,6 +278,174 @@ async function checkChangePasswordGuards() {
   console.log('   change-password: 400 con nueva corta y 401 genérico con actual errónea (sin cambiar nada)');
 }
 
+// Recepción (ASSISTANT) sin metadatos del proceso clínico (regla dura 2; condición 2 de Argos para
+// fix/pacientes-recepcion-sin-proceso). Solo en BD desechables (ENROLL_MFA): prepara con Prisma una
+// consulta ficticia propia (no toca la cuenta demo) y otra consulta con un paciente ajeno.
+//  - Paciente A: proceso ACTIVE (T1, modalidad y frecuencia no nulas) + proceso DISCHARGED (T2) con
+//    citas propias. Paciente B: solo un proceso DISCHARGED. Paciente X: en otra consulta.
+//  - ASSISTANT: activeProcess exactamente {id, therapist:{id,firstName,lastName}, hasActiveProcess}
+//    en listado, detalle y PATCH; nada de estado, modalidad, frecuencia, fechas, recuentos ni email
+//    del profesional; sin clinicalProcessId en las citas de la ficha ni el id del proceso de alta;
+//    agenda y GET /sessions sin la relación clinicalProcess; 403 en el proceso; 404 en otra consulta.
+//  - Control: OWNER sigue recibiendo status, modality y allProcesses.
+// Cada actor usa su propia IP (X-Forwarded-For, solo efectiva con TRUST_PROXY=loopback) para no
+// compartir el límite de login con la cuenta demo.
+// `email` se comprueba solo en los objetos del profesional: la ficha del paciente lleva su propio
+// email (null en estos pacientes ficticios), que no es dato del proceso.
+const RECEPTION_FORBIDDEN_KEYS = ['modality', 'frequency', 'startedAt', 'processCount', 'allProcesses', '_count'];
+function therapistEmails(value, found = []) {
+  if (Array.isArray(value)) { for (const item of value) therapistEmails(item, found); return found; }
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'therapist' && child && typeof child === 'object' && 'email' in child) found.push(child.email);
+      therapistEmails(child, found);
+    }
+  }
+  return found;
+}
+
+async function checkReceptionProcessView(stamp) {
+  if (!allowMfaEnrollment) {
+    console.log('   AVISO: sin ASEPSICO_SMOKE_ENROLL_MFA=1 (BD desechable) se omite la vista de recepción (cubierta por test:security)');
+    return;
+  }
+  assert(LOCAL_HOSTS.has(new URL(API).hostname), 'La vista de recepción crea datos con Prisma: solo contra una API local');
+  assert(process.env.DATABASE_URL, 'Falta DATABASE_URL (la misma BD desechable que usa la API) para preparar la vista de recepción');
+  const { PrismaClient } = requireFromApi('@prisma/client');
+  const bcrypt = requireFromApi('bcryptjs');
+  const prisma = new PrismaClient();
+  try {
+    const actorPassword = 'Aa1' + randomBytes(15).toString('base64url');
+    const hash = await bcrypt.hash(actorPassword, 10);
+    const terms = (await req('/legal/terms', { jar: new Map() })).map(({ documentType, version, textHash }) => ({ documentType, version, textHash }));
+    const tag = `Recepcion${stamp}`;
+    const workspace = await prisma.workspace.create({ data: { name: `Consulta QA recepción ${stamp}` } });
+    const other = await prisma.workspace.create({ data: { name: `Consulta QA ajena ${stamp}` } });
+    const users = {};
+    for (const [key, role, isClinician, ws] of [['owner', 'OWNER', false, workspace], ['assistant', 'ASSISTANT', false, workspace], ['t1', 'THERAPIST', true, workspace], ['t2', 'THERAPIST', true, workspace], ['ownerx', 'OWNER', true, other]]) {
+      const user = await prisma.user.create({ data: { email: `qa-recepcion-${key}-${stamp}@example.test`, passwordHash: hash, firstName: `QA ${key}`, lastName: 'Ficticio' } });
+      await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: user.id, role, isClinician } });
+      await prisma.termsAcceptance.createMany({ data: terms.map((t) => ({ workspaceId: ws.id, userId: user.id, ...t, userAgent: 'smoke-live recepción' })) });
+      users[key] = user;
+    }
+    const patient = (ws, firstName) => prisma.patient.create({ data: { workspaceId: ws.id, firstName, lastName: tag } });
+    const [pa, pb, px] = [await patient(workspace, 'PacienteA'), await patient(workspace, 'PacienteB'), await patient(other, 'PacienteX')];
+    const proc = (patientId, therapistId, status, modality, frequency, ws = workspace) => prisma.clinicalProcess.create({ data: {
+      workspaceId: ws.id, patientId, therapistId, title: SMOKE_PROCESS_TITLE, status, modality, frequency,
+      ...(status === 'DISCHARGED' ? { endedAt: new Date() } : {}),
+    } });
+    const discharged = await proc(pa.id, users.t2.id, 'DISCHARGED', 'HYBRID', 'Quincenal ficticia');
+    const active = await proc(pa.id, users.t1.id, 'ACTIVE', 'ONLINE', 'Semanal ficticia');
+    const dischargedB = await proc(pb.id, users.t2.id, 'DISCHARGED', 'HYBRID', 'Quincenal ficticia');
+    const activeX = await proc(px.id, users.ownerx.id, 'ACTIVE', 'ONLINE', 'Semanal ficticia', other);
+    const DAY = 24 * 60 * 60 * 1000;
+    const session = (patientId, therapistId, clinicalProcessId, days, status) => {
+      const startsAt = new Date(Date.now() + days * DAY);
+      return prisma.session.create({ data: { workspaceId: workspace.id, patientId, therapistId, clinicalProcessId, startsAt, endsAt: new Date(startsAt.getTime() + 50 * 60 * 1000), status, location: 'Sala ficticia' } });
+    };
+    await session(pa.id, users.t2.id, discharged.id, -40, 'COMPLETED');
+    await session(pa.id, users.t1.id, active.id, -5, 'COMPLETED');
+    await session(pa.id, users.t1.id, active.id, 3, 'SCHEDULED');
+    await session(pb.id, users.t2.id, dischargedB.id, -60, 'COMPLETED');
+    const hidden = [discharged.id, dischargedB.id, activeX.id, px.id];
+
+    let ipSeq = 0;
+    async function actor(key, needsMfa) {
+      const jar = new Map();
+      const ip = `192.0.2.${(stamp % 200) + (++ipSeq)}`;
+      const call = (path, options = {}) => rawReq(path, { ...options, jar, ip });
+      const ok = async (path, options = {}) => { const res = await call(path, options); if (!res.ok) throw new Error(`${key} ${options.method ?? 'GET'} ${path}: ${res.status} ${JSON.stringify(res.data)}`); return res.data; };
+      const login = await ok('/auth/login', { method: 'POST', body: { email: users[key].email, password: actorPassword } });
+      assert(!login.mfaRequired && login.user?.id === users[key].id, `Login de ${key} no devolvió su id`);
+      if (needsMfa) {
+        const setup = await ok('/auth/mfa/setup', { method: 'POST' });
+        await ok('/auth/mfa/confirm', { method: 'POST', body: { password: actorPassword, code: await totpCode(setup.secret) } });
+        await ok('/auth/refresh', { method: 'POST' });
+      }
+      return { call, ok };
+    }
+    const assistant = await actor('assistant', false);
+    const owner = await actor('owner', true);
+
+    const expectedActive = { id: active.id, therapist: { id: users.t1.id, firstName: users.t1.firstName, lastName: users.t1.lastName }, hasActiveProcess: true };
+    const sameJson = (a, b) => { const norm = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([p], [q]) => p.localeCompare(q))) : x)); return norm(a) === norm(b); };
+    function assertReception(value, where) {
+      const json = JSON.stringify(value);
+      for (const key of RECEPTION_FORBIDDEN_KEYS) assert(!json.includes(`"${key}"`), `${where} (ASSISTANT) devuelve la clave ${key}`);
+      assert(therapistEmails(value).length === 0, `${where} (ASSISTANT) devuelve el email del profesional`);
+      for (const id of hidden) assert(!json.includes(id), `${where} (ASSISTANT) devuelve un id de proceso de alta o de otra consulta`);
+      for (const marker of ['HYBRID', 'ONLINE', 'DISCHARGED', 'Quincenal ficticia', 'Semanal ficticia', SMOKE_PROCESS_TITLE, '@example.test']) {
+        assert(!json.includes(marker), `${where} (ASSISTANT) expone ${marker}`);
+      }
+    }
+    function assertPatientA(row, where) {
+      assert(sameJson(row?.summary?.activeProcess, expectedActive), `${where}: activeProcess de A no es exactamente {id, therapist:{id,firstName,lastName}, hasActiveProcess:true}: ${JSON.stringify(row?.summary?.activeProcess)}`);
+      assertReception(row, where);
+    }
+    function assertDetailA(detail, where) {
+      assertPatientA(detail, where);
+      assert(!JSON.stringify(detail).includes('"clinicalProcessId"'), `${where} (ASSISTANT) devuelve clinicalProcessId en las citas`);
+      assert(Array.isArray(detail.summary.recentSessions) && detail.summary.recentSessions.length === 3, `${where}: se esperaban 3 citas recientes de A y llegaron ${detail.summary.recentSessions?.length}`);
+      assert(detail.summary.lastSession && detail.summary.nextSession, `${where}: faltan lastSession o nextSession (la comprobación no sería concluyente)`);
+    }
+
+    // ASSISTANT: listado.
+    const list = await assistant.ok(`/patients?q=${encodeURIComponent(tag)}`);
+    const rowA = list.data?.find((x) => x.id === pa.id);
+    const rowB = list.data?.find((x) => x.id === pb.id);
+    assert(rowA && rowB, 'GET /patients (ASSISTANT) no devuelve los pacientes A y B');
+    assert(!list.data.some((x) => x.id === px.id), 'GET /patients (ASSISTANT) devuelve el paciente de otra consulta');
+    assertPatientA(rowA, 'GET /patients fila A');
+    assert(rowB.summary && rowB.summary.activeProcess === null, `GET /patients fila B: activeProcess debía ser null y fue ${JSON.stringify(rowB.summary?.activeProcess)}`);
+    assertReception(list, 'GET /patients');
+
+    // ASSISTANT: detalle, PATCH inocuo, otra consulta.
+    assertDetailA(await assistant.ok(`/patients/${pa.id}`), 'GET /patients/:idA');
+    const detailB = await assistant.ok(`/patients/${pb.id}`);
+    assert(detailB.summary && detailB.summary.activeProcess === null, `GET /patients/:idB: activeProcess debía ser null y fue ${JSON.stringify(detailB.summary?.activeProcess)}`);
+    assertReception(detailB, 'GET /patients/:idB');
+    const foreign = await assistant.call(`/patients/${px.id}`);
+    assert(foreign.status === 404, `GET /patients/:idOtraConsulta (ASSISTANT) debía dar 404 y dio ${foreign.status}`);
+    const patched = await assistant.ok(`/patients/${pa.id}`, { method: 'PATCH', body: { phone: '+34600000099' } });
+    assert(patched.phone === '+34600000099', 'PATCH /patients/:idA (ASSISTANT) no devolvió el teléfono nuevo');
+    assertDetailA(patched, 'PATCH /patients/:idA');
+
+    // ASSISTANT: agenda del paciente y listado de citas (clinicalProcessId escalar permitido por ahora).
+    const from = new Date(Date.now() - 90 * DAY).toISOString();
+    const to = new Date(Date.now() + 30 * DAY).toISOString();
+    const agenda = await assistant.ok(`/sessions/patient/${pa.id}/agenda?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    assert(Array.isArray(agenda.data) && agenda.data.length === 3, `Agenda de A (ASSISTANT): se esperaban 3 citas y llegaron ${agenda.data?.length}`);
+    for (const row of [...agenda.data, agenda.nextSession].filter(Boolean)) assert(!('clinicalProcess' in row), 'Agenda del paciente (ASSISTANT) devuelve la relación clinicalProcess');
+    for (const path of ['/sessions', `/sessions?patientId=${pa.id}`]) {
+      const sessions = await assistant.ok(path);
+      assert(Array.isArray(sessions.data) && sessions.data.length > 0, `GET ${path} (ASSISTANT) no devolvió citas (comprobación no concluyente)`);
+      assert(sessions.data.every((row) => !('clinicalProcess' in row)), `GET ${path} (ASSISTANT) devuelve la relación clinicalProcess`);
+      assert(!JSON.stringify(sessions).includes('"modality"'), `GET ${path} (ASSISTANT) devuelve modality`);
+    }
+    const processDenied = await assistant.call(`/clinical-processes/${active.id}`);
+    assert(processDenied.status === 403, `GET /clinical-processes/:idActivo (ASSISTANT) debía dar 403 y dio ${processDenied.status}`);
+    assert(!JSON.stringify(processDenied.data).includes('Semanal ficticia'), 'El 403 del proceso filtra datos del proceso');
+
+    // Control: OWNER conserva la vista completa.
+    const ownerList = await owner.ok(`/patients?q=${encodeURIComponent(tag)}`);
+    const ownerRowA = ownerList.data?.find((x) => x.id === pa.id);
+    assert(ownerRowA?.summary?.activeProcess?.status && ownerRowA.summary.activeProcess.modality && typeof ownerRowA.summary.processCount === 'number', 'GET /patients (OWNER) ya no devuelve status, modality o processCount');
+    const ownerDetail = await owner.ok(`/patients/${pa.id}`);
+    assert(ownerDetail.summary?.activeProcess?.status === 'ACTIVE' && ownerDetail.summary.activeProcess.modality === 'ONLINE', 'GET /patients/:idA (OWNER) no devuelve status y modality del proceso activo');
+    const all = ownerDetail.summary?.allProcesses ?? [];
+    assert(all.length === 2 && all.some((p) => p.id === discharged.id && p.status === 'DISCHARGED') && all.every((p) => p.modality), 'GET /patients/:idA (OWNER) no devuelve allProcesses con los dos procesos, su estado y su modalidad');
+    const ownerPatched = await owner.ok(`/patients/${pa.id}`, { method: 'PATCH', body: { phone: '+34600000098' } });
+    assert(ownerPatched.summary?.allProcesses?.length === 2, 'PATCH /patients/:idA (OWNER) no devuelve allProcesses');
+    const ownerAgenda = await owner.ok(`/sessions/patient/${pa.id}/agenda?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    assert(ownerAgenda.data?.length === 3 && ownerAgenda.data.every((row) => row.clinicalProcess?.status && row.clinicalProcess.modality), 'Agenda de A (OWNER) ya no devuelve clinicalProcess con status y modality');
+    const ownerSessions = await owner.ok(`/sessions?patientId=${pa.id}`);
+    assert(ownerSessions.data?.length === 3 && ownerSessions.data.every((row) => row.clinicalProcess?.status), 'GET /sessions (OWNER) ya no devuelve clinicalProcess con status');
+    console.log('   ASSISTANT: solo {id, therapist, hasActiveProcess} del proceso activo en listado, ficha y PATCH; B → null; otra consulta → 404; agenda y citas sin clinicalProcess; proceso → 403. OWNER: vista completa');
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 async function main() {
   const stamp = Date.now();
   console.log('0/11 Registro cerrado y condiciones vigentes'); await checkClosedRegistration();
@@ -285,6 +461,7 @@ async function main() {
   console.log('7/11 Guardar preferencias'); await req('/notifications/preferences', { method: 'PATCH', body: { appointmentReminders: true, taskReminders: true, consentReminders: false, invoiceReminders: true, emailEnabled: false, smsEnabled: false, reminderHoursBefore: 24 } }); const pref = await req('/notifications/preferences'); assert(pref.reminderHoursBefore === 24, 'Preferencias no persistieron');
   console.log('8/11 Comprobar timeline'); const timeline = await req(`/patients/${patient.id}/timeline`); assert(Array.isArray(timeline), 'Timeline no disponible');
   console.log('9/11 Motivo de consulta y títulos de proceso fuera de las vistas generales y del panel'); await checkReasonExposure(patient);
+  console.log('9b/11 Recepción (ASSISTANT) sin metadatos del proceso clínico; OWNER como control'); await checkReceptionProcessView(stamp);
   // Portal: un mismo paciente admite cuenta propia y de tutor (regresión del índice único
   // PatientPortalAccount_patientId_key, migración 20260925000000) y el cambio de modo revoca las
   // cuentas incompatibles. Contraseña aleatoria por ejecución (repo público), que cumple la política
