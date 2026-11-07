@@ -95,9 +95,11 @@ describe('BillingService security and accounting invariants', () => {
     const service = new BillingService(prisma);
     const result:any = await service.sendToPatient('ws-1', owner, 'inv-1');
     expect(result.ok).toBe(true);
-    expect(result.channels).toEqual(['IN_APP','EMAIL']);
+    // Argos M3: aunque el paciente tenga emailEnabled, solo IN_APP (nunca una entrega EMAIL con importes).
+    expect(result.channels).toEqual(['IN_APP']);
     expect(prisma.__tx.notification.upsert).toHaveBeenCalled();
-    expect(prisma.__tx.notificationDelivery.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.__tx.notificationDelivery.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.__tx.notificationDelivery.upsert.mock.calls[0][0].create.channel).toBe('IN_APP');
     expect(prisma.__tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({action:'INVOICE_SENT_TO_PATIENT'})}));
   });
 
