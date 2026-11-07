@@ -4,6 +4,7 @@ import { assertNotificationEmailConfig, groupEnabledFor, readNotificationEmailCo
 import { quietHoursEnd } from '../src/notifications/email/email-outbox.service';
 import { defaultFor, staffEmailPreferenceView, wantsStaffEmail } from '../src/notifications/email/staff-email-preferences';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { patientSubject, renderPatientEmail } from '../src/notifications/email/patient-email-layout';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -21,16 +22,48 @@ const BASE = {
 };
 const mail = { subject: 'Asunto ficticio largo', text: 'Cuerpo ficticio largo', html: '<p>Cuerpo</p>' };
 
-describe('N0-5 (decisión del Jefe 07/11) · remitente único: todos los emails salen de MAIL_FROM', () => {
-  it('staff y pacientes salen de MAIL_FROM; no hay forma de pasar otro remitente', async () => {
+describe('N0-5 / M7 · remitente por tipo de destinatario (hoy la misma dirección, MAIL_FROM)', () => {
+  const PATIENT_TEMPLATE_CALLS = async (mailer: NotificationMailer, name?: string) => {
+    for (const t of PATIENT_TEMPLATES) await mailer.send(t, 'paciente@example.test', mail, name);
+  };
+
+  it('equipo → MAIL_FROM; pacientes → «Avisos de cita» con la dirección de MAIL_FROM si no hay PATIENT_MAIL_FROM', async () => {
     const send = jest.fn(async () => ({ messageId: '<ref@x>' }));
-    const mailer = new NotificationMailer({ ...BASE, STAFF_MAIL_FROM: 'Otro <otro@example.test>', PATIENT_MAIL_FROM: 'otro@neutro.test' } as any, () => ({ send }));
-    for (const t of [...STAFF_TEMPLATES, ...PATIENT_TEMPLATES]) await (mailer.send as any)(t, 'destino@example.test', mail, 'Remitente inyectado <x@example.test>');
-    expect(send).toHaveBeenCalledTimes(STAFF_TEMPLATES.length + PATIENT_TEMPLATES.length);
-    for (const call of send.mock.calls as any[]) {
-      expect(call[0].from).toBe(BASE.MAIL_FROM);
-      expect(Object.keys(call[0]).sort()).toEqual(['from', 'html', 'subject', 'text', 'to']);
+    const mailer = new NotificationMailer(BASE as any, () => ({ send }));
+    for (const t of STAFF_TEMPLATES) await (mailer.send as any)(t, 'equipo@example.test', mail, 'Remitente inyectado <x@example.test>');
+    await PATIENT_TEMPLATE_CALLS(mailer);
+    const calls = send.mock.calls.map((c: any) => c[0]);
+    for (const m of calls.filter((m: any) => m.to.startsWith('equipo'))) expect(m.from).toBe(BASE.MAIL_FROM);
+    for (const m of calls.filter((m: any) => m.to.startsWith('paciente'))) expect(m.from).toBe('Avisos de cita <avisos@notificaciones.example.test>');
+    for (const m of calls) expect(Object.keys(m).sort()).toEqual(['from', 'html', 'subject', 'text', 'to']);
+  });
+
+  it('con PATIENT_MAIL_FROM los pacientes cambian de dirección sin tocar código; el equipo no cambia', async () => {
+    const send = jest.fn(async () => ({ messageId: '<ref@x>' }));
+    const mailer = new NotificationMailer({ ...BASE, PATIENT_MAIL_FROM: 'no-responder@neutro-ficticio.test' } as any, () => ({ send }));
+    await mailer.send('STAFF_APPOINTMENT_REQUEST', 'equipo@example.test', mail);
+    await PATIENT_TEMPLATE_CALLS(mailer, 'Consulta Ficticia');
+    const calls = send.mock.calls.map((c: any) => c[0]);
+    expect(calls[0].from).toBe(BASE.MAIL_FROM);
+    for (const m of calls.slice(1)) expect(m.from).toBe('Consulta Ficticia <no-responder@neutro-ficticio.test>');
+  });
+
+  it('M1: el nombre visible del remitente de pacientes nunca es AsePsico ni revela el tipo de cita', async () => {
+    const send = jest.fn(async () => ({ messageId: '<ref@x>' }));
+    const mailer = new NotificationMailer(BASE as any, () => ({ send }));
+    for (const name of [null, '', 'AsePsico', 'Centro de Psicología Ficticio', 'Terapia Ficticia', 'Clínica Ficticia', 'Salud Mental X', 'Ficticio\r\nBcc: x@example.test', '"<x@example.test>"']) {
+      const from = mailer.senderFor('PATIENT_APPOINTMENT_REMINDER', name);
+      const display = from.slice(0, from.lastIndexOf(' <'));
+      expect(from.endsWith(' <avisos@notificaciones.example.test>')).toBe(true);
+      expect(display).not.toMatch(/asepsico|psico|terap|cl[ií]nic|salud|[\r\n"<>]/i);
+      expect(display.length).toBeGreaterThan(0);
     }
+    expect(mailer.senderFor('PATIENT_APPOINTMENT_REMINDER', 'AsePsico')).toBe('Avisos de cita <avisos@notificaciones.example.test>');
+    expect(mailer.senderFor('PATIENT_APPOINTMENT_REMINDER', 'Consulta Norte')).toBe('Consulta Norte <avisos@notificaciones.example.test>');
+  });
+
+  it('PATIENT_MAIL_FROM mal formado → la API no arranca y nombra la variable', () => {
+    expect(() => assertNotificationEmailConfig({ ...BASE, PATIENT_MAIL_FROM: 'no es\r\nuna dirección' } as any)).toThrow(/PATIENT_MAIL_FROM/);
   });
 
   it('MAIL_FROM ausente o con saltos de línea → no se envía nada y, con un interruptor encendido, la API no arranca', async () => {
@@ -177,5 +210,45 @@ describe('Preferencias de email del equipo (§7) y N4', () => {
     const service = new NotificationsService(db);
     await service.getProfessionalPreferences({ sub: 'u1', workspaceId: 'w2' });
     expect(db.notificationPreference.findUnique).toHaveBeenCalledWith({ where: { workspaceId_userId: { workspaceId: 'w2', userId: 'u1' } } });
+  });
+});
+
+describe('M2–M3 · molde de los emails a pacientes (aún apagados)', () => {
+  const tz = 'Europe/Madrid';
+  const startsAt = new Date('2026-11-10T09:00:00Z'); // martes 10 de noviembre, 10:00 en Madrid
+
+  it('M2: el asunto es un prefijo fijo + solo fecha y hora (P2b, sin fecha)', () => {
+    expect(patientSubject('PATIENT_APPOINTMENT_REMINDER', startsAt, tz)).toBe('Recordatorio de cita: martes 10 de noviembre, 10:00');
+    expect(patientSubject('PATIENT_REQUEST_ACCEPTED', startsAt, tz)).toBe('Cita confirmada: martes 10 de noviembre, 10:00');
+    expect(patientSubject('PATIENT_APPOINTMENT_CHANGED', startsAt, tz)).toBe('Tu cita ha cambiado: martes 10 de noviembre, 10:00');
+    expect(patientSubject('PATIENT_APPOINTMENT_CANCELLED', startsAt, tz)).toBe('Cita cancelada: martes 10 de noviembre, 10:00');
+    expect(patientSubject('PATIENT_REQUEST_REJECTED', startsAt, tz)).toBe('Respuesta a tu solicitud de cita');
+  });
+
+  it('M3: la primera línea (vista previa) es neutra; AsePsico solo aparece en el pie; sin logo ni seguimiento', () => {
+    const email = renderPatientEmail({
+      template: 'PATIENT_APPOINTMENT_REMINDER', startsAt, timeZone: tz, greeting: 'Hola, Nombre:',
+      lines: ['Tienes una cita el martes 10 de noviembre a las 10:00 (hora peninsular).', 'Si no puedes venir, avisa a tu consulta.'],
+      portalUrl: 'https://portal.example.test',
+    });
+    const [beforeFooter, footer] = email.text.split('\n--\n');
+    expect(beforeFooter.split('\n')[0]).toBe('Tienes una cita el martes 10 de noviembre a las 10:00 (hora peninsular).');
+    expect(`${email.subject}\n${beforeFooter}`).not.toMatch(/asepsico|psico|terap|cl[ií]nic|salud/i);
+    expect(footer).toContain('AsePsico');
+    expect(email.html.indexOf('AsePsico')).toBeGreaterThan(email.html.indexOf('<hr>'));
+    expect(email.html.replace(/<[^>]+>/g, '\n').trim().split('\n').find(Boolean)).toBe('Tienes una cita el martes 10 de noviembre a las 10:00 (hora peninsular).');
+    expect(email.html).not.toMatch(/<img|<script|background=|url\(|\?[a-z_]+=/i);
+  });
+
+  it('M3: una primera línea, saludo o asunto no neutros se rechazan', () => {
+    const base = { template: 'PATIENT_APPOINTMENT_REMINDER' as const, startsAt, timeZone: tz, greeting: 'Hola:' };
+    expect(() => renderPatientEmail({ ...base, lines: ['Tu sesión de terapia en AsePsico'] })).toThrow();
+    expect(() => renderPatientEmail({ ...base, greeting: 'Hola, paciente de psicología:', lines: ['Tienes una cita.'] })).toThrow();
+    expect(() => renderPatientEmail({ ...base, lines: [] })).toThrow();
+  });
+
+  it('enlace al portal solo si es fijo (https, sin parámetros)', () => {
+    const email = renderPatientEmail({ template: 'PATIENT_APPOINTMENT_REMINDER', startsAt, timeZone: tz, greeting: 'Hola:', lines: ['Tienes una cita.'], portalUrl: 'https://portal.example.test/?cita=1' });
+    expect(email.text).not.toContain('portal.example.test');
   });
 });
