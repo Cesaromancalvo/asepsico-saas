@@ -3,6 +3,8 @@ import { SessionsService } from '../src/sessions/sessions.service';
 import { PortalBookingService } from '../src/scheduling/portal-booking.service';
 import { AppointmentRequestsService } from '../src/scheduling/appointment-requests.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { EmailOutboxService } from '../src/notifications/email/email-outbox.service';
+import { NotificationMailer } from '../src/notifications/email/notification-mailer';
 
 /**
  * Avisos de cambio de cita al personal contra PostgreSQL REAL: las consultas de Prisma (metadata
@@ -98,7 +100,26 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
       expect(`${r.title} ${r.body}`).not.toMatch(/Paciente|Uno|\d{1,2}:\d{2}/);
       expect(JSON.stringify(r.metadata)).not.toMatch(/Paciente|Uno|Proceso/);
     }
-    expect(await prisma.notificationDelivery.count({ where: { notificationId: { in: rows.map((r) => r.id) } } })).toBe(0);
+    // N2: solo la petición del PACIENTE genera email (profesional y recepción; OWNER apagado por
+    // defecto). Mover (recepción) y rechazar (OWNER) no generan email al equipo.
+    const deliveries = await prisma.notificationDelivery.findMany({ where: { workspaceId: ids.ws, notificationId: { in: rows.map((r) => r.id) } }, include: { notification: { select: { userId: true } } } });
+    expect(deliveries.map((d) => `${d.template}:${Object.keys(ids).find((k) => ids[k] === d.notification.userId)}`).sort()).toEqual([
+      'STAFF_PATIENT_CANCELLATION:assistant', 'STAFF_PATIENT_CANCELLATION:therapistA',
+    ]);
+    // La pasada envía un email a cada uno, solo con el nombre del espacio (transporte falso).
+    const send = jest.fn(async () => ({ messageId: '<ref@example.test>' }));
+    const mailer = new NotificationMailer({
+      MAIL_SMTP_HOST: 'smtp.example.test', MAIL_SMTP_PORT: '2465', MAIL_SMTP_USER: 'u', MAIL_SMTP_PASSWORD: 'p',
+      MAIL_FROM: 'AsePsico <avisos@notificaciones.example.test>', STAFF_EMAIL_NOTIFICATIONS_ENABLED: 'true',
+    } as any, () => ({ send }));
+    const counts = await new EmailOutboxService(prisma as any, mailer).processWorkspace(ids.ws, new Date());
+    const sent = send.mock.calls.map((c: any) => c[0]);
+    // Según la hora del CI puede caer en la franja silenciosa (21:00–08:00): entonces se aplazan las dos.
+    expect(sent.length === 2 || counts.deferred.QUIET_HOURS === 2).toBe(true);
+    for (const m of sent) {
+      expect(`${m.subject}\n${m.text}\n${m.html}`).not.toMatch(/Paciente|Uno|Proceso|\d{1,2}:\d{2}/);
+      expect(m.text).toContain('Un paciente ha cancelado una cita (o retirado una solicitud)');
+    }
 
     const listA: any[] = await notifications.listProfessional(actor('therapistA', 'THERAPIST'));
     expect(listA.map((n) => n.body)).toEqual(expect.arrayContaining([

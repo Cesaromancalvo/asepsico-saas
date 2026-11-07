@@ -24,7 +24,7 @@ export function fakeClinicalDb(seed: Partial<Store>) {
     clinicalProcessOpening: [], exceptionalAccessJustification: [], exceptionalAccessReasonMiss: [], refreshToken: [],
     appointmentRequest: [], availabilityBlock: [], therapistAvailability: [], clinicalProcessPrivateNote: [],
     portalIntakeLink: [], portalSignupRequest: [], portalActivationToken: [],
-    workspace: [],
+    workspace: [], notificationPreference: [], notificationDelivery: [],
     ...seed,
   } as Store;
 
@@ -123,7 +123,11 @@ export function fakeClinicalDb(seed: Partial<Store>) {
       store[name].push(row);
       return { ...row };
     }),
-    createMany: jest.fn(async ({ data }: Row) => { store[name].push(...(Array.isArray(data) ? data : [data])); return { count: 1 }; }),
+    createMany: jest.fn(async ({ data }: Row) => {
+      const rows = (Array.isArray(data) ? data : [data]).map((row: Row) => ({ id: `${name}-${store[name].length + 1}-${Math.random().toString(36).slice(2, 8)}`, ...row }));
+      store[name].push(...rows);
+      return { count: rows.length };
+    }),
     updateMany: jest.fn(async ({ where, data }: Row) => {
       const rows = find(name, where);
       rows.forEach((row) => Object.assign(row, data));
