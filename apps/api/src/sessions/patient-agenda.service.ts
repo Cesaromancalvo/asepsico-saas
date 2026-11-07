@@ -6,7 +6,7 @@ import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 import { projectSelect } from '../patients/patient-view.util';
 import { PatientAgendaQueryDto } from './dto/patient-agenda-query.dto';
-import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT } from './session-view.util';
+import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole, toReceptionSession } from './session-view.util';
 
 /** Roles con vista administrativa de la agenda (todas las citas del paciente, sin contenido). */
 const ADMINISTRATIVE_ROLES = ['OWNER', 'ADMIN', 'ASSISTANT'];
@@ -71,17 +71,27 @@ export class PatientAgendaService {
         : {}),
     };
 
-    // Consulta con la proyección más amplia permitida; la decisión FULL/BUSY es fila a fila.
-    const rows = await this.prisma.session.findMany({
-      where,
-      orderBy: { startsAt: 'asc' },
-      take: MAX_ROWS,
-      select: SESSION_LIST_SELECT,
-    });
-
-    type BusyRow = Prisma.SessionGetPayload<{ select: typeof SESSION_BUSY_SELECT }>;
     const isUpcoming = (row: { status: SessionStatus; startsAt: Date }) =>
       row.status === SessionStatus.SCHEDULED && new Date(row.startsAt).getTime() >= now.getTime();
+    const findArgs = { where, orderBy: { startsAt: 'asc' as const }, take: MAX_ROWS };
+
+    // Recepción (ASSISTANT o rol no clínico, falla en cerrado): el select se elige en la propia
+    // consulta, así que la relación clinicalProcess ni siquiera se carga (regla dura 2); de la cita
+    // solo sale hasClinicalProcess, nunca el clinicalProcessId (ver toReceptionSession).
+    if (isReceptionRole(actor.role)) {
+      const receptionRows = await this.prisma.session.findMany({ ...findArgs, select: SESSION_RECEPTION_SELECT });
+      const data = receptionRows.map((row) => ({
+        ...toReceptionSession(row),
+        visibility: 'FULL' as PatientAgendaVisibility,
+      }));
+      const nextIndex = receptionRows.findIndex((row) => isUpcoming(row));
+      return { patientId, view, data, nextSession: nextIndex >= 0 ? data[nextIndex] : null };
+    }
+
+    // Vista clínica: proyección más amplia permitida; la decisión FULL/BUSY es fila a fila.
+    const rows = await this.prisma.session.findMany({ ...findArgs, select: SESSION_LIST_SELECT });
+
+    type BusyRow = Prisma.SessionGetPayload<{ select: typeof SESSION_BUSY_SELECT }>;
     const toItem = (row: (typeof rows)[number]) => {
       if (view === 'ADMINISTRATIVE' || row.therapistId === actor.sub) {
         return { ...projectSelect<typeof row>(row, SESSION_LIST_SELECT), visibility: 'FULL' as PatientAgendaVisibility };

@@ -12,6 +12,8 @@ import { NON_MODIFIABLE_STATUSES, updatePatientScoped } from './patient-write.ut
 import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 import { assertNoActiveDemoMembers } from './demo-workspace.util';
+import { isReceptionRole } from '../sessions/session-view.util';
+import { firstReceptionProcess, receptionProcessesSelect, receptionSessionSelect } from './patient-reception-view.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -127,8 +129,8 @@ export class PatientCoreService {
           updatedAt: 'desc',
         },
         take: 1,
-        // Sin title: el título del proceso puede revelar contenido clínico y el listado
-        // lo ve también un ASSISTANT. Solo metadatos operativos.
+        // Sin title: el título del proceso puede revelar contenido clínico. Solo metadatos
+        // operativos (vista clínica; recepción usa receptionSelect).
         select: {
           id: true,
           status: true,
@@ -148,6 +150,7 @@ export class PatientCoreService {
 
       sessions: {
         where: {
+          workspaceId,
           ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}),
           startsAt: {
             lt: now,
@@ -167,15 +170,22 @@ export class PatientCoreService {
       },
     } satisfies Prisma.PatientSelect;
 
-    const [patients, total] = await Promise.all([
-      this.prisma.patient.findMany({
-        where,
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+    // Recepción (ASSISTANT o rol no clínico, falla en cerrado): el select se elige en la propia
+    // consulta. Solo el proceso ACTIVO (id + profesional), sin estado, modalidad, frecuencia,
+    // fechas ni recuento de procesos (ver patient-reception-view.util.ts).
+    const reception = isReceptionRole(actor.role);
+    const receptionSelect = {
+      ...PATIENT_VIEW_SELECT,
+      _count: { select: { sessions: true } },
+      clinicalProcesses: receptionProcessesSelect(workspaceId, 1),
+      sessions: select.sessions,
+    } satisfies Prisma.PatientSelect;
+    const paging = { where, orderBy, skip: (page - 1) * pageSize, take: pageSize };
 
-        select,
-      }),
+    const [patients, total] = await Promise.all([
+      reception
+        ? this.prisma.patient.findMany({ ...paging, select: receptionSelect })
+        : this.prisma.patient.findMany({ ...paging, select }),
 
       this.prisma.patient.count({
         where,
@@ -229,7 +239,21 @@ export class PatientCoreService {
     }
 
     const data = patients.map((row) => {
-      const patient = projectSelect<typeof row>(row, select);
+      if (reception) {
+        const { _count, clinicalProcesses, sessions, ...patientData } = projectSelect<any>(row, receptionSelect);
+        const activeProcess = firstReceptionProcess(clinicalProcesses);
+        return {
+          ...toPatientView(patientData),
+          summary: {
+            sessionCount: _count.sessions,
+            activeProcess,
+            lastSession: sessions[0] ?? null,
+            nextSession: nextSessionByPatient.get(patientData.id) ?? null,
+            therapist: activeProcess?.therapist ?? null,
+          },
+        };
+      }
+      const patient = projectSelect<Prisma.PatientGetPayload<{ select: typeof select }>>(row, select);
       const {
         _count,
         clinicalProcesses,
@@ -287,7 +311,7 @@ export class PatientCoreService {
       clinicalProcesses: {
         ...(actor.role === 'THERAPIST' ? { where: { workspaceId, therapistId: actor.sub } } : {}),
         orderBy: { updatedAt: 'desc' },
-        // Sin title (igual que list()): el detalle general lo ve también un ASSISTANT.
+        // Sin title (igual que list()). Vista clínica; recepción usa receptionSelect.
         select: {
           id: true,
           status: true,
@@ -300,7 +324,7 @@ export class PatientCoreService {
         },
       },
       sessions: {
-        ...(actor.role === 'THERAPIST' ? { where: { therapistId: actor.sub } } : {}),
+        where: { workspaceId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) },
         orderBy: { startsAt: 'desc' },
         select: {
           id: true,
@@ -317,16 +341,43 @@ export class PatientCoreService {
       },
     } satisfies Prisma.PatientSelect;
 
-    const row = await this.prisma.patient.findFirst({
-      where: {
-        id,
-        workspaceId,
-        ...(actor.role === 'THERAPIST'
-          ? { clinicalProcesses: { some: { workspaceId, therapistId: actor.sub } } }
-          : {}),
-      },
-      select,
-    });
+    const where: Prisma.PatientWhereInput = {
+      id,
+      workspaceId,
+      ...(actor.role === 'THERAPIST'
+        ? { clinicalProcesses: { some: { workspaceId, therapistId: actor.sub } } }
+        : {}),
+    };
+
+    // Recepción (falla en cerrado): mismo criterio que list(), select elegido en la consulta.
+    if (isReceptionRole(actor.role)) {
+      const receptionSelect = {
+        ...PATIENT_VIEW_SELECT,
+        _count: { select: { sessions: true } },
+        clinicalProcesses: receptionProcessesSelect(workspaceId),
+        // Sin clinicalProcessId: con el id de proceso de cada cita, recepción podría contar
+        // procesos distintos (también cerrados o de alta) y deducir el recuento que no se le da.
+        // La agenda asocia la cita con summary.activeProcess.id. Afecta también a
+        // lastSession/nextSession, que salen de esta misma lista.
+        sessions: { ...select.sessions, select: receptionSessionSelect(select.sessions.select) },
+      } satisfies Prisma.PatientSelect;
+      const receptionRow = await this.prisma.patient.findFirst({ where, select: receptionSelect });
+      if (!receptionRow) throw new NotFoundException('Paciente no encontrado');
+      const { _count, clinicalProcesses, sessions, ...patientData } = projectSelect<any>(receptionRow, receptionSelect);
+      const activeProcess = firstReceptionProcess(clinicalProcesses);
+      return {
+        ...toPatientView(patientData),
+        summary: {
+          sessionCount: _count.sessions,
+          activeProcess,
+          recentSessions: sessions.slice(0, 20),
+          ...this.sessionMarkers(sessions, now),
+          therapist: activeProcess?.therapist ?? null,
+        },
+      };
+    }
+
+    const row = await this.prisma.patient.findFirst({ where, select });
 
     if (!row) {
       throw new NotFoundException('Paciente no encontrado');
@@ -338,12 +389,7 @@ export class PatientCoreService {
 
     const activeProcess = clinicalProcesses.find((process) => process.status === 'ACTIVE') ?? null;
 
-    const lastSession = sessions.find((session) => new Date(session.startsAt) < now) ?? null;
-
-    const nextSession =
-      [...sessions]
-        .filter((session) => session.status === 'SCHEDULED' && new Date(session.startsAt) >= now)
-        .sort((first, second) => new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime())[0] ?? null;
+    const { lastSession, nextSession } = this.sessionMarkers(sessions, now);
 
     return {
       ...toPatientView(patientData),
@@ -358,6 +404,16 @@ export class PatientCoreService {
         therapist: activeProcess?.therapist ?? null,
       },
     };
+  }
+
+  /** Última cita pasada y próxima cita programada (sesiones ya ordenadas por inicio desc). */
+  private sessionMarkers<T extends { startsAt: Date; status: string }>(sessions: T[], now: Date) {
+    const lastSession = sessions.find((session) => new Date(session.startsAt) < now) ?? null;
+    const nextSession =
+      [...sessions]
+        .filter((session) => session.status === 'SCHEDULED' && new Date(session.startsAt) >= now)
+        .sort((first, second) => new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime())[0] ?? null;
+    return { lastSession, nextSession };
   }
 
   async create(
