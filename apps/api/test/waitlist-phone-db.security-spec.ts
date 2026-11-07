@@ -60,7 +60,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
   const rowOf = (id: string) => prisma.waitlistEntry.findUniqueOrThrow({ where: { id } });
   const v5 = (email: string, phone: string) => new WaitlistService(prisma as any).submit({
     name: 'Persona Ficticia Telefono', email, phone, situation: 'PRACTICE', privacyAccepted: true,
-    privacyPolicyVersion: 'lista-espera-v5', formToken: issueFormToken(Date.now() - 10_000),
+    privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'PHONE_AND_EMAIL', formToken: issueFormToken(Date.now() - 10_000),
   } as any);
 
   /** App completa. El test de CSRF levanta la suya: el límite de 5/min por ruta e IP vive en memoria de cada app. */
@@ -117,6 +117,17 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     expect(raw[0].phone).not.toContain('612000111');
     expect(decryptField(raw[0].phone)).toBe(PHONES[0]);
     expect((await rowOf(ids.v4)).phone).toBeNull();
+    expect((await rowOf(ids.v5)).contactPreference).toBe('PHONE_AND_EMAIL');
+  });
+
+  it('v6 «Solo por email» contra Postgres: phone NULL y EMAIL_ONLY; con teléfono, 400 y sin fila', async () => {
+    const email = `${run}-solo-email@example.com`;
+    const base = { name: 'Persona Ficticia Solo Email', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY' };
+    await expect(new WaitlistService(prisma as any).submit({ ...base, phone: '612 000 555', formToken: issueFormToken(Date.now() - 10_000) } as any)).rejects.toMatchObject({ response: { code: 'WAITLIST_PHONE_NOT_ALLOWED' } });
+    expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email) } })).toBe(0);
+    await new WaitlistService(prisma as any).submit({ ...base, formToken: issueFormToken(Date.now() - 10_000) } as any);
+    const row = await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } });
+    expect(row).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', privacyPolicyVersion: 'lista-espera-v6', deletedAt: null });
   });
 
   it('panel: PLATFORM_ADMIN con MFA ve el teléfono descifrado y withoutPhone; cualquier otro, 404 sin teléfono', async () => {
@@ -139,6 +150,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     expect(row.phone).toMatch(/^enc:v[12]:/);
     expect(decryptField(row.phone)).toBe(PHONES[1]);
     expect(row.privacyPolicyVersion).toBe('lista-espera-v4'); // la versión aceptada no cambia
+    expect(row.contactPreference).toBe('PHONE_AND_EMAIL'); // v6 §2: quien da el teléfono por escrito pasa a «teléfono y email»
     expect(await setWaitlistPhone(prisma, V4_EMAIL, '900 123 456')).toBe('invalid');
     expect(decryptField((await rowOf(ids.v4)).phone)).toBe(PHONES[1]);
     expect(await setWaitlistPhone(prisma, `${run}-nadie@example.com`, '612 000 222')).toBe('not-found');
@@ -157,12 +169,19 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     const ok = await http().post(path).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(204);
     expect(ok.headers['cache-control']).toBe('no-store');
     const row = await rowOf(ids.v5);
-    expect(row).toMatchObject({ phone: null, deletedAt: null });
+    expect(row).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', deletedAt: null }); // L15: pasa a solo email
     expect(row.name).not.toBeNull();
     expect(row.email).not.toBeNull();
     expect(row.emailHash).toBe(hashWaitlistEmail(V5_EMAIL));
 
     await http().post(path).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(204); // idempotente
+    // Condición 3 de Argos (v6): una fila sin teléfono con PHONE_AND_EMAIL (incoherente a propósito)
+    // no cuenta como borrado: ni cambia ni se audita PLATFORM_WAITLIST_PHONE_CLEARED.
+    await prisma.waitlistEntry.update({ where: { id: ids.v5 }, data: { contactPreference: 'PHONE_AND_EMAIL' } });
+    expect(await clearWaitlistPhoneByEmail(prisma, V5_EMAIL)).toBe('no-phone');
+    expect((await rowOf(ids.v5)).contactPreference).toBe('PHONE_AND_EMAIL');
+    expect(await prisma.platformAuditLog.count({ where: { entityId: ids.v5, action: 'PLATFORM_WAITLIST_PHONE_CLEARED', actorId: null } })).toBe(0);
+    await prisma.waitlistEntry.update({ where: { id: ids.v5 }, data: { contactPreference: 'EMAIL_ONLY' } });
 
     const audit = await prisma.platformAuditLog.findMany({ where: { actorId: ids.admin, action: { in: ['PLATFORM_REAUTH_FAILED', 'PLATFORM_WAITLIST_PHONE_CLEARED'] } }, orderBy: { createdAt: 'asc' } });
     expect(audit.map((a) => [a.action, a.entityId, a.metadata])).toEqual([
@@ -202,7 +221,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
 
   it('borrar SOLO el teléfono por CLI (función): cleared, luego no-phone; auditoría sin actor', async () => {
     expect(await clearWaitlistPhoneByEmail(prisma, V4_EMAIL)).toBe('cleared');
-    expect(await rowOf(ids.v4)).toMatchObject({ phone: null, deletedAt: null });
+    expect(await rowOf(ids.v4)).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', deletedAt: null });
     expect(await clearWaitlistPhoneByEmail(prisma, V4_EMAIL)).toBe('no-phone');
     expect(await clearWaitlistPhoneByEmail(prisma, `${run}-nadie@example.com`)).toBe('not-found');
     const audit = await prisma.platformAuditLog.findMany({ where: { entityId: ids.v4, action: 'PLATFORM_WAITLIST_PHONE_CLEARED' } });
@@ -214,7 +233,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     await v5(email, '+34 699 000 333');
     const id = (await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } })).id;
     await http().post(`/api/v1/admin/waitlist/${id}/delete`).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(204);
-    expect(await rowOf(id)).toMatchObject({ phone: null, email: null, emailHash: null, deletedAt: expect.any(Date) });
+    expect(await rowOf(id)).toMatchObject({ phone: null, contactPreference: null, email: null, emailHash: null, deletedAt: expect.any(Date) });
     expect(await setWaitlistPhone(prisma, email, '+34 699 000 333')).toBe('not-found');
     await http().post(`/api/v1/admin/waitlist/${id}/phone/delete`).set(asUser(adminToken())).send({ password: ADMIN_PASSWORD }).expect(404);
   });
@@ -259,7 +278,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
   it('nada del teléfono (ni del email) en PlatformAuditLog ni en los logs de la app', async () => {
     const audit = JSON.stringify(await prisma.platformAuditLog.findMany({ where: { OR: [{ entityId: { in: [ids.v4, ids.v5] } }, { actorId: ids.admin }] } }));
     const logs = logger.lines.join('\n');
-    for (const value of [...PHONES, '612000111', '612 000 111', V5_EMAIL, V4_EMAIL]) {
+    for (const value of [...PHONES, '612000111', '612 000 111', V5_EMAIL, V4_EMAIL, 'EMAIL_ONLY', 'PHONE_AND_EMAIL', 'contactPreference']) {
       expect(audit).not.toContain(value);
       expect(logs).not.toContain(value);
     }

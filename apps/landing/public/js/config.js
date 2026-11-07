@@ -13,15 +13,16 @@ window.ASEPSICO_CONFIG = Object.freeze({
 
   // Versión de la política que acepta quien se apunta (se envía en privacyPolicyVersion). Tiene que
   // coincidir con la que muestra /privacidad-lista-espera/ y estar entre las que acepta la API
-  // (desplegar la API antes que la landing al cambiarla). v5 (teléfono obligatorio) desde el 27/10/2026;
-  // la v4 queda archivada en /privacidad-lista-espera/v4/. Con v5 el formulario envía `phone`.
-  WAITLIST_POLICY_VERSION: 'lista-espera-v5',
+  // (desplegar la API antes que la landing al cambiarla). v6: preferencia de contacto obligatoria
+  // (`contactPreference`, sin opción marcada) y `phone` solo con «Por teléfono y por email»; la v5
+  // queda archivada en /privacidad-lista-espera/v5/ (y v1–v4 en sus carpetas).
+  WAITLIST_POLICY_VERSION: 'lista-espera-v6',
 
   // RED DE SEGURIDAD: formulario de Google Forms, solo si FEATURES.ownWaitlistForm está apagado.
   // Se abre como enlace normal en una pestaña nueva: nunca incrustado.
   FORM_URL: 'https://forms.gle/ceKKYV85j1rq4EHZ9',
 
-  // Política de privacidad del formulario propio (página de la web, versión lista-espera-v5; las anteriores están en /privacidad-lista-espera/v1/ a /v4/).
+  // Política de privacidad del formulario propio (página de la web, versión lista-espera-v6; las anteriores están en /privacidad-lista-espera/v1/ a /v5/).
   // Los enlaces ya van con este href en el HTML; esta constante solo lo sobrescribe si cambia.
   FORM_PRIVACY_URL: '/privacidad-lista-espera/',
 

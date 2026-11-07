@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { WaitlistContactPreference, type Prisma, type PrismaClient } from '@prisma/client';
 import { decryptModel, encryptModelData } from '../common/crypto/clinical-crypto';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../common/crypto/field-encryption';
 import { PLATFORM_AUDIT_ACTIONS, writePlatformAudit } from '../platform/platform-audit';
@@ -99,6 +99,7 @@ function suppressedData(now: Date) {
     email: null,
     emailHash: null,
     phone: null,
+    contactPreference: null,
     tools: null,
     professionalsCount: null,
     situation: null,
@@ -205,6 +206,8 @@ export type SetPhoneResult = 'updated' | 'not-found' | 'invalid';
  * (los 3 apuntados v2–v4, spec §8 y P4 de Lex). Valida y normaliza con la MISMA regla que la API,
  * lo cifra y escribe solo en la fila activa con ese email, con auditoría en PlatformAuditLog en la
  * misma transacción (sin el teléfono ni el email). La versión de la política de la fila no cambia.
+ * La preferencia pasa a PHONE_AND_EMAIL (v6 §2 y Lex §1.4: solo cuando la persona lo pide por escrito
+ * para que la llamemos), para mantener el invariante «teléfono ⇔ PHONE_AND_EMAIL».
  */
 export async function setWaitlistPhone(prisma: PrismaClient, email: string, rawPhone: string): Promise<SetPhoneResult> {
   const phone = normalizeWaitlistPhone(rawPhone);
@@ -212,7 +215,7 @@ export async function setWaitlistPhone(prisma: PrismaClient, email: string, rawP
   return prisma.$transaction(async (tx) => {
     const id = await activeEntryIdByEmail(tx, email);
     if (!id) return 'not-found';
-    const result = await tx.waitlistEntry.updateMany({ where: { id, deletedAt: null }, data: encryptModelData('waitlistEntry', { phone }) });
+    const result = await tx.waitlistEntry.updateMany({ where: { id, deletedAt: null }, data: { ...encryptModelData('waitlistEntry', { phone }), contactPreference: WaitlistContactPreference.PHONE_AND_EMAIL } });
     if (result.count !== 1) return 'not-found';
     await writePlatformAudit(tx, { actorId: null, action: PLATFORM_AUDIT_ACTIONS.WAITLIST_PHONE_SET, entityType: 'WaitlistEntry', entityId: id, metadata: { source: 'cli' } });
     return 'updated';
@@ -223,11 +226,18 @@ export type ClearPhoneResult = 'cleared' | 'no-phone' | 'not-found';
 
 /**
  * Borra SOLO el teléfono de una alta activa por id (retirada del consentimiento para llamadas,
- * apartado 3 de la política v5; bloqueo §3/L15 de Lex). La persona sigue en la lista. No escribe
- * auditoría: la escribe quien llama, en la misma transacción (CLI o panel, con su actor).
+ * apartado 3 de la política v5 y apartados 3 y 7 de la v6; L15 de Lex) y deja la preferencia en
+ * EMAIL_ONLY («pasamos a contactarte solo por email»). La persona sigue en la lista.
+ * Solo cuenta como borrado ('cleared') si la fila TENÍA teléfono: con una fila sin teléfono devuelve
+ * 'no-phone', no escribe nada y quien llama no audita WAITLIST_PHONE_CLEARED (condición 3 de Argos,
+ * v6). El invariante «teléfono ⇔ PHONE_AND_EMAIL» lo mantienen la migración, el alta, set-phone y esta
+ * función. No escribe auditoría: la escribe quien llama, en la misma transacción (CLI o panel).
  */
 export async function clearWaitlistPhoneById(db: Pick<Prisma.TransactionClient, 'waitlistEntry'>, id: string): Promise<ClearPhoneResult> {
-  const result = await db.waitlistEntry.updateMany({ where: { id, deletedAt: null, phone: { not: null } }, data: { phone: null } });
+  const result = await db.waitlistEntry.updateMany({
+    where: { id, deletedAt: null, phone: { not: null } },
+    data: { phone: null, contactPreference: WaitlistContactPreference.EMAIL_ONLY },
+  });
   if (result.count === 1) return 'cleared';
   const exists = await db.waitlistEntry.count({ where: { id, deletedAt: null } });
   return exists ? 'no-phone' : 'not-found';

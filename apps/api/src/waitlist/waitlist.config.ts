@@ -10,6 +10,8 @@ import { createHmac } from 'node:crypto';
  *  - WAITLIST_SECRET: secreto (>= 32 caracteres) del que se derivan, por separado, la clave del
  *    hash de deduplicación del email y la de firma del token de formulario. Obligatorio en
  *    producción (la API no arranca sin él). Cambiarlo rompe la deduplicación de las altas previas.
+ *  - WAITLIST_V5_ACCEPTED_UNTIL: fin de la transición de la política lista-espera-v5 (opcional, máx.
+ *    7 días; ver waitlistV5AcceptedUntil). Sin ella, la v5 está retirada.
  */
 
 export const WAITLIST_PATH = '/api/v1/public/waitlist';
@@ -22,31 +24,82 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * su versión aquí (y en packages/contracts), desplegar la API y DESPUÉS la landing; retirar la
  * anterior (pasarla a RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS) cuando la landing ya no la sirva.
  *
- * Vigente: lista-espera-v5 (27/10/2026), con teléfono OBLIGATORIO (decisión del Jefe del 27/10).
- * Texto de Lex Psi (borrador 1.0 del 27/10/2026; pendiente de revisión del abogado humano): se trata
- * el teléfono (guardado en E.164); la finalidad es contactar sobre el piloto «por email o por
- * teléfono (llamada o SMS)», con base en el consentimiento (art. 6.1.a RGPD; cubre las llamadas,
- * art. 66.1.b LGTel); el teléfono solo sirve para el piloto y la demo, no se cede ni se usa en grupos
- * o listas de difusión; se puede pedir no recibir más llamadas: se borra SOLO el teléfono
- * (waitlist:set-phone --clear o el panel) y se sigue por email; el aviso interno de altas no lleva el
- * teléfono; borrado a los 14 días tras un «no» al piloto. Sin comunicaciones comerciales.
+ * Vigente: lista-espera-v6 (decisión del Jefe del 03/11/2026; texto de Lex Psi, revisión 1.0 del
+ * 03/11/2026, pendiente del abogado humano). Teléfono OPCIONAL con preferencia de contacto
+ * obligatoria y sin valor por defecto (contactPreference):
+ *  - PHONE_AND_EMAIL: teléfono obligatorio (WAITLIST_PHONE_REQUIRED / WAITLIST_PHONE_INVALID), en E.164
+ *    y cifrado. Es el consentimiento previo a las llamadas (art. 66.1.b LGTel).
+ *  - EMAIL_ONLY: el teléfono NO puede llegar (WAITLIST_PHONE_NOT_ALLOWED; minimización, art. 5.1.c).
+ *  - Sin preferencia → WAITLIST_CONTACT_PREFERENCE_REQUIRED.
  *
- * Toda versión aceptada exige el teléfono (WAITLIST_PHONE_REQUIRED / WAITLIST_PHONE_INVALID) y no
- * ofrece comunicaciones comerciales (commercialConsentRequested=true → WAITLIST_COMMERCIAL_NOT_OFFERED).
+ * Transición: lista-espera-v5 (27/10/2026) solo se acepta mientras dure la transición (ver
+ * waitlistV5AcceptedUntil), con SUS reglas: teléfono obligatorio, sin campo de preferencia
+ * (WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED si llega) y se guarda PHONE_AND_EMAIL, porque su
+ * casilla consintió las llamadas. Nunca un alta v5 sin teléfono. Pasada la fecha, o si no se
+ * configura, se rechaza como retirada (WAITLIST_POLICY_VERSION_RETIRED).
+ *
+ * Ninguna versión ofrece comunicaciones comerciales (commercialConsentRequested=true →
+ * WAITLIST_COMMERCIAL_NOT_OFFERED).
  */
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v5'] as const;
+export const CURRENT_WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v6';
+export const TRANSITIONAL_WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v5';
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v5', 'lista-espera-v6'] as const;
 
 /**
  * Versiones retiradas (condición 3 de Argos, 27/10/2026; retiradas cuando la landing publicada ya
  * enviaba la v5). Un alta NUEVA con ellas → 400 WAITLIST_POLICY_VERSION_RETIRED. Las filas ya
  * guardadas con estas versiones no cambian. Sus textos siguen archivados en
- * /privacidad-lista-espera/v1/ a /v4/.
+ * /privacidad-lista-espera/v1/ a /v4/ (y la v5 en /v5/ desde la publicación de la v6).
  *  - lista-espera-v1: 29/09/2026, Google Forms (nunca se aceptó en esta API).
  *  - lista-espera-v2: 16/10/2026 a 17/10/2026, con casilla opcional de comunicaciones comerciales.
  *  - lista-espera-v3: 17/10/2026 a 22/10/2026, sin comunicaciones comerciales.
  *  - lista-espera-v4: 22/10/2026 a 27/10/2026, panel web privado y aviso interno de altas.
  */
 export const RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'] as const;
+
+/** Plazo máximo de la transición de la v5 (Lex Psi, §1.4: 7 días desde la publicación de la v6). */
+export const WAITLIST_V5_TRANSITION_MAX_DAYS = 7;
+
+/**
+ * Fin de la transición de la v5: WAITLIST_V5_ACCEPTED_UNTIL (fecha ISO 8601 con zona, p. ej.
+ * 2026-11-13T23:59:59+01:00). Sin la variable (o vacía) la v5 queda retirada: es el valor seguro.
+ * Una fecha mal escrita o a más de 7 días del arranque impide arrancar (assertWaitlistConfig), para
+ * que nadie alargue la transición por error.
+ */
+export function waitlistV5AcceptedUntil(env: NodeJS.ProcessEnv = process.env): Date | null {
+  const raw = env.WAITLIST_V5_ACCEPTED_UNTIL?.trim();
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(raw)) {
+    throw new InvalidWaitlistConfigError('WAITLIST_V5_ACCEPTED_UNTIL debe ser una fecha ISO 8601 con zona horaria (p. ej. 2026-11-13T23:59:59+01:00)');
+  }
+  const until = new Date(raw);
+  if (Number.isNaN(until.getTime())) throw new InvalidWaitlistConfigError('WAITLIST_V5_ACCEPTED_UNTIL no es una fecha válida');
+  return until;
+}
+
+function assertV5Transition(env: NodeJS.ProcessEnv, now: Date): void {
+  const until = waitlistV5AcceptedUntil(env);
+  if (until && until.getTime() > now.getTime() + WAITLIST_V5_TRANSITION_MAX_DAYS * 24 * 60 * 60_000) {
+    throw new InvalidWaitlistConfigError(`WAITLIST_V5_ACCEPTED_UNTIL no puede estar a más de ${WAITLIST_V5_TRANSITION_MAX_DAYS} días (transición de la política lista-espera-v5)`);
+  }
+}
+
+/**
+ * ¿Se acepta hoy un alta NUEVA con esta versión? La v6 siempre; la v5 solo antes de
+ * WAITLIST_V5_ACCEPTED_UNTIL; cualquier otra, nunca. Una variable mal escrita cuenta como «sin
+ * transición» (nunca amplía lo aceptado).
+ */
+export function isWaitlistPolicyVersionAccepted(version: string, now: Date = new Date(), env: NodeJS.ProcessEnv = process.env): boolean {
+  if (version === CURRENT_WAITLIST_PRIVACY_POLICY_VERSION) return true;
+  if (version !== TRANSITIONAL_WAITLIST_PRIVACY_POLICY_VERSION) return false;
+  let until: Date | null;
+  try {
+    until = waitlistV5AcceptedUntil(env);
+  } catch {
+    return false;
+  }
+  return until !== null && now.getTime() < until.getTime();
+}
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
 export const WAITLIST_FORM_MIN_SECONDS = 3;
@@ -114,7 +167,8 @@ export function waitlistSubkey(purpose: 'email-hash-v1' | 'form-token-v1', env: 
 }
 
 /** Comprueba toda la configuración; se llama al arrancar para fallar pronto en producción. */
-export function assertWaitlistConfig(env: NodeJS.ProcessEnv = process.env): void {
+export function assertWaitlistConfig(env: NodeJS.ProcessEnv = process.env, now: Date = new Date()): void {
   waitlistAllowedOrigins(env);
   waitlistSubkey('email-hash-v1', env);
+  assertV5Transition(env, now);
 }

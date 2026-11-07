@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, WaitlistContactPreference } from '@prisma/client';
 import { encryptModelData } from '../common/crypto/clinical-crypto';
 import { PrismaService } from '../database/prisma.service';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
 import { normalizeWaitlistPhone } from './waitlist-phone';
-import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, WAITLIST_FORM_MIN_SECONDS } from './waitlist.config';
+import { CURRENT_WAITLIST_PRIVACY_POLICY_VERSION, WAITLIST_FORM_MIN_SECONDS, isWaitlistPolicyVersionAccepted } from './waitlist.config';
 
 /** Respuesta única para alta nueva, alta repetida y honeypot: no revela si el email ya estaba. */
 export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
@@ -15,8 +15,11 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
  * Lista de espera pública. Fuera de cualquier workspace (no hay workspaceId: es anterior a tener
  * cuenta). Reglas:
  *  - name, email, tools y phone se guardan cifrados (registro waitlistEntry en clinical-crypto.ts).
- *  - Solo se acepta la política vigente (v5); las retiradas (v1–v4) → 400 WAITLIST_POLICY_VERSION_RETIRED.
- *  - phone: obligatorio (phoneFor). Se guarda en E.164.
+ *  - Se acepta la política vigente (v6) y la v5 solo durante su transición (waitlist.config.ts); las
+ *    retiradas (v1–v4, y la v5 fuera de plazo) → 400 WAITLIST_POLICY_VERSION_RETIRED.
+ *  - contactPreference y phone según la versión (contactFor): v6 con preferencia obligatoria y
+ *    teléfono solo con PHONE_AND_EMAIL; v5 sin preferencia y con teléfono obligatorio. E.164.
+ *  - La preferencia, como el resto de datos, no sale en logs ni en el aviso interno.
  *  - Deduplicación por emailHash (HMAC); una segunda alta no toca la fila y no lo revela.
  *  - Los logs no llevan nunca nombre, email, teléfono, herramientas, hash ni IP: solo el tipo de evento.
  *  - No se guarda IP ni user-agent: el rate limit por IP vive solo en la memoria del throttler.
@@ -37,9 +40,9 @@ export class WaitlistService {
       return WAITLIST_ACCEPTED;
     }
 
-    // Solo la política vigente. El DTO deja pasar las retiradas (v1–v4) para darles este code propio;
-    // se comprueba aquí también por defensa en profundidad (el servicio no depende del ValidationPipe).
-    if (!(ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS as readonly string[]).includes(dto.privacyPolicyVersion)) {
+    // Solo la vigente (y la v5 en transición). El DTO deja pasar las retiradas para darles este code
+    // propio; se comprueba aquí también por defensa en profundidad (no depende del ValidationPipe).
+    if (!isWaitlistPolicyVersionAccepted(dto.privacyPolicyVersion)) {
       this.logger.warn('Alta rechazada: versión de la política retirada o no vigente');
       throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_POLICY_VERSION_RETIRED', message: 'Esta versión de la política ya no está vigente. Recarga la página y vuelve a enviar el formulario.' });
     }
@@ -50,7 +53,7 @@ export class WaitlistService {
       throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_COMMERCIAL_NOT_OFFERED', message: 'Esta versión de la política no incluye comunicaciones comerciales.' });
     }
 
-    const phone = this.phoneFor(dto);
+    const { contactPreference, phone } = this.contactFor(dto);
 
     const token = checkFormToken(dto.formToken);
     if (token === 'too-fast') {
@@ -69,6 +72,7 @@ export class WaitlistService {
       situation: dto.situation,
       tools: dto.tools ? dto.tools : null,
       phone,
+      contactPreference,
       professionalsCount: dto.professionalsCount ?? null,
       source: dto.source ?? null,
       privacyPolicyVersion: dto.privacyPolicyVersion,
@@ -107,10 +111,38 @@ export class WaitlistService {
   }
 
   /**
-   * Teléfono obligatorio (política v5). Devuelve el teléfono en E.164. Una cadena vacía cuenta como
-   * «no enviado». Los errores y los logs nombran el campo, nunca el valor.
+   * Preferencia de contacto y teléfono según la versión de la política (Lex Psi, revisión 03/11/2026
+   * §1.1 y §1.4). Los errores y los logs nombran el campo, nunca el valor.
+   *  - v6: preferencia obligatoria. PHONE_AND_EMAIL → teléfono obligatorio y válido. EMAIL_ONLY →
+   *    el teléfono NO puede llegar (ni vacío ni null): 400 WAITLIST_PHONE_NOT_ALLOWED.
+   *  - v5 (transición): sin campo de preferencia (si llega → 400) y teléfono obligatorio; se guarda
+   *    PHONE_AND_EMAIL porque la casilla de la v5 consintió las llamadas.
    */
-  private phoneFor(dto: CreateWaitlistEntryDto): string {
+  private contactFor(dto: CreateWaitlistEntryDto): { contactPreference: WaitlistContactPreference; phone: string | null } {
+    if (dto.privacyPolicyVersion === CURRENT_WAITLIST_PRIVACY_POLICY_VERSION) {
+      if (dto.contactPreference === WaitlistContactPreference.EMAIL_ONLY) {
+        if (dto.phone !== undefined) {
+          this.logger.warn('Alta rechazada: teléfono enviado con la preferencia de contacto que no lo admite');
+          throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_NOT_ALLOWED', message: 'Si eliges que te contactemos solo por email, no envíes el teléfono.' });
+        }
+        return { contactPreference: WaitlistContactPreference.EMAIL_ONLY, phone: null };
+      }
+      if (dto.contactPreference === WaitlistContactPreference.PHONE_AND_EMAIL) {
+        return { contactPreference: WaitlistContactPreference.PHONE_AND_EMAIL, phone: this.requiredPhone(dto) };
+      }
+      this.logger.warn('Alta rechazada: falta la preferencia de contacto');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_CONTACT_PREFERENCE_REQUIRED', message: 'Elige cómo prefieres que te contactemos.' });
+    }
+    // Única otra versión que llega aquí: la v5 en transición (isWaitlistPolicyVersionAccepted).
+    if (dto.contactPreference !== undefined) {
+      this.logger.warn('Alta rechazada: preferencia de contacto con una versión de la política que no la ofrece');
+      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED', message: 'Esta versión de la política no incluye la preferencia de contacto. Recarga la página y vuelve a enviar el formulario.' });
+    }
+    return { contactPreference: WaitlistContactPreference.PHONE_AND_EMAIL, phone: this.requiredPhone(dto) };
+  }
+
+  /** Teléfono obligatorio, en E.164. Una cadena vacía cuenta como «no enviado». */
+  private requiredPhone(dto: CreateWaitlistEntryDto): string {
     const sent = typeof dto.phone === 'string' && dto.phone !== '';
     if (!sent) {
       this.logger.warn('Alta rechazada: falta el teléfono');

@@ -1046,6 +1046,13 @@ enum WaitlistSource {
   NOT_SAID
 }
 
+/// Cómo quiere la persona que la contactemos sobre el piloto (política lista-espera-v6).
+/// PHONE_AND_EMAIL: consiente las llamadas (art. 66.1.b LGTel) y hay teléfono; EMAIL_ONLY: sin teléfono.
+enum WaitlistContactPreference {
+  PHONE_AND_EMAIL
+  EMAIL_ONLY
+}
+
 model WaitlistEntry {
   id                           String             @id @default(cuid())
   /// Cifrado (enc:v1/v2). Null tras la supresión.
@@ -1057,10 +1064,14 @@ model WaitlistEntry {
   situation                    WaitlistSituation?
   /// Texto libre cifrado: herramientas que usa hoy.
   tools                        String?
-  /// Cifrado (enc:v1/v2). Teléfono normalizado a E.164 (+34612345678). Obligatorio en las altas con la
-  /// política lista-espera-v5; null en las altas anteriores (v2–v4), tras la supresión y tras borrar solo
-  /// el teléfono (retirada del consentimiento para llamadas). Sin hash: no se busca ni se deduplica por él.
+  /// Cifrado (enc:v1/v2). Teléfono normalizado a E.164 (+34612345678). Obligatorio en las altas v5 y en
+  /// las v6 con preferencia PHONE_AND_EMAIL; null con EMAIL_ONLY, en las altas anteriores (v2–v4), tras la
+  /// supresión y tras borrar solo el teléfono (retirada del consentimiento para llamadas). Sin hash.
   phone                        String?
+  /// Preferencia de contacto (v6). Invariante en filas activas: PHONE_AND_EMAIL ⇔ phone no nulo. Las filas
+  /// anteriores a la v6 se rellenaron en la migración (con teléfono → PHONE_AND_EMAIL; sin él → EMAIL_ONLY).
+  /// Null solo tras la supresión. Nunca va en logs, PlatformAuditLog ni en el aviso interno de altas.
+  contactPreference            WaitlistContactPreference?
   professionalsCount           Int?
   source                       WaitlistSource?
   privacyPolicyVersion         String
