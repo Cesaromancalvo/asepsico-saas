@@ -358,20 +358,20 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
 
 });
 
-describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.2) y datos del titular fuera de git', () => {
+describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.3) y datos del titular fuera de git', () => {
   // Datos 100 % ficticios: DNI de ejemplo con letra de control válida y un domicilio inventado.
   const FAKE_NIF = '12345678Z';
   const FAKE_ADDRESS = 'Calle Ficticia 1, 00000 Ciudad Inventada';
   const filledEnv = { LEGAL_TITULAR_NIF: FAKE_NIF, LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any;
 
-  it('vigentes: PILOT_TERMS demo-1.1 y PRIVACY_PRODUCT demo-1.2; DPA_ART28 fuera durante el demo', () => {
+  it('vigentes: PILOT_TERMS demo-1.1 y PRIVACY_PRODUCT demo-1.3; DPA_ART28 fuera durante el demo', () => {
     const docs = legalDocs.buildLegalDocuments({});
-    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.2']]);
+    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.3']]);
     expect(docs.map((d) => d.type)).not.toContain('DPA_ART28');
   });
 
   it('en git solo quedan sin rellenar [NIF] y [DOMICILIO]; el resto de datos decididos ya está', () => {
-    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.2 · En vigor desde el 27/10/2026' };
+    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.3 · En vigor desde el 07/11/2026' };
     for (const doc of legalDocs.buildLegalDocuments({})) {
       // Cualquier cosa entre corchetes (no solo lo que reconoce UNFILLED_MARKER_RE): solo [NIF] y [DOMICILIO].
       const anyBrackets = [...new Set(doc.text.match(/\[[^\]\n]*\]/g) ?? [])].sort();
@@ -443,28 +443,41 @@ describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.2) y d
     expect(legalDocs.isDraftLegalText('Hola [-GUION-INICIAL]')).toBe(false);
   });
 
-  it('privacidad demo-1.2: Vercel solo aparece en la frase histórica del §5 y la nota de cambios', () => {
+  it('privacidad demo-1.3: Vercel solo aparece en la frase histórica del §5', () => {
     const privacy = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PRIVACY_PRODUCT')!;
     const historical = 'Hasta el 26/10/2026, la parte web de la aplicación la alojaba Vercel Inc. (Estados Unidos)';
-    const changeNote = 'desde el 26/10/2026 la aplicación ya no usa Vercel.';
     expect(privacy.text).toContain(historical);
-    expect(privacy.text).toContain(changeNote);
-    expect(privacy.text.split(historical).join('').split(changeNote).join('')).not.toMatch(/vercel/i);
+    expect(privacy.text.split(historical).join('')).not.toMatch(/vercel/i);
     const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
     expect(terms.text).not.toMatch(/vercel/i);
   });
 
-  it('reaceptación: quien aceptó condiciones demo-1.1 y privacidad demo-1.1 solo tiene pendiente la privacidad', async () => {
+  // Condición C1 de Lex (07/11/2026): avisos por email al equipo a través de Scaleway. Texto exacto, línea a línea
+  // sin saltos (el Markdown parte las frases en varias líneas).
+  it('privacidad demo-1.3 (C1 de Lex): nota de cambios, §3, §4 y §5 con Scaleway; §6 sin Scaleway', () => {
+    const privacy = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PRIVACY_PRODUCT')!;
+    const flat = privacy.text.replace(/\n(?!\n|- |#|\|)\s*/g, ' ');
+    const section = (n: number) => flat.split(`## ${n}.`)[1].split('\n## ')[0];
+    expect(flat).toContain('**Qué cambia respecto a la versión demo-1.2:** AsePsico te envía avisos automáticos por email de la actividad de tu espacio (por ejemplo, una solicitud de cita nueva) a través de Scaleway SAS (Francia) (apartados 3, 4 y 5). Puedes desactivarlos en Mi cuenta. El resto no cambia.');
+    expect(flat).not.toContain('Qué cambia respecto a la versión demo-1.1');
+    expect(section(3)).toContain('| Crear y gestionar tu cuenta y tu espacio, prestarte el piloto demo, darte soporte, enviarte avisos del servicio (cambios, incidencias, fin de la prueba) y enviarte por email los avisos de actividad de tu espacio que tengas activados | Ejecución de las condiciones de uso');
+    expect(section(4)).toContain('- **Registro de los avisos por email:** guardamos cuándo se envió cada aviso y si se pudo entregar mientras exista tu cuenta. El proveedor de envío no guarda el contenido de los avisos una vez enviados; conserva un registro técnico de cada envío el plazo que fija para su funcionamiento y seguridad.');
+    expect(section(5)).toContain('- **Google (Gmail):** correo electrónico de AsePsico, para los emails de soporte y de la prueba.\n- **Scaleway SAS (Francia):** envía los avisos automáticos por email de AsePsico. Trata tu email y el nombre de tu espacio. El servicio de envío está en su región de París (Francia). Los avisos que recibes como profesional no incluyen nombres ni otros datos de pacientes.');
+    expect(section(6)).not.toMatch(/scaleway/i);
+    expect(privacy.text).not.toMatch(/\bTEM\b|Transactional Email/);
+  });
+
+  it('reaceptación: quien aceptó condiciones demo-1.1 y privacidad demo-1.2 solo tiene pendiente la privacidad demo-1.3', async () => {
     const docs = legalDocs.buildLegalDocuments({});
     const terms = docs.find((d) => d.type === 'PILOT_TERMS')!;
     const rows = [
       { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PILOT_TERMS', version: terms.version, textHash: terms.textHash },
-      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PRIVACY_PRODUCT', version: 'demo-1.1', textHash: 'hash-de-la-version-anterior' },
+      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PRIVACY_PRODUCT', version: 'demo-1.2', textHash: 'hash-de-la-version-anterior' },
     ];
     const findMany = jest.fn(async ({ where }: any) => rows.filter((r) => r.workspaceId === where.workspaceId && r.userId === where.userId
       && where.OR.some((o: any) => o.documentType === r.documentType && o.version === r.version && o.textHash === r.textHash)));
     const pending = await pendingLegalDocuments({ termsAcceptance: { findMany } } as any, 'ws-1', 'u-1', docs);
-    expect(pending.map((d) => [d.type, d.version])).toEqual([['PRIVACY_PRODUCT', 'demo-1.2']]);
+    expect(pending.map((d) => [d.type, d.version])).toEqual([['PRIVACY_PRODUCT', 'demo-1.3']]);
   });
 
   it('el repositorio no contiene NIF ni domicilio: el texto en git deja los marcadores', () => {

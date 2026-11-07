@@ -1,4 +1,5 @@
-// Texto de Lex Psi (privacidad-profesionales-demo-v1.2.md, demo-1.2): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
+// Texto de Lex Psi (privacidad-profesionales-demo-v1.2.md más los cambios de la condición C1 de Lex del
+// 07/11/2026 para los avisos por email al equipo: línea de cambios, §3, §4 y §5 con Scaleway; demo-1.3).
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -6,11 +7,11 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.2 · En vigor desde el 27/10/2026
+Versión demo-1.3 · En vigor desde el 07/11/2026
 
-**Qué cambia respecto a la versión demo-1.1:** desde el 26/10/2026 la aplicación ya no usa Vercel.
-Ahora toda la aplicación la aloja Render, y la conexión entra por la red de distribución de un
-proveedor de Render con sede en Estados Unidos (apartados 5 y 6). El resto no cambia.
+**Qué cambia respecto a la versión demo-1.2:** AsePsico te envía avisos automáticos por email de la
+actividad de tu espacio (por ejemplo, una solicitud de cita nueva) a través de Scaleway SAS (Francia)
+(apartados 3, 4 y 5). Puedes desactivarlos en Mi cuenta. El resto no cambia.
 
 Esta política explica cómo tratamos los datos de las **personas profesionales** (titulares de un
 espacio y miembros de su equipo) que participan en el **piloto demo** de AsePsico. En el piloto demo
@@ -52,7 +53,7 @@ necesarios para crear la cuenta; sin ellos no puedes participar.
 | Para qué | Base jurídica |
 |---|---|
 | Si eres miembro invitado: enviarte la invitación de tu consulta para unirte a su espacio | Interés legítimo nuestro y de tu consulta en que puedas unirte a su espacio (art. 6.1.f RGPD) |
-| Crear y gestionar tu cuenta y tu espacio, prestarte el piloto demo, darte soporte y enviarte avisos del servicio (cambios, incidencias, fin de la prueba) | Ejecución de las condiciones de uso que aceptas, como titular o como miembro invitado (art. 6.1.b RGPD) |
+| Crear y gestionar tu cuenta y tu espacio, prestarte el piloto demo, darte soporte, enviarte avisos del servicio (cambios, incidencias, fin de la prueba) y enviarte por email los avisos de actividad de tu espacio que tengas activados | Ejecución de las condiciones de uso que aceptas, como titular o como miembro invitado (art. 6.1.b RGPD) |
 | Proteger el servicio: verificación en dos pasos, registro de actividad, prevención de abusos e investigación de incidentes | Interés legítimo en mantener seguro el servicio y a quienes lo usan (art. 6.1.f) |
 | Conservar la prueba de que aceptaste las condiciones y defendernos ante reclamaciones | Interés legítimo (art. 6.1.f) |
 | Analizar tus comentarios para mejorar AsePsico | Interés legítimo en mejorar el producto (art. 6.1.f) |
@@ -77,6 +78,10 @@ opinión sin tu consentimiento expreso, que te pediríamos aparte.
   conservar los comentarios después, sin datos que te identifiquen.
 - **Registros técnicos de los proveedores de alojamiento:** el plazo breve que fija cada proveedor
   para su funcionamiento y seguridad.
+- **Registro de los avisos por email:** guardamos cuándo se envió cada aviso y si se pudo entregar
+  mientras exista tu cuenta. El proveedor de envío no guarda el contenido de los avisos una vez
+  enviados; conserva un registro técnico de cada envío el plazo que fija para su funcionamiento y
+  seguridad.
 
 ## 5. Quién más trata tus datos
 
@@ -93,6 +98,9 @@ para que AsePsico funcione:
   otros proveedores con sede en Estados Unidos y trata los datos con un acuerdo de tratamiento de
   datos que incluye las cláusulas contractuales tipo de la Comisión Europea.
 - **Google (Gmail):** correo electrónico de AsePsico, para los emails de soporte y de la prueba.
+- **Scaleway SAS (Francia):** envía los avisos automáticos por email de AsePsico. Trata tu email y
+  el nombre de tu espacio. El servicio de envío está en su región de París (Francia). Los avisos que
+  recibes como profesional no incluyen nombres ni otros datos de pacientes.
 - Si la llamada de seguimiento se hace por videollamada, el proveedor que te indiquemos al
   proponértela.
 

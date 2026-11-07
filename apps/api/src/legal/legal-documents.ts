@@ -57,7 +57,7 @@ export type LegalDocument = {
 
 const DEFINITIONS: Array<Pick<LegalDocument, 'type' | 'version' | 'title' | 'text'>> = [
   { type: 'PILOT_TERMS', version: 'demo-1.1', title: 'Condiciones de uso del piloto demo', text: PILOT_TERMS_TEXT },
-  { type: 'PRIVACY_PRODUCT', version: 'demo-1.2', title: 'Política de privacidad para profesionales (piloto demo)', text: PRIVACY_PRODUCT_TEXT },
+  { type: 'PRIVACY_PRODUCT', version: 'demo-1.3', title: 'Política de privacidad para profesionales (piloto demo)', text: PRIVACY_PRODUCT_TEXT },
 ];
 
 const NIF_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
