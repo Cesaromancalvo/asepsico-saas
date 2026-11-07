@@ -254,7 +254,7 @@ export class BillingService {
     }
 
     const preferences = await (this.prisma as any).notificationPreference.findUnique({
-      where: { patientId: invoice.patientId },
+      where: { workspaceId_patientId: { workspaceId, patientId: invoice.patientId } },
     });
     const channels = ['IN_APP'];
     if (email && preferences?.emailEnabled) channels.push('EMAIL');
@@ -287,7 +287,10 @@ export class BillingService {
       for (const channel of channels) {
         await tx.notificationDelivery.upsert({
           where: { notificationId_channel: { notificationId: notification.id, channel } },
+          // Sin plantilla: la bandeja de salida de email NUNCA envía esta entrega (no hay plantilla
+          // de cobros; un email con importes está fuera de alcance).
           create: {
+            workspaceId,
             notificationId: notification.id,
             channel,
             status: channel === 'IN_APP' ? 'SENT' : 'PENDING',

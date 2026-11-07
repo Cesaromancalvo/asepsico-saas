@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { UpdateNotificationPreferencesDto } from './dto/notification.dto';
+import { UpdateNotificationPreferencesDto, UpdateStaffEmailPreferencesDto } from './dto/notification.dto';
+import { KIND_FIELD, kindAllowedForRole, STAFF_EMAIL_KINDS, staffEmailPreferenceView } from './email/staff-email-preferences';
 import { sendDeferredNoticeReminders } from '../exceptional-access/exceptional-access-register.service';
 import { routeToActiveMembers } from '../workspace-members/notification-recipients.util';
 import { enrichAppointmentChanges } from './appointment-change-notice.util';
@@ -37,14 +38,39 @@ export class NotificationsService {
     });
   }
   async getProfessionalPreferences(actor:any) {
-    return (await this.p().notificationPreference.findUnique({where:{userId:actor.sub}})) ?? this.defaults();
+    return (await this.p().notificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:actor.workspaceId,userId:actor.sub}}})) ?? this.defaults();
   }
+  /** Preferencias propias en el espacio actual. AuditLog en la misma transacción (antes/después, sin direcciones). */
   async updateProfessionalPreferences(actor:any,dto:UpdateNotificationPreferencesDto) {
-    return this.p().notificationPreference.upsert({ where:{userId:actor.sub}, create:{workspaceId:actor.workspaceId,userId:actor.sub,...dto}, update:dto });
+    const key={workspaceId_userId:{workspaceId:actor.workspaceId,userId:actor.sub}};
+    return this.prisma.$transaction(async(tx:any)=>{
+      const before=await tx.notificationPreference.findUnique({where:key});
+      const saved=await tx.notificationPreference.upsert({ where:key, create:{workspaceId:actor.workspaceId,userId:actor.sub,...dto}, update:dto });
+      await tx.auditLog.create({data:{workspaceId:actor.workspaceId,actorId:actor.sub,action:'NOTIFICATION_PREFERENCES_UPDATED',entityType:'NotificationPreference',entityId:saved.id,metadata:{source:'STAFF',...diff(before,saved,Object.keys(dto))}}});
+      return saved;
+    });
+  }
+  /** N4: avisos por email del propio usuario en el espacio actual (valor efectivo y si es el defecto). */
+  async getStaffEmailPreferences(actor:any) {
+    const pref=await this.p().notificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:actor.workspaceId,userId:actor.sub}},select:{emailAppointmentRequests:true,emailPatientCancellations:true,emailTaskSubmitted:true}});
+    return { workspaceId:actor.workspaceId, preferences:staffEmailPreferenceView(pref,actor.role) };
+  }
+  /** N4: solo las propias (no hay userId en la ruta). ASSISTANT no puede encender tareas (403). */
+  async updateStaffEmailPreferences(actor:any,dto:UpdateStaffEmailPreferencesDto) {
+    const changes=STAFF_EMAIL_KINDS.filter((k)=>typeof dto[k]==='boolean');
+    for (const kind of changes) if (!kindAllowedForRole(kind,actor.role)) throw new ForbiddenException('Tu rol no puede recibir este aviso');
+    const data=Object.fromEntries(changes.map((k)=>[KIND_FIELD[k],dto[k]]));
+    const key={workspaceId_userId:{workspaceId:actor.workspaceId,userId:actor.sub}};
+    await this.prisma.$transaction(async(tx:any)=>{
+      const before=await tx.notificationPreference.findUnique({where:key});
+      const saved=await tx.notificationPreference.upsert({where:key,create:{workspaceId:actor.workspaceId,userId:actor.sub,...data},update:data});
+      await tx.auditLog.create({data:{workspaceId:actor.workspaceId,actorId:actor.sub,action:'STAFF_EMAIL_PREFERENCES_UPDATED',entityType:'NotificationPreference',entityId:saved.id,metadata:{source:'STAFF',...diff(before,saved,Object.keys(data))}}});
+    });
+    return this.getStaffEmailPreferences(actor);
   }
   async getPatientPreferences(portal:any) {
     await this.assertPortal(portal);
-    return (await this.p().notificationPreference.findUnique({where:{patientId:portal.patientId}})) ?? this.defaults();
+    return (await this.p().notificationPreference.findUnique({where:{workspaceId_patientId:{workspaceId:portal.workspaceId,patientId:portal.patientId}}})) ?? this.defaults();
   }
   async updatePatientPreferences(portal:any,dto:UpdateNotificationPreferencesDto) {
     await this.assertPortal(portal);
@@ -54,7 +80,13 @@ export class NotificationsService {
       const patient=await this.prisma.patient.findFirst({where:{id:portal.patientId,workspaceId:portal.workspaceId},select:{phone:true}});
       if (!patient?.phone) safe.smsEnabled=false;
     }
-    return this.p().notificationPreference.upsert({where:{patientId:portal.patientId},create:{workspaceId:portal.workspaceId,patientId:portal.patientId,...safe},update:safe});
+    const key={workspaceId_patientId:{workspaceId:portal.workspaceId,patientId:portal.patientId}};
+    return this.prisma.$transaction(async(tx:any)=>{
+      const before=await tx.notificationPreference.findUnique({where:key});
+      const saved=await tx.notificationPreference.upsert({where:key,create:{workspaceId:portal.workspaceId,patientId:portal.patientId,...safe},update:safe});
+      await tx.auditLog.create({data:{workspaceId:portal.workspaceId,actorId:null,action:'NOTIFICATION_PREFERENCES_UPDATED',entityType:'NotificationPreference',entityId:saved.id,metadata:{source:'PORTAL',patientId:portal.patientId,accessorType:portal.accessorType??null,portalAccountId:portal.portalAccountId??null,...diff(before,saved,Object.keys(safe))}}});
+      return saved;
+    });
   }
   async markProfessionalRead(actor:any,id:string) {
     const result=await this.p().notification.updateMany({where:{id,workspaceId:actor.workspaceId,userId:actor.sub,audience:'PROFESSIONAL'},data:{status:'READ',readAt:new Date()}});
@@ -123,4 +155,10 @@ export class NotificationsService {
     const account=await this.p().patientPortalAccount.findFirst({where:{id:portal.portalAccountId,patientId:portal.patientId,workspaceId:portal.workspaceId,isActive:true},select:{id:true}});
     if(!account) throw new ForbiddenException();
   }
+}
+
+/** Antes/después de los campos tocados (solo booleanos y números: las preferencias no guardan direcciones). */
+function diff(before:any,after:any,fields:string[]){
+  const pick=(row:any)=>Object.fromEntries(fields.map((f)=>[f,row?.[f]??null]));
+  return { fields, before:pick(before), after:pick(after) };
 }

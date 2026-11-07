@@ -12,10 +12,15 @@ describe('Usability persistence: notification preferences',()=>{
         findUnique:jest.fn(async()=>stored),
         upsert:jest.fn(async({create,update}:any)=>{stored=stored?{...stored,...update}:{id:'pref1',...create};return stored;}),
       },
+      auditLog:{create:jest.fn()},
     };
+    prisma.$transaction=jest.fn(async(cb:any)=>cb(prisma));
     const service=new NotificationsService(prisma);
     await service.updatePatientPreferences(portal,{appointmentReminders:false,emailEnabled:true,smsEnabled:true,reminderHoursBefore:72} as any);
     const reloaded:any=await service.getPatientPreferences(portal);
+    // Cambio auditado en la misma transacción, con antes/después y sin direcciones (N0-7).
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({data:expect.objectContaining({action:'NOTIFICATION_PREFERENCES_UPDATED',metadata:expect.objectContaining({source:'PORTAL',before:expect.any(Object),after:expect.objectContaining({emailEnabled:true})})})});
+    expect(JSON.stringify(prisma.auditLog.create.mock.calls)).not.toMatch(/@/);
     expect(reloaded).toEqual(expect.objectContaining({appointmentReminders:false,emailEnabled:true,smsEnabled:true,reminderHoursBefore:72}));
   });
 
@@ -25,7 +30,9 @@ describe('Usability persistence: notification preferences',()=>{
       patientPortalAccount:{findFirst:jest.fn().mockResolvedValue({id:'pa1'})},
       patient:{findFirst:jest.fn().mockResolvedValue({phone:null})},
       notificationPreference:{findUnique:jest.fn(async()=>stored),upsert:jest.fn(async({create}:any)=>{stored={id:'pref1',...create};return stored;})},
+      auditLog:{create:jest.fn()},
     };
+    prisma.$transaction=jest.fn(async(cb:any)=>cb(prisma));
     const saved:any=await new NotificationsService(prisma).updatePatientPreferences(portal,{smsEnabled:true} as any);
     expect(saved.smsEnabled).toBe(false);
   });

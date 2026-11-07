@@ -3,7 +3,7 @@ import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorat
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CsrfGuard } from '../common/guards/csrf.guard';
 import { PortalGuard } from '../portal/portal.guard';
-import { UpdateNotificationPreferencesDto } from './dto/notification.dto';
+import { UpdateNotificationPreferencesDto, UpdateStaffEmailPreferencesDto } from './dto/notification.dto';
 import { NotificationsService } from './notifications.service';
 
 @Controller()
@@ -20,6 +20,11 @@ export class NotificationsController {
   preferences(@CurrentUser() user:AuthUser) { return this.service.getProfessionalPreferences(user); }
   @Patch('notifications/preferences') @UseGuards(JwtAuthGuard, CsrfGuard)
   updatePreferences(@CurrentUser() user:AuthUser,@Body() dto:UpdateNotificationPreferencesDto) { return this.service.updateProfessionalPreferences(user,dto); }
+  // N4 · Avisos por email del propio usuario en su espacio actual. Cualquier rol de staff; nunca de otro usuario.
+  @Get('notifications/email-preferences') @UseGuards(JwtAuthGuard)
+  emailPreferences(@CurrentUser() user:AuthUser) { return this.service.getStaffEmailPreferences(user); }
+  @Patch('notifications/email-preferences') @UseGuards(JwtAuthGuard, CsrfGuard)
+  updateEmailPreferences(@CurrentUser() user:AuthUser,@Body() dto:UpdateStaffEmailPreferencesDto) { return this.service.updateStaffEmailPreferences(user,dto); }
   @Patch('notifications/:id/read') @UseGuards(JwtAuthGuard, CsrfGuard)
   markRead(@CurrentUser() user:AuthUser,@Param('id') id:string) { return this.service.markProfessionalRead(user,id); }
   @Post('notifications/process-due') @UseGuards(JwtAuthGuard, CsrfGuard)

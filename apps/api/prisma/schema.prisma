@@ -849,8 +849,10 @@ enum PortalAccessorType {
 model NotificationPreference {
   id                   String   @id @default(cuid())
   workspaceId          String
-  patientId            String?  @unique
-  userId               String?  @unique
+  /// Preferencias de un paciente o de un miembro del equipo, siempre DENTRO de un espacio: un mismo
+  /// usuario en dos espacios tiene una fila por espacio (único por workspaceId + userId).
+  patientId            String?
+  userId               String?
   appointmentReminders Boolean  @default(true)
   taskReminders        Boolean  @default(true)
   consentReminders     Boolean  @default(true)
@@ -858,9 +860,16 @@ model NotificationPreference {
   emailEnabled         Boolean  @default(false)
   smsEnabled           Boolean  @default(false)
   reminderHoursBefore  Int      @default(24)
+  /// Avisos por email al equipo (N4). null = valor por defecto según rol y relación con la cita
+  /// (ver src/notifications/email/staff-email-preferences.ts); true/false = elección expresa.
+  emailAppointmentRequests  Boolean?
+  emailPatientCancellations Boolean?
+  emailTaskSubmitted        Boolean?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  @@unique([workspaceId, userId])
+  @@unique([workspaceId, patientId])
   @@index([workspaceId])
 }
 
@@ -889,19 +898,48 @@ model Notification {
   @@index([patientId, status, createdAt])
 }
 
+/// Plantillas de email. La plantilla fija el grupo (STAFF_* / PATIENT_*, cada uno con su interruptor)
+/// y el texto; todas salen del remitente único MAIL_FROM: nunca se envía el title/body de la Notification ni
+/// texto libre del equipo. Una entrega EMAIL sin plantilla (p. ej. las antiguas de facturación) no
+/// la envía nunca la bandeja de salida.
+enum EmailTemplate {
+  STAFF_APPOINTMENT_REQUEST
+  STAFF_PATIENT_CANCELLATION
+  STAFF_TASK_SUBMITTED
+  PATIENT_APPOINTMENT_REMINDER
+  PATIENT_REQUEST_ACCEPTED
+  PATIENT_REQUEST_REJECTED
+  PATIENT_APPOINTMENT_CHANGED
+  PATIENT_APPOINTMENT_CANCELLED
+}
+
 model NotificationDelivery {
   id             String              @id @default(cuid())
+  /// Mismo espacio que la Notification (toda lectura/escritura de la bandeja filtra por él).
+  workspaceId    String
   notificationId String
   channel        NotificationChannel
   status         NotificationStatus  @default(PENDING)
+  template       EmailTemplate?
+  /// No se envía antes de esta hora (franja silenciosa, agrupación, reintentos).
+  scheduledAt    DateTime            @default(now())
+  /// Pasada esta hora ya no se envía: CANCELLED con errorCode EXPIRED.
+  expiresAt      DateTime?
+  attempts       Int                 @default(0)
+  /// Reserva de la pasada que la está enviando (dos instancias nunca envían la misma entrega).
+  claimToken     String?
+  claimedUntil   DateTime?
   providerRef    String?
   attemptedAt    DateTime?
+  sentAt         DateTime?
   errorCode      String?
   createdAt      DateTime            @default(now())
   notification   Notification        @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, channel])
   @@index([status, createdAt])
+  @@index([channel, status, scheduledAt])
+  @@index([workspaceId, channel, status])
 }
 
 enum ConversationStatus {
