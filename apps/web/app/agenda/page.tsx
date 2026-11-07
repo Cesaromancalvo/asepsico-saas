@@ -61,7 +61,11 @@ type Session = {
   id: string;
   patientId: string;
   therapistId: string;
+  // OWNER/ADMIN/THERAPIST. Recepción (ASSISTANT) no lo recibe: usa hasClinicalProcess.
   clinicalProcessId?: string | null;
+  // Solo en la vista de recepción. Para asociar una cita nueva al proceso activo se usa
+  // summary.activeProcess.id de la ficha del paciente, nunca el id que traiga una cita.
+  hasClinicalProcess?: boolean;
   startsAt: string;
   endsAt: string;
   status: SessionStatus;
@@ -84,7 +88,7 @@ type Session = {
   };
 
   // Sin título: puede revelar contenido clínico. A ASSISTANT (recepción) la API no le envía
-  // clinicalProcess en absoluto (ni modalidad ni estado), solo clinicalProcessId.
+  // clinicalProcess en absoluto (ni modalidad ni estado) ni clinicalProcessId, solo hasClinicalProcess.
   clinicalProcess?: {
     id: string;
     modality: TherapyModality;
@@ -1168,8 +1172,8 @@ export default function AgendaPage() {
                             </p>
                           )}
 
-                          {/* Recepción no recibe clinicalProcess: el aviso solo cuando de verdad no hay proceso. */}
-                          {!session.clinicalProcess && !session.clinicalProcessId && (
+                          {/* Recepción no recibe clinicalProcess ni su id: el aviso solo cuando de verdad no hay proceso. */}
+                          {!session.clinicalProcess && !session.clinicalProcessId && session.hasClinicalProcess !== true && (
                             <p className="agenda-session-notes">
                               Sin proceso clínico
                               asociado

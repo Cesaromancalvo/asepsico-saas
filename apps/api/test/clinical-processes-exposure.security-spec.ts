@@ -135,9 +135,11 @@ describe('GET /sessions (agenda) sin notas ni título del proceso', () => {
 
     const [row] = result.data;
     if (actor.role === 'ASSISTANT') {
-      // Recepción: nada del proceso clínico (regla dura 2), solo el id escalar de enlace.
-      expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', clinicalProcessId: 'proc-1' });
+      // Recepción: nada del proceso clínico (regla dura 2), ni su id: solo hasClinicalProcess.
+      expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', hasClinicalProcess: true });
       expect(row).not.toHaveProperty('clinicalProcess');
+      expect(row).not.toHaveProperty('clinicalProcessId');
+      expect(JSON.stringify(result)).not.toContain('proc-1');
       expect(args0(prisma).select).not.toHaveProperty('clinicalProcess');
     } else {
       expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', clinicalProcess: { id: 'proc-1', modality: 'IN_PERSON', status: 'ACTIVE' } });
@@ -249,7 +251,9 @@ describe('GET /sessions/:id y escrituras de notas por rol', () => {
   it('ASSISTANT en GET /sessions/:id: sin notes, internalSummary ni nada del proceso clínico', async () => {
     const prisma = sessionsPrisma();
     const result: any = await new SessionsService(prisma).get('ws-1', assistant, 'sess-1');
-    expect(result).toMatchObject({ id: 'sess-1', therapistId: 'therapist-1', clinicalProcessId: 'proc-1' });
+    expect(result).toMatchObject({ id: 'sess-1', therapistId: 'therapist-1', hasClinicalProcess: true });
+    expect(result).not.toHaveProperty('clinicalProcessId');
+    expect(JSON.stringify(result)).not.toContain('proc-1');
     expect(result).not.toHaveProperty('notes');
     expect(result).not.toHaveProperty('internalSummary');
     expect(result).not.toHaveProperty('clinicalProcess');

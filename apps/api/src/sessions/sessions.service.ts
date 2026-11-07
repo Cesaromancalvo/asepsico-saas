@@ -21,7 +21,7 @@ import { RescheduleSessionDto } from './dto/reschedule-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { ClosingStatus } from './dto/close-session.dto';
 import { UpdateSessionNotesDto } from './dto/update-session-notes.dto';
-import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole } from './session-view.util';
+import { SESSION_ADMIN_DETAIL_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole, toReceptionSession } from './session-view.util';
 import { projectSelect } from '../patients/patient-view.util';
 import { ClinicalAccessService, readsWholeRecord } from '../clinical-access/clinical-access.service';
 import { findScheduleConflict, lockTherapistSchedule } from '../scheduling/schedule-lock.util';
@@ -167,40 +167,40 @@ export class SessionsService {
         : {}),
     };
 
-    // Recepción (ASSISTANT): sin la relación clinicalProcess (ni modalidad ni estado del proceso).
-    const select = isReceptionRole(actor.role) ? SESSION_RECEPTION_SELECT : SESSION_LIST_SELECT;
+    const range = {
+      where,
+      orderBy: { startsAt: 'asc' as const },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    };
+    const meta = (total: number) => ({
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
+
+    // Recepción (ASSISTANT o rol no clínico, falla en cerrado): sin la relación clinicalProcess
+    // (ni modalidad ni estado del proceso) y sin clinicalProcessId; solo hasClinicalProcess.
+    if (isReceptionRole(actor.role)) {
+      const [rows, total] = await Promise.all([
+        this.prisma.session.findMany({ ...range, select: SESSION_RECEPTION_SELECT }),
+        this.prisma.session.count({ where }),
+      ]);
+      return { data: rows.map(toReceptionSession), meta: meta(total) };
+    }
 
     const [data, total] = await Promise.all([
-      this.prisma.session.findMany({
-        where,
-        orderBy: {
-          startsAt: 'asc',
-        },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-
-        // Listado: solo metadatos (sin notes, internalSummary ni título del proceso).
-        select,
-      }),
-
-      this.prisma.session.count({
-        where,
-      }),
+      // Listado: solo metadatos (sin notes, internalSummary ni título del proceso).
+      this.prisma.session.findMany({ ...range, select: SESSION_LIST_SELECT }),
+      this.prisma.session.count({ where }),
     ]);
 
     return {
       // La proyección se aplica también a la respuesta (lista blanca) como defensa en
       // profundidad, por si una consulta futura trae la fila completa.
-      data: data.map((row) => projectSelect<typeof row>(row, select)),
-      meta: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.max(
-          1,
-          Math.ceil(total / pageSize),
-        ),
-      },
+      data: data.map((row) => projectSelect<typeof row>(row, SESSION_LIST_SELECT)),
+      meta: meta(total),
     };
   }
 
@@ -212,8 +212,9 @@ export class SessionsService {
     assertStaffRole(actor);
 
     // Roles no clínicos (ASSISTANT): solo metadatos de agenda, sin notes, internalSummary ni
-    // nada del proceso clínico (ni título, ni modalidad, ni frecuencia, ni estado). Lista blanca
-    // también sobre la respuesta.
+    // nada del proceso clínico (ni título, ni modalidad, ni frecuencia, ni estado, ni su id: solo
+    // hasClinicalProcess). Lista blanca también sobre la respuesta. Cubre las respuestas de
+    // POST /sessions, PATCH /sessions/:id, reschedule y close, que reutilizan get().
     if (!isClinicalRole(actor)) {
       const summary = await this.prisma.session.findFirst({
         where: { id, workspaceId },
@@ -222,7 +223,7 @@ export class SessionsService {
       if (!summary) {
         throw new NotFoundException('Sesión no encontrada');
       }
-      return projectSelect<typeof summary>(summary, SESSION_RECEPTION_SELECT);
+      return toReceptionSession(summary);
     }
 
     const session =

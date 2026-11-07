@@ -6,7 +6,7 @@ import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 import { projectSelect } from '../patients/patient-view.util';
 import { PatientAgendaQueryDto } from './dto/patient-agenda-query.dto';
-import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole } from './session-view.util';
+import { SESSION_BUSY_SELECT, SESSION_LIST_SELECT, SESSION_RECEPTION_SELECT, isReceptionRole, toReceptionSession } from './session-view.util';
 
 /** Roles con vista administrativa de la agenda (todas las citas del paciente, sin contenido). */
 const ADMINISTRATIVE_ROLES = ['OWNER', 'ADMIN', 'ASSISTANT'];
@@ -76,12 +76,12 @@ export class PatientAgendaService {
     const findArgs = { where, orderBy: { startsAt: 'asc' as const }, take: MAX_ROWS };
 
     // Recepción (ASSISTANT o rol no clínico, falla en cerrado): el select se elige en la propia
-    // consulta, así que la relación clinicalProcess ni siquiera se carga (regla dura 2).
+    // consulta, así que la relación clinicalProcess ni siquiera se carga (regla dura 2); de la cita
+    // solo sale hasClinicalProcess, nunca el clinicalProcessId (ver toReceptionSession).
     if (isReceptionRole(actor.role)) {
       const receptionRows = await this.prisma.session.findMany({ ...findArgs, select: SESSION_RECEPTION_SELECT });
-      type ReceptionRow = (typeof receptionRows)[number];
       const data = receptionRows.map((row) => ({
-        ...projectSelect<ReceptionRow>(row, SESSION_RECEPTION_SELECT),
+        ...toReceptionSession(row),
         visibility: 'FULL' as PatientAgendaVisibility,
       }));
       const nextIndex = receptionRows.findIndex((row) => isUpcoming(row));

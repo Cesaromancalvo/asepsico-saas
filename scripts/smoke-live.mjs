@@ -286,7 +286,9 @@ async function checkChangePasswordGuards() {
 //  - ASSISTANT: activeProcess exactamente {id, therapist:{id,firstName,lastName}, hasActiveProcess}
 //    en listado, detalle y PATCH; nada de estado, modalidad, frecuencia, fechas, recuentos ni email
 //    del profesional; sin clinicalProcessId en las citas de la ficha ni el id del proceso de alta;
-//    agenda y GET /sessions sin la relación clinicalProcess; 403 en el proceso; 404 en otra consulta.
+//    agenda, GET /sessions y GET /sessions?patientId= sin la relación clinicalProcess ni
+//    clinicalProcessId (solo hasClinicalProcess, correcto con y sin proceso), con la misma
+//    comprobación de ocultos que la ficha; 403 en el proceso; 404 en otra consulta.
 //  - Control: OWNER sigue recibiendo status, modality y allProcesses.
 // Cada actor usa su propia IP (X-Forwarded-For, solo efectiva con TRUST_PROXY=loopback) para no
 // compartir el límite de login con la cuenta demo.
@@ -347,6 +349,7 @@ async function checkReceptionProcessView(stamp) {
     await session(pa.id, users.t1.id, active.id, -5, 'COMPLETED');
     await session(pa.id, users.t1.id, active.id, 3, 'SCHEDULED');
     await session(pb.id, users.t2.id, dischargedB.id, -60, 'COMPLETED');
+    const withoutProcess = await session(pa.id, users.t1.id, null, 5, 'SCHEDULED');
     const hidden = [discharged.id, dischargedB.id, activeX.id, px.id];
 
     let ipSeq = 0;
@@ -385,7 +388,7 @@ async function checkReceptionProcessView(stamp) {
     function assertDetailA(detail, where) {
       assertPatientA(detail, where);
       assert(!JSON.stringify(detail).includes('"clinicalProcessId"'), `${where} (ASSISTANT) devuelve clinicalProcessId en las citas`);
-      assert(Array.isArray(detail.summary.recentSessions) && detail.summary.recentSessions.length === 3, `${where}: se esperaban 3 citas recientes de A y llegaron ${detail.summary.recentSessions?.length}`);
+      assert(Array.isArray(detail.summary.recentSessions) && detail.summary.recentSessions.length === 4, `${where}: se esperaban 4 citas recientes de A y llegaron ${detail.summary.recentSessions?.length}`);
       assert(detail.summary.lastSession && detail.summary.nextSession, `${where}: faltan lastSession o nextSession (la comprobación no sería concluyente)`);
     }
 
@@ -410,18 +413,31 @@ async function checkReceptionProcessView(stamp) {
     assert(patched.phone === '+34600000099', 'PATCH /patients/:idA (ASSISTANT) no devolvió el teléfono nuevo');
     assertDetailA(patched, 'PATCH /patients/:idA');
 
-    // ASSISTANT: agenda del paciente y listado de citas (clinicalProcessId escalar permitido por ahora).
+    // ASSISTANT: agenda del paciente y listado de citas, sin clinicalProcessId (solo hasClinicalProcess).
+    function assertReceptionSessions(rows, where) {
+      assert(Array.isArray(rows) && rows.length > 0, `${where} (ASSISTANT) no devolvió citas (comprobación no concluyente)`);
+      for (const row of rows) {
+        assert(!('clinicalProcess' in row), `${where} (ASSISTANT) devuelve la relación clinicalProcess`);
+        assert(typeof row.hasClinicalProcess === 'boolean', `${where} (ASSISTANT): falta hasClinicalProcess en la cita ${row.id}`);
+        if (row.id === withoutProcess.id) assert(row.hasClinicalProcess === false, `${where} (ASSISTANT): la cita sin proceso llega con hasClinicalProcess=true`);
+        else if (row.patientId === pa.id || row.patientId === pb.id) assert(row.hasClinicalProcess === true, `${where} (ASSISTANT): una cita con proceso llega con hasClinicalProcess=false`);
+      }
+      assert(!JSON.stringify(rows).includes('"clinicalProcessId"'), `${where} (ASSISTANT) devuelve clinicalProcessId`);
+    }
     const from = new Date(Date.now() - 90 * DAY).toISOString();
     const to = new Date(Date.now() + 30 * DAY).toISOString();
     const agenda = await assistant.ok(`/sessions/patient/${pa.id}/agenda?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-    assert(Array.isArray(agenda.data) && agenda.data.length === 3, `Agenda de A (ASSISTANT): se esperaban 3 citas y llegaron ${agenda.data?.length}`);
-    for (const row of [...agenda.data, agenda.nextSession].filter(Boolean)) assert(!('clinicalProcess' in row), 'Agenda del paciente (ASSISTANT) devuelve la relación clinicalProcess');
-    for (const path of ['/sessions', `/sessions?patientId=${pa.id}`]) {
+    assert(Array.isArray(agenda.data) && agenda.data.length === 4, `Agenda de A (ASSISTANT): se esperaban 4 citas y llegaron ${agenda.data?.length}`);
+    assert(agenda.data.some((row) => row.id === withoutProcess.id), 'Agenda de A (ASSISTANT) no incluye la cita sin proceso (comprobación no concluyente)');
+    assertReceptionSessions([...agenda.data, agenda.nextSession].filter(Boolean), 'Agenda del paciente');
+    assertReception(agenda, 'Agenda del paciente');
+    for (const path of ['/sessions?pageSize=100', `/sessions?patientId=${pa.id}`]) {
       const sessions = await assistant.ok(path);
-      assert(Array.isArray(sessions.data) && sessions.data.length > 0, `GET ${path} (ASSISTANT) no devolvió citas (comprobación no concluyente)`);
-      assert(sessions.data.every((row) => !('clinicalProcess' in row)), `GET ${path} (ASSISTANT) devuelve la relación clinicalProcess`);
-      assert(!JSON.stringify(sessions).includes('"modality"'), `GET ${path} (ASSISTANT) devuelve modality`);
+      assertReceptionSessions(sessions.data, `GET ${path}`);
+      assertReception(sessions, `GET ${path}`);
     }
+    const byPatient = await assistant.ok(`/sessions?patientId=${pa.id}`);
+    assert(byPatient.data.length === 4 && byPatient.data.some((row) => row.id === withoutProcess.id), `GET /sessions?patientId=A (ASSISTANT): se esperaban 4 citas con la cita sin proceso y llegaron ${byPatient.data.length}`);
     const processDenied = await assistant.call(`/clinical-processes/${active.id}`);
     assert(processDenied.status === 403, `GET /clinical-processes/:idActivo (ASSISTANT) debía dar 403 y dio ${processDenied.status}`);
     assert(!JSON.stringify(processDenied.data).includes('Semanal ficticia'), 'El 403 del proceso filtra datos del proceso');
@@ -437,10 +453,12 @@ async function checkReceptionProcessView(stamp) {
     const ownerPatched = await owner.ok(`/patients/${pa.id}`, { method: 'PATCH', body: { phone: '+34600000098' } });
     assert(ownerPatched.summary?.allProcesses?.length === 2, 'PATCH /patients/:idA (OWNER) no devuelve allProcesses');
     const ownerAgenda = await owner.ok(`/sessions/patient/${pa.id}/agenda?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-    assert(ownerAgenda.data?.length === 3 && ownerAgenda.data.every((row) => row.clinicalProcess?.status && row.clinicalProcess.modality), 'Agenda de A (OWNER) ya no devuelve clinicalProcess con status y modality');
+    const ownerWithProcess = ownerAgenda.data?.filter((row) => row.id !== withoutProcess.id) ?? [];
+    assert(ownerAgenda.data?.length === 4 && ownerWithProcess.length === 3 && ownerWithProcess.every((row) => row.clinicalProcess?.status && row.clinicalProcess.modality && row.clinicalProcessId === row.clinicalProcess.id), 'Agenda de A (OWNER) ya no devuelve clinicalProcess con status y modality, o clinicalProcessId');
     const ownerSessions = await owner.ok(`/sessions?patientId=${pa.id}`);
-    assert(ownerSessions.data?.length === 3 && ownerSessions.data.every((row) => row.clinicalProcess?.status), 'GET /sessions (OWNER) ya no devuelve clinicalProcess con status');
-    console.log('   ASSISTANT: solo {id, therapist, hasActiveProcess} del proceso activo en listado, ficha y PATCH; B → null; otra consulta → 404; agenda y citas sin clinicalProcess; proceso → 403. OWNER: vista completa');
+    assert(ownerSessions.data?.length === 4 && ownerSessions.data.some((row) => row.clinicalProcessId === discharged.id) && ownerSessions.data.every((row) => !('hasClinicalProcess' in row)), 'GET /sessions?patientId=A (OWNER) ya no devuelve clinicalProcessId (o recibe la vista de recepción)');
+    assert(ownerSessions.data.filter((row) => row.id !== withoutProcess.id).every((row) => row.clinicalProcess?.status), 'GET /sessions (OWNER) ya no devuelve clinicalProcess con status');
+    console.log('   ASSISTANT: solo {id, therapist, hasActiveProcess} del proceso activo en listado, ficha y PATCH; B → null; otra consulta → 404; agenda y citas sin clinicalProcess ni clinicalProcessId (hasClinicalProcess correcto); proceso → 403. OWNER: vista completa');
   } finally {
     await prisma.$disconnect();
   }

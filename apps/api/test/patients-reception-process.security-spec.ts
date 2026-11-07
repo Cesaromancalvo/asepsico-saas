@@ -173,10 +173,15 @@ describe('Pacientes vistos por recepción (ASSISTANT): sin metadatos del proceso
     await expect(new PatientsService(seed() as any).get(WS, actor('assistant', 'ASSISTANT'), 'pat-x')).rejects.toThrow('Paciente no encontrado');
   });
 
-  it('GET /clinical-processes/:id con el id que da la agenda → ASSISTANT 403', async () => {
+  it('GET /clinical-processes/:id con el id del proceso activo que sí recibe recepción → ASSISTANT 403', async () => {
     const prisma = seed();
+    // La agenda ya no da el id del proceso (solo hasClinicalProcess); recepción solo conoce el del
+    // proceso ACTIVO, por la ficha (summary.activeProcess.id), y con él tampoco abre el proceso.
     const agenda: any = await new PatientAgendaService(prisma as any).agenda(WS, actor('assistant', 'ASSISTANT'), 'pat-1');
-    const processId = agenda.data.find((row: any) => row.id === 'ses-1').clinicalProcessId;
+    expect(JSON.stringify(agenda)).not.toContain('"clinicalProcessId"');
+    expect(agenda.data.find((row: any) => row.id === 'ses-1').hasClinicalProcess).toBe(true);
+    const patient: any = await new PatientsService(prisma as any).get(WS, actor('assistant', 'ASSISTANT'), 'pat-1');
+    const processId = patient.summary.activeProcess.id;
     expect(processId).toBe('proc-a');
     await expect(new ClinicalProcessesService(prisma as any).get(WS, actor('assistant', 'ASSISTANT'), processId)).rejects.toBeInstanceOf(ForbiddenException);
   });
