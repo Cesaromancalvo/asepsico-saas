@@ -7,7 +7,7 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.3 · En vigor desde el 07/11/2026
+Versión demo-1.3 · En vigor desde el 09/11/2026
 
 **Qué cambia respecto a la versión demo-1.2:** AsePsico te envía avisos automáticos por email de la
 actividad de tu espacio (por ejemplo, una solicitud de cita nueva) a través de Scaleway SAS (Francia)
