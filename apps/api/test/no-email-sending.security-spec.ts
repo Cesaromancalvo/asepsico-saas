@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { EmailOutboxService } from '../src/notifications/email/email-outbox.service';
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
 import { PATIENT_TEMPLATES, STAFF_TEMPLATES } from '../src/notifications/email/email-templates';
+import { patientRecipientEmail } from '../src/notifications/email/patient-recipient';
 
 /**
  * REESCRITO el 07/11/2026 (N0 · avisos por email; pendiente de revisión de Argos). Antes: «la API
@@ -132,11 +133,13 @@ function fakeDb() {
       findFirst: jest.fn(async () => null),
     },
     $executeRaw: jest.fn(async () => 0),
+    $queryRaw: jest.fn(async () => [{ locked: true }]),
     auditLog: { create: jest.fn() },
     workspace: { findFirst: jest.fn(async () => ({ name: 'Consulta ficticia', timeZone: 'Europe/Madrid' })) },
     workspaceMember: { findFirst: jest.fn() },
     notificationPreference: { findUnique: jest.fn() },
   };
+  db.$transaction = jest.fn(async (cb: any) => cb(db));
   return db;
 }
 
@@ -193,6 +196,64 @@ describe('Avisos por email: nada sale con los interruptores apagados (P-SEG-3, N
     await expect(mailer.send('STAFF_APPOINTMENT_REQUEST', 'equipo@example.test', { subject: 'Asunto ficticio', text: 'Texto ficticio largo', html: '<p>x</p>' })).rejects.toThrow();
     await expect(mailer.send('PATIENT_APPOINTMENT_REMINDER', 'paciente@example.test', { subject: 'Asunto ficticio', text: 'Texto ficticio largo', html: '<p>x</p>' })).rejects.toThrow();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------
+// Argos B5 y M2: quién puede encolar emails y de dónde sale el correo de un paciente.
+
+const srcFiles = () => SCAN_DIRS.flatMap((d) => walk(join(ROOT, d))).map((file) => ({ file: relative(ROOT, file), source: readFileSync(file, 'utf8') }));
+
+/** Únicos archivos que pueden encolar emails al equipo (además de donde se definen). */
+const ENQUEUE_ALLOWED = [
+  'src/notifications/email/email-outbox.store.ts',
+  'src/notifications/email/staff-email-enqueue.ts',
+  'src/notifications/appointment-change-notice.util.ts',
+  'src/scheduling/appointment-request-lifecycle.util.ts',
+];
+const ENQUEUE = /\benqueueStaffEmails\w*\b|staff-email-enqueue|email-outbox\.store/;
+
+describe('Argos B5: encolar emails solo desde los puntos de enganche revisados', () => {
+  it('ningún otro archivo de src importa ni llama a enqueueStaffEmails*', () => {
+    const offending = srcFiles().filter(({ file, source }) => ENQUEUE.test(source) && !ENQUEUE_ALLOWED.includes(file) && !file.startsWith('src/notifications/email/'))
+      .map(({ file }) => file);
+    expect(offending).toEqual([]);
+    // Dentro de src/notifications/email solo el servicio de la bandeja usa el almacén (no lo usa para encolar).
+    const inside = srcFiles().filter(({ file, source }) => file.startsWith('src/notifications/email/') && /\benqueueStaffEmails\w*\(/.test(source))
+      .map(({ file }) => file).sort();
+    expect(inside).toEqual(['src/notifications/email/email-outbox.store.ts', 'src/notifications/email/staff-email-enqueue.ts']);
+  });
+
+  it('el detector reconoce un enganche nuevo fuera de la lista', () => {
+    expect(ENQUEUE.test("import { enqueueStaffEmailsForNotices } from '../notifications/email/staff-email-enqueue';")).toBe(true);
+    expect(ENQUEUE.test('await enqueueStaffEmails(tx, ws, items);')).toBe(true);
+  });
+});
+
+describe('Argos M2: el correo de un paciente solo sale de portalEmailUsableForDelivery', () => {
+  it('patientRecipientEmail: solo cuenta de portal activa y verificada', () => {
+    const verified = new Date();
+    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: true, emailVerifiedAt: verified })).toBe('paciente@example.test');
+    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: true, emailVerifiedAt: null })).toBeNull();
+    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: false, emailVerifiedAt: verified })).toBeNull();
+    expect(patientRecipientEmail({ email: 'liberado-x@liberado.invalid', isActive: true, emailVerifiedAt: verified })).toBeNull();
+    expect(patientRecipientEmail(null)).toBeNull();
+  });
+
+  it('patient-recipient.ts usa portalEmailUsableForDelivery', () => {
+    expect(readFileSync(join(ROOT, 'src/notifications/email/patient-recipient.ts'), 'utf8')).toMatch(/portalEmailUsableForDelivery\(/);
+  });
+
+  it('ningún archivo de la bandeja lee el email del paciente (ficha o portal) fuera de patient-recipient.ts', () => {
+    const PATIENT_EMAIL_READ = /\b(patient|patients|portalAccount|portalAccounts|patientPortalAccount|guardian\w*)\s*:\s*\{[^}]*\bemail\b|\.(patient|portalAccount|patientPortalAccount)\??\.email\b|patientPortalAccount\.find/;
+    const offending = srcFiles().filter(({ file, source }) => file.startsWith('src/notifications/email/') && file !== 'src/notifications/email/patient-recipient.ts' && PATIENT_EMAIL_READ.test(source))
+      .map(({ file }) => file);
+    expect(offending).toEqual([]);
+    // Control del propio detector.
+    expect(PATIENT_EMAIL_READ.test('select: { patient: { select: { email: true } } }')).toBe(true);
+    expect(PATIENT_EMAIL_READ.test('const to = row.patient.email;')).toBe(true);
+    expect(PATIENT_EMAIL_READ.test('await db.patientPortalAccount.findFirst({ where })')).toBe(true);
+    expect(PATIENT_EMAIL_READ.test("select: { role: true, user: { select: { email: true } } }")).toBe(false);
   });
 });
 

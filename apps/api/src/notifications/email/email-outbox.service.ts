@@ -6,13 +6,21 @@ import { renderStaffEmail, StaffTemplate, templatesOf } from './email-templates'
 import { ClaimedDelivery, claimDue, defer, expireDue, lastStaffEmailAt, markCancelled, markFailed, markSent, workspacesWithDueEmail } from './email-outbox.store';
 import { EmailGroup, groupEnabledFor } from './notification-email.config';
 import { NotificationMailer } from './notification-mailer';
+// Grupo PATIENT: el destinatario solo puede salir de patientRecipientEmail (Argos M2). En N0 aún no
+// hay plantillas de paciente y sus entregas se cancelan (TEMPLATE_UNAVAILABLE) sin leer ningún correo.
+export { patientRecipientEmail } from './patient-recipient';
 import { kindAllowedForRole, KIND_FIELD, TEMPLATE_KIND } from './staff-email-preferences';
 
 export const STAFF_MIN_INTERVAL_MS = 30 * 60_000;
 export const QUIET_START_HOUR = 21;
 export const QUIET_END_HOUR = 8;
+/** Espacio de claves (primer int4) de los advisory locks de la bandeja: no choca con los de la agenda. */
+export const EMAIL_OUTBOX_LOCK_SPACE = 7302;
+/** Límite de una pasada de un espacio (la reserva de entregas dura 30 min). */
+const PASS_TIMEOUT_MS = 15 * 60_000;
 
 export type PassCounts = {
+  skippedLocked?: boolean;
   emailsSent: number;
   deliveriesSent: number;
   grouped: number;
@@ -75,22 +83,43 @@ export class EmailOutboxService {
     }
   }
 
+  /**
+   * Una pasada en un espacio. Argos B1: la pasada de un espacio se serializa entre instancias con
+   * pg_try_advisory_xact_lock (espacio de claves propio de la bandeja); si otra instancia está con
+   * ese espacio, esta lo salta. El bloqueo vive en una transacción abierta durante la pasada; las
+   * escrituras van fuera de ella y se confirman al momento (un SENT nunca se deshace).
+   */
   async processWorkspace(workspaceId: string, now = new Date()): Promise<PassCounts> {
+    return this.db().$transaction(
+      async (tx: any) => {
+        const rows = await tx.$queryRaw`SELECT pg_try_advisory_xact_lock(${EMAIL_OUTBOX_LOCK_SPACE}::int4, hashtext(${workspaceId})) AS "locked"`;
+        if (!rows?.[0]?.locked) return { ...emptyCounts(), skippedLocked: true } as PassCounts;
+        return this.processWorkspaceLocked(workspaceId, now);
+      },
+      { maxWait: 10_000, timeout: PASS_TIMEOUT_MS },
+    );
+  }
+
+  private async processWorkspaceLocked(workspaceId: string, now: Date): Promise<PassCounts> {
     const counts = emptyCounts();
-    counts.expired = await expireDue(this.db(), workspaceId, now);
-    for (const group of ['STAFF', 'PATIENT'] as EmailGroup[]) {
-      if (!groupEnabledFor(this.mailer.config, group, workspaceId)) continue;
-      const token = randomUUID();
-      const claimed = await claimDue(this.db(), workspaceId, templatesOf(group), now, token);
-      if (!claimed.length) continue;
-      if (group === 'STAFF') await this.sendStaff(workspaceId, claimed, token, now, counts);
-      else bump(counts.cancelled, 'TEMPLATE_UNAVAILABLE', await markCancelled(this.db(), workspaceId, claimed.map((c) => c.id), token, 'TEMPLATE_UNAVAILABLE'));
-    }
-    counts.grouped = counts.deliveriesSent - counts.emailsSent;
-    if (hasActivity(counts)) {
-      await this.db().auditLog.create({
-        data: { workspaceId, actorId: null, action: 'EMAIL_OUTBOX_PASS', entityType: 'NotificationDelivery', metadata: counts },
-      });
+    try {
+      counts.expired = await expireDue(this.db(), workspaceId, now);
+      for (const group of ['STAFF', 'PATIENT'] as EmailGroup[]) {
+        if (!groupEnabledFor(this.mailer.config, group, workspaceId)) continue;
+        const token = randomUUID();
+        const claimed = await claimDue(this.db(), workspaceId, templatesOf(group), now, token);
+        if (!claimed.length) continue;
+        if (group === 'STAFF') await this.sendStaff(workspaceId, claimed, token, now, counts);
+        else bump(counts.cancelled, 'TEMPLATE_UNAVAILABLE', await markCancelled(this.db(), workspaceId, claimed.map((c) => c.id), token, 'TEMPLATE_UNAVAILABLE'));
+      }
+    } finally {
+      // Argos B3: el recuento se audita aunque la pasada falle a medias (lo ya enviado consta).
+      counts.grouped = counts.deliveriesSent - counts.emailsSent;
+      if (hasActivity(counts)) {
+        await this.db().auditLog.create({
+          data: { workspaceId, actorId: null, action: 'EMAIL_OUTBOX_PASS', entityType: 'NotificationDelivery', metadata: counts },
+        });
+      }
     }
     return counts;
   }

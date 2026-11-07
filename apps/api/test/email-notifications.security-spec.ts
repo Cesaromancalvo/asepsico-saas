@@ -1,7 +1,7 @@
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
 import { renderStaffEmail, STAFF_TEMPLATES, PATIENT_TEMPLATES, templateGroup } from '../src/notifications/email/email-templates';
 import { assertNotificationEmailConfig, groupEnabledFor, readNotificationEmailConfig } from '../src/notifications/email/notification-email.config';
-import { quietHoursEnd } from '../src/notifications/email/email-outbox.service';
+import { EmailOutboxService, quietHoursEnd } from '../src/notifications/email/email-outbox.service';
 import { defaultFor, staffEmailPreferenceView, wantsStaffEmail } from '../src/notifications/email/staff-email-preferences';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { patientSubject, renderPatientEmail } from '../src/notifications/email/patient-email-layout';
@@ -250,5 +250,32 @@ describe('M2–M3 · molde de los emails a pacientes (aún apagados)', () => {
   it('enlace al portal solo si es fijo (https, sin parámetros)', () => {
     const email = renderPatientEmail({ template: 'PATIENT_APPOINTMENT_REMINDER', startsAt, timeZone: tz, greeting: 'Hola:', lines: ['Tienes una cita.'], portalUrl: 'https://portal.example.test/?cita=1' });
     expect(email.text).not.toContain('portal.example.test');
+  });
+});
+
+describe('Argos B1 y B3 · bloqueo por espacio y auditoría en finally', () => {
+  function fake(locked: boolean) {
+    const db: any = {
+      $queryRaw: jest.fn(async () => [{ locked }]),
+      $executeRaw: jest.fn(async () => { throw new Error('fallo simulado de la reserva'); }),
+      notificationDelivery: { updateMany: jest.fn(async () => ({ count: 2 })), findMany: jest.fn(async () => []) },
+      auditLog: { create: jest.fn() },
+    };
+    db.$transaction = jest.fn(async (cb: any) => cb(db));
+    return db;
+  }
+
+  it('B1: sin el advisory lock del espacio la pasada no toca nada', async () => {
+    const db = fake(false);
+    const counts = await new EmailOutboxService(db, new NotificationMailer(BASE as any, () => ({ send: jest.fn() }))).processWorkspace('w1', new Date());
+    expect(counts.skippedLocked).toBe(true);
+    expect(db.notificationDelivery.updateMany).not.toHaveBeenCalled();
+    expect(String(db.$queryRaw.mock.calls[0][0].join('?'))).toMatch(/pg_try_advisory_xact_lock\(\?::int4, hashtext\(\?\)\)/);
+  });
+
+  it('B3: si la pasada falla a medias, el AuditLog con lo ya hecho se escribe igual', async () => {
+    const db = fake(true);
+    await expect(new EmailOutboxService(db, new NotificationMailer(BASE as any, () => ({ send: jest.fn() }))).processWorkspace('w1', new Date())).rejects.toThrow('fallo simulado');
+    expect(db.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ workspaceId: 'w1', action: 'EMAIL_OUTBOX_PASS', metadata: expect.objectContaining({ expired: 2 }) }) });
   });
 });

@@ -104,6 +104,30 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
     expect(rows.every((r) => r.status === 'SENT' && r.attempts === 1)).toBe(true);
   });
 
+  it('B1 · con otra instancia procesando el espacio (advisory lock tomado), esta pasada lo salta', async () => {
+    const { ws, users } = await scenario();
+    const d = await notice(ws.id, users.therapist);
+    const { service, send } = outbox();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => { locked = r; });
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(7302::int4, hashtext(${ws.id}))`;
+      locked();
+      await held;
+    }, { timeout: 30_000 });
+    await isLocked;
+    const counts = await service.processWorkspace(ws.id, T0);
+    release();
+    await holder;
+    expect(counts.skippedLocked).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    expect((await delivery(d.id)).status).toBe('PENDING');
+    await service.processWorkspace(ws.id, T0);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('agrupación: varias entregas del mismo usuario → un email; lo siguiente espera 30 min desde el último', async () => {
     const { ws, users } = await scenario();
     const first = [await notice(ws.id, users.therapist), await notice(ws.id, users.therapist), await notice(ws.id, users.therapist, 'STAFF_PATIENT_CANCELLATION')];
