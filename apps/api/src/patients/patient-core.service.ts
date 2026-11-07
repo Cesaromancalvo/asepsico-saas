@@ -13,7 +13,7 @@ import { applyPortalAccessModeChange } from '../portal/portal-access-mode.util';
 import { ClinicalAccessService } from '../clinical-access/clinical-access.service';
 import { assertNoActiveDemoMembers } from './demo-workspace.util';
 import { isReceptionRole } from '../sessions/session-view.util';
-import { firstReceptionProcess, receptionProcessesSelect } from './patient-reception-view.util';
+import { firstReceptionProcess, receptionProcessesSelect, receptionSessionSelect } from './patient-reception-view.util';
 
 // El ciclo de vida (changeStatus, archive, restore, block) vive en PatientLifecycleService.
 @Injectable()
@@ -150,6 +150,7 @@ export class PatientCoreService {
 
       sessions: {
         where: {
+          workspaceId,
           ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}),
           startsAt: {
             lt: now,
@@ -323,7 +324,7 @@ export class PatientCoreService {
         },
       },
       sessions: {
-        ...(actor.role === 'THERAPIST' ? { where: { therapistId: actor.sub } } : {}),
+        where: { workspaceId, ...(actor.role === 'THERAPIST' ? { therapistId: actor.sub } : {}) },
         orderBy: { startsAt: 'desc' },
         select: {
           id: true,
@@ -354,7 +355,11 @@ export class PatientCoreService {
         ...PATIENT_VIEW_SELECT,
         _count: { select: { sessions: true } },
         clinicalProcesses: receptionProcessesSelect(workspaceId),
-        sessions: select.sessions,
+        // Sin clinicalProcessId: con el id de proceso de cada cita, recepción podría contar
+        // procesos distintos (también cerrados o de alta) y deducir el recuento que no se le da.
+        // La agenda asocia la cita con summary.activeProcess.id. Afecta también a
+        // lastSession/nextSession, que salen de esta misma lista.
+        sessions: { ...select.sessions, select: receptionSessionSelect(select.sessions.select) },
       } satisfies Prisma.PatientSelect;
       const receptionRow = await this.prisma.patient.findFirst({ where, select: receptionSelect });
       if (!receptionRow) throw new NotFoundException('Paciente no encontrado');

@@ -53,6 +53,12 @@ function seed() {
       id: 'ses-1', workspaceId: WS, patientId: 'pat-1', therapistId: 't-a', clinicalProcessId: 'proc-a', startsAt: at(2),
       endsAt: new Date(at(2).getTime() + 50 * 60 * 1000), status: 'SCHEDULED', type: 'INDIVIDUAL', location: 'Sala 1',
       videoCallUrl: null, notes: null, internalSummary: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+    }, {
+      // Cita antigua del proceso de alta: su clinicalProcessId (proc-old) no debe llegar a
+      // recepción, o podría contar procesos distintos y deducir el recuento que no se le da.
+      id: 'ses-old', workspaceId: WS, patientId: 'pat-1', therapistId: 't-b', clinicalProcessId: 'proc-old', startsAt: at(-30),
+      endsAt: new Date(at(-30).getTime() + 50 * 60 * 1000), status: 'COMPLETED', type: 'INDIVIDUAL', location: 'Sala 2',
+      videoCallUrl: null, notes: null, internalSummary: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
     }],
   });
 }
@@ -99,6 +105,50 @@ describe('Pacientes vistos por recepción (ASSISTANT): sin metadatos del proceso
     expectNoProcessMetadata(result);
   });
 
+  it('GET /patients/:id: ASSISTANT no recibe el clinicalProcessId de las citas (ni de un proceso de alta)', async () => {
+    const result: any = await new PatientsService(seed() as any).get(WS, actor('assistant', 'ASSISTANT'), 'pat-1');
+    expect(result.summary.recentSessions.map((s: any) => s.id).sort()).toEqual(['ses-1', 'ses-old']);
+    for (const session of [...result.summary.recentSessions, result.summary.lastSession, result.summary.nextSession]) {
+      expect(session).not.toHaveProperty('clinicalProcessId');
+    }
+    expect(result.summary.lastSession?.id).toBe('ses-old');
+    expect(json(result)).not.toContain('"clinicalProcessId"');
+    expectNoProcessMetadata(result);
+  });
+
+  it('la consulta de sesiones de recepción no pide clinicalProcessId y filtra por workspace', async () => {
+    const prisma = seed();
+    await new PatientsService(prisma as any).get(WS, actor('assistant', 'ASSISTANT'), 'pat-1');
+    const sessions = prisma.patient.findFirst.mock.calls[0][0].select.sessions;
+    expect(sessions.select).not.toHaveProperty('clinicalProcessId');
+    expect(sessions.where.workspaceId).toBe(WS);
+  });
+
+  it('PATCH /patients/:id como ASSISTANT: la respuesta es la vista de recepción', async () => {
+    const prisma = seed();
+    const result: any = await new PatientsService(prisma as any).update(WS, actor('assistant', 'ASSISTANT'), 'pat-1', { phone: '600000000' } as any);
+    expect(result.id).toBe('pat-1');
+    expect(result.summary.activeProcess).toEqual({ id: 'proc-a', therapist: RECEPTION_THERAPIST, hasActiveProcess: true });
+    expect(result.summary).not.toHaveProperty('allProcesses');
+    expect(result.summary).not.toHaveProperty('processCount');
+    expect(json(result)).not.toContain('"clinicalProcessId"');
+    expectNoProcessMetadata(result);
+    expect(prisma.__store.auditLog.map((log: any) => log.action)).toContain('PATIENT_UPDATED');
+  });
+
+  it('changeStatus sin cambio de estado como ASSISTANT: devuelve la vista de recepción sin escribir', async () => {
+    const prisma = seed();
+    const result: any = await new PatientsService(prisma as any).changeStatus(WS, actor('assistant', 'ASSISTANT'), 'pat-1', 'ACTIVE' as any);
+    expect(result.status).toBe('ACTIVE');
+    expect(result.summary.activeProcess).toEqual({ id: 'proc-a', therapist: RECEPTION_THERAPIST, hasActiveProcess: true });
+    expect(result.summary).not.toHaveProperty('allProcesses');
+    expect(result.summary).not.toHaveProperty('processCount');
+    expect(json(result)).not.toContain('"clinicalProcessId"');
+    expectNoProcessMetadata(result);
+    expect(prisma.patient.updateMany).not.toHaveBeenCalled();
+    expect(prisma.__store.auditLog).toHaveLength(0);
+  });
+
   it('GET /patients/:id: ASSISTANT con un paciente sin proceso activo → activeProcess null, sin DISCHARGED', async () => {
     const result: any = await new PatientsService(seed() as any).get(WS, actor('assistant', 'ASSISTANT'), 'pat-2');
     expect(result.summary.activeProcess).toBeNull();
@@ -126,7 +176,7 @@ describe('Pacientes vistos por recepción (ASSISTANT): sin metadatos del proceso
   it('GET /clinical-processes/:id con el id que da la agenda → ASSISTANT 403', async () => {
     const prisma = seed();
     const agenda: any = await new PatientAgendaService(prisma as any).agenda(WS, actor('assistant', 'ASSISTANT'), 'pat-1');
-    const processId = agenda.data[0].clinicalProcessId;
+    const processId = agenda.data.find((row: any) => row.id === 'ses-1').clinicalProcessId;
     expect(processId).toBe('proc-a');
     await expect(new ClinicalProcessesService(prisma as any).get(WS, actor('assistant', 'ASSISTANT'), processId)).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -149,6 +199,8 @@ describe('Pacientes vistos por recepción (ASSISTANT): sin metadatos del proceso
       const result: any = await new PatientsService(seed() as any).get(WS, actor(sub, role), 'pat-1');
       expect(result.summary.activeProcess).toMatchObject({ id: 'proc-a', status: 'ACTIVE', modality: 'HYBRID', frequency: 'BIWEEKLY' });
       expect(result.summary.allProcesses.map((p: any) => p.id).sort()).toEqual(['proc-a', 'proc-old']);
+      // La vista clínica conserva el clinicalProcessId de cada cita.
+      expect(result.summary.recentSessions.find((s: any) => s.id === 'ses-old')?.clinicalProcessId).toBe('proc-old');
       expect(result.summary).toHaveProperty('processCount');
       expect(json(result)).not.toContain(MARK_TITLE);
     });

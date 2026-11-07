@@ -53,3 +53,13 @@ export function firstReceptionProcess(rows: unknown[]): ReceptionProcess | null 
   }
   return null;
 }
+
+/**
+ * Select de sesiones para recepción en GET /patients/:id: el mismo de la vista clínica pero sin
+ * `clinicalProcessId`. Con él, recepción podría agrupar sus citas por proceso y deducir cuántos
+ * procesos ha tenido el paciente (y que hay alguno cerrado), el recuento que no se le devuelve.
+ */
+export function receptionSessionSelect<T extends Prisma.SessionSelect>(clinicalSelect: T): Omit<T, 'clinicalProcessId'> {
+  const { clinicalProcessId: _omitted, ...rest } = clinicalSelect;
+  return rest;
+}
