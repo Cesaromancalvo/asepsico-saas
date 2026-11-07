@@ -45,7 +45,7 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
     const ws = await prisma.workspace.create({ data: { name: `${name} ${run}-${++seq}`, timeZone: 'Europe/Madrid' } });
     const users: Record<string, string> = {};
     const add = async (key: string, role: string, extra: Record<string, unknown> = {}) => {
-      const u = await prisma.user.create({ data: { email: `${key}-${run}-${seq}-${Math.random().toString(36).slice(2, 8)}@example.com`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
+      const u = await prisma.user.create({ data: { email: `${key}-${run}-${seq}-${Math.random().toString(36).slice(2, 8)}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
       await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role: role as any, isClinician: role === 'THERAPIST', ...extra } as any });
       users[key] = u.id;
     };
@@ -194,6 +194,34 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
     expect((await delivery(removed.id)).errorCode).toBe('RECIPIENT_INACTIVE');
     expect((await delivery(off.id)).errorCode).toBe('PREFERENCE_OFF');
     expect((await delivery(task.id)).errorCode).toBe('ROLE_NOT_ALLOWED');
+  });
+
+  it('Dora R1 · usuarios demo y correos de dominios reservados: no se encola nada; si cambian después, se cancela al enviar', async () => {
+    const { ws, users } = await scenario();
+    const demo = await prisma.user.create({ data: { email: `demo-${run}-${++seq}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: 'Demo', lastName: 'Ficticio', isDemo: true } });
+    const reserved = await prisma.user.create({ data: { email: `recepcion-${run}-${++seq}@consulta.example.test`, passwordHash: 'hash-ficticio', firstName: 'Recepción', lastName: 'Ficticia' } });
+    for (const u of [demo, reserved]) await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role: 'ASSISTANT' } as any });
+    for (const userId of [demo.id, reserved.id]) {
+      const n = await prisma.notification.create({
+        data: { workspaceId: ws.id, audience: 'PROFESSIONAL', userId, type: 'APPOINTMENT_REQUEST', title: 'Nueva solicitud de cita', body: 'Texto genérico', status: 'SENT', scheduledAt: T0, sentAt: T0, dedupeKey: `${run}-${++seq}` },
+      });
+      expect(await prisma.$transaction((tx) => enqueueStaffEmails(tx, ws.id, [{ notificationId: n.id, template: 'STAFF_APPOINTMENT_REQUEST' }], T0))).toBe(0);
+      expect(await prisma.notificationDelivery.count({ where: { workspaceId: ws.id, notificationId: n.id } })).toBe(0);
+    }
+    // Encolado cuando era entregable; al enviar ya es demo (o tiene un correo reservado) → cancelada.
+    const d1 = await notice(ws.id, users.therapist);
+    const d2 = await notice(ws.id, users.assistant);
+    await prisma.user.update({ where: { id: users.therapist }, data: { isDemo: true } });
+    await prisma.user.update({ where: { id: users.assistant }, data: { email: `asistente-${run}-${++seq}@example.org` } });
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service, send } = outbox();
+    const counts = await service.processWorkspace(ws.id, T0);
+    expect(send).not.toHaveBeenCalled();
+    expect(await delivery(d1.id)).toEqual(expect.objectContaining({ status: 'CANCELLED', errorCode: 'RECIPIENT_NOT_DELIVERABLE' }));
+    expect(await delivery(d2.id)).toEqual(expect.objectContaining({ status: 'CANCELLED', errorCode: 'RECIPIENT_NOT_DELIVERABLE' }));
+    expect(counts.cancelled).toEqual({ RECIPIENT_NOT_DELIVERABLE: 2 });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/@/);
+    warn.mockRestore();
   });
 
   it('franja silenciosa: a las 23:10 (Madrid) no sale; se aplaza a las 08:00', async () => {

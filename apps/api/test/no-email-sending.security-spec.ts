@@ -233,9 +233,10 @@ describe('Argos B5: encolar emails solo desde los puntos de enganche revisados',
 describe('Argos M2: el correo de un paciente solo sale de portalEmailUsableForDelivery', () => {
   it('patientRecipientEmail: solo cuenta de portal activa y verificada', () => {
     const verified = new Date();
-    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: true, emailVerifiedAt: verified })).toBe('paciente@example.test');
-    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: true, emailVerifiedAt: null })).toBeNull();
-    expect(patientRecipientEmail({ email: 'paciente@example.test', isActive: false, emailVerifiedAt: verified })).toBeNull();
+    // Dominio no reservado (los reservados nunca salen: Dora R1, email-recipient-deliverability).
+    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: true, emailVerifiedAt: verified })).toBe('paciente@pruebas.asepsico.es');
+    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: true, emailVerifiedAt: null })).toBeNull();
+    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: false, emailVerifiedAt: verified })).toBeNull();
     expect(patientRecipientEmail({ email: 'liberado-x@liberado.invalid', isActive: true, emailVerifiedAt: verified })).toBeNull();
     expect(patientRecipientEmail(null)).toBeNull();
   });

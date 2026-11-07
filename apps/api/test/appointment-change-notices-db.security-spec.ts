@@ -36,7 +36,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
     const ws2 = await prisma.workspace.create({ data: { name: `Otra consulta ficticia ${run}` } });
     ids.ws = ws.id; ids.ws2 = ws2.id;
     const user = async (key: string, role: string, isClinician: boolean, workspaceId = ws.id) => {
-      const u = await prisma.user.create({ data: { email: `${key}-${run}@example.com`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
+      const u = await prisma.user.create({ data: { email: `${key}-${run}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
       await prisma.workspaceMember.create({ data: { workspaceId, userId: u.id, role: role as any, isClinician } });
       ids[key] = u.id;
     };
@@ -52,7 +52,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
     const session = await prisma.session.create({ data: { workspaceId: ws.id, patientId: patient.id, therapistId: ids.therapistA, clinicalProcessId: process.id, startsAt: start, endsAt: new Date(start.getTime() + 50 * 60_000) } });
     ids.session = session.id;
     await prisma.therapistAvailability.create({ data: { workspaceId: ws.id, therapistId: ids.therapistA, portalBookingEnabled: true, cancelNoticeHours: 24 } });
-    const account = await prisma.patientPortalAccount.create({ data: { workspaceId: ws.id, patientId: patient.id, email: `paciente-${run}@example.com`, passwordHash: 'hash-ficticio' } as any });
+    const account = await prisma.patientPortalAccount.create({ data: { workspaceId: ws.id, patientId: patient.id, email: `paciente-${run}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio' } as any });
     ids.account = account.id;
   });
 

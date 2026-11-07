@@ -49,7 +49,11 @@ const settings = (therapistId: string, workspaceId = WS) => ({
 function seed() {
   return fakeClinicalDb({
     workspace: [{ id: WS, timeZone: 'Europe/Madrid' }, { id: WS2, timeZone: 'Europe/Madrid' }],
-    user: [{ id: 't-a', firstName: 'Ana', lastName: 'Ficticia' }, { id: 't-b', firstName: 'Beto', lastName: 'Ficticio' }],
+    // Dora R1: el email solo se encola para usuarios no demo con correo de dominio no reservado.
+    user: [
+      { id: 't-a', firstName: 'Ana', lastName: 'Ficticia' }, { id: 't-b', firstName: 'Beto', lastName: 'Ficticio' },
+      { id: 'owner-1' }, { id: 'admin-1' }, { id: 'assistant-1' }, { id: 'owner-2' }, { id: 't-x' },
+    ].map((u) => ({ ...u, email: `${u.id}@pruebas.asepsico.es`, isDemo: false })),
     workspaceMember: [
       { workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
       { workspaceId: WS, userId: 'admin-1', role: 'ADMIN', isClinician: false },
@@ -215,6 +219,16 @@ describe('3 y 5. El paciente pide desde el portal cambiar o cancelar', () => {
     expect(emails.map((d: any) => stored(prisma).find((n) => n.id === d.notificationId).userId).sort()).toEqual(['assistant-1', 't-a']);
     expect(emails.every((d: any) => d.template === 'STAFF_APPOINTMENT_REQUEST' && d.status === 'PENDING')).toBe(true);
     expectStoredIsGeneric(prisma);
+  });
+
+  it('Dora R1: en un espacio demo, recepción demo y terapeuta con correo reservado ven el aviso en la campana pero no se les encola email', async () => {
+    const prisma = seed();
+    prisma.__store.user.find((u: any) => u.id === 'assistant-1').isDemo = true;
+    prisma.__store.user.find((u: any) => u.id === 't-a').email = 't-a@consulta-demo.example.test';
+    const slot = await firstSlot(prisma);
+    await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    expect(recipients(prisma)).toEqual(['assistant-1', 't-a']);
+    expect(prisma.__store.notificationDelivery).toEqual([]);
   });
 
   it('3d (N1-2): un OWNER que enciende «Solicitudes de cita» recibe aviso y email; el que lo apaga (t-a) no recibe email', async () => {

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { EmailTemplateName, STAFF_TEMPLATES, StaffTemplate } from './email-templates';
+import { isDeliverableStaffUser } from './recipient-deliverability';
 
 /**
  * Acceso a la bandeja de salida (NotificationDelivery canal EMAIL). TODA lectura y escritura lleva
@@ -29,7 +30,8 @@ export type ClaimedDelivery = {
 
 /**
  * Encola emails de staff para avisos YA creados (en la transacción del llamante). Comprueba que cada
- * Notification es del espacio, del público PROFESSIONAL y de un usuario. Idempotente: una entrega
+ * Notification es del espacio, del público PROFESSIONAL y de un usuario que puede recibir email (no
+ * demo, correo de dominio no reservado: Dora R1). Idempotente: una entrega
  * EMAIL por notificación (único notificationId + channel).
  */
 export async function enqueueStaffEmails(
@@ -42,9 +44,16 @@ export async function enqueueStaffEmails(
   if (items.some((i) => !(STAFF_TEMPLATES as readonly string[]).includes(i.template))) throw new Error('Plantilla de staff no válida');
   const valid = await tx.notification.findMany({
     where: { id: { in: items.map((i) => i.notificationId) }, workspaceId, audience: 'PROFESSIONAL', userId: { not: null } },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
-  const ok = new Set(valid.map((v: { id: string }) => v.id));
+  // Dora R1: nunca se encola para usuarios demo ni correos de dominios reservados (rebotes). Solo se
+  // lee isDemo y el correo para decidir; el correo no se guarda en la entrega ni se registra.
+  const userIds = [...new Set(valid.map((v: { userId: string }) => v.userId))];
+  const users = userIds.length
+    ? await tx.user.findMany({ where: { id: { in: userIds }, isDemo: false }, select: { id: true, email: true, isDemo: true } })
+    : [];
+  const deliverable = new Set(users.filter(isDeliverableStaffUser).map((u: { id: string }) => u.id));
+  const ok = new Set(valid.filter((v: { userId: string }) => deliverable.has(v.userId)).map((v: { id: string }) => v.id));
   const data = items.filter((i) => ok.has(i.notificationId)).map((i) => ({
     workspaceId, notificationId: i.notificationId, channel: 'EMAIL' as const, status: 'PENDING' as const, template: i.template,
     scheduledAt: now, expiresAt: new Date(now.getTime() + STAFF_EMAIL_TTL_MS),

@@ -9,6 +9,7 @@ import { NotificationMailer } from './notification-mailer';
 // Grupo PATIENT: el destinatario solo puede salir de patientRecipientEmail (Argos M2). En N0 aún no
 // hay plantillas de paciente y sus entregas se cancelan (TEMPLATE_UNAVAILABLE) sin leer ningún correo.
 export { patientRecipientEmail } from './patient-recipient';
+import { isDeliverableStaffUser, RECIPIENT_NOT_DELIVERABLE } from './recipient-deliverability';
 import { kindAllowedForRole, KIND_FIELD, TEMPLATE_KIND } from './staff-email-preferences';
 
 export const STAFF_MIN_INTERVAL_MS = 30 * 60_000;
@@ -146,9 +147,11 @@ export class EmailOutboxService {
     for (const [userId, rows] of byUser) {
       const member = await db.workspaceMember.findFirst({
         where: { workspaceId, userId, status: 'ACTIVE' },
-        select: { role: true, user: { select: { email: true } } },
+        select: { role: true, user: { select: { email: true, isDemo: true } } },
       });
       if (!member?.user?.email) { await cancel(rows, 'RECIPIENT_INACTIVE'); continue; }
+      // Dora R1: segunda comprobación al enviar (el usuario pudo pasar a demo o cambiar de correo).
+      if (!isDeliverableStaffUser(member.user)) { await cancel(rows, RECIPIENT_NOT_DELIVERABLE); continue; }
 
       const pref = await db.notificationPreference.findUnique({
         where: { workspaceId_userId: { workspaceId, userId } },
