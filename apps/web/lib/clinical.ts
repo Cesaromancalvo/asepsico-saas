@@ -325,8 +325,12 @@ export function modalityLabel(modality?: string | null): string | null {
  * (p. ej. "Proceso activo · Presencial"). Sustituye al título, que no llega a quien no tiene
  * acceso a su contenido porque puede revelar contenido clínico.
  */
-export function processLabel(process?: { status?: string | null; modality?: string | null } | null): string {
+export function processLabel(process?: { status?: string | null; modality?: string | null; hasActiveProcess?: boolean } | null): string {
   if (!process) return 'Sin proceso activo';
+  // Vista de recepción: la API no envía estado ni modalidad, solo hasActiveProcess.
+  if (!process.status && process.hasActiveProcess !== undefined) {
+    return process.hasActiveProcess ? PROCESS_STATUS_LABEL.ACTIVE : 'Sin proceso activo';
+  }
   const status = (process.status && PROCESS_STATUS_LABEL[process.status]) || 'Proceso clínico';
   const modality = modalityLabel(process.modality);
   return modality ? `${status} · ${modality}` : status;

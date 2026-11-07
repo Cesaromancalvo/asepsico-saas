@@ -32,10 +32,13 @@ type SessionType =
   | 'ASSESSMENT';
 
 // Vista general de /patients: el proceso llega sin título (puede revelar contenido clínico).
+// A recepción (ASSISTANT) solo le llega el proceso ACTIVO con id, profesional y
+// hasActiveProcess: sin estado ni modalidad.
 type ClinicalProcessSummary = {
   id: string;
-  modality: TherapyModality;
-  status: string;
+  modality?: TherapyModality;
+  status?: string;
+  hasActiveProcess?: boolean;
   therapist?: { id: string } | null;
 };
 
@@ -829,6 +832,8 @@ export default function AgendaPage() {
                       ? processLabel({
                           status:
                             activeProcess.status,
+                          hasActiveProcess:
+                            activeProcess.hasActiveProcess,
                         })
                       : 'Sin proceso clínico activo'
                   }
@@ -843,7 +848,7 @@ export default function AgendaPage() {
                   type="text"
                   readOnly
                   value={
-                    activeProcess
+                    activeProcess?.modality
                       ? MODALITY_LABELS[
                           activeProcess.modality
                         ]

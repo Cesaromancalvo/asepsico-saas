@@ -71,23 +71,28 @@ export class PatientAgendaService {
         : {}),
     };
 
-    // Consulta con la proyección más amplia permitida; la decisión FULL/BUSY es fila a fila.
-    const rows = await this.prisma.session.findMany({
-      where,
-      orderBy: { startsAt: 'asc' },
-      take: MAX_ROWS,
-      select: SESSION_LIST_SELECT,
-    });
-
-    type BusyRow = Prisma.SessionGetPayload<{ select: typeof SESSION_BUSY_SELECT }>;
-    type ReceptionRow = Prisma.SessionGetPayload<{ select: typeof SESSION_RECEPTION_SELECT }>;
     const isUpcoming = (row: { status: SessionStatus; startsAt: Date }) =>
       row.status === SessionStatus.SCHEDULED && new Date(row.startsAt).getTime() >= now.getTime();
+    const findArgs = { where, orderBy: { startsAt: 'asc' as const }, take: MAX_ROWS };
+
+    // Recepción (ASSISTANT o rol no clínico, falla en cerrado): el select se elige en la propia
+    // consulta, así que la relación clinicalProcess ni siquiera se carga (regla dura 2).
+    if (isReceptionRole(actor.role)) {
+      const receptionRows = await this.prisma.session.findMany({ ...findArgs, select: SESSION_RECEPTION_SELECT });
+      type ReceptionRow = (typeof receptionRows)[number];
+      const data = receptionRows.map((row) => ({
+        ...projectSelect<ReceptionRow>(row, SESSION_RECEPTION_SELECT),
+        visibility: 'FULL' as PatientAgendaVisibility,
+      }));
+      const nextIndex = receptionRows.findIndex((row) => isUpcoming(row));
+      return { patientId, view, data, nextSession: nextIndex >= 0 ? data[nextIndex] : null };
+    }
+
+    // Vista clínica: proyección más amplia permitida; la decisión FULL/BUSY es fila a fila.
+    const rows = await this.prisma.session.findMany({ ...findArgs, select: SESSION_LIST_SELECT });
+
+    type BusyRow = Prisma.SessionGetPayload<{ select: typeof SESSION_BUSY_SELECT }>;
     const toItem = (row: (typeof rows)[number]) => {
-      // Recepción (ASSISTANT): sin la relación clinicalProcess (regla dura 2).
-      if (view === 'ADMINISTRATIVE' && isReceptionRole(actor.role)) {
-        return { ...projectSelect<ReceptionRow>(row, SESSION_RECEPTION_SELECT), visibility: 'FULL' as PatientAgendaVisibility };
-      }
       if (view === 'ADMINISTRATIVE' || row.therapistId === actor.sub) {
         return { ...projectSelect<typeof row>(row, SESSION_LIST_SELECT), visibility: 'FULL' as PatientAgendaVisibility };
       }
