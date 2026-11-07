@@ -41,29 +41,49 @@ const value = (env: NodeJS.ProcessEnv, name: string) => (env[name] ?? '').trim()
  * silencio). MAIL_FROM se comprueba sin recortar: un espacio o salto de línea final lo invalida.
  */
 export function mailConfigProblems(env: NodeJS.ProcessEnv = process.env): string[] {
+  const problems = smtpConfigProblems(env);
+  for (const name of ['MAIL_FROM', 'WAITLIST_NOTIFY_TO']) {
+    if (!value(env, name)) problems.push(`${name} (falta)`);
+  }
+  const from = env.MAIL_FROM ?? '';
+  if (value(env, 'MAIL_FROM') && !isValidFrom(from)) problems.push('MAIL_FROM (formato: "Nombre <direccion@dominio>", sin espacios ni saltos de línea al principio o al final)');
+  const to = internalRecipients(env);
+  if (to.length && !to.every((r) => EMAIL_RE.test(r))) problems.push('WAITLIST_NOTIFY_TO (direcciones no válidas)');
+  return problems;
+}
+
+/**
+ * Problemas SOLO del servidor SMTP (host, puerto, usuario y contraseña), con nombres de variables.
+ * Lo comparten el aviso de la lista de espera y los avisos por email (src/notifications/email).
+ */
+export function smtpConfigProblems(env: NodeJS.ProcessEnv = process.env): string[] {
   const problems: string[] = [];
-  for (const name of ['MAIL_SMTP_HOST', 'MAIL_SMTP_USER', 'MAIL_SMTP_PASSWORD', 'MAIL_FROM', 'WAITLIST_NOTIFY_TO']) {
+  for (const name of ['MAIL_SMTP_HOST', 'MAIL_SMTP_USER', 'MAIL_SMTP_PASSWORD']) {
     if (!value(env, name)) problems.push(`${name} (falta)`);
   }
   const port = value(env, 'MAIL_SMTP_PORT');
   if (!port) problems.push('MAIL_SMTP_PORT (falta)');
   else if (!ALLOWED_SMTP_PORTS.includes(port)) problems.push('MAIL_SMTP_PORT (solo 587, 465, 2587 o 2465)');
-  const from = env.MAIL_FROM ?? '';
-  if (value(env, 'MAIL_FROM') && !FROM_RE.test(from)) problems.push('MAIL_FROM (formato: "Nombre <direccion@dominio>", sin espacios ni saltos de línea al principio o al final)');
-  const to = internalRecipients(env);
-  if (to.length && !to.every((r) => EMAIL_RE.test(r))) problems.push('WAITLIST_NOTIFY_TO (direcciones no válidas)');
   if (/[\x00-\x1f\x7f]/.test(value(env, 'MAIL_SMTP_HOST'))) problems.push('MAIL_SMTP_HOST (caracteres no válidos)');
   if (/[\x00-\x1f\x7f]/.test(value(env, 'MAIL_SMTP_USER'))) problems.push('MAIL_SMTP_USER (caracteres no válidos)');
   return problems;
 }
 
+/** Servidor SMTP si no tiene ningún problema; si no, null. */
+export function readSmtpConfig(env: NodeJS.ProcessEnv = process.env): SmtpConfig | null {
+  if (smtpConfigProblems(env).length) return null;
+  return { host: value(env, 'MAIL_SMTP_HOST'), port: Number(value(env, 'MAIL_SMTP_PORT')) as SmtpPort, user: value(env, 'MAIL_SMTP_USER'), password: env.MAIL_SMTP_PASSWORD ?? '' };
+}
+
+/** Remitente "Nombre <dir@dominio>" o "dir@dominio", sin CR/LF ni espacios sobrantes (anti-inyección). */
+export function isValidFrom(from: string): boolean {
+  return FROM_RE.test(from);
+}
+
 /** Transporte SMTP solo si la configuración no tiene ningún problema; si no, null (sin transporte). */
 export function readMailConfig(env: NodeJS.ProcessEnv = process.env): MailConfig {
   if (mailConfigProblems(env).length) return null;
-  return {
-    smtp: { host: value(env, 'MAIL_SMTP_HOST'), port: Number(value(env, 'MAIL_SMTP_PORT')) as SmtpPort, user: value(env, 'MAIL_SMTP_USER'), password: env.MAIL_SMTP_PASSWORD ?? '' },
-    from: env.MAIL_FROM ?? '',
-  };
+  return { smtp: readSmtpConfig(env) as SmtpConfig, from: env.MAIL_FROM ?? '' };
 }
 
 export function waitlistNotifyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
