@@ -5,6 +5,7 @@ import { AppointmentRequestsService } from '../src/scheduling/appointment-reques
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { EmailOutboxService } from '../src/notifications/email/email-outbox.service';
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
+import { allowTestRecipientDomain, TEST_RECIPIENT_DOMAIN } from './support/test-recipient-domain';
 
 /**
  * Avisos de cambio de cita al personal contra PostgreSQL REAL: las consultas de Prisma (metadata
@@ -12,7 +13,7 @@ import { NotificationMailer } from '../src/notifications/email/notification-mail
  *
  * Como los demás *-db: solo con RACE_DATABASE_URL (BD DESECHABLE ya migrada); con
  * RACE_DATABASE_REQUIRED=1 su ausencia hace fallar la suite. Crea su propio espacio ficticio.
- * Datos 100 % ficticios.
+ * Datos 100 % ficticios. Correos del dominio reservado de tests (nunca entregables: Argos C1).
  */
 const url = process.env.RACE_DATABASE_URL;
 if (process.env.RACE_DATABASE_REQUIRED === '1' && !url) {
@@ -28,6 +29,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
   let prisma: PrismaClient;
   const run = `avisos-${Date.now()}`;
   const ids: Record<string, string> = {};
+  allowTestRecipientDomain();
   const actor = (key: string, role: string, workspaceId = ids.ws) => ({ sub: ids[key], role, workspaceId, email: `${key}-${run}@example.com` }) as any;
 
   beforeAll(async () => {
@@ -36,7 +38,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
     const ws2 = await prisma.workspace.create({ data: { name: `Otra consulta ficticia ${run}` } });
     ids.ws = ws.id; ids.ws2 = ws2.id;
     const user = async (key: string, role: string, isClinician: boolean, workspaceId = ws.id) => {
-      const u = await prisma.user.create({ data: { email: `${key}-${run}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
+      const u = await prisma.user.create({ data: { email: `${key}-${run}@${TEST_RECIPIENT_DOMAIN}`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
       await prisma.workspaceMember.create({ data: { workspaceId, userId: u.id, role: role as any, isClinician } });
       ids[key] = u.id;
     };
@@ -52,7 +54,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
     const session = await prisma.session.create({ data: { workspaceId: ws.id, patientId: patient.id, therapistId: ids.therapistA, clinicalProcessId: process.id, startsAt: start, endsAt: new Date(start.getTime() + 50 * 60_000) } });
     ids.session = session.id;
     await prisma.therapistAvailability.create({ data: { workspaceId: ws.id, therapistId: ids.therapistA, portalBookingEnabled: true, cancelNoticeHours: 24 } });
-    const account = await prisma.patientPortalAccount.create({ data: { workspaceId: ws.id, patientId: patient.id, email: `paciente-${run}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio' } as any });
+    const account = await prisma.patientPortalAccount.create({ data: { workspaceId: ws.id, patientId: patient.id, email: `paciente-${run}@${TEST_RECIPIENT_DOMAIN}`, passwordHash: 'hash-ficticio' } as any });
     ids.account = account.id;
   });
 

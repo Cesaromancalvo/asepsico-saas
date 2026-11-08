@@ -7,6 +7,7 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import { encryptField } from '../src/common/crypto/field-encryption';
 import { APPOINTMENT_CHANGES, EMAIL_FOR_CHANGE } from '../src/notifications/appointment-change-notice.util';
 import { STAFF_TEMPLATES } from '../src/notifications/email/email-templates';
+import { allowTestRecipientDomain, TEST_RECIPIENT_DOMAIN } from './support/test-recipient-domain';
 
 /**
  * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10):
@@ -50,10 +51,11 @@ function seed() {
   return fakeClinicalDb({
     workspace: [{ id: WS, timeZone: 'Europe/Madrid' }, { id: WS2, timeZone: 'Europe/Madrid' }],
     // Dora R1: el email solo se encola para usuarios no demo con correo de dominio no reservado.
+    // Argos C1: correos del dominio reservado de tests, permitido solo aquí (allowTestRecipientDomain).
     user: [
       { id: 't-a', firstName: 'Ana', lastName: 'Ficticia' }, { id: 't-b', firstName: 'Beto', lastName: 'Ficticio' },
       { id: 'owner-1' }, { id: 'admin-1' }, { id: 'assistant-1' }, { id: 'owner-2' }, { id: 't-x' },
-    ].map((u) => ({ ...u, email: `${u.id}@pruebas.asepsico.es`, isDemo: false })),
+    ].map((u) => ({ ...u, email: `${u.id}@${TEST_RECIPIENT_DOMAIN}`, isDemo: false })),
     workspaceMember: [
       { workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
       { workspaceId: WS, userId: 'admin-1', role: 'ADMIN', isClinician: false },
@@ -136,6 +138,8 @@ const target = new Date('2027-01-12T18:30:00Z'); // martes 12 de enero, 19:30 en
 const moveBody = { startsAt: target.toISOString(), endsAt: plus(target, 50).toISOString() };
 
 // -----------------------------------------------------------------------------------------------
+allowTestRecipientDomain();
+
 describe('1–2. Mover una cita desde la agenda', () => {
   it('1: el profesional mueve su propia cita → aviso al paciente y ninguno al personal', async () => {
     const prisma = seed();

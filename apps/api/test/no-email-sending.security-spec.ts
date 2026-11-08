@@ -4,6 +4,7 @@ import { EmailOutboxService } from '../src/notifications/email/email-outbox.serv
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
 import { PATIENT_TEMPLATES, STAFF_TEMPLATES } from '../src/notifications/email/email-templates';
 import { patientRecipientEmail } from '../src/notifications/email/patient-recipient';
+import { allowTestRecipientDomain, TEST_RECIPIENT_DOMAIN } from './support/test-recipient-domain';
 
 /**
  * REESCRITO el 07/11/2026 (N0 · avisos por email; pendiente de revisión de Argos). Antes: «la API
@@ -231,12 +232,16 @@ describe('Argos B5: encolar emails solo desde los puntos de enganche revisados',
 });
 
 describe('Argos M2: el correo de un paciente solo sale de portalEmailUsableForDelivery', () => {
+  // Dominio reservado de tests, permitido solo en este bloque (los demás reservados nunca salen:
+  // Dora R1 y Argos C1, email-recipient-deliverability).
+  allowTestRecipientDomain();
+  const paciente = `paciente@${TEST_RECIPIENT_DOMAIN}`;
+
   it('patientRecipientEmail: solo cuenta de portal activa y verificada', () => {
     const verified = new Date();
-    // Dominio no reservado (los reservados nunca salen: Dora R1, email-recipient-deliverability).
-    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: true, emailVerifiedAt: verified })).toBe('paciente@pruebas.asepsico.es');
-    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: true, emailVerifiedAt: null })).toBeNull();
-    expect(patientRecipientEmail({ email: 'paciente@pruebas.asepsico.es', isActive: false, emailVerifiedAt: verified })).toBeNull();
+    expect(patientRecipientEmail({ email: paciente, isActive: true, emailVerifiedAt: verified })).toBe(paciente);
+    expect(patientRecipientEmail({ email: paciente, isActive: true, emailVerifiedAt: null })).toBeNull();
+    expect(patientRecipientEmail({ email: paciente, isActive: false, emailVerifiedAt: verified })).toBeNull();
     expect(patientRecipientEmail({ email: 'liberado-x@liberado.invalid', isActive: true, emailVerifiedAt: verified })).toBeNull();
     expect(patientRecipientEmail(null)).toBeNull();
   });

@@ -1,5 +1,5 @@
 import { portalEmailUsableForDelivery } from '../../portal/portal-email.util';
-import { isReservedEmailDomain } from './recipient-deliverability';
+import { isBlockedRecipientEmail } from './recipient-deliverability';
 
 /**
  * Argos M2 (07/11/2026): el destinatario de un email del grupo PATIENT SOLO puede salir de aquí, y
@@ -10,5 +10,5 @@ import { isReservedEmailDomain } from './recipient-deliverability';
 export function patientRecipientEmail(account: { email?: string | null; isActive?: boolean | null; emailVerifiedAt?: Date | null } | null | undefined): string | null {
   if (!account || !portalEmailUsableForDelivery(account)) return null;
   const email = (account.email ?? '').trim();
-  return email && !isReservedEmailDomain(email) ? email : null;
+  return email && !isBlockedRecipientEmail(email) ? email : null;
 }

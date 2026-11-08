@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { EmailOutboxService } from '../src/notifications/email/email-outbox.service';
 import { enqueueStaffEmails } from '../src/notifications/email/email-outbox.store';
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
+import { allowTestRecipientDomain, TEST_RECIPIENT_DOMAIN } from './support/test-recipient-domain';
 
 /**
  * N0 · Bandeja de salida de avisos por email contra PostgreSQL REAL: reserva con SKIP LOCKED,
@@ -12,6 +13,8 @@ import { NotificationMailer } from '../src/notifications/email/notification-mail
  * Como los demás *-db: solo con RACE_DATABASE_URL (BD DESECHABLE ya migrada); con
  * RACE_DATABASE_REQUIRED=1 su ausencia hace fallar la suite. Datos 100 % ficticios. Las pasadas se
  * lanzan por espacio (processWorkspace) para no tocar datos de otros tests en la misma BD.
+ * Correos del dominio reservado de tests (nunca entregables: Argos C1); los demás dominios reservados
+ * siguen bloqueados y Dora R1 se comprueba con ellos.
  */
 const url = process.env.RACE_DATABASE_URL;
 if (process.env.RACE_DATABASE_REQUIRED === '1' && !url) {
@@ -32,6 +35,7 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
   let prisma: PrismaClient;
   const run = `outbox-${Date.now()}`;
   let seq = 0;
+  allowTestRecipientDomain();
 
   beforeAll(() => { prisma = new PrismaClient({ datasourceUrl: url }); });
   afterAll(async () => { await prisma?.$disconnect(); });
@@ -45,7 +49,7 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
     const ws = await prisma.workspace.create({ data: { name: `${name} ${run}-${++seq}`, timeZone: 'Europe/Madrid' } });
     const users: Record<string, string> = {};
     const add = async (key: string, role: string, extra: Record<string, unknown> = {}) => {
-      const u = await prisma.user.create({ data: { email: `${key}-${run}-${seq}-${Math.random().toString(36).slice(2, 8)}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
+      const u = await prisma.user.create({ data: { email: `${key}-${run}-${seq}-${Math.random().toString(36).slice(2, 8)}@${TEST_RECIPIENT_DOMAIN}`, passwordHash: 'hash-ficticio', firstName: key, lastName: 'Ficticio' } });
       await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role: role as any, isClinician: role === 'THERAPIST', ...extra } as any });
       users[key] = u.id;
     };
@@ -198,7 +202,7 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
 
   it('Dora R1 · usuarios demo y correos de dominios reservados: no se encola nada; si cambian después, se cancela al enviar', async () => {
     const { ws, users } = await scenario();
-    const demo = await prisma.user.create({ data: { email: `demo-${run}-${++seq}@pruebas.asepsico.es`, passwordHash: 'hash-ficticio', firstName: 'Demo', lastName: 'Ficticio', isDemo: true } });
+    const demo = await prisma.user.create({ data: { email: `demo-${run}-${++seq}@${TEST_RECIPIENT_DOMAIN}`, passwordHash: 'hash-ficticio', firstName: 'Demo', lastName: 'Ficticio', isDemo: true } });
     const reserved = await prisma.user.create({ data: { email: `recepcion-${run}-${++seq}@consulta.example.test`, passwordHash: 'hash-ficticio', firstName: 'Recepción', lastName: 'Ficticia' } });
     for (const u of [demo, reserved]) await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role: 'ASSISTANT' } as any });
     for (const userId of [demo.id, reserved.id]) {

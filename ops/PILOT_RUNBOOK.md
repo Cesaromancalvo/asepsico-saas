@@ -427,6 +427,13 @@ Argos OK y DPA de Scaleway archivado (C2).
 **Comprobación tras encender:** en `AuditLog`, una fila `EMAIL_OUTBOX_PASS` por espacio y pasada con
 recuentos (`emailsSent`, `failed`, `cancelled`…). Los logs solo llevan id de entrega y código.
 
+**Regla (Argos C1, 08/11/2026): los tests con BD nunca se ejecutan contra una base con el worker de email
+y un SMTP encendidos.** `RACE_DATABASE_URL` apunta siempre a una base desechable a la que no está
+conectada ninguna API con `EMAIL_OUTBOX_SCHEDULER` activo y `MAIL_SMTP_*` configurado (nunca producción
+ni staging con correo real). Defensa adicional, no sustitutiva: los tests solo usan correos del dominio
+reservado `destinatario.test` (RFC 6761), que no puede entregarse; el filtro de dominios reservados (Dora
+R1) solo lo deja pasar dentro de Jest y por llamada explícita del test, sin variable de entorno.
+
 **Pendiente (Argos, 07/11/2026; no implementado):**
 
 - **B2 · envío «al menos una vez».** Si la API cae después de que el SMTP acepte un correo y antes de
