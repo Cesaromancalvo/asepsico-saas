@@ -92,6 +92,19 @@ datos clínicos reales en producción.
   las programadas futuras con id, inicio, fin y nombre del profesional (sin estado, notas,
   proceso, tipo, lugar ni enlace). Quien no lo trata recibe 403 auditado. `OWNER`, `ADMIN` y
   `ASSISTANT` conservan la vista administrativa de la agenda.
+- Recepción (`ASSISTANT` y cualquier rol que no sea `OWNER`, `ADMIN` o `THERAPIST`; falla en
+  cerrado) no recibe metadatos del proceso clínico (07/11/2026): en agenda y citas
+  (`GET /sessions`, `GET /sessions/:id`, agenda del paciente y respuestas de crear, mover, cancelar
+  y cerrar) solo `hasClinicalProcess`, sin id, estado, modalidad ni frecuencia del proceso; en
+  `GET/PATCH /patients` solo el proceso activo del espacio con id, profesional (sin email) y
+  `hasActiveProcess`, sin recuentos, fechas ni procesos de alta o cerrados, y sin
+  `clinicalProcessId` en las citas de la ficha. Tests `agenda-reception-process` y
+  `patients-reception-process`, y paso 9b del smoke HTTP real con un `ASSISTANT`.
+- Avisos en la app al personal cuando cambia una cita (`docs/STAFF_NOTIFICATIONS_API.md`):
+  acotados a `workspaceId` y destinatario; lo guardado es genérico y el nombre y la fecha se
+  componen al leer con el acceso de agenda de quien lee; el portal nunca devuelve avisos del
+  personal. Sin correo ni SMS. Un envío externo futuro solo podrá usar el título y el cuerpo
+  guardados. **Pendiente:** retención (propuesta de 90 días) y borrado con la supresión del paciente.
 - Cerrar o dar de alta un proceso con citas futuras programadas devuelve 409
   `PROCESS_HAS_FUTURE_SESSIONS` (citas solo como metadatos) salvo `cancelFutureSessions: true`,
   que las cancela en la misma transacción con auditoría por cita. Crear o reprogramar una cita
@@ -194,15 +207,24 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   consentimiento separado y doble opt-in.
 - No se guarda IP ni user-agent; el contador del rate limit vive solo en memoria y caduca.
   Logs sin nombre, email, herramientas, hash ni IP (test `waitlist.security-spec.ts`).
-- Teléfono (política `lista-espera-v5`, 27/10/2026): obligatorio. Desde el 28/10/2026 la API solo
-  acepta la v5: las altas nuevas con v1–v4 → 400 `WAITLIST_POLICY_VERSION_RETIRED` (las filas ya
-  guardadas con v2–v4 no cambian); normalizado a E.164 con una única función
+- Teléfono (política `lista-espera-v5`, 27/10/2026): obligatorio en la v5; en la v6, según la
+  preferencia de contacto (siguiente punto). Las altas nuevas con v1–v4 → 400
+  `WAITLIST_POLICY_VERSION_RETIRED` desde el 28/10/2026 (las filas ya guardadas con v2–v4 no
+  cambian); normalizado a E.164 con una única función
   (`waitlist-phone.ts`) y cifrado en reposo (registro `waitlistEntry`). Sin hash ni búsqueda por
   teléfono. Nunca en logs, errores, `PlatformAuditLog` ni en el aviso por correo. Solo lo ve
   PLATFORM_ADMIN con MFA en el panel. Se borra con la supresión y la purga, y se puede borrar
   **solo el teléfono** (panel con contraseña o `waitlist:set-phone --clear`, auditado). El CLI
   `waitlist:set-phone` lee email y teléfono por stdin, nunca por argumentos (tests
   `waitlist-phone.security-spec.ts` y `waitlist-phone-db.security-spec.ts`).
+- Preferencia de contacto (política `lista-espera-v6`, publicada el 07/11/2026, migración 40):
+  `contactPreference` obligatoria (`PHONE_AND_EMAIL` / `EMAIL_ONLY`), sin opción marcada por
+  defecto en el formulario. Con `PHONE_AND_EMAIL` el teléfono es obligatorio; con `EMAIL_ONLY`
+  cualquier teléfono → 400 `WAITLIST_PHONE_NOT_ALLOWED`. La v5 solo se acepta mientras lo permita
+  `WAITLIST_V5_ACCEPTED_UNTIL` (máximo 7 días; en producción, hasta el 12/11/2026); **pendiente:**
+  quitar la variable y retirar la v5 en el código el 13/11/2026. Borrar el teléfono deja la
+  preferencia en `EMAIL_ONLY`. La preferencia no va a logs, auditoría ni al aviso interno
+  (`waitlist-v6.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
   token. No se rota: rompe la deduplicación y `waitlist:delete` de las altas previas.
 - Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,
@@ -303,7 +325,9 @@ Módulo `apps/api/src/platform/`; contrato en `packages/contracts/src/platform-w
   ligada al correo). Cualquier fallo responde 400 neutro `REGISTRATION_NOT_ALLOWED`.
 - **Condiciones versionadas** (`apps/api/src/legal/`): en el piloto demo están vigentes las
   condiciones de uso del piloto demo (`PILOT_TERMS`, `demo-1.1`) y la política de privacidad para
-  profesionales (`PRIVACY_PRODUCT`, `demo-1.1`). El contrato art. 28 (`DPA_ART28`) **no** está
+  profesionales (`PRIVACY_PRODUCT`, `demo-1.2`, en vigor desde el 27/10/2026). **Pendiente, no
+  vigente:** la `demo-1.3` (avisos por email al equipo) va con la rama `feat/email-staff-web`, aún
+  sin fusionar en `main`; al publicarse, cada profesional tendrá que aceptarla (428). El contrato art. 28 (`DPA_ART28`) **no** está
   vigente durante el demo (sigue en borrador y no debe haber datos de pacientes); vuelve con el
   piloto real. Cada profesional acepta por sí mismo: el titular al registrarse (`POST /auth/register`)
   y cada miembro invitado al darse de alta (`POST /auth/register/member`). Cada aceptación guarda

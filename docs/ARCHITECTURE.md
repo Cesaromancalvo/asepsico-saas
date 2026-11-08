@@ -30,7 +30,8 @@ vuelve al login. Detalle en `docs/SECURITY_BASELINE.md`.
 
 ## Control de acceso a contenido clínico
 `ASSISTANT` (recepción) no tiene ningún acceso a `ClinicalProcess`: solo gestiona Patients y Sessions
-para agendar. Un `THERAPIST` solo puede leer/editar/cerrar sus propios procesos; `OWNER`/`ADMIN`
+para agendar, y sus respuestas no llevan metadatos del proceso (estado, modalidad, frecuencia ni id):
+solo los booleanos `hasClinicalProcess` en las citas y `hasActiveProcess` en los pacientes (Sprint 21). Un `THERAPIST` solo puede leer/editar/cerrar sus propios procesos; `OWNER`/`ADMIN`
 pueden ver y gestionar cualquiera del workspace. Las transiciones de estado están validadas
 (`CLOSED` es terminal; `DISCHARGED` puede reabrirse a `ACTIVE`).
 
