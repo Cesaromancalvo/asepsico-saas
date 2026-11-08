@@ -39,6 +39,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 | Sprint 18 | Alta en el portal con QR y baja de miembros del equipo (entrega S5) | `SPRINT_18_ALTA_PORTAL_QR_Y_BAJA_MIEMBRO.md` | Implementado (PR #34 en `main`, `346e1fe`); desplegado el 21/10/2026 | Argos aprobado; `test:security` 1448/1448 con PostgreSQL real, web 136/136, smoke y verificaciones en vivo del CI en verde, prueba manual HTTP 21/21; producción de 33 a 37 migraciones con copia previa; comprobaciones posteriores al despliegue sin datos reales | BETA (solo demo, sin datos reales); flujo completo del alta por QR y de la baja en el entorno pendiente |
 | Sprint 19 | Salida de Vercel, web estática y arreglos previos al piloto demo (27/10/2026) | `SPRINT_19_SALIDA_VERCEL_Y_ARREGLOS_PREPILOTO.md` | Implementado (PR #43–#47 en `main`, `1930b55`) | CI con los 2 checks en verde en cada PR y en `1930b55`; revisión de seguridad aprobada en #44, #45 y #47 y condiciones C4 incorporadas en #43; cifras de tests por suite no recogidas; ensayo de alta del piloto demo correcto el 27/10 (comunicado, sin acta en el repo) | BETA (solo demo, sin datos reales); comprobación en producción pendiente |
 | Sprint 20 | «Mover cita», contraseñas por soporte y cierre de la lista de espera v5 (28–30/10/2026) | `SPRINT_20_MOVER_CITA_Y_CIERRE_LISTA_ESPERA.md` | Implementado (PR #48–#52 en `main`, `4057655`); sin migraciones | PR #51: 1695 tests de seguridad con PostgreSQL real y 241 de web, build y punta a punta en verde; CI con los 2 checks en verde en el último commit de cada PR y en `4057655`; revisión de seguridad aprobada en #51 y #52 y condiciones incorporadas en #50; botón de mover cita presente en la web publicada (solo `GET`) | BETA (solo demo, sin datos reales) |
+| Sprint 21 | Avisos al equipo, lista de espera v6, privacidad de la web y recepción sin datos del proceso clínico (02–08/11/2026) | `SPRINT_21_AVISOS_LISTA_ESPERA_V6_Y_RECEPCION.md` | Implementado (PR #54–#60 en `main`, `18dcec7`); migración 40 aplicada en producción el 07/11/2026 | #54: integración con BD real 80/80; #55: web 271/271; #58: 1721 tests de seguridad (06/11); sin recuentos para #56, #57, #59 y #60; CI con los 2 checks en verde en el último commit de cada PR y en `18dcec7`; revisión de seguridad aprobada en #54, #55, #58 y #59; smoke 9b con `ASSISTANT` en el CI | BETA (solo demo, sin datos reales); comprobación en producción con una cuenta de recepción pendiente |
 
 ## Evidencia acumulada relevante
 
@@ -55,6 +56,7 @@ La numeración se corresponde con los archivos `SPRINT_X_*.md` incluidos en el r
 - Sprint 18 (entrega S5): `test:security` con PostgreSQL real **1448/1448**, web **136/136**, smoke HTTP y verificaciones en vivo del CI en verde, prueba manual HTTP **21/21**.
 - Sprint 19 (PR #43–#47): `Typecheck, tests and build` y `PostgreSQL migrations and real HTTP smoke test` en verde en cada PR y en `1930b55`. Sin recuentos por suite.
 - Sprint 20 (PR #48–#52): según el PR #51, **1695** tests de seguridad con PostgreSQL real y **241** de web, build y punta a punta en verde. Dos checks del CI en verde en el último commit de cada PR y en el merge `4057655` (30/10/2026). Sin recuentos para #48, #50 y #52.
+- Sprint 21 (PR #54–#60): según las descripciones de los PR, #54 con integración con base de datos real **80/80** y `test:security` sin fallos; #55 con web **271/271** e integración **80/80**; #58 con **1721** tests de seguridad (06/11, los de base de datos en el CI). Dos checks del CI en verde en el último commit de cada PR y en el merge `18dcec7` (consulta del 08/11/2026). Sin recuentos para #56, #57, #59 y #60.
 
 ### Backup y restauración
 
@@ -244,6 +246,19 @@ Estado: **Implementado (PR #48–#52 en `main`, `4057655`); BETA solo para demo 
 - **#52:** la lista de espera solo acepta la política `lista-espera-v5`; v1–v4 responden `WAITLIST_POLICY_VERSION_RETIRED`.
 
 Pendiente: comprobación en producción de mover cita (movimiento, aviso en el portal, 403 sobre la cita de otro profesional) y del CLI sobre una cuenta demo; criterios del Sprint 19 aún abiertos; riesgo M1 de `TRUST_PROXY` antes del primer paciente real.
+
+### Sprint 21 — Avisos al equipo, lista de espera v6, privacidad de la web y recepción sin datos del proceso clínico (02–08/11/2026)
+
+Estado: **Implementado (PR #54–#60 en `main`, `18dcec7`); BETA solo para demo (sin datos de pacientes reales)**. Documento: `SPRINT_21_AVISOS_LISTA_ESPERA_V6_Y_RECEPCION.md`.
+
+- **#54 y #55:** avisos en la app al personal cuando cambia una cita (`docs/STAFF_NOTIFICATIONS_API.md`), campana, bloque «Cambios de agenda» en «Mi jornada» y aviso «Tu cita ha cambiado» arriba en el portal; sin correo ni SMS; sin migración.
+- **#56 y #60:** apartado 3.3 de `/privacidad/` sobre los contactos que inicia el proyecto (email, Instagram, WhatsApp, LinkedIn y contactos presentados). Textos de Lex Psi (IA) sin revisión de abogado.
+- **#57:** mejoras de conversión de la landing («Quiénes somos», «Qué pasa después de apuntarte») y PDF descargable «Mapa de tu semana de consulta», sin pedir email.
+- **#58:** lista de espera `lista-espera-v6` con preferencia de contacto y teléfono opcional (migración 40); la v5 se acepta en transición hasta el 12/11/2026.
+- **#59:** recepción (`ASSISTANT`) sin metadatos del proceso clínico en agenda, citas y fichas; smoke 9b con `ASSISTANT` exigido en el CI.
+- **Operación:** la API del piloto demo pasa a un plan de pago de Render sin suspensión por inactividad (07/11/2026).
+
+Pendiente: retirar la v5 el 13/11/2026 (paso 14); fusionar y publicar los emails al equipo con la privacidad para profesionales `demo-1.3` (rama `feat/email-staff-web`, prevista el 09/11/2026; riesgos B2 y B4 abiertos antes de los emails a pacientes); filtro y más de 100 citas en la agenda de recepción; pantalla de importación de pacientes; retención de los avisos del personal; comprobación en producción con una cuenta de recepción; revisión por abogado de los textos de privacidad.
 
 ### Fase B — Hardening RGPD y preparación jurídica
 
