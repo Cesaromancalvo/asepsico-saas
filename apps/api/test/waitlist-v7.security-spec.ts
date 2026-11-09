@@ -307,16 +307,26 @@ describe('Configuración: v5 retirada tras su fecha, v6 en transición y v7 vige
     expect(() => assertWaitlistConfig(e, new Date('2026-11-15T08:00:00Z'))).not.toThrow();
   });
 
-  it('propuesta de Lex Psi: v7 y retirada de la v5 el 13/11 (sin variable de la v5) y v6 hasta el 16/11 23:59 (+01:00)', () => {
-    const e = env({ v6: '2026-11-16T23:59:59+01:00' });
-    const deploy = new Date('2026-11-13T09:00:00+01:00');
-    expect(() => assertWaitlistConfig(e, deploy)).not.toThrow();
-    expect(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, '2026-11-13T09:00:00+01:00', e))).toEqual([false, true, true]);
-    expect(accepted('lista-espera-v6', '2026-11-16T23:59:58+01:00', e)).toBe(true);
-    expect(accepted('lista-espera-v6', '2026-11-16T23:59:59+01:00', e)).toBe(false);
-    expect(accepted('lista-espera-v6', '2026-11-17T00:00:00+01:00', e)).toBe(false);
-    // Aunque alguien dejara puesta la variable antigua de la v5, el 13/11 la v5 ya no entra (tope fijo).
-    expect(accepted('lista-espera-v5', '2026-11-13T09:00:00+01:00', env({ v5: '2026-11-14T09:00:00+01:00', v6: '2026-11-16T23:59:59+01:00' }))).toBe(false);
+  it('plan del Jefe: v7 publicada el 09/11, v5 hasta el 12/11 23:59 y v6 hasta el 15/11 23:59 (+01:00)', () => {
+    const e = env({ v5: '2026-11-12T23:59:59+01:00', v6: '2026-11-15T23:59:59+01:00' });
+    // Arranca el día de la publicación, aunque sea a última hora, y en cualquier reinicio posterior.
+    for (const boot of ['2026-11-09T08:00:00+01:00', '2026-11-09T23:59:00+01:00', '2026-11-12T10:00:00+01:00', '2026-11-20T10:00:00+01:00']) {
+      expect(() => assertWaitlistConfig(e, new Date(boot))).not.toThrow();
+    }
+    const at = (when: string) => ['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, when, e));
+    expect(at('2026-11-09T12:00:00+01:00')).toEqual([true, true, true]);
+    expect(at('2026-11-12T23:59:58+01:00')).toEqual([true, true, true]);
+    expect(at('2026-11-12T23:59:59+01:00')).toEqual([false, true, true]);
+    expect(at('2026-11-15T23:59:58+01:00')).toEqual([false, true, true]);
+    expect(at('2026-11-15T23:59:59+01:00')).toEqual([false, false, true]);
+    expect(at('2026-11-16T09:00:00+01:00')).toEqual([false, false, true]);
+  });
+
+  it('con la v7 publicada el 09/11, la v6 hasta el 16/11 23:59 no cabe en los 7 días: la API no arranca', () => {
+    const boot = new Date('2026-11-09T12:00:00+01:00');
+    expect(() => assertWaitlistConfig(env({ v6: '2026-11-16T23:59:59+01:00' }), boot)).toThrow(/WAITLIST_V6_ACCEPTED_UNTIL/);
+    // Ni una variable de la v5 alargada más allá de su tope amplía nada (y a +7 días tampoco arranca).
+    expect(accepted('lista-espera-v5', '2026-11-13T09:00:00+01:00', env({ v5: '2026-11-14T09:00:00+01:00' }))).toBe(false);
   });
 
   it('una variable de la v6 mal escrita, leída en caliente, nunca amplía lo aceptado', () => {
