@@ -20,13 +20,21 @@ export type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHE
 export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 
 /**
- * Versión de la política que muestra (y envía) la landing: la v6, con teléfono opcional y preferencia
- * de contacto obligatoria. La API (apps/api/src/waitlist/waitlist.config.ts) acepta la v6 y, solo
- * durante la transición (WAITLIST_V5_ACCEPTED_UNTIL, máx. 7 días), la v5 con sus reglas (teléfono
- * obligatorio, sin preferencia). v1–v4, y la v5 fuera de plazo: 400 WAITLIST_POLICY_VERSION_RETIRED.
+ * Versión de la política que muestra (y envía) la landing publicada: todavía la v6 (teléfono opcional
+ * y preferencia obligatoria). Fina la cambia a 'lista-espera-v7' en el mismo cambio que publica el
+ * formulario y la política v7 (scripts/check-landing-form.mjs exige que coincidan).
+ *
+ * La API (apps/api/src/waitlist/waitlist.config.ts) acepta:
+ *  - lista-espera-v7 (vigente desde la decisión del Jefe del 09/11/2026): teléfono OBLIGATORIO y SIN
+ *    contactPreference (si llega → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED); se guarda PHONE_AND_EMAIL.
+ *  - lista-espera-v6 solo durante su transición (WAITLIST_V6_ACCEPTED_UNTIL, máx. 7 días), con sus reglas.
+ *  - lista-espera-v5 solo durante su transición (WAITLIST_V5_ACCEPTED_UNTIL, nunca después del 12/11/2026).
+ * v1–v4, y v5/v6 fuera de plazo: 400 WAITLIST_POLICY_VERSION_RETIRED.
  * Al cambiarla: API → política nueva → landing.
  */
 export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v6';
+/** Versión vigente en la API (la que enviará la landing cuando publique la v7). */
+export const WAITLIST_CURRENT_API_POLICY_VERSION = 'lista-espera-v7';
 
 /**
  * Preferencia de contacto (v6). La landing NO marca ninguna por defecto (consentimiento previo a las
@@ -47,12 +55,12 @@ export interface WaitlistSubmitRequest {
   /** Email válido, máx. 254. */
   email: string;
   situation: WaitlistSituation;
-  /** v6: OBLIGATORIA (sin valor por defecto en el formulario). v5: no se envía (si llega, 400). */
+  /** v6: OBLIGATORIA (sin valor por defecto en el formulario). v7 y v5: no se envía (si llega, 400). */
   contactPreference?: WaitlistContactPreference;
   /**
    * Teléfono tal como lo teclea la persona (string, máx. 25 caracteres); la API lo valida y lo
-   * normaliza a E.164. v6: OBLIGATORIO con PHONE_AND_EMAIL y PROHIBIDO con EMAIL_ONLY (la landing
-   * oculta, vacía y omite el campo: con EMAIL_ONLY no se manda ni vacío ni null). v5: obligatorio.
+   * normaliza a E.164. v7 y v5: OBLIGATORIO. v6: OBLIGATORIO con PHONE_AND_EMAIL y PROHIBIDO con
+   * EMAIL_ONLY (la landing oculta, vacía y omite el campo: con EMAIL_ONLY no se manda ni vacío ni null).
    * Se ignoran espacios, puntos, guiones y paréntesis. Se aceptan:
    *  - España: 9 dígitos de móvil (6xx, 71x–74x) o fijo geográfico (8[1-8]x, 9[1-8]x), con o sin
    *    +34 / 0034 / 34. Se rechazan 70x, 80x y 90x (tarificación especial y servicios).
@@ -74,7 +82,7 @@ export interface WaitlistSubmitRequest {
   source?: WaitlistSource;
   /** Debe ser exactamente true (si no, 400). */
   privacyAccepted: true;
-  privacyPolicyVersion: typeof WAITLIST_PRIVACY_POLICY_VERSION | 'lista-espera-v5';
+  privacyPolicyVersion: typeof WAITLIST_CURRENT_API_POLICY_VERSION | 'lista-espera-v6' | 'lista-espera-v5';
   /**
    * La landing ya no lo envía (sin casilla de novedades); la API lo sigue aceptando y, si falta, guarda false.
    * Casilla opcional de comunicaciones comerciales. Por defecto false. Solo registra la SOLICITUD:
@@ -98,8 +106,8 @@ export interface WaitlistErrorResponse {
    * PHONE_REQUIRED / PHONE_INVALID: error junto al campo teléfono (la API no devuelve el valor).
    * PHONE_NOT_ALLOWED: llegó teléfono con EMAIL_ONLY (fallo de la landing, no de la persona).
    * CONTACT_PREFERENCE_REQUIRED: v6 sin preferencia: error junto al grupo de preferencia.
-   * CONTACT_PREFERENCE_NOT_OFFERED: preferencia con la v5.
-   * POLICY_VERSION_RETIRED: privacyPolicyVersion es una versión retirada (v1–v4, o la v5 pasada la
+   * CONTACT_PREFERENCE_NOT_OFFERED: preferencia con la v7 o la v5 (formulario y versión no casan).
+   * POLICY_VERSION_RETIRED: privacyPolicyVersion es una versión retirada (v1–v4, o la v5/v6 pasada su
    * transición), p. ej. una página antigua en caché: pedir que recargue la página.
    * COMMERCIAL_NOT_OFFERED: casilla comercial con una política que no la ofrece.
    */
