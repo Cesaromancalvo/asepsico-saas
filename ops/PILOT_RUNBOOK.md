@@ -565,19 +565,21 @@ Estado de las versiones en el código (`apps/api/src/waitlist/waitlist.config.ts
 Sin variable (o vacía), la versión está retirada. Una variable mal escrita o a más de 7 días del
 arranque impide arrancar la API. Una fecha ya pasada es válida (no impide arrancar).
 
-Fechas propuestas por Lex Psi (**pendientes de confirmar por el Jefe**): v7 en vigor el **viernes
-13/11/2026**, en el mismo despliegue que retira la v5, y la v6 en transición hasta el **16/11/2026 a
-las 23:59** (hora peninsular).
+Fechas (decisión del Jefe: la v7 se publica el **09/11/2026**): durante unos días conviven las dos
+transiciones. La v5 sigue hasta el **12/11/2026 a las 23:59** (su variable actual, sin tocarla) y la
+v6 hasta el **15/11/2026 a las 23:59** (hora peninsular). El 16/11 no vale: desde un arranque el 09/11
+supera los 7 días y la API no arrancaría.
 
 **Orden (API → política y landing, el mismo día):**
 
 1. **Antes de desplegar la API**, en Render (servicio de la API) → Environment:
-   - `WAITLIST_V6_ACCEPTED_UNTIL=2026-11-16T23:59:59+01:00` (o la fecha que confirme el Jefe, como
-     máximo 7 días después del despliegue). **Imprescindible:** con la API nueva y la landing aún en
-     la v6, sin esta variable el formulario publicado devuelve 400 `WAITLIST_POLICY_VERSION_RETIRED` a
-     todo el mundo.
-   - Borrar `WAITLIST_V5_ACCEPTED_UNTIL` (desde el 13/11 la v5 está retirada de todas formas por el
-     tope fijo; dejarla vencida no impide arrancar, pero no aporta nada).
+   - `WAITLIST_V6_ACCEPTED_UNTIL=2026-11-15T23:59:59+01:00` (como máximo 7 días después del
+     arranque; si el despliegue se retrasa, la fecha sigue valiendo mientras el arranque sea posterior
+     al 08/11 a las 23:59). **Imprescindible:** con la API nueva y la landing aún en la v6, sin esta
+     variable el formulario publicado devuelve 400 `WAITLIST_POLICY_VERSION_RETIRED` a todo el mundo.
+   - **No tocar** `WAITLIST_V5_ACCEPTED_UNTIL` (`2026-11-12T23:59:59+01:00`): borrarla hoy retiraría la
+     v5 antes de su fecha. A partir del 13/11 el tope fijo del código la retira sola; ese día se puede
+     borrar la variable (redespliega; una fecha vencida no impide arrancar).
 2. Desplegar la API (no hay migraciones nuevas; `prisma migrate deploy` no aplica nada).
 3. Comprobación (solo lectura), antes de publicar la landing: que la API sigue aceptando la v6 y ya
    acepta la v7 sin crear filas de prueba en producción. Basta con el registro de Render: arranca sin
@@ -588,7 +590,8 @@ las 23:59** (hora peninsular).
    `packages/contracts/src/waitlist.ts` en `lista-espera-v7` (lo exige `check-landing-form`).
 5. Repetir la comprobación del invariante de la v6 (las dos cifras deben ser `0`; ver la sección
    anterior). La v7 no la cambia: toda alta v7 tiene teléfono y `PHONE_AND_EMAIL`.
-6. Cumplido el plazo de la v6 (17/11): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
+6. 13/11 o después: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (opcional; la v5 ya no entra).
+7. Cumplido el plazo de la v6 (16/11): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
    quitar la v5 y la v6 de `WAITLIST_POLICY_TRANSITIONS` y pasarlas a
    `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS` (junto con la rama v6 de `contactFor`).
 
