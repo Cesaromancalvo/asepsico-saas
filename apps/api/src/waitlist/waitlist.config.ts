@@ -11,7 +11,11 @@ import { createHmac } from 'node:crypto';
  *    hash de deduplicación del email y la de firma del token de formulario. Obligatorio en
  *    producción (la API no arranca sin él). Cambiarlo rompe la deduplicación de las altas previas.
  *  - WAITLIST_V5_ACCEPTED_UNTIL: fin de la transición de la política lista-espera-v5 (opcional, máx.
- *    7 días; ver waitlistV5AcceptedUntil). Sin ella, la v5 está retirada.
+ *    7 días y nunca después del 12/11/2026 a las 23:59:59 hora peninsular; ver
+ *    waitlistTransitionUntil). Sin ella, la v5 está retirada.
+ *  - WAITLIST_V6_ACCEPTED_UNTIL: fin de la transición de la política lista-espera-v6 tras publicar la
+ *    v7 (opcional, máx. 7 días y nunca después del 15/11/2026 a las 23:59:59 hora peninsular). Sin
+ *    ella, la v6 está retirada.
  */
 
 export const WAITLIST_PATH = '/api/v1/public/waitlist';
@@ -22,28 +26,32 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * Versiones de la política de privacidad de la lista de espera que la API acepta. La landing
  * envía la versión que ha mostrado y se guarda tal cual. Al publicar una política nueva: añadir
  * su versión aquí (y en packages/contracts), desplegar la API y DESPUÉS la landing; retirar la
- * anterior (pasarla a RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS) cuando la landing ya no la sirva.
+ * anterior (pasarla a RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS) cuando acabe su transición.
  *
- * Vigente: lista-espera-v6 (decisión del Jefe del 03/11/2026; texto de Lex Psi, revisión 1.0 del
- * 03/11/2026, pendiente del abogado humano). Teléfono OPCIONAL con preferencia de contacto
- * obligatoria y sin valor por defecto (contactPreference):
- *  - PHONE_AND_EMAIL: teléfono obligatorio (WAITLIST_PHONE_REQUIRED / WAITLIST_PHONE_INVALID), en E.164
- *    y cifrado. Es el consentimiento previo a las llamadas (art. 66.1.b LGTel).
- *  - EMAIL_ONLY: el teléfono NO puede llegar (WAITLIST_PHONE_NOT_ALLOWED; minimización, art. 5.1.c).
- *  - Sin preferencia → WAITLIST_CONTACT_PREFERENCE_REQUIRED.
+ * Vigente: lista-espera-v7 (decisión del Jefe del 09/11/2026; texto de Lex Psi en redacción,
+ * pendiente del abogado humano). Teléfono OBLIGATORIO, como en la v5, y SIN campo de preferencia:
+ *  - Teléfono obligatorio (WAITLIST_PHONE_REQUIRED / WAITLIST_PHONE_INVALID), en E.164 y cifrado.
+ *  - contactPreference no se ofrece: si llega → WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED. Se guarda
+ *    PHONE_AND_EMAIL (la única coherente con un teléfono obligatorio y con el invariante
+ *    «PHONE_AND_EMAIL ⇔ teléfono» de las filas activas; el texto de la v7 debe informar de las
+ *    llamadas, art. 66.1.b LGTel).
  *
- * Transición: lista-espera-v5 (27/10/2026) solo se acepta mientras dure la transición (ver
- * waitlistV5AcceptedUntil), con SUS reglas: teléfono obligatorio, sin campo de preferencia
- * (WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED si llega) y se guarda PHONE_AND_EMAIL, porque su
- * casilla consintió las llamadas. Nunca un alta v5 sin teléfono. Pasada la fecha, o si no se
- * configura, se rechaza como retirada (WAITLIST_POLICY_VERSION_RETIRED).
+ * Transiciones (WAITLIST_POLICY_TRANSITIONS): cada versión anterior solo se acepta, con SUS reglas,
+ * mientras lo diga su variable (máx. 7 días desde el arranque; sin variable o mal escrita, retirada):
+ *  - lista-espera-v6 (03/11/2026): preferencia obligatoria y sin valor por defecto; PHONE_AND_EMAIL
+ *    exige teléfono y EMAIL_ONLY lo prohíbe (WAITLIST_PHONE_NOT_ALLOWED; minimización, art. 5.1.c).
+ *    Sin preferencia → WAITLIST_CONTACT_PREFERENCE_REQUIRED. Tope fijo (hardEnd): nunca después del
+ *    15/11/2026 a las 23:59:59 hora peninsular, aunque la variable diga otra cosa.
+ *  - lista-espera-v5 (27/10/2026): teléfono obligatorio y sin preferencia (se guarda PHONE_AND_EMAIL).
+ *    Además, tope fijo en el código (hardEnd): nunca se acepta después del 12/11/2026, aunque la
+ *    variable diga otra cosa (un reinicio con la variable movida no alarga la transición).
+ * Pasada la fecha → WAITLIST_POLICY_VERSION_RETIRED.
  *
  * Ninguna versión ofrece comunicaciones comerciales (commercialConsentRequested=true →
  * WAITLIST_COMMERCIAL_NOT_OFFERED).
  */
-export const CURRENT_WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v6';
-export const TRANSITIONAL_WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v5';
-export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v5', 'lista-espera-v6'] as const;
+export const CURRENT_WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v7';
+export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'] as const;
 
 /**
  * Versiones retiradas (condición 3 de Argos, 27/10/2026; retiradas cuando la landing publicada ya
@@ -57,48 +65,95 @@ export const ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v5', 'li
  */
 export const RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS = ['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'] as const;
 
-/** Plazo máximo de la transición de la v5 (Lex Psi, §1.4: 7 días desde la publicación de la v6). */
-export const WAITLIST_V5_TRANSITION_MAX_DAYS = 7;
+/** Plazo máximo de cualquier transición (Lex Psi, §1.4: 7 días desde la publicación de la nueva). */
+export const WAITLIST_TRANSITION_MAX_DAYS = 7;
+/** @deprecated Alias de WAITLIST_TRANSITION_MAX_DAYS (mismo plazo para la v5 y la v6). */
+export const WAITLIST_V5_TRANSITION_MAX_DAYS = WAITLIST_TRANSITION_MAX_DAYS;
+
+export type TransitionalWaitlistPolicyVersion = 'lista-espera-v5' | 'lista-espera-v6';
+
+interface WaitlistPolicyTransition {
+  /** Variable de entorno con el fin de la transición (ISO 8601 con zona). */
+  envVar: 'WAITLIST_V5_ACCEPTED_UNTIL' | 'WAITLIST_V6_ACCEPTED_UNTIL';
+  /** Tope fijo: a partir de aquí la versión nunca se acepta, diga lo que diga la variable. */
+  hardEnd: Date | null;
+}
+
+/** Versiones en transición. Al acabar una: quitarla de aquí y pasarla a RETIRED_…. */
+export const WAITLIST_POLICY_TRANSITIONS: Readonly<Record<TransitionalWaitlistPolicyVersion, WaitlistPolicyTransition>> = {
+  // Fijada en producción hasta el 12/11/2026 a las 23:59 (hora peninsular) al publicar la v6.
+  'lista-espera-v5': { envVar: 'WAITLIST_V5_ACCEPTED_UNTIL', hardEnd: new Date('2026-11-12T23:59:59+01:00') },
+  // Abierta al publicar la v7 (09/11/2026) hasta el 15/11/2026 a las 23:59 (hora peninsular). Tope
+  // fijo (condición 1 de Argos, revisión de la v7): un reinicio con la variable movida no la alarga.
+  'lista-espera-v6': { envVar: 'WAITLIST_V6_ACCEPTED_UNTIL', hardEnd: new Date('2026-11-15T23:59:59+01:00') },
+};
+
+export function isTransitionalWaitlistPolicyVersion(version: string): version is TransitionalWaitlistPolicyVersion {
+  return Object.prototype.hasOwnProperty.call(WAITLIST_POLICY_TRANSITIONS, version);
+}
+
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /**
- * Fin de la transición de la v5: WAITLIST_V5_ACCEPTED_UNTIL (fecha ISO 8601 con zona, p. ej.
- * 2026-11-13T23:59:59+01:00). Sin la variable (o vacía) la v5 queda retirada: es el valor seguro.
- * Una fecha mal escrita o a más de 7 días del arranque impide arrancar (assertWaitlistConfig), para
- * que nadie alargue la transición por error.
+ * Fin de la transición de una versión, tal como lo dice su variable (p. ej.
+ * WAITLIST_V6_ACCEPTED_UNTIL=2026-11-17T23:59:59+01:00). Sin la variable (o vacía) → null: la versión
+ * queda retirada, que es el valor seguro. Una fecha mal escrita lanza InvalidWaitlistConfigError (al
+ * arrancar, assertWaitlistConfig impide que la API se levante). No aplica el tope fijo (hardEnd).
  */
-export function waitlistV5AcceptedUntil(env: NodeJS.ProcessEnv = process.env): Date | null {
-  const raw = env.WAITLIST_V5_ACCEPTED_UNTIL?.trim();
+export function waitlistTransitionUntil(version: TransitionalWaitlistPolicyVersion, env: NodeJS.ProcessEnv = process.env): Date | null {
+  const { envVar } = WAITLIST_POLICY_TRANSITIONS[version];
+  const raw = env[envVar]?.trim();
   if (!raw) return null;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(raw)) {
-    throw new InvalidWaitlistConfigError('WAITLIST_V5_ACCEPTED_UNTIL debe ser una fecha ISO 8601 con zona horaria (p. ej. 2026-11-13T23:59:59+01:00)');
+  if (!ISO_WITH_ZONE.test(raw)) {
+    throw new InvalidWaitlistConfigError(`${envVar} debe ser una fecha ISO 8601 con zona horaria (p. ej. 2026-11-13T23:59:59+01:00)`);
   }
   const until = new Date(raw);
-  if (Number.isNaN(until.getTime())) throw new InvalidWaitlistConfigError('WAITLIST_V5_ACCEPTED_UNTIL no es una fecha válida');
+  if (Number.isNaN(until.getTime())) throw new InvalidWaitlistConfigError(`${envVar} no es una fecha válida`);
   return until;
 }
 
-function assertV5Transition(env: NodeJS.ProcessEnv, now: Date): void {
-  const until = waitlistV5AcceptedUntil(env);
-  if (until && until.getTime() > now.getTime() + WAITLIST_V5_TRANSITION_MAX_DAYS * 24 * 60 * 60_000) {
-    throw new InvalidWaitlistConfigError(`WAITLIST_V5_ACCEPTED_UNTIL no puede estar a más de ${WAITLIST_V5_TRANSITION_MAX_DAYS} días (transición de la política lista-espera-v5)`);
+/** Fin de la transición de la v5 (WAITLIST_V5_ACCEPTED_UNTIL). */
+export function waitlistV5AcceptedUntil(env: NodeJS.ProcessEnv = process.env): Date | null {
+  return waitlistTransitionUntil('lista-espera-v5', env);
+}
+
+/** Fin de la transición de la v6 (WAITLIST_V6_ACCEPTED_UNTIL). */
+export function waitlistV6AcceptedUntil(env: NodeJS.ProcessEnv = process.env): Date | null {
+  return waitlistTransitionUntil('lista-espera-v6', env);
+}
+
+/**
+ * Cada variable de transición: bien escrita y a 7 días como máximo del arranque (para que nadie alargue
+ * una transición por error). Una fecha ya pasada es válida (la versión queda retirada): así la
+ * variable de la v5 puede seguir puesta tras el 12/11 sin impedir el arranque.
+ */
+function assertTransitions(env: NodeJS.ProcessEnv, now: Date): void {
+  for (const version of Object.keys(WAITLIST_POLICY_TRANSITIONS) as TransitionalWaitlistPolicyVersion[]) {
+    const until = waitlistTransitionUntil(version, env);
+    if (until && until.getTime() > now.getTime() + WAITLIST_TRANSITION_MAX_DAYS * 24 * 60 * 60_000) {
+      const { envVar } = WAITLIST_POLICY_TRANSITIONS[version];
+      throw new InvalidWaitlistConfigError(`${envVar} no puede estar a más de ${WAITLIST_TRANSITION_MAX_DAYS} días (transición de la política ${version})`);
+    }
   }
 }
 
 /**
- * ¿Se acepta hoy un alta NUEVA con esta versión? La v6 siempre; la v5 solo antes de
- * WAITLIST_V5_ACCEPTED_UNTIL; cualquier otra, nunca. Una variable mal escrita cuenta como «sin
- * transición» (nunca amplía lo aceptado).
+ * ¿Se acepta hoy un alta NUEVA con esta versión? La vigente (v7) siempre; una en transición solo
+ * antes del fin que diga su variable y, si lo tiene, antes de su tope fijo; cualquier otra, nunca.
+ * Una variable mal escrita cuenta como «sin transición» (nunca amplía lo aceptado).
  */
 export function isWaitlistPolicyVersionAccepted(version: string, now: Date = new Date(), env: NodeJS.ProcessEnv = process.env): boolean {
   if (version === CURRENT_WAITLIST_PRIVACY_POLICY_VERSION) return true;
-  if (version !== TRANSITIONAL_WAITLIST_PRIVACY_POLICY_VERSION) return false;
+  if (!isTransitionalWaitlistPolicyVersion(version)) return false;
   let until: Date | null;
   try {
-    until = waitlistV5AcceptedUntil(env);
+    until = waitlistTransitionUntil(version, env);
   } catch {
     return false;
   }
-  return until !== null && now.getTime() < until.getTime();
+  if (until === null || now.getTime() >= until.getTime()) return false;
+  const { hardEnd } = WAITLIST_POLICY_TRANSITIONS[version];
+  return hardEnd === null || now.getTime() < hardEnd.getTime();
 }
 
 /** Tiempo mínimo entre pedir el token de formulario y enviarlo (un humano tarda más). */
@@ -170,5 +225,5 @@ export function waitlistSubkey(purpose: 'email-hash-v1' | 'form-token-v1', env: 
 export function assertWaitlistConfig(env: NodeJS.ProcessEnv = process.env, now: Date = new Date()): void {
   waitlistAllowedOrigins(env);
   waitlistSubkey('email-hash-v1', env);
-  assertV5Transition(env, now);
+  assertTransitions(env, now);
 }

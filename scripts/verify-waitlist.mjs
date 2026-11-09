@@ -4,17 +4,19 @@
 // Comprueba: form-token, alta 202 guardada cifrada (sin nombre ni email en claro), alta repetida
 // 202 sin tocar la fila, 3 altas simultáneas del mismo email → una sola fila, sin Origin → 403,
 // text/plain → 415, envío demasiado rápido → 400 y sexto envío desde la misma IP → 429.
-// Política lista-espera-v6 (condición de Argos): las dos preferencias de contacto («Solo por
-// email» sin teléfono y con teléfono → 400; «Por teléfono y por email»), v6 sin preferencia → 400 y
-// la v5 dentro o fuera de su transición según WAITLIST_VERIFY_V5_WINDOW ('open' si la API arrancó
-// con WAITLIST_V5_ACCEPTED_UNTIL en el futuro; cualquier otro valor = fuera de plazo).
+// Política lista-espera-v7 (vigente): teléfono obligatorio (sin teléfono → 400 WAITLIST_PHONE_REQUIRED)
+// y sin preferencia (con contactPreference → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED); se guarda
+// PHONE_AND_EMAIL. La v6 dentro o fuera de su transición según WAITLIST_VERIFY_V6_WINDOW ('open' si la
+// API arrancó con WAITLIST_V6_ACCEPTED_UNTIL en el futuro; cualquier otro valor = fuera de plazo), con
+// sus reglas («Solo por email» sin teléfono → 202; sin preferencia → 400). La v5 siempre retirada (su
+// tope fijo es el 12/11/2026 y el CI nunca abre su transición).
 // Al terminar borra las filas que ha creado.
 //
 // Requisitos: API local con TRUST_PROXY=loopback (cada bloque usa una IP de cliente distinta vía
 // X-Forwarded-For para no consumir el cupo de los demás), WAITLIST_ALLOWED_ORIGINS vacío o con
 // WAITLIST_ORIGIN, y DATABASE_URL de la misma BD.
 // Variables: ASEPSICO_API_URL, DATABASE_URL, WAITLIST_ORIGIN (por defecto https://asepsico.es),
-// WAITLIST_VERIFY_V5_WINDOW.
+// WAITLIST_VERIFY_V6_WINDOW.
 // Nunca imprime los datos enviados ni el contenido de la BD.
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -37,7 +39,7 @@ const EMAIL_CONC = `ci.concurrente.${run}@example.com`;
 let ipCounter = 0;
 const nextIp = () => `203.0.113.${(ipCounter++ % 250) + 1}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const V5_WINDOW_OPEN = process.env.WAITLIST_VERIFY_V5_WINDOW === 'open';
+const V6_WINDOW_OPEN = process.env.WAITLIST_VERIFY_V6_WINDOW === 'open';
 let previousIds = null; // filas que ya existían: nunca se borran
 
 function assert(cond, message) {
@@ -55,7 +57,7 @@ async function formToken(ip) {
 function payload(token, extra = {}) {
   return {
     name: NAME, email: EMAIL, situation: 'SELF_EMPLOYED', tools: 'Agenda ficticia de CI', professionalsCount: 1,
-    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'PHONE_AND_EMAIL', phone: '+34 600 000 001',
+    source: 'NOT_SAID', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v7', phone: '+34 600 000 001',
     formToken: token, ...extra,
   };
 }
@@ -115,43 +117,56 @@ async function main() {
   assert((await post(payload(tokens[0].token), { ip: ipB, origin: null })) === 403, 'sin Origin → 403');
   assert((await post(payload(tokens[0].token), { ip: ipB, type: 'text/plain' })) === 415, 'text/plain → 415');
   assert((await prisma.waitlistEntry.count()) === before + 2, 'los envíos rechazados no crean filas');
-  assert((await rowByMarker(0)).contactPreference === 'PHONE_AND_EMAIL' && /^enc:v\d:/.test((await rowByMarker(0)).phone ?? ''), 'v6 «Por teléfono y por email» → PHONE_AND_EMAIL y teléfono cifrado');
+  assert((await rowByMarker(0)).contactPreference === 'PHONE_AND_EMAIL' && /^enc:v\d:/.test((await rowByMarker(0)).phone ?? ''), 'v7 con teléfono → PHONE_AND_EMAIL y teléfono cifrado');
 
-  // Bloque C (otra IP, 4 envíos): preferencias de la v6.
+  // Bloque C (otra IP, 2 envíos): reglas de la v7.
   const ipC = nextIp();
-  const tc = [];
-  for (let i = 0; i < 4; i++) tc.push(await formToken(ipC));
+  const tc = [await formToken(ipC), await formToken(ipC)];
   await sleep((tc[0].minSeconds + 0.5) * 1000);
-  const emailOnly = (token, extra = {}) => { const { phone: _p, ...b } = payload(token, { email: `ci.solo-email.${run}@example.com`, contactPreference: 'EMAIL_ONLY', ...extra }); return b; };
-  let res = await postCode({ ...emailOnly(tc[0].token), phone: '+34 600 000 002' }, ipC);
-  assert(res.status === 400 && res.code === 'WAITLIST_PHONE_NOT_ALLOWED', `v6 «Solo por email» con teléfono → 400 WAITLIST_PHONE_NOT_ALLOWED (${res.status} ${res.code})`);
-  const { contactPreference: _c, ...noPref } = payload(tc[1].token, { email: `ci.sin-pref.${run}@example.com` });
-  res = await postCode(noPref, ipC);
-  assert(res.status === 400 && res.code === 'WAITLIST_CONTACT_PREFERENCE_REQUIRED', `v6 sin preferencia → 400 WAITLIST_CONTACT_PREFERENCE_REQUIRED (${res.status} ${res.code})`);
-  assert((await prisma.waitlistEntry.count()) === before + 2, 'los rechazos de la v6 no crean filas');
-  res = await postCode(emailOnly(tc[2].token), ipC);
-  assert(res.status === 202, `v6 «Solo por email» sin teléfono → 202 (${res.status})`);
-  const solo = await rowByMarker(-1);
-  assert(solo.phone === null && solo.contactPreference === 'EMAIL_ONLY' && solo.privacyPolicyVersion === 'lista-espera-v6', 'v6 «Solo por email» → phone NULL y EMAIL_ONLY en la BD');
+  const { phone: _p7, ...v7NoPhone } = payload(tc[0].token, { email: `ci.v7-sin-tel.${run}@example.com` });
+  let res = await postCode(v7NoPhone, ipC);
+  assert(res.status === 400 && res.code === 'WAITLIST_PHONE_REQUIRED', `v7 sin teléfono → 400 WAITLIST_PHONE_REQUIRED (${res.status} ${res.code})`);
+  res = await postCode(payload(tc[1].token, { email: `ci.v7-pref.${run}@example.com`, contactPreference: 'PHONE_AND_EMAIL' }), ipC);
+  assert(res.status === 400 && res.code === 'WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED', `v7 con contactPreference → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED (${res.status} ${res.code})`);
+  assert((await prisma.waitlistEntry.count()) === before + 2, 'los rechazos de la v7 no crean filas');
 
-  // Bloque D (otra IP, 2 envíos): la v5 dentro o fuera de su transición.
+  // Bloque D (otra IP, 3 envíos): la v6 dentro o fuera de su transición, con sus reglas.
   const ipD = nextIp();
-  const td = [await formToken(ipD), await formToken(ipD)];
+  const td = [await formToken(ipD), await formToken(ipD), await formToken(ipD)];
   await sleep((td[0].minSeconds + 0.5) * 1000);
-  const v5 = (token, extra = {}) => { const { contactPreference: _p, ...b } = payload(token, { email: `ci.v5.${run}@example.com`, privacyPolicyVersion: 'lista-espera-v5', ...extra }); return b; };
-  const { phone: _noPhone, ...v5NoPhone } = v5(td[0].token);
-  res = await postCode(v5NoPhone, ipD);
-  const expectedNoPhone = V5_WINDOW_OPEN ? 'WAITLIST_PHONE_REQUIRED' : 'WAITLIST_POLICY_VERSION_RETIRED';
-  assert(res.status === 400 && res.code === expectedNoPhone, `v5 sin teléfono (${V5_WINDOW_OPEN ? 'en plazo' : 'fuera de plazo'}) → 400 ${expectedNoPhone} (${res.status} ${res.code})`);
-  res = await postCode(v5(td[1].token), ipD);
-  if (V5_WINDOW_OPEN) {
-    assert(res.status === 202, `v5 con teléfono en plazo → 202 (${res.status})`);
-    const row = await rowByMarker(-1);
-    assert(row.privacyPolicyVersion === 'lista-espera-v5' && row.contactPreference === 'PHONE_AND_EMAIL' && /^enc:v\d:/.test(row.phone ?? ''), 'v5 en plazo → se guarda v5, PHONE_AND_EMAIL y teléfono cifrado');
+  const v6EmailOnly = (token, extra = {}) => { const { phone: _p, ...b } = payload(token, { email: `ci.v6-solo-email.${run}@example.com`, privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY', ...extra }); return b; };
+  const window6 = V6_WINDOW_OPEN ? 'en plazo' : 'fuera de plazo';
+  const { contactPreference: _c6, ...v6NoPref } = v6EmailOnly(td[0].token, { email: `ci.v6-sin-pref.${run}@example.com` });
+  res = await postCode(v6NoPref, ipD);
+  const expectedNoPref = V6_WINDOW_OPEN ? 'WAITLIST_CONTACT_PREFERENCE_REQUIRED' : 'WAITLIST_POLICY_VERSION_RETIRED';
+  assert(res.status === 400 && res.code === expectedNoPref, `v6 sin preferencia (${window6}) → 400 ${expectedNoPref} (${res.status} ${res.code})`);
+  res = await postCode({ ...v6EmailOnly(td[1].token), phone: '+34 600 000 002' }, ipD);
+  const expectedWithPhone = V6_WINDOW_OPEN ? 'WAITLIST_PHONE_NOT_ALLOWED' : 'WAITLIST_POLICY_VERSION_RETIRED';
+  assert(res.status === 400 && res.code === expectedWithPhone, `v6 «Solo por email» con teléfono (${window6}) → 400 ${expectedWithPhone} (${res.status} ${res.code})`);
+  assert((await prisma.waitlistEntry.count()) === before + 2, 'los rechazos de la v6 no crean filas');
+  res = await postCode(v6EmailOnly(td[2].token), ipD);
+  let expectedRows = before + 2;
+  if (V6_WINDOW_OPEN) {
+    assert(res.status === 202, `v6 «Solo por email» sin teléfono en plazo → 202 (${res.status})`);
+    const solo = await rowByMarker(-1);
+    assert(solo.phone === null && solo.contactPreference === 'EMAIL_ONLY' && solo.privacyPolicyVersion === 'lista-espera-v6', 'v6 en plazo «Solo por email» → phone NULL, EMAIL_ONLY y versión v6 en la BD');
+    expectedRows += 1;
   } else {
-    assert(res.status === 400 && res.code === 'WAITLIST_POLICY_VERSION_RETIRED', `v5 fuera de plazo → 400 WAITLIST_POLICY_VERSION_RETIRED (${res.status} ${res.code})`);
-    assert((await prisma.waitlistEntry.count()) === before + 3, 'la v5 fuera de plazo no crea filas');
+    assert(res.status === 400 && res.code === 'WAITLIST_POLICY_VERSION_RETIRED', `v6 fuera de plazo → 400 WAITLIST_POLICY_VERSION_RETIRED (${res.status} ${res.code})`);
+    assert((await prisma.waitlistEntry.count()) === expectedRows, 'la v6 fuera de plazo no crea filas');
   }
+
+  // Bloque E (otra IP, 2 envíos): la v5 retirada, con o sin teléfono.
+  const ipE = nextIp();
+  const te = [await formToken(ipE), await formToken(ipE)];
+  await sleep((te[0].minSeconds + 0.5) * 1000);
+  const v5 = (token, extra = {}) => payload(token, { email: `ci.v5.${run}@example.com`, privacyPolicyVersion: 'lista-espera-v5', ...extra });
+  const { phone: _noPhone, ...v5NoPhone } = v5(te[0].token);
+  res = await postCode(v5NoPhone, ipE);
+  assert(res.status === 400 && res.code === 'WAITLIST_POLICY_VERSION_RETIRED', `v5 sin teléfono → 400 WAITLIST_POLICY_VERSION_RETIRED (${res.status} ${res.code})`);
+  res = await postCode(v5(te[1].token), ipE);
+  assert(res.status === 400 && res.code === 'WAITLIST_POLICY_VERSION_RETIRED', `v5 con teléfono → 400 WAITLIST_POLICY_VERSION_RETIRED (${res.status} ${res.code})`);
+  assert((await prisma.waitlistEntry.count()) === expectedRows, 'la v5 retirada no crea filas');
 }
 
 main()

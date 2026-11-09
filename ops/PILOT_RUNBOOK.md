@@ -545,6 +545,63 @@ Con la v6, «Borrar teléfono» (panel o `waitlist:set-phone -- --clear`) deja a
 `waitlist:set-phone` (solo cuando la persona da su teléfono por escrito para que la llamemos) pone la
 preferencia en «teléfono y email».
 
+### Política `lista-espera-v7`: teléfono obligatorio de nuevo (despliegue)
+
+Decisión del Jefe del 09/11/2026; texto de Lex Psi (pendiente del abogado humano). La v7 exige el
+teléfono (E.164, cifrado) y **no** tiene campo de preferencia: si llega `contactPreference`, la API
+responde 400 `WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED`; sin teléfono, 400 `WAITLIST_PHONE_REQUIRED`.
+Se guarda `PHONE_AND_EMAIL`. **Sin migración**: las filas existentes (también las v6 «Solo por
+email», sin teléfono) no cambian ni de versión ni de preferencia.
+
+Estado de las versiones en el código (`apps/api/src/waitlist/waitlist.config.ts`):
+
+| Versión | Estado | Variable | Límite |
+|---|---|---|---|
+| v1–v4 | retiradas | — | — |
+| v5 | transición, **tope fijo** 12/11/2026 23:59:59 (+01:00) | `WAITLIST_V5_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
+| v6 | transición, con sus reglas (preferencia obligatoria; `EMAIL_ONLY` sin teléfono), **tope fijo** 15/11/2026 23:59:59 (+01:00) | `WAITLIST_V6_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
+| v7 | vigente | — | — |
+
+Sin variable (o vacía), la versión está retirada. Una variable mal escrita o a más de 7 días del
+arranque impide arrancar la API. Una fecha ya pasada es válida (no impide arrancar).
+
+Fechas (decisión del Jefe: la v7 se publica el **09/11/2026**): durante unos días conviven las dos
+transiciones. La v5 sigue hasta el **12/11/2026 a las 23:59** (su variable actual, sin tocarla) y la
+v6 hasta el **15/11/2026 a las 23:59** (hora peninsular). El 16/11 no vale: desde un arranque el 09/11
+supera los 7 días y la API no arrancaría.
+
+**Orden (API → política y landing, el mismo día):**
+
+1. **Antes de desplegar la API**, en Render (servicio de la API) → Environment:
+   - `WAITLIST_V6_ACCEPTED_UNTIL=2026-11-15T23:59:59+01:00` (como máximo 7 días después del
+     arranque; si el despliegue se retrasa, la fecha sigue valiendo mientras el arranque sea posterior
+     al 08/11 a las 23:59). **Imprescindible:** con la API nueva y la landing aún en la v6, sin esta
+     variable el formulario publicado devuelve 400 `WAITLIST_POLICY_VERSION_RETIRED` a todo el mundo.
+   - **No tocar** `WAITLIST_V5_ACCEPTED_UNTIL` (`2026-11-12T23:59:59+01:00`): borrarla hoy retiraría la
+     v5 antes de su fecha. A partir del 13/11 el tope fijo del código la retira sola; ese día se puede
+     borrar la variable (redespliega; una fecha vencida no impide arrancar).
+2. Desplegar la API (no hay migraciones nuevas; `prisma migrate deploy` no aplica nada).
+3. Comprobación (solo lectura), antes de publicar la landing: que la API sigue aceptando la v6 y ya
+   acepta la v7 sin crear filas de prueba en producción. Basta con el registro de Render: arranca sin
+   `InvalidWaitlistConfigError`. Si dice `WAITLIST_V6_ACCEPTED_UNTIL no puede estar a más de 7 días`,
+   corregir la fecha en Render (no redesplegar código).
+4. Publicar la landing (Fina): formulario v7 y política v7 en el **mismo** despliegue, con la v6
+   archivada en `/privacidad-lista-espera/v6/`, y `WAITLIST_PRIVACY_POLICY_VERSION` de
+   `packages/contracts/src/waitlist.ts` en `lista-espera-v7` (lo exige `check-landing-form`).
+5. Repetir la comprobación del invariante de la v6 (las dos cifras deben ser `0`; ver la sección
+   anterior). La v7 no la cambia: toda alta v7 tiene teléfono y `PHONE_AND_EMAIL`.
+6. 13/11 o después: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (opcional; la v5 ya no entra).
+7. Cumplido el plazo de la v6 (16/11; desde el 15/11 a las 23:59:59 el tope fijo del código la retira
+   aunque la variable diga otra fecha): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
+   quitar la v5 y la v6 de `WAITLIST_POLICY_TRANSITIONS` y pasarlas a
+   `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS` (junto con la rama v6 de `contactFor`).
+
+**Filas v6 «Solo por email».** Se conservan tal cual y **no se les pide el teléfono** (Lex Psi, v7 §4).
+Si alguien lo da por escrito por iniciativa propia, `waitlist:set-phone` (ver arriba) cifra el
+teléfono y pasa la fila a `PHONE_AND_EMAIL` sin cambiar su versión; guardar el hilo como evidencia.
+Retirar las llamadas a una alta v7 («Borrar teléfono» o `--clear`) la deja en `EMAIL_ONLY` sin
+sacarla de la lista, como hasta ahora.
+
 ### Tarea programada: purga por plazo de conservación
 
 | Cuándo | Qué |

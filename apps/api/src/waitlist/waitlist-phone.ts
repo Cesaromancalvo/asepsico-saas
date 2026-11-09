@@ -1,5 +1,5 @@
 /**
- * Teléfono de la lista de espera (política lista-espera-v5). FUENTE ÚNICA de la regla: la usan el
+ * Teléfono de la lista de espera (políticas lista-espera-v5, v6 y v7). FUENTE ÚNICA de la regla: la usan el
  * alta pública y el CLI waitlist:set-phone. La landing replica la regla para dar el error al
  * momento, pero la API no confía en ella. Ninguna función de aquí registra ni devuelve en un error
  * el valor recibido.

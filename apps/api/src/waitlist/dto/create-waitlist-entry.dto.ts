@@ -25,11 +25,12 @@ export class CreateWaitlistEntryDto {
   email!: string;
 
   /**
-   * Preferencia de contacto (lista-espera-v6): obligatoria en la v6 y sin valor por defecto. Opcional
-   * para class-validator: la obligatoriedad por versión la comprueba el servicio
-   * (WAITLIST_CONTACT_PREFERENCE_REQUIRED / _NOT_OFFERED). Un valor que no sea del enum → 400 genérico.
+   * Preferencia de contacto (lista-espera-v6, en transición): obligatoria en la v6 y sin valor por
+   * defecto; no admitida en la v7 ni en la v5. Opcional para class-validator: la regla por versión la
+   * comprueba el servicio (WAITLIST_CONTACT_PREFERENCE_REQUIRED / _NOT_OFFERED). Un valor que no sea
+   * del enum → 400 genérico.
    */
-  @ApiPropertyOptional({ enum: WaitlistContactPreference, description: 'Obligatoria en lista-espera-v6, sin valor por defecto; no admitida en v5.' })
+  @ApiPropertyOptional({ enum: WaitlistContactPreference, description: 'Solo lista-espera-v6 (transición): obligatoria, sin valor por defecto. No admitida en v7 (vigente) ni en v5.' })
   @IsOptional() @IsEnum(WaitlistContactPreference)
   contactPreference?: WaitlistContactPreference;
 
@@ -38,7 +39,7 @@ export class CreateWaitlistEntryDto {
    * class-validator: la regla por versión y preferencia la comprueba el servicio (codes propios para
    * la landing). Nunca se registra ni se devuelve en un error.
    */
-  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'v6: obligatorio con PHONE_AND_EMAIL y prohibido con EMAIL_ONLY. v5 (transición): obligatorio. Se guarda cifrado en E.164.' })
+  @ApiPropertyOptional({ maxLength: WAITLIST_PHONE_MAX_INPUT_LENGTH, example: '+34600000001', description: 'v7 (vigente) y v5 (transición): obligatorio. v6 (transición): obligatorio con PHONE_AND_EMAIL y prohibido con EMAIL_ONLY. Se guarda cifrado en E.164.' })
   @IsOptional() @Transform(trim) @IsString() @MaxLength(WAITLIST_PHONE_MAX_INPUT_LENGTH)
   phone?: string;
 
@@ -63,8 +64,8 @@ export class CreateWaitlistEntryDto {
   @IsBoolean() @Equals(true, { message: 'privacyAccepted debe ser true' })
   privacyAccepted!: boolean;
 
-  // Pasan el DTO la vigente (v6), la de transición (v5) y las retiradas: el servicio rechaza las
-  // retiradas, y la v5 fuera de la transición, con un code propio (WAITLIST_POLICY_VERSION_RETIRED).
+  // Pasan el DTO la vigente (v7), las de transición (v6, v5) y las retiradas: el servicio rechaza las
+  // retiradas, y la v6 y la v5 fuera de su transición, con un code propio (WAITLIST_POLICY_VERSION_RETIRED).
   // Cualquier otro valor → 400 de validación genérico.
   @ApiProperty({ enum: ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS })
   @IsString() @IsIn([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, ...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS], { message: 'privacyPolicyVersion no es una versión vigente' })
