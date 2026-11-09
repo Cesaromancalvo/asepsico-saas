@@ -556,7 +556,7 @@ for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['W
   check(/aria-describedby="wl-phone-help wl-phone-err"/.test(phoneInput), '12: la ayuda del teléfono no está asociada al campo');
   check(html.includes('acepto que se traten mis datos para gestionar la lista de espera y contactarme por email y por teléfono sobre el piloto de AsePsico.'), '12: la casilla no tiene el texto de Lex v7 §7.2');
   check(html.includes('Usamos tus datos, también tu teléfono, para gestionar la lista de espera y contactarte por email y por teléfono sobre el piloto, con tu consentimiento.'), '12: la primera capa no tiene el texto de Lex v7 §7.3');
-  check(html.includes('<p>Si te apuntas, solo te escribimos o te llamamos sobre tu solicitud y sobre el piloto.</p>'), '12: la pantalla de gracias no tiene el texto de Lex v7 §7.4');
+  check(html.includes('<p>Solo te escribiremos o te llamaremos sobre tu solicitud y sobre el piloto.</p>'), '12: la pantalla de gracias no tiene el texto de Lex v7 (retoque del 09/11)');
   check(html.includes('<li>Te llamamos o te escribimos para conocer tu consulta y ver si el piloto encaja contigo. Solo te contactamos sobre tu solicitud y sobre el piloto.</li>'), '12: el paso 1 de «Qué pasa después» no tiene el texto v7 (decisión del Jefe 09/11)');
   check(!/hablamos por teléfono con cada persona/.test(html), '12: «hablamos por teléfono con cada persona» (decisión del Jefe 09/11: no)');
   check(!/¿Prefieres no darlo\?/.test(html), '12: «¿Prefieres no darlo?» (decisión del Jefe 09/11: no hay salida sin teléfono)');
@@ -566,12 +566,15 @@ for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['W
   check(page.includes('Versión: lista-espera-v7 · Última actualización: 9 de noviembre de 2026'), '12: la política v7 no tiene la fecha del 9 de noviembre de 2026');
   check(page.includes('href="/privacidad-lista-espera/v6/"'), '12: la política v7 no enlaza la v6 archivada');
   check(!/Prefieres no darlo|prefieres no darlo|hablamos por teléfono con cada persona/.test(page), '12: la política v7 ofrece una salida sin teléfono o dice «cada persona»');
+  check(page.includes('Por eso es obligatorio para apuntarte a la lista del piloto. Si más adelante no quieres que te llamemos, dínoslo: borraremos tu teléfono y seguiremos contigo por email (apartado 3).</p>'), '12: el apartado 10 de la v7 no tiene el texto aprobado por Lex (09/11)');
   check(!/tu teléfono \(si nos lo das\)|solo si eliges que te llamemos|Si eliges solo email|si lo eliges, también por teléfono/.test(page), '12: la política v7 conserva textos de la v6 sobre el teléfono opcional');
   const v6 = readFileSync(join(pub, 'privacidad-lista-espera/v6/index.html'), 'utf8');
   check(v6.includes('<link rel="canonical" href="https://asepsico.es/privacidad-lista-espera/v6/">'), '12: la v6 archivada no tiene su propio canonical');
-  check(v6.includes('La versión vigente es la <a href="/privacidad-lista-espera/">lista-espera-v7</a>.') && v6.includes('href="/privacidad-lista-espera/v5/"'), '12: la v6 archivada no lleva la nota de archivo o no enlaza la v5');
-  const v5 = readFileSync(join(pub, 'privacidad-lista-espera/v5/index.html'), 'utf8');
-  check(v5.includes('La versión vigente es la <a href="/privacidad-lista-espera/">versión actual</a>.'), '12: la nota de la v5 archivada no apunta a la «versión actual» (Lex v7 §3.3)');
+  check(v6.includes('desde el 6 de noviembre de 2026 hasta el 15 de noviembre de 2026. La versión vigente es la <a href="/privacidad-lista-espera/">versión actual</a>.') && v6.includes('href="/privacidad-lista-espera/v5/"'), '12: la v6 archivada no lleva la nota de archivo (con el 15/11) o no enlaza la v5');
+  for (const n of ['v2', 'v3', 'v4', 'v5']) {
+    const old = readFileSync(join(pub, `privacidad-lista-espera/${n}/index.html`), 'utf8');
+    check(old.includes('La versión vigente es la <a href="/privacidad-lista-espera/">versión actual</a>.') && !/La versión vigente es[^<]*<a[^>]*>[^<]*<\/a>\s*\(lista-espera-v\d/.test(old), `12: la nota de la ${n} archivada no apunta a la «versión actual» sin número`);
+  }
   const sitemap = readFileSync(join(pub, 'sitemap.xml'), 'utf8');
   check(/<loc>https:\/\/asepsico\.es\/privacidad-lista-espera\/<\/loc>\s*<lastmod>2026-11-09<\/lastmod>/.test(sitemap), '12: el sitemap no tiene la v7 con fecha 2026-11-09');
   check(!/privacidad-lista-espera\/v\d+\//.test(sitemap), '12: una política archivada está en el sitemap');
