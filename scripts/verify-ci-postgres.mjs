@@ -30,11 +30,11 @@ const checks = [
   ['verificación en vivo del acceso excepcional (modo rápido de CI)', /node scripts\/verify-exceptional-access-live\.mjs[\s\S]*?QA_CONCURRENCY_ROUNDS:\s*'3'/],
   ['verificación en vivo de la reserva de citas', /node scripts\/verify-reserva-citas-live\.mjs/],
   ['tests con BD real (carreras, «Mover cita», avisos del dashboard y avisos de cambio de cita) en postgres-integration', /--testPathPattern '\(session-close-race\|booking-race\|session-reschedule\|dashboard-task-review\|appointment-change-notices-db\)'/],
-  // Lista de espera v6 (condición de Argos): smoke con las dos preferencias y la v5 fuera y dentro de
-  // plazo, y la suite waitlist-phone-db contra el Postgres del servicio.
-  ['smoke de la lista de espera (v6, v5 fuera de plazo)', /- name: Verify public waitlist \(real PostgreSQL\)\s*\n\s*run: node scripts\/verify-waitlist\.mjs/],
-  ['API reiniciada con la transición de la v5 abierta', /export WAITLIST_V5_ACCEPTED_UNTIL="\$\(date -u -d '\+3 days'/],
-  ['smoke de la lista de espera con la v5 en plazo', /run: node scripts\/verify-waitlist\.mjs\s*\n\s*env:\s*\n\s*WAITLIST_VERIFY_V5_WINDOW: open/],
+  // Lista de espera v7 (teléfono obligatorio): smoke con la v6 fuera y dentro de su transición y la v5
+  // retirada, y la suite waitlist-phone-db contra el Postgres del servicio.
+  ['smoke de la lista de espera (v7, v6 fuera de plazo)', /- name: Verify public waitlist \(real PostgreSQL\)\s*\n\s*run: node scripts\/verify-waitlist\.mjs/],
+  ['API reiniciada con la transición de la v6 abierta', /export WAITLIST_V6_ACCEPTED_UNTIL="\$\(date -u -d '\+3 days'/],
+  ['smoke de la lista de espera con la v6 en plazo', /run: node scripts\/verify-waitlist\.mjs\s*\n\s*env:\s*\n\s*WAITLIST_VERIFY_V6_WINDOW: open/],
   ['waitlist-phone-db en postgres-integration', /--testPathPattern '\(platform-admin-db\|waitlist-phone-db\|users-set-password-db\)'/],
   ['RACE_DATABASE_URL hacia el Postgres del servicio', /RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/],
   ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
