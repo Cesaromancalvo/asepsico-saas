@@ -20,9 +20,9 @@ export type WaitlistSituation = 'SELF_EMPLOYED' | 'PRACTICE' | 'STUDENT' | 'OTHE
 export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' | 'SEARCH_ENGINE' | 'OTHER' | 'NOT_SAID';
 
 /**
- * Versión de la política que muestra (y envía) la landing publicada: todavía la v6 (teléfono opcional
- * y preferencia obligatoria). Fina la cambia a 'lista-espera-v7' en el mismo cambio que publica el
- * formulario y la política v7 (scripts/check-landing-form.mjs exige que coincidan).
+ * Versión de la política que muestra (y envía) la landing publicada: la v7 (teléfono obligatorio y
+ * sin preferencia de contacto), publicada el 09/11/2026 junto con el formulario
+ * (scripts/check-landing-form.mjs exige que coincidan).
  *
  * La API (apps/api/src/waitlist/waitlist.config.ts) acepta:
  *  - lista-espera-v7 (vigente desde la decisión del Jefe del 09/11/2026): teléfono OBLIGATORIO y SIN
@@ -32,8 +32,8 @@ export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' 
  * v1–v4, y v5/v6 fuera de plazo: 400 WAITLIST_POLICY_VERSION_RETIRED.
  * Al cambiarla: API → política nueva → landing.
  */
-export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v6';
-/** Versión vigente en la API (la que enviará la landing cuando publique la v7). */
+export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v7';
+/** Versión vigente en la API (la que envía la landing). */
 export const WAITLIST_CURRENT_API_POLICY_VERSION = 'lista-espera-v7';
 
 /**

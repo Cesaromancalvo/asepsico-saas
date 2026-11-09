@@ -499,9 +499,9 @@
       generic: 'Algo ha fallado al enviar el formulario. Inténtalo de nuevo más tarde o escríbenos a ' + email + '.',
       policyRetired: 'La página se ha actualizado: recárgala y vuelve a enviar el formulario.'
     };
-    // Errores del teléfono (con «Por teléfono y por email», lista-espera-v6). Nunca repiten lo que ha escrito la persona.
+    // Errores del teléfono (obligatorio desde lista-espera-v7). Nunca repiten lo que ha escrito la persona.
     var PHONE_MSG = {
-      required: 'Escribe tu teléfono: lo necesitamos para llamarte y contarte el piloto.',
+      required: 'Escribe tu teléfono: lo necesitamos para contactarte sobre el piloto.',
       invalid: 'Escribe un teléfono válido, por ejemplo 612 345 678 o +34 612 345 678.'
     };
 
@@ -607,14 +607,6 @@
     var inPrivacy = q('#wl-privacy');
     var situationGroup = q('[data-wl-group="situation"]');
     var radios = Array.prototype.slice.call(form.querySelectorAll('input[name="situation"]'));
-    // Preferencia de contacto (lista-espera-v6): obligatoria y SIN opción marcada por defecto. El
-    // teléfono solo se muestra, se valida y se envía con «Por teléfono y por email»; con «Solo por
-    // email» (o sin elegir) se oculta, se vacía y no se envía (la API devolvería 400).
-    var contactGroup = q('[data-wl-group="contact"]');
-    var contactRadios = Array.prototype.slice.call(form.querySelectorAll('input[name="contactPreference"]'));
-    var phoneWrap = form.querySelector('[data-wl-phone-wrap]');
-    var CONTACT_PHONE = 'PHONE_AND_EMAIL';
-    var CONTACT_MSG = 'Elige cómo prefieres que te contactemos.';
     var toolRadios = Array.prototype.slice.call(form.querySelectorAll('input[name="currentTool"]'));
     var TOOL_OTHER = 'Otra';
     var TOOL_OTHER_MAX = 100;
@@ -623,27 +615,18 @@
     function setError(target, errId, msg) {
       var err = errEl(errId);
       if (err) { err.textContent = msg || ''; err.hidden = !msg; }
-      var list = target === situationGroup ? radios : contactGroup && target === contactGroup ? contactRadios : [target];
+      var list = target === situationGroup ? radios : [target];
       list.forEach(function (el) {
         if (msg) el.setAttribute('aria-invalid', 'true');
         else el.removeAttribute('aria-invalid');
       });
-      if (target === situationGroup || (contactGroup && target === contactGroup)) target.classList.toggle('is-invalid', !!msg);
+      if (target === situationGroup) target.classList.toggle('is-invalid', !!msg);
     }
     function checkedValue(list) {
       for (var i = 0; i < list.length; i++) if (list[i].checked) return list[i].value;
       return '';
     }
     function situation() { return checkedValue(radios); }
-    function contactPreference() { return checkedValue(contactRadios); }
-    function wantsPhone() { return contactPreference() === CONTACT_PHONE; }
-    function syncPhone() {
-      if (!phoneWrap || !inPhone) return;
-      var show = wantsPhone();
-      phoneWrap.hidden = !show;
-      if (show) inPhone.setAttribute('required', '');
-      else { inPhone.removeAttribute('required'); inPhone.value = ''; phoneError(''); }
-    }
     // Las preguntas opcionales van plegadas (<details>): si una tiene un error, se despliega antes de
     // poner el foco en ella para que se vea.
     var optionalBox = form.querySelector('[data-wl-optional]');
@@ -699,16 +682,10 @@
         (mail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) ? 'Escribe un email válido, por ejemplo nombre@dominio.es.' : '';
       setError(inEmail, 'wl-email-err', mailMsg); if (mailMsg) bad.push(inEmail);
 
-      var pref = contactPreference();
-      var prefMsg = pref ? '' : CONTACT_MSG;
-      if (contactGroup) { setError(contactGroup, 'wl-contact-err', prefMsg); if (prefMsg) bad.push(contactRadios[0]); }
-
-      var phone = '';
-      if (pref === CONTACT_PHONE) {
-        phone = inPhone ? inPhone.value.trim() : '';
-        var phoneKind = !phone ? 'required' : phoneValid(phone) ? '' : 'invalid';
-        phoneError(phoneKind); if (phoneKind) bad.push(inPhone);
-      } else phoneError('');
+      // lista-espera-v7: el teléfono es obligatorio y no hay preferencia de contacto (la API devolvería 400).
+      var phone = inPhone ? inPhone.value.trim() : '';
+      var phoneKind = !phone ? 'required' : phoneValid(phone) ? '' : 'invalid';
+      phoneError(phoneKind); if (phoneKind) bad.push(inPhone);
 
       var sitMsg = sit ? '' : 'Elige tu situación.';
       setError(situationGroup, 'wl-situation-err', sitMsg); if (sitMsg) bad.push(radios[0]);
@@ -732,7 +709,6 @@
       var payload = {
         name: name,
         email: mail,
-        contactPreference: pref,
         situation: sit,
         privacyAccepted: true,
         privacyPolicyVersion: version,
@@ -740,8 +716,7 @@
       };
       // La API guarda "tools" como texto (cifrado, máx. 500): se manda la opción elegida y, con "Otra",
       // lo que se escriba ("Otra: …"). Sin opción elegida, no se manda.
-      // El teléfono solo viaja con «Por teléfono y por email» (con «Solo por email» ni siquiera vacío).
-      if (pref === CONTACT_PHONE) payload.phone = phone;
+      payload.phone = phone;
       if (tool) payload.tools = toolOther ? TOOL_OTHER + ': ' + toolOther : tool;
       if (count !== null && !countMsg) payload.professionalsCount = count;
       if (inSource && inSource.value) payload.source = inSource.value;
@@ -761,7 +736,6 @@
     function showDone() {
       form.reset();
       syncToolOther();
-      syncPhone();
       form.hidden = true;
       done.hidden = false;
       done.focus();
@@ -796,13 +770,8 @@
           if (inPhone) inPhone.focus();
           return;
         }
-        if (code === 'WAITLIST_CONTACT_PREFERENCE_REQUIRED' && contactGroup) {
-          setError(contactGroup, 'wl-contact-err', CONTACT_MSG);
-          say(MSG.invalid, 'error');
-          if (contactRadios[0]) contactRadios[0].focus();
-          return;
-        }
-        // Página antigua en caché con una política retirada (v1–v4, o la v5 pasada la transición): basta con recargar.
+        // Página antigua en caché con una política retirada (v1–v4, o la v5/v6 pasada su transición) o que
+        // no casa con el formulario (preferencia con la v7): basta con recargar.
         if (code === 'WAITLIST_POLICY_VERSION_RETIRED' || code === 'WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED') { say(MSG.policyRetired, 'error'); return; }
         if (r.status === 400) { say(MSG.rejected, 'error'); return; }
         say(MSG.generic, 'error');
@@ -827,10 +796,6 @@
       r.addEventListener('change', function () { syncCount(); setError(situationGroup, 'wl-situation-err', ''); });
     });
     toolRadios.forEach(function (r) { r.addEventListener('change', syncToolOther); });
-    contactRadios.forEach(function (r) {
-      r.addEventListener('change', function () { syncPhone(); if (contactGroup) setError(contactGroup, 'wl-contact-err', ''); });
-    });
-    syncPhone();
     [inName, inEmail, inPhone, inCount, inToolOther].forEach(function (el) {
       if (el) el.addEventListener('input', function () {
         if (el.getAttribute('aria-invalid') === 'true') setError(el, el.getAttribute('aria-describedby').split(' ').pop(), '');
