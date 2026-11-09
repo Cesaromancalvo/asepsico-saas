@@ -19,19 +19,25 @@ export interface BusySessionContract {
   therapist: ProfessionalRef | null;
 }
 
-/** Cita con metadatos de agenda (las propias, o todas en la vista administrativa). Sin notas. */
+/**
+ * Cita con metadatos de agenda (las propias, o todas en la vista administrativa). Sin notas.
+ * OWNER/ADMIN/THERAPIST reciben clinicalProcessId y clinicalProcess; recepción (ASSISTANT) no
+ * recibe ninguno de los dos, solo hasClinicalProcess.
+ */
 export interface FullAgendaSessionContract extends BusySessionContract {
   status: SessionStatusValue;
   workspaceId: string;
   therapistId: string;
-  clinicalProcessId: string | null;
+  clinicalProcessId?: string | null;
+  /** Solo en la vista de recepción: la cita está asociada a un proceso clínico. */
+  hasClinicalProcess?: boolean;
   type: string;
   location: string | null;
   videoCallUrl: string | null;
   createdAt: string;
   updatedAt: string;
   patient: { id: string; firstName: string; lastName: string } | null;
-  clinicalProcess: { id: string; modality: string; status: string } | null;
+  clinicalProcess?: { id: string; modality: string; status: string } | null;
 }
 
 export type PatientAgendaItem =

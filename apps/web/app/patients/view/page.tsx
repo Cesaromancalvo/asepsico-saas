@@ -21,7 +21,8 @@ type TaskStatus = 'DRAFT' | 'PENDING' | 'IN_PROGRESS' | 'SUBMITTED' | 'CHANGES_R
 
 type Session = { id:string; startsAt:string; endsAt:string; status:string; type:string; notes?:string|null };
 // Vista general del paciente: el proceso llega sin título ni contenido clínico narrativo.
-type ClinicalProcess = { id:string; status:string; modality?:string|null; frequency?:string|null; startedAt?:string|null };
+// A recepción (ASSISTANT) solo le llega el proceso ACTIVO con id, profesional y hasActiveProcess.
+type ClinicalProcess = { id:string; status?:string; hasActiveProcess?:boolean; modality?:string|null; frequency?:string|null; startedAt?:string|null; therapist?:{ id:string; firstName?:string|null; lastName?:string|null }|null };
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; priority:number; updatedAt:string };
 type Task = { id:string; title:string; instructions?:string|null; status:TaskStatus; dueDate?:string|null; completedAt?:string|null; patientFeedback?:string|null; clinicianNotes?:string|null; createdAt:string; updatedAt:string };
 type Assessment = { id:string; scaleName:string; totalScore:number; severity:string; riskFlag:boolean; administeredAt:string };
@@ -31,7 +32,7 @@ type TimelineEvent = { id:string; type:string; date:string; title:string; descri
 type Patient = {
   id:string; firstName:string; lastName:string; email?:string|null; phone?:string|null; birthDate?:string|null;
   status:PatientStatus; sessions:Session[]; clinicalProcesses:ClinicalProcess[];
-  summary:{ processCount:number; sessionCount:number; activeProcess:ClinicalProcess|null; lastSession:Session|null; nextSession:Session|null };
+  summary:{ processCount?:number; sessionCount:number; activeProcess:ClinicalProcess|null; lastSession:Session|null; nextSession:Session|null };
 };
 
 type ClinicalHistory = {
@@ -234,7 +235,7 @@ export default function PatientRecordPage(){
       <section className="patient-record-summary-grid patient-unified-summary">
         <article className="patient-summary-card"><span>{nextSessionTitle}</span><strong>{patient.summary.nextSession?formatDate(patient.summary.nextSession.startsAt,true):'Ninguna programada'}</strong><small>{patient.summary.nextSession?'Cita programada':nextSessionEmpty}</small></article>
         <article className="patient-summary-card"><span>{ownSessionsOnly?'Tus sesiones':'Sesiones'}</span><strong>{patient.summary.sessionCount}</strong><small>Última: {formatDate(patient.summary.lastSession?.startsAt)}</small></article>
-        <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{patient.summary.activeProcess?.frequency||'Frecuencia no definida'}</small></article>
+        <article className="patient-summary-card"><span>Proceso actual</span><strong>{processLabel(patient.summary.activeProcess)}</strong><small>{isStaffWithProcessAccess(viewer.role)?(patient.summary.activeProcess?.frequency||'Frecuencia no definida'):(patient.summary.activeProcess?.therapist?therapistName(patient.summary.activeProcess.therapist):'Sin profesional asignado')}</small></article>
       </section>
       {processList}
       <aside className="patient-record-card patient-unified-side-card"><div className="patient-unified-card-heading"><div><span>Accesos rápidos</span><h2>Gestión administrativa</h2></div></div><div className="patient-quick-links"><Link href={`/agenda?patientId=${patient.id}`}><strong>Agenda</strong><span>Programar o mover citas</span></Link><Link href={patientHref(patient.id, 'portal')}><strong>Portal del paciente</strong><span>Acceso y comunicación</span></Link></div></aside>

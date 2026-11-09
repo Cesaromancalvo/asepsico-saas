@@ -58,9 +58,10 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
   const asUser = (t: string) => ({ Authorization: `Bearer ${t}`, Cookie: 'csrf_token=csrf-ficticio', 'x-csrf-token': 'csrf-ficticio' });
   const http = () => request(app.getHttpServer());
   const rowOf = (id: string) => prisma.waitlistEntry.findUniqueOrThrow({ where: { id } });
+  /** Alta pública con teléfono (hoy con la v7 vigente; el nombre viene de cuando era la v5). */
   const v5 = (email: string, phone: string) => new WaitlistService(prisma as any).submit({
     name: 'Persona Ficticia Telefono', email, phone, situation: 'PRACTICE', privacyAccepted: true,
-    privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'PHONE_AND_EMAIL', formToken: issueFormToken(Date.now() - 10_000),
+    privacyPolicyVersion: 'lista-espera-v7', formToken: issueFormToken(Date.now() - 10_000),
   } as any);
 
   /** App completa. El test de CSRF levanta la suya: el límite de 5/min por ruta e IP vive en memoria de cada app. */
@@ -120,14 +121,40 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
     expect((await rowOf(ids.v5)).contactPreference).toBe('PHONE_AND_EMAIL');
   });
 
-  it('v6 «Solo por email» contra Postgres: phone NULL y EMAIL_ONLY; con teléfono, 400 y sin fila', async () => {
-    const email = `${run}-solo-email@example.com`;
-    const base = { name: 'Persona Ficticia Solo Email', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY' };
-    await expect(new WaitlistService(prisma as any).submit({ ...base, phone: '612 000 555', formToken: issueFormToken(Date.now() - 10_000) } as any)).rejects.toMatchObject({ response: { code: 'WAITLIST_PHONE_NOT_ALLOWED' } });
-    expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email) } })).toBe(0);
-    await new WaitlistService(prisma as any).submit({ ...base, formToken: issueFormToken(Date.now() - 10_000) } as any);
-    const row = await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } });
-    expect(row).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', privacyPolicyVersion: 'lista-espera-v6', deletedAt: null });
+  it('v6 en transición, «Solo por email», contra Postgres: phone NULL y EMAIL_ONLY; con teléfono, 400 y sin fila; set-phone después → PHONE_AND_EMAIL', async () => {
+    const previousV6 = process.env.WAITLIST_V6_ACCEPTED_UNTIL;
+    // Solo Date congelado (timers reales), dentro de la transición: la v6 tiene tope fijo (15/11/2026 23:59:59 +01:00).
+    jest.useFakeTimers({
+      now: new Date('2026-11-10T10:00:00Z'),
+      doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
+    process.env.WAITLIST_V6_ACCEPTED_UNTIL = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString();
+    try {
+      const email = `${run}-solo-email@example.com`;
+      const base = { name: 'Persona Ficticia Solo Email', email, situation: 'STUDENT', privacyAccepted: true, privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY' };
+      await expect(new WaitlistService(prisma as any).submit({ ...base, phone: '612 000 555', formToken: issueFormToken(Date.now() - 10_000) } as any)).rejects.toMatchObject({ response: { code: 'WAITLIST_PHONE_NOT_ALLOWED' } });
+      expect(await prisma.waitlistEntry.count({ where: { emailHash: hashWaitlistEmail(email) } })).toBe(0);
+      await new WaitlistService(prisma as any).submit({ ...base, formToken: issueFormToken(Date.now() - 10_000) } as any);
+      const row = await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } });
+      expect(row).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', privacyPolicyVersion: 'lista-espera-v6', deletedAt: null });
+      jest.useRealTimers();
+
+      // Lex Psi, v7 §4: si esa persona da el teléfono por escrito, set-phone la pasa a PHONE_AND_EMAIL;
+      // la versión aceptada (v6) no cambia y la auditoría no lleva ni el teléfono ni la preferencia.
+      const auditsBefore = await prisma.platformAuditLog.count({ where: { entityId: row.id } });
+      expect(await setWaitlistPhone(prisma, email, '+34 612 000 666')).toBe('updated');
+      const updated = await rowOf(row.id);
+      expect(updated).toMatchObject({ contactPreference: 'PHONE_AND_EMAIL', privacyPolicyVersion: 'lista-espera-v6', deletedAt: null });
+      expect(updated.phone).toMatch(/^enc:v[12]:/);
+      expect(decryptField(updated.phone)).toBe('+34612000666');
+      const audits = await prisma.platformAuditLog.findMany({ where: { entityId: row.id } });
+      expect(audits).toHaveLength(auditsBefore + 1);
+      expect(JSON.stringify(audits)).not.toMatch(/612.?000.?666|EMAIL_ONLY|PHONE_AND_EMAIL|contactPreference/);
+    } finally {
+      jest.useRealTimers();
+      if (previousV6 === undefined) delete process.env.WAITLIST_V6_ACCEPTED_UNTIL;
+      else process.env.WAITLIST_V6_ACCEPTED_UNTIL = previousV6;
+    }
   });
 
   it('panel: PLATFORM_ADMIN con MFA ve el teléfono descifrado y withoutPhone; cualquier otro, 404 sin teléfono', async () => {

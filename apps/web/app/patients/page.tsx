@@ -48,10 +48,12 @@ type Therapist = {
   email?: string;
 };
 
-// Vista general: sin título del proceso (puede revelar contenido clínico).
+// Vista general: sin título del proceso (puede revelar contenido clínico). A recepción
+// (ASSISTANT) solo le llega el proceso ACTIVO con id, profesional y hasActiveProcess.
 type ClinicalProcess = {
   id: string;
-  status: ProcessStatus;
+  status?: ProcessStatus;
+  hasActiveProcess?: boolean;
   modality?: string;
   frequency?: string;
   startedAt?: string;
@@ -67,7 +69,7 @@ type SessionSummary = {
 };
 
 type PatientSummary = {
-  processCount: number;
+  processCount?: number; // recepción no lo recibe
   sessionCount: number;
   activeProcess: ClinicalProcess | null;
   lastSession: SessionSummary | null;
@@ -588,6 +590,7 @@ export default function PatientsPage() {
                     </div>
 
                     <div className="patients-row-stats">
+                      {patient.summary.processCount !== undefined && (
                       <div>
                         <div className="muted">
                           Procesos
@@ -599,6 +602,7 @@ export default function PatientsPage() {
                           }
                         </strong>
                       </div>
+                      )}
 
                       <div>
                         <div className="muted">
@@ -850,7 +854,7 @@ export default function PatientsPage() {
                     )}
                   </strong>
 
-                  {selectedPatient.summary.activeProcess && (
+                  {selectedPatient.summary.activeProcess && viewer && isStaffWithProcessAccess(viewer.role) && (
                     <Link
                       href={processHref(selectedPatient.id, selectedPatient.summary.activeProcess.id)}
                       className="button secondary"
@@ -859,7 +863,7 @@ export default function PatientsPage() {
                       Abrir proceso
                     </Link>
                   )}
-                  {selectedPatient.summary.activeProcess && canManageProcess(viewer, selectedPatient.summary.activeProcess) && (
+                  {selectedPatient.summary.activeProcess?.status && canManageProcess(viewer, selectedPatient.summary.activeProcess) && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                       {PROCESS_TRANSITIONS[selectedPatient.summary.activeProcess.status].map((t) => (
                         <button
@@ -888,6 +892,7 @@ export default function PatientsPage() {
                   </strong>
                 </div>
 
+                {viewer && isStaffWithProcessAccess(viewer.role) && (
                 <div>
                   <div className="muted">
                     Frecuencia
@@ -900,6 +905,7 @@ export default function PatientsPage() {
                       'No indicada'}
                   </strong>
                 </div>
+                )}
 
                 <div>
                   <div className="muted">

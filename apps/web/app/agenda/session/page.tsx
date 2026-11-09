@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
-import { isForbidden, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
+import { isForbidden, isStaffWithProcessAccess, modalityLabel, processLabel, sessionClinicalAccess, useViewer } from "@/lib/clinical";
 import { patientHref, processHref, queryId } from '@/lib/routes';
 import RescheduleSessionForm from "@/components/RescheduleSessionForm";
 import { agendaWeekHref, canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from "@/lib/reschedule";
@@ -164,8 +164,13 @@ export default function SessionDetailPage() {
             <div><dt>Tipo</dt><dd>{session.type ? SESSION_TYPE[session.type] ?? session.type : "No indicado"}</dd></div>
             <div><dt>Ubicación</dt><dd>{session.location || "No indicada"}</dd></div>
             <div><dt>Profesional</dt><dd>{fullName(session.therapist)}</dd></div>
-            <div><dt>Proceso</dt><dd>{session.clinicalProcess ? processLabel(session.clinicalProcess) : "Sin proceso"}</dd></div>
-            <div><dt>Modalidad</dt><dd>{modalityLabel(session.clinicalProcess?.modality) ?? "No indicada"}</dd></div>
+            {/* Recepción (ASSISTANT): la API no envía el proceso; tampoco se pinta (regla dura 2). */}
+            {isStaffWithProcessAccess(viewer?.role) && (
+              <>
+                <div><dt>Proceso</dt><dd>{session.clinicalProcess ? processLabel(session.clinicalProcess) : "Sin proceso"}</dd></div>
+                <div><dt>Modalidad</dt><dd>{modalityLabel(session.clinicalProcess?.modality) ?? "No indicada"}</dd></div>
+              </>
+            )}
           </dl>
           <div className="e1-actions">
             {canReschedule && !rescheduling && (

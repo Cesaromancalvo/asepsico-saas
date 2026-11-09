@@ -30,11 +30,11 @@ const checks = [
   ['verificación en vivo del acceso excepcional (modo rápido de CI)', /node scripts\/verify-exceptional-access-live\.mjs[\s\S]*?QA_CONCURRENCY_ROUNDS:\s*'3'/],
   ['verificación en vivo de la reserva de citas', /node scripts\/verify-reserva-citas-live\.mjs/],
   ['tests con BD real (carreras, «Mover cita», avisos del dashboard, avisos de cambio de cita y bandeja de email) en postgres-integration', /--testPathPattern '\(session-close-race\|booking-race\|session-reschedule\|dashboard-task-review\|appointment-change-notices-db\|email-outbox-db\)'/],
-  // Lista de espera v6 (condición de Argos): smoke con las dos preferencias y la v5 fuera y dentro de
-  // plazo, y la suite waitlist-phone-db contra el Postgres del servicio.
-  ['smoke de la lista de espera (v6, v5 fuera de plazo)', /- name: Verify public waitlist \(real PostgreSQL\)\s*\n\s*run: node scripts\/verify-waitlist\.mjs/],
-  ['API reiniciada con la transición de la v5 abierta', /export WAITLIST_V5_ACCEPTED_UNTIL="\$\(date -u -d '\+3 days'/],
-  ['smoke de la lista de espera con la v5 en plazo', /run: node scripts\/verify-waitlist\.mjs\s*\n\s*env:\s*\n\s*WAITLIST_VERIFY_V5_WINDOW: open/],
+  // Lista de espera v7 (teléfono obligatorio): smoke con la v6 fuera y dentro de su transición y la v5
+  // retirada, y la suite waitlist-phone-db contra el Postgres del servicio.
+  ['smoke de la lista de espera (v7, v6 fuera de plazo)', /- name: Verify public waitlist \(real PostgreSQL\)\s*\n\s*run: node scripts\/verify-waitlist\.mjs/],
+  ['API reiniciada con la transición de la v6 abierta', /export WAITLIST_V6_ACCEPTED_UNTIL="\$\(date -u -d '\+3 days'/],
+  ['smoke de la lista de espera con la v6 en plazo', /run: node scripts\/verify-waitlist\.mjs\s*\n\s*env:\s*\n\s*WAITLIST_VERIFY_V6_WINDOW: open/],
   ['waitlist-phone-db en postgres-integration', /--testPathPattern '\(platform-admin-db\|waitlist-phone-db\|users-set-password-db\)'/],
   ['RACE_DATABASE_URL hacia el Postgres del servicio', /RACE_DATABASE_URL:\s*postgresql:\/\/asepsico:asepsico@localhost:5432\/asepsico/],
   ['RACE_DATABASE_REQUIRED=1 (falla en vez de omitirse)', /RACE_DATABASE_REQUIRED:\s*'1'/],
@@ -181,6 +181,20 @@ if (!/randomBytes\(/.test(smoke) || /temporaryPassword:\s*'[^']+'/.test(smoke)) 
 }
 if (!/finally\s*\{[\s\S]*?\/portal-account`,\s*\{\s*method:\s*'DELETE'/.test(smoke)) {
   throw new Error('El smoke debe desactivar las cuentas de portal (DELETE portal-account) en un finally');
+}
+
+// Condición 2 de Argos (fix/pacientes-recepcion-sin-proceso): el smoke real comprueba lo que ve
+// recepción (ASSISTANT) del proceso clínico. Con ENROLL_MFA prepara sus datos con Prisma, así que
+// necesita DATABASE_URL en el job (si faltara, el smoke falla en vez de omitir el paso).
+if (!/console\.log\('9b\/11[^\n]*await checkReceptionProcessView\(stamp\);/.test(smoke) ||
+    !/assert\(process\.env\.DATABASE_URL,/.test(smoke)) {
+  throw new Error('El smoke debe ejecutar checkReceptionProcessView (vista de recepción del proceso clínico) y exigir DATABASE_URL');
+}
+{
+  const job = workflow.slice(workflow.indexOf('postgres-integration:'));
+  if (!/^\s{6}DATABASE_URL:\s*postgresql:\/\//m.test(job.slice(0, job.indexOf('steps:')))) {
+    throw new Error('El job postgres-integration debe definir DATABASE_URL a nivel de job (la usa el smoke para la vista de recepción)');
+  }
 }
 
 // La API exige MFA a OWNER/ADMIN/THERAPIST: sin este flujo el smoke muere con 403 en el paso 2.

@@ -125,6 +125,8 @@ describe('GET /clinical-processes/:id no devuelve el motivo de consulta del paci
   });
 });
 
+const args0 = (prisma: any) => prisma.session.findMany.mock.calls[0][0];
+
 describe('GET /sessions (agenda) sin notas ni título del proceso', () => {
   it.each(STAFF)('%s: solo metadatos de la sesión', async (_role, actor) => {
     const full = { ...sessionRow(), patient: patientRow(), therapist: { id: 'therapist-1', firstName: 'T', lastName: 'F' }, clinicalProcess: processRow() };
@@ -132,10 +134,19 @@ describe('GET /sessions (agenda) sin notas ni título del proceso', () => {
     const result: any = await new SessionsService(prisma).list('ws-1', actor, {} as any);
 
     const [row] = result.data;
-    expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', clinicalProcess: { id: 'proc-1', modality: 'IN_PERSON', status: 'ACTIVE' } });
+    if (actor.role === 'ASSISTANT') {
+      // Recepción: nada del proceso clínico (regla dura 2), ni su id: solo hasClinicalProcess.
+      expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', hasClinicalProcess: true });
+      expect(row).not.toHaveProperty('clinicalProcess');
+      expect(row).not.toHaveProperty('clinicalProcessId');
+      expect(JSON.stringify(result)).not.toContain('proc-1');
+      expect(args0(prisma).select).not.toHaveProperty('clinicalProcess');
+    } else {
+      expect(row).toMatchObject({ id: 'sess-1', status: 'COMPLETED', clinicalProcess: { id: 'proc-1', modality: 'IN_PERSON', status: 'ACTIVE' } });
+      expect(row.clinicalProcess).not.toHaveProperty('title');
+    }
     expect(row).not.toHaveProperty('notes');
     expect(row).not.toHaveProperty('internalSummary');
-    expect(row.clinicalProcess).not.toHaveProperty('title');
     expect(row.patient).not.toHaveProperty('consultationReason');
     expectNoNarrative(result, [SESSION_NOTES, SESSION_SUMMARY, PROCESS_TITLE, PROCESS_REASON, PATIENT_REASON]);
 
@@ -143,7 +154,7 @@ describe('GET /sessions (agenda) sin notas ni título del proceso', () => {
     expect(args.include).toBeUndefined();
     expect(args.select).not.toHaveProperty('notes');
     expect(args.select).not.toHaveProperty('internalSummary');
-    expect(args.select.clinicalProcess.select).not.toHaveProperty('title');
+    expect(args.select.clinicalProcess?.select ?? {}).not.toHaveProperty('title');
   });
 });
 
@@ -237,20 +248,23 @@ function expectNoWrites(prisma: any) {
 }
 
 describe('GET /sessions/:id y escrituras de notas por rol', () => {
-  it('ASSISTANT en GET /sessions/:id: sin notes, internalSummary ni título del proceso', async () => {
+  it('ASSISTANT en GET /sessions/:id: sin notes, internalSummary ni nada del proceso clínico', async () => {
     const prisma = sessionsPrisma();
     const result: any = await new SessionsService(prisma).get('ws-1', assistant, 'sess-1');
-    expect(result).toMatchObject({ id: 'sess-1', therapistId: 'therapist-1', clinicalProcess: { id: 'proc-1', status: 'ACTIVE' } });
+    expect(result).toMatchObject({ id: 'sess-1', therapistId: 'therapist-1', hasClinicalProcess: true });
+    expect(result).not.toHaveProperty('clinicalProcessId');
+    expect(JSON.stringify(result)).not.toContain('proc-1');
     expect(result).not.toHaveProperty('notes');
     expect(result).not.toHaveProperty('internalSummary');
-    expect(result.clinicalProcess).not.toHaveProperty('title');
+    expect(result).not.toHaveProperty('clinicalProcess');
+    expect(prisma.session.findFirst.mock.calls[0][0].select).not.toHaveProperty('clinicalProcess');
     expectNoNarrative(result, [SESSION_NOTES, SESSION_SUMMARY, PROCESS_TITLE, PROCESS_REASON, PATIENT_REASON]);
     const args = prisma.session.findFirst.mock.calls[0][0];
     expect(args.where).toMatchObject({ id: 'sess-1', workspaceId: 'ws-1' });
     expect(args.include).toBeUndefined();
     expect(args.select).not.toHaveProperty('notes');
     expect(args.select).not.toHaveProperty('internalSummary');
-    expect(args.select.clinicalProcess.select).not.toHaveProperty('title');
+    expect(args.select.clinicalProcess?.select ?? {}).not.toHaveProperty('title');
   });
 
   it('OWNER que trata al paciente en GET /sessions/:id ve las notas, pero no el resumen interno ajeno', async () => {

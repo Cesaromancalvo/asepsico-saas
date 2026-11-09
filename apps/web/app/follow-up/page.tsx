@@ -13,9 +13,10 @@ type Patient = {
   lastName: string;
   status: 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
   summary: {
-    processCount: number;
+    processCount?: number;
     sessionCount: number;
-    activeProcess?: { id: string; status: string; modality?: string | null } | null;
+    // Recepción: sin status ni modalidad, solo hasActiveProcess.
+    activeProcess?: { id: string; status?: string; modality?: string | null; hasActiveProcess?: boolean } | null;
     lastSession?: { startsAt: string; status: string } | null;
     nextSession?: { startsAt: string; status: string } | null;
   };

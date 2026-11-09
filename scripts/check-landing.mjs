@@ -13,12 +13,16 @@
  *     'self' + CONNECT_ORIGINS, o sin form-action 'none'.
  *   - (con --require-filled, para la salida de apps/landing/build.mjs) un marcador [[...]] sin
  *     rellenar. Sin esa opción, [[NIF]] y [[DOMICILIO]] son lo esperado en el código fuente.
+ *   - un enlace o recurso con http:// (solo https; se exceptúan los espacios de nombres xmlns);
+ *   - un recurso descargable obligatorio (REQUIRED_LINKS: el mapa de la semana, página y PDF) que
+ *     no exista en el directorio o al que no enlace ninguna página, o un enlace interno a
+ *     /recursos/... que no lleve a ningún archivo.
  *
  * Uso: node scripts/check-landing.mjs [directorio] [--require-filled]
  *      (por defecto apps/landing/public)
  * Sin dependencias.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,6 +35,13 @@ const ALLOWED_HOSTS = ['asepsico.es', 'forms.gle', 'instagram.com', 'policies.go
 // (WAITLIST_API_URL) y solo con https. Es lo mismo que va en connect-src de la CSP (README).
 const CONNECT_ORIGINS = ['https://asepsico-api.onrender.com'];
 const CONNECT_FILE = 'js/config.js';
+
+// Recursos descargables que la landing ofrece y que tienen que estar en la salida publicada y
+// enlazados desde alguna página (href exacto → archivo que lo sirve).
+const REQUIRED_LINKS = [
+  { href: '/recursos/mapa-semana-consulta/', file: 'recursos/mapa-semana-consulta/index.html' },
+  { href: '/recursos/mapa-semana-consulta.pdf', file: 'recursos/mapa-semana-consulta.pdf' },
+];
 
 // Archivos que no son contenido de la web (licencias) y pueden citar URLs ajenas.
 const IGNORED_FILES = new Set(['fonts/OFL.txt']);
@@ -91,6 +102,7 @@ try {
 }
 
 let scanned = 0;
+const internalHrefs = []; // { rel, href } de las páginas, para comprobar los recursos
 for (const full of files) {
   const rel = relative(root, full).split('\\').join('/');
   const ext = extname(full).toLowerCase();
@@ -159,6 +171,18 @@ for (const full of files) {
   }
   for (const m of scan.matchAll(/javascript\s*:/gi)) report(problems, rel, text, m.index, 'URL javascript: no permitida');
 
+  // 5. Solo https: ningún http:// (ni en enlaces, ni en recursos, ni en el JSON-LD), salvo xmlns.
+  for (const m of text.matchAll(/\bhttp:\/\//gi)) {
+    const before = text.slice(Math.max(0, m.index - 16), m.index);
+    if (/xmlns(?::[a-z]+)?\s*=\s*["']?$/i.test(before)) continue;
+    report(problems, rel, text, m.index, 'enlace http:// (solo https)');
+  }
+
+  // 6. Enlaces internos absolutos de las páginas (para REQUIRED_LINKS y los de /recursos/).
+  if (ext === '.html' || ext === '.htm') {
+    for (const m of scan.matchAll(/\shref\s*=\s*["'](\/[^"'#?]*)/gi)) internalHrefs.push({ rel, href: m[1], index: m.index, text });
+  }
+
   // Marcadores de datos del titular. En el código fuente son lo esperado (el repo es público: los
   // rellena apps/landing/build.mjs al publicar); en la salida del build (--require-filled) son error.
   for (const m of raw.matchAll(/\[\[[A-ZÁÉÍÓÚÜÑ_ ]+\]\]/g)) {
@@ -166,6 +190,18 @@ for (const full of files) {
     else if (!KNOWN_MARKERS.has(m[0])) report(problems, rel, raw, m.index, `marcador desconocido: ${m[0]} (build.mjs no lo rellena)`);
     else markers += 1;
   }
+}
+
+// Recursos descargables: existen en el directorio revisado (fuente o salida del build) y alguna
+// página los enlaza; y todo enlace interno a /recursos/ lleva a un archivo que existe.
+for (const { href, file } of REQUIRED_LINKS) {
+  if (!existsSync(join(root, file))) problems.push(`${file}  falta el recurso obligatorio (${href})`);
+  if (!internalHrefs.some((l) => l.href === href)) problems.push(`ninguna página enlaza a ${href}`);
+}
+for (const { rel, href, index, text } of internalHrefs) {
+  if (!href.startsWith('/recursos/')) continue;
+  const target = href.endsWith('/') ? join(root, href, 'index.html') : join(root, href);
+  if (!existsSync(target)) report(problems, rel, text, index, `enlace interno roto: ${href}`);
 }
 
 // CSP documentada para Render (README de la landing): connect-src = 'self' + la API, y nada más;

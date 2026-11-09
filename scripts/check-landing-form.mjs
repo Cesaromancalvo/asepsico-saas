@@ -16,13 +16,14 @@
  *     de máx. 100 caracteres, y sin campos commercialConsent*; las preguntas opcionales van plegadas en un
  *     <details> sin nada obligatorio dentro y se despliegan si una de ellas tiene un error;
  *  9. versión de la política: config.js = página = contrato, aceptada por la API, y archivadas con noindex;
- * 11. teléfono (con «Por teléfono y por email», lista-espera-v6): obligatorio, misma regla que la API, se envía tal como se escribe,
+ * 11. teléfono (lista-espera-v7): siempre obligatorio, misma regla que la API, se envía tal como se escribe,
  *     un mensaje distinto para cada code de la API (PHONE_REQUIRED, PHONE_INVALID),
  *     foco en el campo y nunca se repite el número en un mensaje; POLICY_VERSION_RETIRED pide recargar
  *     sin marcar campos y un code desconocido cae en el mensaje genérico de 400;
- * 12. preferencia de contacto (lista-espera-v6): obligatoria y sin opción marcada en el HTML; con
- *     «Solo por email» el teléfono se oculta, se vacía y NO viaja (ni vacío); codes nuevos de la API;
- *     casilla, primera capa y pantalla de gracias con los textos de Lex (revisión 03/11/2026 §2);
+ * 12. lista-espera-v7 sin preferencia de contacto: el HTML no tiene el grupo, el teléfono es visible y
+ *     required, el POST nunca lleva contactPreference y siempre lleva phone; codes de la API; ayuda del
+ *     teléfono, casilla, primera capa, pantalla de gracias y «Qué pasa después» con los textos de Lex
+ *     (v7, 09/11/2026 §7) y las decisiones del Jefe (sin «¿Prefieres no darlo?»);
  * 10. arranque en frío (tiempos escalados): mensajes a los 6 s y a los 20 s, timeout a los 90 s sin
  *     reintento, sin doble envío mientras espera, un único reintento tras un fallo de red y el envío
  *     espera al token que se está pidiendo desde la carga.
@@ -115,11 +116,6 @@ function buildDom() {
   field('wl-name').setAttribute('aria-describedby', 'wl-name-err');
   field('wl-email').setAttribute('aria-describedby', 'wl-email-err');
   field('wl-phone').setAttribute('aria-describedby', 'wl-phone-help wl-phone-err');
-  const phoneWrap = form.add('[data-wl-phone-wrap]', new El('phone-wrap', { hidden: true }));
-  const contactGroup = form.add('[data-wl-group="contact"]', new El('contact-group'));
-  for (const v of ['PHONE_AND_EMAIL', 'EMAIL_ONLY']) {
-    form.add('input[name="contactPreference"]', reg(new El(`contact-${v}`, { value: v, isField: true, radio: true })));
-  }
   field('wl-count').setAttribute('aria-describedby', 'wl-count-err');
   field('wl-tool-other').setAttribute('aria-describedby', 'wl-tool-other-help wl-tool-other-err');
   const toolOtherWrap = form.add('[data-wl-tool-other-wrap]', new El('tool-other-wrap', { hidden: true }));
@@ -140,13 +136,12 @@ function buildDom() {
     origReset();
     for (const r of form.querySelectorAll('input[name="situation"]')) r.value = r.id.slice(4);
     for (const r of form.querySelectorAll('input[name="currentTool"]')) r.value = r.id.slice(5);
-    for (const r of form.querySelectorAll('input[name="contactPreference"]')) r.value = r.id.slice(8);
   };
-  for (const id of ['wl-name-err', 'wl-email-err', 'wl-phone-err', 'wl-contact-err', 'wl-situation-err', 'wl-count-err', 'wl-tool-other-err', 'wl-privacy-err']) {
+  for (const id of ['wl-name-err', 'wl-email-err', 'wl-phone-err', 'wl-situation-err', 'wl-count-err', 'wl-tool-other-err', 'wl-privacy-err']) {
     reg(new El(id, { hidden: true }));
   }
   const cta = doc.add('a[data-cta]', new El('cta'));
-  return { section, form, done, countWrap, toolOtherWrap, optional, group, phoneWrap, contactGroup, cta, status: section.querySelector('[data-wl-status]') };
+  return { section, form, done, countWrap, toolOtherWrap, optional, group, cta, status: section.querySelector('[data-wl-status]') };
 }
 
 /* ---- fetch falso: cola de respuestas por ruta y registro de llamadas ---- */
@@ -207,13 +202,6 @@ function fill(t, opts = {}) {
   const f = t.form;
   f.querySelector('#wl-name').value = 'Persona Ficticia';
   f.querySelector('#wl-email').value = opts.email || 'ficticia@example.com';
-  // Por defecto «Por teléfono y por email» (como en la v5, para reutilizar las pruebas del teléfono).
-  const contact = opts.contact === undefined ? 'PHONE_AND_EMAIL' : opts.contact;
-  if (contact) {
-    const radio = f.querySelectorAll('input[name="contactPreference"]').find((x) => x.value === contact);
-    radio.checked = true;
-    radio.dispatch('change');
-  }
   f.querySelector('#wl-phone').value = opts.phone !== undefined ? opts.phone : '612 345 678';
   f.querySelectorAll('input[name="situation"]')[0].checked = true;
   f.querySelector('#wl-privacy').checked = true;
@@ -268,7 +256,7 @@ async function submitAndWait(t, ms = 500) { t.form.dispatch('submit'); await sle
   if (p[0]) {
     check(p[0].at - tokenAt >= 1000, `2: se envió ${p[0].at - tokenAt} ms después del token (mínimo 1000)`);
     check(p[0].body.formToken === 'tok-espera', '2: no se envió el token recibido');
-    check(p[0].body.privacyPolicyVersion === 'lista-espera-v6', '2: privacyPolicyVersion distinto de lista-espera-v6');
+    check(p[0].body.privacyPolicyVersion === 'lista-espera-v7', '2: privacyPolicyVersion distinto de lista-espera-v7');
     check(p[0].body.phone === '612 345 678', `11: el teléfono no se envió tal como se escribió ("${p[0].body.phone}")`);
     check(!Object.keys(p[0].body).some((k) => k.startsWith('commercialConsent')), '2: se envió un campo commercialConsent* (la casilla de novedades ya no existe)');
     check(p[0].body.tools === 'Otra: Un programa propio', `8: "Otra" con texto se envió como "${p[0].body.tools}"`);
@@ -482,8 +470,8 @@ for (const [opts, expected] of [
   check(t.done.hidden === false, '10: el envío tras esperar el token no terminó');
 }
 
-/* ---- 11. Teléfono (lista-espera-v5) ---- */
-const PHONE_REQUIRED = 'Escribe tu teléfono: lo necesitamos para llamarte y contarte el piloto.';
+/* ---- 11. Teléfono (obligatorio en lista-espera-v7) ---- */
+const PHONE_REQUIRED = 'Escribe tu teléfono: lo necesitamos para contactarte sobre el piloto.';
 const PHONE_INVALID = 'Escribe un teléfono válido, por ejemplo 612 345 678 o +34 612 345 678.';
 const phoneErr = () => doc.getElementById('wl-phone-err');
 { // Regla del navegador = regla de la API (apps/api/src/waitlist/waitlist-phone.ts).
@@ -554,87 +542,68 @@ for (const [code, expected] of [['WAITLIST_PHONE_REQUIRED', PHONE_REQUIRED], ['W
     '11: la landing usa almacenamiento, analítica o cambia la URL');
 }
 
-/* ---- 12. Preferencia de contacto (lista-espera-v6) ---- */
-const CONTACT_REQUIRED = 'Elige cómo prefieres que te contactemos.';
-const contactErr = () => doc.getElementById('wl-contact-err');
-{ // HTML: grupo obligatorio, sin opción marcada por defecto (Lex §1.1.2, decisión del Jefe 03/11), y textos de Lex §2.
+/* ---- 12. lista-espera-v7: teléfono obligatorio y sin preferencia de contacto ---- */
+{ // HTML: sin el grupo de preferencia, teléfono visible y required, y textos de Lex (v7 §7) con las decisiones del Jefe (09/11).
   const html = readFileSync(join(pub, 'index.html'), 'utf8');
-  const group = (html.match(/<fieldset[^>]*data-wl-group="contact"[\s\S]*?<\/fieldset>/) || [''])[0];
-  const radiosHtml = group.match(/<input[^>]*name="contactPreference"[^>]*>/g) || [];
-  check(radiosHtml.length === 2, `12: el grupo de preferencia tiene ${radiosHtml.length} opciones (deben ser 2)`);
-  check(radiosHtml.every((x) => !/\schecked\b/.test(x)), '12: hay una preferencia marcada por defecto');
-  check(/value="PHONE_AND_EMAIL"[^>]*>\s*Por teléfono y por email/.test(group) && /value="EMAIL_ONLY"[^>]*>\s*Solo por email/.test(group), '12: rótulos de la preferencia distintos de los de Lex');
-  check(group.includes('¿Cómo prefieres que te contactemos sobre el piloto?') && group.includes('Si eliges solo email, no te pedimos el teléfono.'), '12: falta la pregunta o la ayuda del grupo de preferencia');
+  check(!/data-wl-group="contact"|name="contactPreference"|wl-contact-/.test(html), '12: sigue el grupo «¿Cómo prefieres que te contactemos?» (la v7 no lo ofrece)');
+  check(!/Solo por email|solo email|si lo eliges|si lo he elegido/i.test(html), '12: queda un texto de la v6 que deja elegir «solo email»');
+  check(!/tel[eé]fono[^<.]{0,40}\(opcional\)/i.test(html), '12: el teléfono aparece como opcional');
   const phoneInput = (html.match(/<input[^>]*id="wl-phone"[^>]*>/) || [''])[0];
-  check(!/\srequired\b/.test(phoneInput), '12: el teléfono no puede ser required en el HTML (solo con «Por teléfono y por email»)');
-  check(/<div class="sfield" data-wl-phone-wrap hidden>/.test(html), '12: el bloque del teléfono no empieza oculto');
-  check(html.includes('Para llamarte y contarte el piloto. Solo lo usamos para eso y no lo compartimos con nadie. Si en algún momento no quieres más llamadas, dínoslo y borramos tu teléfono.'), '12: falta la ayuda del teléfono de Lex §2.2');
-  check(html.includes('contactarme sobre el piloto de AsePsico por email y, si lo he elegido, también por teléfono.'), '12: la casilla no tiene el texto de Lex §2.3');
-  check(html.includes('contactarte sobre el piloto por email y, si lo eliges, por teléfono, con tu consentimiento.') && !html.includes('también tu teléfono'), '12: la primera capa no tiene el texto de Lex §2.4');
-  check(html.includes('Si te apuntas, solo te contactamos sobre tu solicitud y sobre el piloto.') && !html.includes('te escribimos o te llamamos'), '12: la pantalla de gracias no tiene el texto de Lex §2.5');
-  check(!/¿Prefieres no darlo\?/.test(html), '12: sigue la línea D.1 de la v5 («¿Prefieres no darlo?»)');
-  check(html.includes('<li>Solo te contactamos sobre tu solicitud y sobre el piloto: por email y, si lo eliges, por teléfono.</li>'), '12: el paso 1 de «Qué pasa después» no tiene el texto v6 de Lex (§3.1)');
+  check(/\srequired\b/.test(phoneInput), '12: el teléfono tiene que ser required en el HTML');
+  check(!/data-wl-phone-wrap/.test(html), '12: el bloque del teléfono no puede empezar oculto ni depender de una preferencia');
+  check(/<label for="wl-phone">Teléfono <span class="req" aria-hidden="true">\*<\/span><\/label>/.test(html), '12: la etiqueta del teléfono no es «Teléfono *»');
+  check(html.includes('<p class="sfield__help" id="wl-phone-help">Para llamarte o escribirte sobre el piloto y la demo. Solo lo usamos para eso y no lo compartimos con nadie. Si en algún momento no quieres más llamadas, dínoslo y borramos tu teléfono.</p>'), '12: falta la ayuda del teléfono de Lex v7 §7.1');
+  check(/aria-describedby="wl-phone-help wl-phone-err"/.test(phoneInput), '12: la ayuda del teléfono no está asociada al campo');
+  check(html.includes('acepto que se traten mis datos para gestionar la lista de espera y contactarme por email y por teléfono sobre el piloto de AsePsico.'), '12: la casilla no tiene el texto de Lex v7 §7.2');
+  check(html.includes('Usamos tus datos, también tu teléfono, para gestionar la lista de espera y contactarte por email y por teléfono sobre el piloto, con tu consentimiento.'), '12: la primera capa no tiene el texto de Lex v7 §7.3');
+  check(html.includes('<p>Solo te escribiremos o te llamaremos sobre tu solicitud y sobre el piloto.</p>'), '12: la pantalla de gracias no tiene el texto de Lex v7 (retoque del 09/11)');
+  check(html.includes('<li>Te llamamos o te escribimos para conocer tu consulta y ver si el piloto encaja contigo. Solo te contactamos sobre tu solicitud y sobre el piloto.</li>'), '12: el paso 1 de «Qué pasa después» no tiene el texto v7 (decisión del Jefe 09/11)');
+  check(!/hablamos por teléfono con cada persona/.test(html), '12: «hablamos por teléfono con cada persona» (decisión del Jefe 09/11: no)');
+  check(!/¿Prefieres no darlo\?/.test(html), '12: «¿Prefieres no darlo?» (decisión del Jefe 09/11: no hay salida sin teléfono)');
 }
-{ // Al cargar: teléfono oculto. Sin elegir preferencia: error en el grupo, foco y sin POST.
-  const t = load();
-  await sleep(10);
-  check(t.phoneWrap.hidden === true, '12: al cargar el teléfono debe estar oculto (no hay preferencia elegida)');
-  fill(t, { contact: null, phone: '' });
-  await submitAndWait(t, 200);
-  check(posts(t).length === 0, '12: sin preferencia se envió el formulario');
-  check(contactErr().textContent === CONTACT_REQUIRED && contactErr().hidden === false, '12: falta el error de preferencia obligatoria');
-  check(doc.activeElement && doc.activeElement.id === 'contact-PHONE_AND_EMAIL', '12: el foco no fue a la preferencia');
-  check(phoneErr().hidden === true, '12: sin preferencia no debe pedirse el teléfono');
-}
-{ // «Solo por email»: el teléfono se oculta, se vacía y el POST no lleva la clave phone.
-  const t = load();
-  await sleep(10);
-  fill(t, { contact: 'PHONE_AND_EMAIL', phone: '+34 611 000 999' });
-  check(t.phoneWrap.hidden === false, '12: con «Por teléfono y por email» el teléfono no se muestra');
-  const [phoneRadio, emailRadio] = t.form.querySelectorAll('input[name="contactPreference"]');
-  phoneRadio.checked = false; emailRadio.checked = true; emailRadio.dispatch('change');
-  check(t.phoneWrap.hidden === true, '12: con «Solo por email» el teléfono no se oculta');
-  check(t.form.querySelector('#wl-phone').value === '', '12: con «Solo por email» el teléfono no se vacía');
-  await submitAndWait(t);
-  const p = posts(t);
-  check(p.length === 1, '12: «Solo por email» no se envió');
-  if (p[0]) {
-    check(p[0].body.contactPreference === 'EMAIL_ONLY', '12: no se envió contactPreference EMAIL_ONLY');
-    check(!('phone' in p[0].body), '12: con «Solo por email» viajó la clave phone');
-    check(p[0].body.privacyPolicyVersion === 'lista-espera-v6', '12: la versión enviada no es lista-espera-v6');
+{ // Política v7: sin salida para quien no quiera dar el teléfono ni «cada persona» (decisiones del Jefe 09/11).
+  const page = readFileSync(join(pub, 'privacidad-lista-espera/index.html'), 'utf8');
+  check(page.includes('Versión: lista-espera-v7 · Última actualización: 9 de noviembre de 2026'), '12: la política v7 no tiene la fecha del 9 de noviembre de 2026');
+  check(page.includes('href="/privacidad-lista-espera/v6/"'), '12: la política v7 no enlaza la v6 archivada');
+  check(!/Prefieres no darlo|prefieres no darlo|hablamos por teléfono con cada persona/.test(page), '12: la política v7 ofrece una salida sin teléfono o dice «cada persona»');
+  check(page.includes('Por eso es obligatorio para apuntarte a la lista del piloto. Si más adelante no quieres que te llamemos, dínoslo: borraremos tu teléfono y seguiremos contigo por email (apartado 3).</p>'), '12: el apartado 10 de la v7 no tiene el texto aprobado por Lex (09/11)');
+  check(!/tu teléfono \(si nos lo das\)|solo si eliges que te llamemos|Si eliges solo email|si lo eliges, también por teléfono/.test(page), '12: la política v7 conserva textos de la v6 sobre el teléfono opcional');
+  const v6 = readFileSync(join(pub, 'privacidad-lista-espera/v6/index.html'), 'utf8');
+  check(v6.includes('<link rel="canonical" href="https://asepsico.es/privacidad-lista-espera/v6/">'), '12: la v6 archivada no tiene su propio canonical');
+  check(v6.includes('desde el 6 de noviembre de 2026 hasta el 15 de noviembre de 2026. La versión vigente es la <a href="/privacidad-lista-espera/">versión actual</a>.') && v6.includes('href="/privacidad-lista-espera/v5/"'), '12: la v6 archivada no lleva la nota de archivo (con el 15/11) o no enlaza la v5');
+  for (const n of ['v2', 'v3', 'v4', 'v5']) {
+    const old = readFileSync(join(pub, `privacidad-lista-espera/${n}/index.html`), 'utf8');
+    check(old.includes('La versión vigente es la <a href="/privacidad-lista-espera/">versión actual</a>.') && !/La versión vigente es[^<]*<a[^>]*>[^<]*<\/a>\s*\(lista-espera-v\d/.test(old), `12: la nota de la ${n} archivada no apunta a la «versión actual» sin número`);
   }
-  check(t.done.hidden === false, '12: tras el 202 no se muestra el mensaje final');
-  check(t.phoneWrap.hidden === true, '12: tras el 202 el teléfono no vuelve a estar oculto');
+  const sitemap = readFileSync(join(pub, 'sitemap.xml'), 'utf8');
+  check(/<loc>https:\/\/asepsico\.es\/privacidad-lista-espera\/<\/loc>\s*<lastmod>2026-11-09<\/lastmod>/.test(sitemap), '12: el sitemap no tiene la v7 con fecha 2026-11-09');
+  check(!/privacidad-lista-espera\/v\d+\//.test(sitemap), '12: una política archivada está en el sitemap');
 }
-{ // «Solo por email» aunque quede texto en el campo (p. ej. autocompletado): nunca viaja.
+{ // Envío: siempre phone y nunca contactPreference.
   const t = load();
   await sleep(10);
-  fill(t, { contact: 'EMAIL_ONLY', phone: '612 345 678' });
-  await submitAndWait(t);
-  check(posts(t).length === 1 && !('phone' in posts(t)[0].body), '12: un teléfono escrito con «Solo por email» viajó en el POST');
-}
-{ // «Por teléfono y por email»: viajan la preferencia y el teléfono.
-  const t = load();
-  await sleep(10);
-  fill(t, { contact: 'PHONE_AND_EMAIL', phone: '612 345 678' });
+  fill(t, { phone: '612 345 678' });
   await submitAndWait(t);
   const b = posts(t)[0] && posts(t)[0].body;
-  check(b && b.contactPreference === 'PHONE_AND_EMAIL' && b.phone === '612 345 678', '12: con «Por teléfono y por email» no viajaron la preferencia y el teléfono');
+  check(b && b.phone === '612 345 678', '12: el teléfono no viajó en el POST');
+  check(b && !('contactPreference' in b), '12: viajó contactPreference (la v7 no lo ofrece: 400)');
+  check(b && b.privacyPolicyVersion === 'lista-espera-v7', '12: la versión enviada no es lista-espera-v7');
+  check(t.done.hidden === false, '12: tras el 202 no se muestra el mensaje final');
 }
-// Codes nuevos de la API.
-for (const [code, want, field] of [
-  ['WAITLIST_CONTACT_PREFERENCE_REQUIRED', /Revisa los campos marcados/, true],
-  ['WAITLIST_PHONE_NOT_ALLOWED', /No hemos podido apuntarte con esos datos/, false],
-  ['WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED', /se ha actualizado: recárgala/, false],
+// Codes de la API que el formulario v7 no debería provocar: mensaje general, sin marcar campos.
+for (const [code, want] of [
+  ['WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED', /se ha actualizado: recárgala/],
+  ['WAITLIST_CONTACT_PREFERENCE_REQUIRED', /No hemos podido apuntarte con esos datos/],
+  ['WAITLIST_PHONE_NOT_ALLOWED', /No hemos podido apuntarte con esos datos/],
 ]) {
   const t = load();
   t.net.queue.post.push({ status: 400, body: { statusCode: 400, code, message: 'x' } });
   await sleep(10);
-  fill(t, { contact: 'EMAIL_ONLY' });
+  fill(t);
   await submitAndWait(t);
   check(want.test(t.status.textContent), `12 (${code}): mensaje inesperado "${t.status.textContent}"`);
   check(t.done.hidden === true, `12 (${code}): se mostró el mensaje de éxito`);
-  check((contactErr().hidden === false) === field, `12 (${code}): el error del grupo de preferencia ${field ? 'no ' : ''}se mostró`);
+  check(phoneErr().hidden === true, `12 (${code}): se marcó el teléfono (no es un fallo de la persona)`);
 }
 
 if (failures.length) {
@@ -642,4 +611,4 @@ if (failures.length) {
   console.error(`\ncheck-landing-form: ${failures.length} fallo(s).`);
   process.exit(1);
 }
-console.log('check-landing-form: OK (fetch simulado: token al cargar, minSeconds, 202, 400/413/415/429, reintentos, red con un reintento, arranque en frío (6/20/90 s), validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política, teléfono y preferencia de contacto v6).');
+console.log('check-landing-form: OK (fetch simulado: token al cargar, minSeconds, 202, 400/413/415/429, reintentos, red con un reintento, arranque en frío (6/20/90 s), validación, herramienta actual, sin casilla comercial, sin almacenamiento, versión de la política, teléfono obligatorio y sin preferencia de contacto v7).');
