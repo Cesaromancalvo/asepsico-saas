@@ -559,7 +559,7 @@ Estado de las versiones en el código (`apps/api/src/waitlist/waitlist.config.ts
 |---|---|---|---|
 | v1–v4 | retiradas | — | — |
 | v5 | transición, **tope fijo** 12/11/2026 23:59:59 (+01:00) | `WAITLIST_V5_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
-| v6 | transición, con sus reglas (preferencia obligatoria; `EMAIL_ONLY` sin teléfono) | `WAITLIST_V6_ACCEPTED_UNTIL` | 7 días desde el arranque |
+| v6 | transición, con sus reglas (preferencia obligatoria; `EMAIL_ONLY` sin teléfono), **tope fijo** 15/11/2026 23:59:59 (+01:00) | `WAITLIST_V6_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
 | v7 | vigente | — | — |
 
 Sin variable (o vacía), la versión está retirada. Una variable mal escrita o a más de 7 días del
@@ -591,7 +591,8 @@ supera los 7 días y la API no arrancaría.
 5. Repetir la comprobación del invariante de la v6 (las dos cifras deben ser `0`; ver la sección
    anterior). La v7 no la cambia: toda alta v7 tiene teléfono y `PHONE_AND_EMAIL`.
 6. 13/11 o después: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (opcional; la v5 ya no entra).
-7. Cumplido el plazo de la v6 (16/11): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
+7. Cumplido el plazo de la v6 (16/11; desde el 15/11 a las 23:59:59 el tope fijo del código la retira
+   aunque la variable diga otra fecha): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
    quitar la v5 y la v6 de `WAITLIST_POLICY_TRANSITIONS` y pasarlas a
    `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS` (junto con la rama v6 de `contactFor`).
 

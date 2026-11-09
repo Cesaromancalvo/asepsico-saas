@@ -14,7 +14,8 @@ import { createHmac } from 'node:crypto';
  *    7 días y nunca después del 12/11/2026 a las 23:59:59 hora peninsular; ver
  *    waitlistTransitionUntil). Sin ella, la v5 está retirada.
  *  - WAITLIST_V6_ACCEPTED_UNTIL: fin de la transición de la política lista-espera-v6 tras publicar la
- *    v7 (opcional, máx. 7 días). Sin ella, la v6 está retirada.
+ *    v7 (opcional, máx. 7 días y nunca después del 15/11/2026 a las 23:59:59 hora peninsular). Sin
+ *    ella, la v6 está retirada.
  */
 
 export const WAITLIST_PATH = '/api/v1/public/waitlist';
@@ -39,7 +40,8 @@ export const DEFAULT_WAITLIST_ORIGINS = ['https://asepsico.es', 'https://www.ase
  * mientras lo diga su variable (máx. 7 días desde el arranque; sin variable o mal escrita, retirada):
  *  - lista-espera-v6 (03/11/2026): preferencia obligatoria y sin valor por defecto; PHONE_AND_EMAIL
  *    exige teléfono y EMAIL_ONLY lo prohíbe (WAITLIST_PHONE_NOT_ALLOWED; minimización, art. 5.1.c).
- *    Sin preferencia → WAITLIST_CONTACT_PREFERENCE_REQUIRED.
+ *    Sin preferencia → WAITLIST_CONTACT_PREFERENCE_REQUIRED. Tope fijo (hardEnd): nunca después del
+ *    15/11/2026 a las 23:59:59 hora peninsular, aunque la variable diga otra cosa.
  *  - lista-espera-v5 (27/10/2026): teléfono obligatorio y sin preferencia (se guarda PHONE_AND_EMAIL).
  *    Además, tope fijo en el código (hardEnd): nunca se acepta después del 12/11/2026, aunque la
  *    variable diga otra cosa (un reinicio con la variable movida no alarga la transición).
@@ -81,8 +83,9 @@ interface WaitlistPolicyTransition {
 export const WAITLIST_POLICY_TRANSITIONS: Readonly<Record<TransitionalWaitlistPolicyVersion, WaitlistPolicyTransition>> = {
   // Fijada en producción hasta el 12/11/2026 a las 23:59 (hora peninsular) al publicar la v6.
   'lista-espera-v5': { envVar: 'WAITLIST_V5_ACCEPTED_UNTIL', hardEnd: new Date('2026-11-12T23:59:59+01:00') },
-  // Se abre al publicar la v7 (fecha de publicación + 7 días como máximo).
-  'lista-espera-v6': { envVar: 'WAITLIST_V6_ACCEPTED_UNTIL', hardEnd: null },
+  // Abierta al publicar la v7 (09/11/2026) hasta el 15/11/2026 a las 23:59 (hora peninsular). Tope
+  // fijo (condición 1 de Argos, revisión de la v7): un reinicio con la variable movida no la alarga.
+  'lista-espera-v6': { envVar: 'WAITLIST_V6_ACCEPTED_UNTIL', hardEnd: new Date('2026-11-15T23:59:59+01:00') },
 };
 
 export function isTransitionalWaitlistPolicyVersion(version: string): version is TransitionalWaitlistPolicyVersion {

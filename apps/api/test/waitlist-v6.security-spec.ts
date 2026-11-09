@@ -120,7 +120,9 @@ describe('Alta v6 en transición: preferencia de contacto y teléfono (POST /pub
   let prisma: any;
   let logger: CapturingLogger;
 
+  // Reloj congelado dentro de la transición: la v6 tiene tope fijo (15/11/2026 23:59:59 +01:00).
   beforeEach(async () => {
+    freezeDate('2026-11-10T10:00:00Z');
     setV5Until(undefined);
     setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
     prisma = mockPrisma();
@@ -134,11 +136,12 @@ describe('Alta v6 en transición: preferencia de contacto y teléfono (POST /pub
     expect(logs).not.toContain(EMAIL);
     setV6Until(undefined);
     await app.close();
+    jest.useRealTimers();
   });
 
-  it('la v6 ya no es la vigente (lo es la v7) y solo se acepta en transición, sin tope fijo', () => {
+  it('la v6 ya no es la vigente (lo es la v7) y solo se acepta en transición, con tope fijo el 15/11/2026 23:59:59 (+01:00)', () => {
     expect(CURRENT_WAITLIST_PRIVACY_POLICY_VERSION).toBe('lista-espera-v7');
-    expect(WAITLIST_POLICY_TRANSITIONS['lista-espera-v6']).toEqual({ envVar: 'WAITLIST_V6_ACCEPTED_UNTIL', hardEnd: null });
+    expect(WAITLIST_POLICY_TRANSITIONS['lista-espera-v6']).toEqual({ envVar: 'WAITLIST_V6_ACCEPTED_UNTIL', hardEnd: new Date('2026-11-15T23:59:59+01:00') });
   });
 
   it('EMAIL_ONLY sin teléfono → 202, phone null y se guarda EMAIL_ONLY con la v6', async () => {
@@ -370,6 +373,7 @@ describe('L15 y set-phone mantienen la preferencia coherente (sin la preferencia
 
 describe('Aviso interno de altas: sin la preferencia (v6 §6)', () => {
   it.each(['EMAIL_ONLY', 'PHONE_AND_EMAIL'])('alta %s: el correo enviado no menciona la preferencia ni el teléfono', async (contactPreference) => {
+    freezeDate('2026-11-10T10:00:00Z'); // dentro de la transición de la v6 (tope fijo 15/11/2026)
     const env: NodeJS.ProcessEnv = {
       MAIL_SMTP_HOST: 'smtp.example.test', MAIL_SMTP_PORT: '587', MAIL_SMTP_USER: 'proyecto-ficticio', MAIL_SMTP_PASSWORD: 'clave-ficticia',
       MAIL_FROM: 'AsePsico <avisos@example.test>', WAITLIST_NOTIFY_TO: 'jefe@example.test', WAITLIST_NOTIFY_ENABLED: 'true',
@@ -384,6 +388,7 @@ describe('Aviso interno de altas: sin la preferencia (v6 §6)', () => {
       await new WaitlistService(prisma, notifier).submit(body as any);
     } finally {
       setV6Until(undefined);
+      jest.useRealTimers();
     }
     await notifier.flush();
     notifier.onModuleDestroy();

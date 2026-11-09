@@ -123,6 +123,11 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
 
   it('v6 en transición, «Solo por email», contra Postgres: phone NULL y EMAIL_ONLY; con teléfono, 400 y sin fila; set-phone después → PHONE_AND_EMAIL', async () => {
     const previousV6 = process.env.WAITLIST_V6_ACCEPTED_UNTIL;
+    // Solo Date congelado (timers reales), dentro de la transición: la v6 tiene tope fijo (15/11/2026 23:59:59 +01:00).
+    jest.useFakeTimers({
+      now: new Date('2026-11-10T10:00:00Z'),
+      doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
     process.env.WAITLIST_V6_ACCEPTED_UNTIL = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString();
     try {
       const email = `${run}-solo-email@example.com`;
@@ -132,6 +137,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
       await new WaitlistService(prisma as any).submit({ ...base, formToken: issueFormToken(Date.now() - 10_000) } as any);
       const row = await prisma.waitlistEntry.findFirstOrThrow({ where: { emailHash: hashWaitlistEmail(email) } });
       expect(row).toMatchObject({ phone: null, contactPreference: 'EMAIL_ONLY', privacyPolicyVersion: 'lista-espera-v6', deletedAt: null });
+      jest.useRealTimers();
 
       // Lex Psi, v7 §4: si esa persona da el teléfono por escrito, set-phone la pasa a PHONE_AND_EMAIL;
       // la versión aceptada (v6) no cambia y la auditoría no lleva ni el teléfono ni la preferencia.
@@ -145,6 +151,7 @@ describeDb('Teléfono de la lista de espera (PostgreSQL real)', () => {
       expect(audits).toHaveLength(auditsBefore + 1);
       expect(JSON.stringify(audits)).not.toMatch(/612.?000.?666|EMAIL_ONLY|PHONE_AND_EMAIL|contactPreference/);
     } finally {
+      jest.useRealTimers();
       if (previousV6 === undefined) delete process.env.WAITLIST_V6_ACCEPTED_UNTIL;
       else process.env.WAITLIST_V6_ACCEPTED_UNTIL = previousV6;
     }

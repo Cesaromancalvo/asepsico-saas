@@ -104,6 +104,14 @@ afterAll(() => {
   setEnv('WAITLIST_V6_ACCEPTED_UNTIL', previous.v6);
 });
 
+/** Solo Date queda falso (timers, nextTick, etc. reales): supertest y Nest funcionan igual. */
+const freezeDate = (iso: string) => jest.useFakeTimers({
+  now: new Date(iso),
+  doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+});
+/** Un día dentro de la transición de la v6 (antes de su tope fijo del 15/11/2026 23:59:59 +01:00). */
+const IN_V6_TRANSITION = '2026-11-10T10:00:00Z';
+
 describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlist)', () => {
   let app: INestApplication;
   let prisma: any;
@@ -165,6 +173,22 @@ describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlis
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['un token falso', () => 'token-falso', 'WAITLIST_FORM_TOKEN_INVALID'],
+    ['un token con la firma alterada', () => `${issueFormToken(Date.now() - 10_000)}x`, 'WAITLIST_FORM_TOKEN_INVALID'],
+    ['un token caducado', () => issueFormToken(Date.now() - 3 * 60 * 60_000), 'WAITLIST_FORM_TOKEN_INVALID'],
+    ['un token recién emitido (demasiado rápido)', () => issueFormToken(), 'WAITLIST_FORM_TOO_FAST'],
+  ])('v7 con contactPreference y %s → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED (la preferencia se rechaza antes que el token)', async (_label, makeToken, tokenCode) => {
+    const formToken = makeToken();
+    for (const contactPreference of ['EMAIL_ONLY', 'PHONE_AND_EMAIL']) {
+      const res = await post(app, v7Body({ contactPreference, formToken })).expect(400);
+      expect(res.body).toEqual({ statusCode: 400, code: 'WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED', message: expect.any(String) });
+    }
+    // Control: sin la preferencia, ese mismo token sí es lo que falla.
+    expect((await post(app, v7Body({ formToken })).expect(400)).body.code).toBe(tokenCode);
+    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+  });
+
   it.each([null, '', 'PHONE', 'email_only', true])('v7 con una preferencia que no es del enum %j → 400 de validación, sin create', async (contactPreference) => {
     expect((await post(app, v7Body({ contactPreference }))).status).toBe(400);
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
@@ -176,9 +200,14 @@ describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlis
   });
 
   it('un email ya apuntado (fila v6 sin teléfono) que se reapunta con la v7 → 202 y la fila existente no cambia', async () => {
-    setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
-    await post(app, v6Body()).expect(202);
-    setV6Until(undefined);
+    freezeDate(IN_V6_TRANSITION);
+    try {
+      setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
+      await post(app, v6Body()).expect(202);
+    } finally {
+      setV6Until(undefined);
+      jest.useRealTimers();
+    }
     const stored = { ...[...prisma.rows.values()][0] };
     expect(stored.phone).toBeNull();
     await post(app, v7Body()).expect(202);
@@ -204,7 +233,9 @@ describe('Transición de la v6 (WAITLIST_V6_ACCEPTED_UNTIL) por HTTP', () => {
   let app: INestApplication;
   let prisma: any;
 
+  // Reloj congelado dentro de la transición: la v6 tiene tope fijo (15/11/2026 23:59:59 +01:00).
   beforeEach(async () => {
+    freezeDate(IN_V6_TRANSITION);
     setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
     prisma = mockPrisma();
     app = await buildApp(prisma, new CapturingLogger());
@@ -212,6 +243,7 @@ describe('Transición de la v6 (WAITLIST_V6_ACCEPTED_UNTIL) por HTTP', () => {
   afterEach(async () => {
     setV6Until(undefined);
     await app.close();
+    jest.useRealTimers();
   });
 
   it('v6 «Solo por email» dentro del plazo → 202, phone null, EMAIL_ONLY y se guarda lista-espera-v6', async () => {
@@ -278,11 +310,53 @@ describe('Configuración: v5 retirada tras su fecha, v6 en transición y v7 vige
   });
 
   it('WAITLIST_V6_ACCEPTED_UNTIL hasta 7 días: arranca y acepta la v6 solo antes de la fecha', () => {
-    const now = new Date('2026-11-10T10:00:00Z');
-    const e = env({ v6: '2026-11-17T10:00:00Z' });
+    const now = new Date('2026-11-08T10:00:00Z');
+    const e = env({ v6: '2026-11-15T10:00:00Z' });
     expect(() => assertWaitlistConfig(e, now)).not.toThrow();
-    expect(accepted('lista-espera-v6', '2026-11-17T09:59:59Z', e)).toBe(true);
-    expect(accepted('lista-espera-v6', '2026-11-17T10:00:00Z', e)).toBe(false);
+    expect(accepted('lista-espera-v6', '2026-11-15T09:59:59Z', e)).toBe(true);
+    expect(accepted('lista-espera-v6', '2026-11-15T10:00:00Z', e)).toBe(false);
+  });
+
+  describe('tope fijo de la v6 (condición 1 de Argos): nunca después del 15/11/2026 23:59:59 (+01:00)', () => {
+    const LATE = '2026-11-20T23:59:59+01:00';
+    let previousV6: string | undefined;
+    beforeEach(() => {
+      previousV6 = process.env.WAITLIST_V6_ACCEPTED_UNTIL;
+      freezeDate('2026-11-14T12:00:00+01:00');
+      setV6Until(LATE);
+    });
+    afterEach(() => {
+      setV6Until(previousV6);
+      jest.useRealTimers();
+    });
+
+    it('reinicio el 14/11 con la variable movida al 20/11: la API arranca, pero la v6 se retira el 15/11 a las 23:59:59', () => {
+      // Valores por defecto (reloj y process.env): lo mismo que hace la API al arrancar y en cada alta.
+      expect(() => assertWaitlistConfig({ ...process.env, NODE_ENV: 'production', WAITLIST_SECRET: 'x'.repeat(40) })).not.toThrow();
+      expect(waitlistV6AcceptedUntil()).toEqual(new Date(LATE));
+      expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(true);
+      jest.setSystemTime(new Date('2026-11-15T23:59:58+01:00'));
+      expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(true);
+      for (const when of ['2026-11-15T23:59:59+01:00', '2026-11-16T00:00:00+01:00', '2026-11-18T09:00:00+01:00', '2026-11-20T23:59:58+01:00']) {
+        jest.setSystemTime(new Date(when));
+        expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(false);
+        expect(isWaitlistPolicyVersionAccepted('lista-espera-v7')).toBe(true);
+      }
+    });
+
+    it('por HTTP: con la variable al 20/11, una alta v6 el 16/11 → 400 WAITLIST_POLICY_VERSION_RETIRED y sin create', async () => {
+      jest.setSystemTime(new Date('2026-11-16T09:00:00+01:00'));
+      const prisma = mockPrisma();
+      const app = await buildApp(prisma, new CapturingLogger());
+      try {
+        expect((await post(app, v6Body()).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
+        expect((await post(app, v6Body({ contactPreference: 'PHONE_AND_EMAIL', phone: PHONE })).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
+        expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
+        await post(app, v7Body()).expect(202);
+      } finally {
+        await app.close();
+      }
+    });
   });
 
   it('WAITLIST_V6_ACCEPTED_UNTIL a más de 7 días o mal escrita: la API no arranca (y la de la v5 sigue igual)', () => {
