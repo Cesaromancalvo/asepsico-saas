@@ -253,11 +253,9 @@ export class BillingService {
       throw new BadRequestException('El paciente necesita un portal activo o un correo electrónico para recibir la factura');
     }
 
-    const preferences = await (this.prisma as any).notificationPreference.findUnique({
-      where: { patientId: invoice.patientId },
-    });
+    // Solo dentro del portal (Argos M3, 07/11/2026): nunca una entrega EMAIL con importes. La bandeja
+    // de email no tiene plantilla de cobros; si algún día la hay, irá por plantilla fija.
     const channels = ['IN_APP'];
-    if (email && preferences?.emailEnabled) channels.push('EMAIL');
 
     return (this.prisma as any).$transaction(async (tx: any) => {
       const notification = await tx.notification.upsert({
@@ -288,6 +286,7 @@ export class BillingService {
         await tx.notificationDelivery.upsert({
           where: { notificationId_channel: { notificationId: notification.id, channel } },
           create: {
+            workspaceId,
             notificationId: notification.id,
             channel,
             status: channel === 'IN_APP' ? 'SENT' : 'PENDING',

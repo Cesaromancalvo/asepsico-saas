@@ -9,3 +9,10 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional() @IsBoolean() smsEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(168) reminderHoursBefore?: number;
 }
+
+/** N4 · Avisos por email del propio usuario (por espacio). Ausente = sin cambios. */
+export class UpdateStaffEmailPreferencesDto {
+  @IsOptional() @IsBoolean() appointmentRequests?: boolean;
+  @IsOptional() @IsBoolean() patientCancellations?: boolean;
+  @IsOptional() @IsBoolean() taskSubmitted?: boolean;
+}

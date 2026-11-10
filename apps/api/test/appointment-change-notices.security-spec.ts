@@ -5,7 +5,9 @@ import { PortalBookingService, PortalUser } from '../src/scheduling/portal-booki
 import { AppointmentRequestsService } from '../src/scheduling/appointment-requests.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { encryptField } from '../src/common/crypto/field-encryption';
-import { APPOINTMENT_CHANGES } from '../src/notifications/appointment-change-notice.util';
+import { APPOINTMENT_CHANGES, EMAIL_FOR_CHANGE } from '../src/notifications/appointment-change-notice.util';
+import { STAFF_TEMPLATES } from '../src/notifications/email/email-templates';
+import { allowTestRecipientDomain, TEST_RECIPIENT_DOMAIN } from './support/test-recipient-domain';
 
 /**
  * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10):
@@ -15,8 +17,9 @@ import { APPOINTMENT_CHANGES } from '../src/notifications/appointment-change-not
  *  4. Otra persona aprueba o rechaza la solicitud → aviso al profesional.
  *  5. El paciente retira su petición → aviso a quienes la recibieron.
  * Seguridad: workspaceId en lectura y escritura, cada usuario solo lo suyo, un THERAPIST solo ve el
- * nombre en citas suyas, nada clínico ni en lo guardado ni en lo devuelto, nunca correo ni SMS, y el
- * texto guardado (title/body) sigue sin nombre ni fecha (criterio 26 de la reserva).
+ * nombre en citas suyas, nada clínico ni en lo guardado ni en lo devuelto, nunca SMS, y el texto
+ * guardado (title/body) sigue sin nombre ni fecha (criterio 26 de la reserva). Email (N1/N2,
+ * 07/11/2026): solo un eco con plantilla fija de staff y solo para los cambios hechos por el paciente.
  * Datos 100 % ficticios.
  */
 
@@ -47,7 +50,12 @@ const settings = (therapistId: string, workspaceId = WS) => ({
 function seed() {
   return fakeClinicalDb({
     workspace: [{ id: WS, timeZone: 'Europe/Madrid' }, { id: WS2, timeZone: 'Europe/Madrid' }],
-    user: [{ id: 't-a', firstName: 'Ana', lastName: 'Ficticia' }, { id: 't-b', firstName: 'Beto', lastName: 'Ficticio' }],
+    // Dora R1: el email solo se encola para usuarios no demo con correo de dominio no reservado.
+    // Argos C1: correos del dominio reservado de tests, permitido solo aquí (allowTestRecipientDomain).
+    user: [
+      { id: 't-a', firstName: 'Ana', lastName: 'Ficticia' }, { id: 't-b', firstName: 'Beto', lastName: 'Ficticio' },
+      { id: 'owner-1' }, { id: 'admin-1' }, { id: 'assistant-1' }, { id: 'owner-2' }, { id: 't-x' },
+    ].map((u) => ({ ...u, email: `${u.id}@${TEST_RECIPIENT_DOMAIN}`, isDemo: false })),
     workspaceMember: [
       { workspaceId: WS, userId: 'owner-1', role: 'OWNER', isClinician: false },
       { workspaceId: WS, userId: 'admin-1', role: 'ADMIN', isClinician: false },
@@ -96,7 +104,20 @@ function expectStoredIsGeneric(prisma: any) {
     expect(n.workspaceId).toBe(WS);
     expect(n.status).toBe('SENT');
   }
-  expect(prisma.__store.notificationDelivery ?? []).toHaveLength(0);
+  expectOnlyPatientOriginatedStaffEmails(prisma);
+}
+
+/** Entregas: solo EMAIL con plantilla de staff, del mismo espacio y para avisos originados por el paciente. */
+function expectOnlyPatientOriginatedStaffEmails(prisma: any) {
+  for (const d of prisma.__store.notificationDelivery ?? []) {
+    expect(d.channel).toBe('EMAIL');
+    expect(d.workspaceId).toBe(WS);
+    expect(STAFF_TEMPLATES).toContain(d.template);
+    const n = stored(prisma).find((x) => x.id === d.notificationId);
+    expect(n.audience).toBe('PROFESSIONAL');
+    const change = n.metadata?.appointmentChange?.change;
+    expect(change === undefined || Object.keys(EMAIL_FOR_CHANGE).includes(change)).toBe(true);
+  }
 }
 
 async function firstSlot(prisma: any) {
@@ -117,6 +138,8 @@ const target = new Date('2027-01-12T18:30:00Z'); // martes 12 de enero, 19:30 en
 const moveBody = { startsAt: target.toISOString(), endsAt: plus(target, 50).toISOString() };
 
 // -----------------------------------------------------------------------------------------------
+allowTestRecipientDomain();
+
 describe('1–2. Mover una cita desde la agenda', () => {
   it('1: el profesional mueve su propia cita → aviso al paciente y ninguno al personal', async () => {
     const prisma = seed();
@@ -190,12 +213,53 @@ describe('3 y 5. El paciente pide desde el portal cambiar o cancelar', () => {
     expect(notice.appointmentChange).toMatchObject({ change: 'PATIENT_REQUESTED_CANCEL', requestType: 'CANCEL' });
   });
 
-  it('3c: una cita NUEVA pedida desde el portal sigue con el aviso genérico de siempre, solo al profesional', async () => {
+  it('3c (N1): una cita NUEVA pedida desde el portal → aviso genérico al profesional y a recepción (con email); OWNER/ADMIN no por defecto', async () => {
     const prisma = seed();
     const slot = await firstSlot(prisma);
     await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
-    expect(recipients(prisma)).toEqual(['t-a']);
+    expect(recipients(prisma)).toEqual(['assistant-1', 't-a']);
     expect(professional(prisma)[0].metadata).toBeUndefined();
+    const emails = prisma.__store.notificationDelivery;
+    expect(emails.map((d: any) => stored(prisma).find((n) => n.id === d.notificationId).userId).sort()).toEqual(['assistant-1', 't-a']);
+    expect(emails.every((d: any) => d.template === 'STAFF_APPOINTMENT_REQUEST' && d.status === 'PENDING')).toBe(true);
+    expectStoredIsGeneric(prisma);
+  });
+
+  it('Dora R1: en un espacio demo, recepción demo y terapeuta con correo reservado ven el aviso en la campana pero no se les encola email', async () => {
+    const prisma = seed();
+    prisma.__store.user.find((u: any) => u.id === 'assistant-1').isDemo = true;
+    prisma.__store.user.find((u: any) => u.id === 't-a').email = 't-a@consulta-demo.example.test';
+    const slot = await firstSlot(prisma);
+    await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    expect(recipients(prisma)).toEqual(['assistant-1', 't-a']);
+    expect(prisma.__store.notificationDelivery).toEqual([]);
+  });
+
+  it('3d (N1-2): un OWNER que enciende «Solicitudes de cita» recibe aviso y email; el que lo apaga (t-a) no recibe email', async () => {
+    const prisma = seed();
+    prisma.__store.notificationPreference.push(
+      { id: 'pref-o', workspaceId: WS, userId: 'owner-1', emailAppointmentRequests: true },
+      { id: 'pref-t', workspaceId: WS, userId: 't-a', emailAppointmentRequests: false },
+      // Preferencia del mismo usuario en OTRO espacio: no cuenta aquí.
+      { id: 'pref-x', workspaceId: WS2, userId: 'admin-1', emailAppointmentRequests: true },
+    );
+    const slot = await firstSlot(prisma);
+    await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    expect(recipients(prisma)).toEqual(['assistant-1', 'owner-1', 't-a']);
+    const emailed = prisma.__store.notificationDelivery.map((d: any) => stored(prisma).find((n) => n.id === d.notificationId).userId).sort();
+    expect(emailed).toEqual(['assistant-1', 'owner-1']);
+  });
+
+  it('5b (N2): el paciente retira una solicitud NUEVA → aviso y email de cancelación a quienes la recibieron', async () => {
+    const prisma = seed();
+    const slot = await firstSlot(prisma);
+    const req: any = await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
+    await booking(prisma).withdraw(portal(), req.id);
+    const withdrawn = professional(prisma).filter((n) => n.metadata?.appointmentChange?.change === 'PATIENT_WITHDREW_REQUEST');
+    expect(withdrawn.map((n) => n.userId).sort()).toEqual(['assistant-1', 't-a']);
+    const cancellations = prisma.__store.notificationDelivery.filter((d: any) => d.template === 'STAFF_PATIENT_CANCELLATION');
+    expect(cancellations).toHaveLength(2);
+    expectStoredIsGeneric(prisma);
   });
 
   it('5: el paciente retira su petición → aviso a quienes la recibieron', async () => {
@@ -323,14 +387,18 @@ describe('Seguridad de la bandeja del personal', () => {
     }
   });
 
-  it('nunca correo ni SMS: no se crea ningún NotificationDelivery en ningún caso', async () => {
+  it('N2-2: los cambios del equipo nunca generan email al equipo; solo la petición del paciente (y nunca SMS)', async () => {
     const prisma = seed();
     const { req } = await portalReschedule(prisma);
+    const afterPatient = prisma.__store.notificationDelivery.length;
+    expect(afterPatient).toBeGreaterThan(0);
     await requests(prisma).approve(assistant, req.id);
     await sessions(prisma).reschedule(WS, owner, 'ses-1', moveBody as any);
     await sessions(prisma).close(WS, assistant, 'ses-1', 'CANCELLED');
     expect(professional(prisma).length).toBeGreaterThanOrEqual(6);
-    expect(prisma.__store.notificationDelivery ?? []).toHaveLength(0);
+    expect(prisma.__store.notificationDelivery).toHaveLength(afterPatient);
+    expect(prisma.__store.notificationDelivery.every((d: any) => d.channel === 'EMAIL')).toBe(true);
+    expectOnlyPatientOriginatedStaffEmails(prisma);
     for (const call of prisma.notification.createMany.mock.calls) {
       for (const row of [].concat(call[0].data)) expect((row as any).workspaceId).toBe(WS);
     }
@@ -355,15 +423,21 @@ describe('Condiciones de Argos', () => {
     return [a, b, c];
   }
 
-  it('M1: los 7 tipos no generan NotificationDelivery y el texto guardado (lo único que podría salir por correo) no lleva nombre, iniciales ni horas', async () => {
+  it('M1: solo los 3 cambios del paciente generan email (plantilla fija de staff, nunca el texto del aviso) y el texto guardado no lleva nombre, iniciales ni horas', async () => {
     const dbs = await allSevenChanges();
     const notices = dbs.flatMap((db) => professional(db).filter((n) => n.metadata?.appointmentChange));
     expect([...new Set(notices.map((n) => n.metadata.appointmentChange.change))].sort()).toEqual([...APPOINTMENT_CHANGES].sort());
+    const emailedChanges = new Set<string>();
     for (const db of dbs) {
-      expect(db.__store.notificationDelivery).toHaveLength(0);
+      expectOnlyPatientOriginatedStaffEmails(db);
       expect(db.notificationDelivery.create).not.toHaveBeenCalled();
-      expect(db.notificationDelivery.createMany).not.toHaveBeenCalled();
+      for (const d of db.__store.notificationDelivery) {
+        expect(Object.keys(d)).not.toEqual(expect.arrayContaining(['title']));
+        expect(JSON.stringify(d)).not.toMatch(/Paciente|Uno|body|title/);
+        emailedChanges.add(stored(db).find((n: any) => n.id === d.notificationId).metadata.appointmentChange.change);
+      }
     }
+    expect([...emailedChanges].sort()).toEqual(Object.keys(EMAIL_FOR_CHANGE).sort());
     for (const n of notices) {
       const outbound = `${n.title}\n${n.body}`;
       expect(outbound).not.toMatch(/Paciente|Uno/);
@@ -392,6 +466,7 @@ describe('Condiciones de Argos', () => {
     let seen = 0;
     for (const db of dbs) {
       expect(professional(db).some((n) => n.patientId === 'p1')).toBe(true);
+      db.notification.findMany.mockClear(); // solo cuentan las lecturas de GET /portal/notifications
       const list: any[] = await notifications(db).listPatient(portal());
       seen += list.length;
       for (const n of list) {

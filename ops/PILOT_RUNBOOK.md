@@ -406,6 +406,48 @@ clave antigua** en Scaleway → anotar la fecha en el registro del piloto.
 pendiente puede perderse al dormir o al reiniciar (aceptado: las altas siguen en la base de datos
 y `waitlist:export` las muestra todas). Un fallo de envío se reintenta una sola vez; nunca afecta al alta.
 
+### Avisos por email al equipo y a pacientes (bandeja de salida)
+
+Código: `apps/api/src/notifications/email/`. La API procesa la bandeja cada 5 min (tarea interna; en
+Render basta una instancia, y con varias no se envía doble: reserva `SKIP LOCKED` + advisory lock por
+espacio). Variables en `.env.example` (sin valores aquí):
+
+- `STAFF_EMAIL_NOTIFICATIONS_ENABLED` / `PATIENT_EMAIL_NOTIFICATIONS_ENABLED`: apagadas por defecto.
+  Son el interruptor de emergencia: cualquier valor distinto de `true` corta ese grupo en la siguiente
+  pasada; lo pendiente caduca (staff: 12 h) y no sale tarde.
+- `PATIENT_EMAIL_WORKSPACE_ALLOWLIST`: obligatoria para pacientes (vacía = ninguno). Hasta el OK de
+  Lex, Argos y el abogado, como mucho el espacio de demos.
+- `PATIENT_MAIL_FROM`: opcional; vacía = la dirección de `MAIL_FROM` con nombre visible neutro.
+- `EMAIL_OUTBOX_SCHEDULER=off` desactiva la tarea en una instancia.
+
+**Encendido de los emails al equipo (condición de Lex C1):** la privacidad de profesionales demo-1.3 se
+publica en el MISMO despliegue que pone `STAFF_EMAIL_NOTIFICATIONS_ENABLED=true`, no después. Antes:
+Argos OK y DPA de Scaleway archivado (C2).
+
+**Comprobación tras encender:** en `AuditLog`, una fila `EMAIL_OUTBOX_PASS` por espacio y pasada con
+recuentos (`emailsSent`, `failed`, `cancelled`…). Los logs solo llevan id de entrega y código.
+
+**Regla (Argos C1, 08/11/2026): los tests con BD nunca se ejecutan contra una base con el worker de email
+y un SMTP encendidos.** `RACE_DATABASE_URL` apunta siempre a una base desechable a la que no está
+conectada ninguna API con `EMAIL_OUTBOX_SCHEDULER` activo y `MAIL_SMTP_*` configurado (nunca producción
+ni staging con correo real). Defensa adicional, no sustitutiva: los tests solo usan correos del dominio
+reservado `destinatario.test` (RFC 6761), que no puede entregarse; el filtro de dominios reservados (Dora
+R1) solo lo deja pasar dentro de Jest y por llamada explícita del test, sin variable de entorno.
+
+**Pendiente (Argos, 07/11/2026; no implementado):**
+
+- **B2 · envío «al menos una vez».** Si la API cae después de que el SMTP acepte un correo y antes de
+  marcarlo `SENT`, al vencer la reserva (30 min) esa entrega se reintenta: el destinatario puede recibir
+  el mismo aviso dos veces. No puede salir a otra persona ni con otro contenido. Se acepta para el
+  equipo; revisar antes de encender pacientes (p. ej. Message-ID determinista por entrega).
+- **B4 · retención.** `NotificationDelivery` y los avisos del equipo no se purgan todavía. Propuesta:
+  90 días (como los avisos de cambio de cita), en la tarea de purga por plazo de conservación.
+  Borrado: las entregas caen en cascada con su `Notification`; la purga del espacio de demos borra los
+  avisos con paciente y los `APPOINTMENT_REQUEST` de sus miembros, pero no las preferencias de email de
+  esos miembros ni otros avisos sin paciente. No existe borrado completo de un espacio en el código:
+  cuando exista, debe incluir `Notification` (y con ella las entregas) y `NotificationPreference` por
+  `workspaceId`.
+
 ### Panel privado de la lista de espera (`/admin/lista-espera`)
 
 Sustituye al uso diario de `waitlist:export` / `waitlist:delete` (los CLI siguen valiendo). Solo lo

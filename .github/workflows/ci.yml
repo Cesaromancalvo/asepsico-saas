@@ -373,8 +373,10 @@ jobs:
       # Y «Tareas por revisar» (dashboard-task-review, condición de Argos): GET /dashboard no da
       # avisos TASK_REVIEW a OWNER/ADMIN no clínicos ni a ASSISTANT aunque haya tareas entregadas.
       # Y los avisos de cambio de cita al personal (appointment-change-notices-db).
+      # Y la bandeja de salida de avisos por email (email-outbox-db): reserva SKIP LOCKED, reintentos,
+      # caducidad, agrupación y aislamiento por espacio, con transporte SMTP falso.
       - name: Session close and booking race tests (real PostgreSQL)
-        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race|session-reschedule|dashboard-task-review|appointment-change-notices-db)'
+        run: npm --workspace @asepsico/api run test:security -- --ci --testPathPattern '(session-close-race|booking-race|session-reschedule|dashboard-task-review|appointment-change-notices-db|email-outbox-db)'
         env:
           RACE_DATABASE_URL: postgresql://asepsico:asepsico@localhost:5432/asepsico?schema=public
           RACE_DATABASE_REQUIRED: '1'

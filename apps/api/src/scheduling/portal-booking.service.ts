@@ -149,6 +149,21 @@ export class PortalBookingService {
       await tx.auditLog.create({
         data: { workspaceId, actorId: null, action: 'APPOINTMENT_REQUEST_WITHDRAWN', entityType: 'AppointmentRequest', entityId: requestId, metadata: { patientId, cause: 'PATIENT', accessorType: portal.accessorType, portalAccountId: portal.portalAccountId } },
       });
+      // Retirar una solicitud NUEVA (N2): avisa a quien recibió el aviso de esa solicitud.
+      if (before.type === 'NEW') {
+        const received = await tx.notification.findMany({
+          where: { workspaceId, audience: 'PROFESSIONAL', dedupeKey: { startsWith: `appointment-request:${requestId}:` } },
+          select: { userId: true },
+        });
+        await notifyStaffOfAppointmentChange(tx, {
+          workspaceId, patientId, actorId: null, recipients: [before.therapistId, ...received.map((r) => r.userId as string)],
+          dedupeBase: `appointment-request:${requestId}:withdrawn`,
+          meta: {
+            change: 'PATIENT_WITHDREW_REQUEST', therapistId: before.therapistId, sessionId: null, requestId, requestType: 'NEW',
+            from: noticeSlot(before.startsAt, before.endsAt), to: null,
+          },
+        });
+      }
       // Retirar un cambio o cancelación pedidos sobre una cita: avisa a quien recibió la solicitud.
       if (before.type !== 'NEW' && before.sessionId) {
         const session = await tx.session.findFirst({ where: { id: before.sessionId, workspaceId, patientId }, select: { startsAt: true, endsAt: true } });

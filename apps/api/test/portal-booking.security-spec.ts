@@ -612,7 +612,8 @@ describe('Seguridad, auditoría y límites (criterios 23–26)', () => {
     const req: any = await booking(prisma).createRequest(portal(), { therapistId: 't-a', startsAt: slot.startsAt.toISOString() });
     await requests(prisma).reject(therapistA, req.id, { reason: 'CONTACT_PRACTICE' });
     const notices = rows(prisma, 'notification');
-    expect(notices.map((n) => n.audience).sort()).toEqual(['PATIENT', 'PROFESSIONAL']);
+    // Profesional y recepción (N1: recepción recibe las solicitudes nuevas por defecto) y el paciente.
+    expect(notices.map((n) => n.audience).sort()).toEqual(['PATIENT', 'PROFESSIONAL', 'PROFESSIONAL']);
     const iso = slot.startsAt.toISOString();
     for (const n of notices) {
       const text = `${n.title} ${n.body} ${n.actionUrl}`;

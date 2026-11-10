@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { enqueueStaffEmailsForNotices, staffEmailRecipients } from '../notifications/email/staff-email-enqueue';
 
 /**
  * Transiciones de solicitudes de cita que se disparan desde fuera del flujo normal (caducidad,
@@ -24,16 +25,32 @@ export const PATIENT_REQUEST_UPDATE_NOTICE = {
 type Tx = Prisma.TransactionClient;
 type PendingRow = { id: string; patientId: string; therapistId: string; type: string; startsAt: Date | null };
 
+/**
+ * Solicitud NUEVA desde el portal (N1). Aviso en la campana al profesional (como siempre) y, además,
+ * a quien gestiona la agenda (ASSISTANT; OWNER/ADMIN solo si lo han encendido) cuando quiere el
+ * email: el email es el eco de un aviso que ve también en la campana. Después se encola el email a
+ * todos los que lo quieren (preferencias y defectos por rol de staff-email-preferences.ts).
+ * Texto genérico: sin nombre del paciente, fecha ni hora (criterio 26).
+ */
 export async function notifyProfessionalOfRequest(tx: Tx, workspaceId: string, therapistId: string, requestId: string) {
   const now = new Date();
+  const managers = (await tx.workspaceMember.findMany({
+    where: { workspaceId, role: { in: ['OWNER', 'ADMIN', 'ASSISTANT'] }, status: 'ACTIVE', userId: { not: therapistId } },
+    select: { userId: true },
+  })).map((m) => m.userId);
+  const extra = [...(await staffEmailRecipients(tx, workspaceId, 'appointmentRequests', managers, new Set([therapistId])))];
+  const notices = [
+    { userId: therapistId, dedupeKey: `appointment-request:${requestId}:therapist` },
+    ...extra.map((userId) => ({ userId, dedupeKey: `appointment-request:${requestId}:staff:${userId}` })),
+  ];
   await tx.notification.createMany({
-    data: [{
-      workspaceId, audience: 'PROFESSIONAL', userId: therapistId, type: 'APPOINTMENT_REQUEST',
-      ...PROFESSIONAL_REQUEST_NOTICE, status: 'SENT', scheduledAt: now, sentAt: now,
-      dedupeKey: `appointment-request:${requestId}:therapist`,
-    }],
+    data: notices.map((n) => ({
+      workspaceId, audience: 'PROFESSIONAL' as const, userId: n.userId, type: 'APPOINTMENT_REQUEST' as const,
+      ...PROFESSIONAL_REQUEST_NOTICE, status: 'SENT' as const, scheduledAt: now, sentAt: now, dedupeKey: n.dedupeKey,
+    })),
     skipDuplicates: true,
   });
+  await enqueueStaffEmailsForNotices(tx, { workspaceId, kind: 'appointmentRequests', notices, professionalIds: new Set([therapistId]) });
 }
 
 export async function notifyPatientOfRequestUpdates(tx: Tx, workspaceId: string, rows: { id: string; patientId: string }[], status: string) {

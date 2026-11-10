@@ -1,9 +1,14 @@
 import { routeToActiveMembers } from '../workspace-members/notification-recipients.util';
+import { enqueueStaffEmailsForNotices } from './email/staff-email-enqueue';
+import { StaffEmailKind } from './email/staff-email-preferences';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from '../scheduling/time-zone.util';
 
 /**
- * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10). Sin correo
- * ni SMS: se guardan como SENT y nunca se crea NotificationDelivery.
+ * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10). Se guardan
+ * como SENT. Desde N1/N2 (07/11/2026) los cambios que hace el PACIENTE desde el portal (pedir cambio,
+ * pedir cancelación, retirar una solicitud) encolan además un email «eco» (NotificationDelivery
+ * EMAIL con plantilla fija, ver EMAIL_FOR_CHANGE) a quien lo quiera según sus preferencias. Los
+ * cambios hechos por el equipo nunca generan email al equipo (N2-2). Sin SMS.
  *
  * Qué se guarda (criterio 26 de la reserva desde el portal, que sigue en pie):
  *  - title/body: texto GENÉRICO, sin nombre del paciente, fecha ni hora. Es lo único que podría
@@ -58,6 +63,16 @@ const GENERIC: Record<AppointmentChange, { type: 'SYSTEM' | 'APPOINTMENT_REQUEST
   REQUEST_REJECTED: { type: 'APPOINTMENT_REQUEST_UPDATE', title: 'Solicitud de cita rechazada', body: 'Se ha rechazado una solicitud de cita. Consúltala en la agenda.' },
 };
 
+/**
+ * Cambios que generan email al equipo y con qué plantilla (N1/N2). Solo los que hace el paciente.
+ * PATIENT_REQUESTED_RESCHEDULE es una solicitud que hay que atender → «Solicitudes de cita».
+ */
+export const EMAIL_FOR_CHANGE: Partial<Record<AppointmentChange, StaffEmailKind>> = {
+  PATIENT_REQUESTED_RESCHEDULE: 'appointmentRequests',
+  PATIENT_REQUESTED_CANCEL: 'patientCancellations',
+  PATIENT_WITHDREW_REQUEST: 'patientCancellations',
+};
+
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 export const slot = (startsAt: Date | null | undefined, endsAt: Date | null | undefined): Slot =>
   startsAt && endsAt ? { startsAt: iso(startsAt)!, endsAt: iso(endsAt)! } : null;
@@ -89,16 +104,24 @@ export async function notifyStaffOfAppointmentChange(
   if (!userIds.length) return 0;
   const generic = GENERIC[meta.change];
   const now = new Date();
+  const dedupeKey = (userId: string) => `${params.dedupeBase}:to:${userId}`;
   await tx.notification.createMany({
     data: userIds.map((userId) => ({
       workspaceId, audience: 'PROFESSIONAL', userId, patientId, type: generic.type,
       title: generic.title, body: generic.body, actionUrl: meta.requestId && meta.change.startsWith('PATIENT_REQUESTED') ? '/agenda/solicitudes' : '/agenda',
       status: 'SENT', scheduledAt: now, sentAt: now,
-      dedupeKey: `${params.dedupeBase}:to:${userId}`,
+      dedupeKey: dedupeKey(userId),
       metadata: { appointmentChange: meta },
     })),
     skipDuplicates: true,
   });
+  // Email «eco» solo si el cambio lo hizo el paciente (actorId nulo) y el tipo lo prevé.
+  const kind = EMAIL_FOR_CHANGE[meta.change];
+  if (kind && actorId === null) {
+    // El profesional de la cita, o quien lo sustituye si está de baja (routeToActiveMembers).
+    const professionalIds = new Set(routes.get(meta.therapistId) ?? [meta.therapistId]);
+    await enqueueStaffEmailsForNotices(tx, { workspaceId, kind, professionalIds, notices: userIds.map((userId) => ({ userId, dedupeKey: dedupeKey(userId) })) });
+  }
   return userIds.length;
 }
 

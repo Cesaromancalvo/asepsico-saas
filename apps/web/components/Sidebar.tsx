@@ -81,8 +81,10 @@ const navigation: { href: string; label: string; icon: IconName; adminOnly?: boo
     noAssistant: true,
   },
   {
+    // «Mi cuenta»: seguridad (contraseña, verificación en dos pasos) y avisos por email.
+    // El pie de los emails al equipo remite a «Mi cuenta».
     href: '/settings/security',
-    label: 'Seguridad',
+    label: 'Mi cuenta',
     icon: 'shield',
   },
   {
@@ -136,6 +138,9 @@ export default function Sidebar({
     // La bandeja de solicitudes cuelga de /agenda pero tiene su propia entrada.
     if (href === '/agenda') {
       return pathname === '/agenda' || (pathname.startsWith('/agenda/') && !pathname.startsWith('/agenda/solicitudes'));
+    }
+    if (href === '/settings/security') {
+      return pathname.startsWith(href) || pathname.startsWith('/settings/email-notifications');
     }
     return pathname.startsWith(href);
   }

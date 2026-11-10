@@ -1,13 +1,14 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { createTransport } from 'nodemailer';
-import { internalRecipients, isImplicitTlsPort, MailConfig, readMailConfig } from './mail.config';
+import { internalRecipients, isImplicitTlsPort, MailConfig, readMailConfig, SmtpConfig } from './mail.config';
 
 /** Mensaje de texto plano. Sin HTML, sin imágenes remotas, sin seguimiento. */
 export type InternalMail = { to: string; subject: string; text: string };
 
 /** Interfaz del transporte: el servicio no depende del proveedor (hoy SMTP de Scaleway). */
 export interface MailTransport {
-  send(message: { from: string; to: string; subject: string; text: string }): Promise<void>;
+  /** Devuelve el Message-ID que asigna el transporte (referencia del proveedor), si lo hay. */
+  send(message: { from: string; to: string; subject: string; text: string; html?: string }): Promise<{ messageId?: string } | void>;
 }
 
 /** Longitud mínima de asunto y cuerpo (requisito de Scaleway Transactional Email). */
@@ -20,7 +21,7 @@ export const MIN_MAIL_PART_LENGTH = 10;
  * mensaje. Timeouts cortos: si la red bloquea el puerto (p. ej. Render gratuito con 465/587), el fallo
  * llega al log en segundos (solo tipo y código de error) en lugar de quedarse colgado.
  */
-export function smtpTransport(config: NonNullable<MailConfig>): MailTransport {
+export function smtpTransport(config: { smtp: SmtpConfig }): MailTransport {
   const transporter = createTransport({
     host: config.smtp.host,
     port: config.smtp.port,
@@ -39,7 +40,8 @@ export function smtpTransport(config: NonNullable<MailConfig>): MailTransport {
   });
   return {
     async send(message) {
-      await transporter.sendMail({ ...message, disableFileAccess: true, disableUrlAccess: true });
+      const info = await transporter.sendMail({ ...message, disableFileAccess: true, disableUrlAccess: true });
+      return { messageId: typeof info?.messageId === 'string' ? info.messageId : undefined };
     },
   };
 }
