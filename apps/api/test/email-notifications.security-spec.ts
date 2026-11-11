@@ -2,6 +2,7 @@ import { NotificationMailer } from '../src/notifications/email/notification-mail
 import { renderStaffEmail, STAFF_TEMPLATES, PATIENT_TEMPLATES, templateGroup } from '../src/notifications/email/email-templates';
 import { assertNotificationEmailConfig, groupEnabledFor, readNotificationEmailConfig } from '../src/notifications/email/notification-email.config';
 import { EmailOutboxService, quietHoursEnd } from '../src/notifications/email/email-outbox.service';
+import { STAFF_EMAIL_TTL_MS } from '../src/notifications/email/email-outbox.store';
 import { defaultFor, staffEmailPreferenceView, wantsStaffEmail } from '../src/notifications/email/staff-email-preferences';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { patientSubject, renderPatientEmail } from '../src/notifications/email/patient-email-layout';
@@ -153,18 +154,27 @@ describe('N0-10 · el código de envío no lee contenido clínico ni texto libre
   });
 });
 
-describe('Franja silenciosa 21:00–08:00 (Europe/Madrid)', () => {
+describe('Franja silenciosa 21:00–07:00 (Europe/Madrid)', () => {
   const tz = 'Europe/Madrid';
   it.each([
     ['2026-11-10T09:00:00Z', null], // 10:00 Madrid
     ['2026-11-10T19:59:00Z', null], // 20:59
-    ['2026-11-10T20:00:00Z', '2026-11-11T07:00:00.000Z'], // 21:00 → 08:00 del día siguiente
-    ['2026-11-10T22:10:00Z', '2026-11-11T07:00:00.000Z'], // 23:10 → 08:00
-    ['2026-11-11T05:30:00Z', '2026-11-11T07:00:00.000Z'], // 06:30 → 08:00 del mismo día
-    ['2026-03-28T21:30:00Z', '2026-03-29T06:00:00.000Z'], // noche del cambio de hora de marzo
+    ['2026-11-10T20:00:00Z', '2026-11-11T06:00:00.000Z'], // 21:00 → 07:00 del día siguiente
+    ['2026-11-10T22:10:00Z', '2026-11-11T06:00:00.000Z'], // 23:10 → 07:00
+    ['2026-11-11T05:30:00Z', '2026-11-11T06:00:00.000Z'], // 06:30 → 07:00 del mismo día
+    ['2026-11-11T06:00:00Z', null], // 07:00: ya fuera de la franja
+    ['2026-11-11T06:30:00Z', null], // 07:30 (antes, con 08:00, se aplazaba)
+    ['2026-03-28T21:30:00Z', '2026-03-29T05:00:00.000Z'], // noche del cambio de hora de marzo (07:00 CEST)
   ])('%s → %s', (now, expected) => {
     const end = quietHoursEnd(new Date(now), tz);
     expect(end ? end.toISOString() : null).toBe(expected);
+  });
+
+  it('la caducidad (12 h) nunca vence antes del fin de la franja para lo creado justo antes de las 21:00', () => {
+    // Creado a las 20:59 y aplazado (agrupación o reintento) a la franja: debe seguir vivo a las 07:00.
+    const created = new Date('2026-11-10T19:59:00Z');
+    const end = quietHoursEnd(new Date('2026-11-10T20:00:00Z'), tz) as Date;
+    expect(created.getTime() + STAFF_EMAIL_TTL_MS).toBeGreaterThan(end.getTime());
   });
 });
 

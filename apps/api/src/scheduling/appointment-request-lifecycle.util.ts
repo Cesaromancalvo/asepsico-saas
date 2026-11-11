@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { enqueueStaffEmailsForNotices, staffEmailRecipients } from '../notifications/email/staff-email-enqueue';
+import { bestEffortStaffEmail } from '../notifications/email/staff-email-best-effort';
 
 /**
  * Transiciones de solicitudes de cita que se disparan desde fuera del flujo normal (caducidad,
@@ -34,11 +35,15 @@ type PendingRow = { id: string; patientId: string; therapistId: string; type: st
  */
 export async function notifyProfessionalOfRequest(tx: Tx, workspaceId: string, therapistId: string, requestId: string) {
   const now = new Date();
-  const managers = (await tx.workspaceMember.findMany({
-    where: { workspaceId, role: { in: ['OWNER', 'ADMIN', 'ASSISTANT'] }, status: 'ACTIVE', userId: { not: therapistId } },
-    select: { userId: true },
-  })).map((m) => m.userId);
-  const extra = [...(await staffEmailRecipients(tx, workspaceId, 'appointmentRequests', managers, new Set([therapistId])))];
+  // Quién más recibe el aviso depende de sus preferencias de email. Si leerlas falla, la solicitud y
+  // el aviso al profesional siguen adelante (incidente 11/11/2026): savepoint + log sin datos.
+  const extra = await bestEffortStaffEmail(tx, 'destinatarios de solicitud nueva', [] as string[], async () => {
+    const managers = (await tx.workspaceMember.findMany({
+      where: { workspaceId, role: { in: ['OWNER', 'ADMIN', 'ASSISTANT'] }, status: 'ACTIVE', userId: { not: therapistId } },
+      select: { userId: true },
+    })).map((m) => m.userId);
+    return [...(await staffEmailRecipients(tx, workspaceId, 'appointmentRequests', managers, new Set([therapistId])))];
+  });
   const notices = [
     { userId: therapistId, dedupeKey: `appointment-request:${requestId}:therapist` },
     ...extra.map((userId) => ({ userId, dedupeKey: `appointment-request:${requestId}:staff:${userId}` })),

@@ -116,7 +116,7 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
     } as any, () => ({ send }));
     const counts = await new EmailOutboxService(prisma as any, mailer).processWorkspace(ids.ws, new Date());
     const sent = send.mock.calls.map((c: any) => c[0]);
-    // Según la hora del CI puede caer en la franja silenciosa (21:00–08:00): entonces se aplazan las dos.
+    // Según la hora del CI puede caer en la franja silenciosa (21:00–07:00): entonces se aplazan las dos.
     expect(sent.length === 2 || counts.deferred.QUIET_HOURS === 2).toBe(true);
     for (const m of sent) {
       expect(`${m.subject}\n${m.text}\n${m.html}`).not.toMatch(/Paciente|Uno|Proceso|\d{1,2}:\d{2}/);

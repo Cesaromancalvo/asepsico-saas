@@ -159,7 +159,8 @@ export function fakeClinicalDb(seed: Partial<Store>) {
   prisma.__locks = [] as string[];
   prisma.$executeRawUnsafe = jest.fn(async (_sql: string, key: string) => { prisma.__locks.push(key); return 1; });
   prisma.$executeRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
-    prisma.__locks.push(String(values[0]));
+    // Solo los advisory locks llevan clave; los SAVEPOINT de los emails al equipo no se registran.
+    if (values.length) prisma.__locks.push(String(values[0]));
     return 1;
   });
   prisma.__store = store;

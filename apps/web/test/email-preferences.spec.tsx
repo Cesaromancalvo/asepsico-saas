@@ -95,10 +95,10 @@ describe('pantalla (N4-1)', () => {
     expect(html.match(/role="switch"/g)).toHaveLength(2);
   });
 
-  it('explica que no hay datos de pacientes y la franja 21:00–08:00', () => {
+  it('explica que no hay datos de pacientes y la franja 21:00–07:00', () => {
     const html = render(THERAPIST.preferences);
     expect(html).toContain('no incluye nombres ni datos de pacientes');
-    expect(html).toContain('entre las 21:00 y las 08:00');
+    expect(html).toContain('entre las 21:00 y las 07:00');
     expect(html).toContain('Consulta Demo');
   });
 

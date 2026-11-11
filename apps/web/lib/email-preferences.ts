@@ -36,7 +36,7 @@ export const EMAIL_KIND_TEXT: Record<StaffEmailKind, { label: string; hint: stri
 
 /** Línea de privacidad y horario (spec §4.2). */
 export const EMAIL_PRIVACY_LINE =
-  'El email solo te avisa de que hay algo nuevo: no incluye nombres ni datos de pacientes, y nunca se envía entre las 21:00 y las 08:00 (lo de la noche te llega a las 08:00 en un solo correo).';
+  'El email solo te avisa de que hay algo nuevo: no incluye nombres ni datos de pacientes, y nunca se envía entre las 21:00 y las 07:00 (lo de la noche te llega a las 07:00 en un solo correo).';
 
 /** Opciones que se muestran, en orden fijo. Las no disponibles para el rol no aparecen. */
 export function visibleKinds(preferences: Partial<Record<StaffEmailKind, StaffEmailPreference>> | null | undefined): StaffEmailKind[] {

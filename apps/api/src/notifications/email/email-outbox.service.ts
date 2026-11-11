@@ -14,7 +14,8 @@ import { kindAllowedForRole, KIND_FIELD, TEMPLATE_KIND } from './staff-email-pre
 
 export const STAFF_MIN_INTERVAL_MS = 30 * 60_000;
 export const QUIET_START_HOUR = 21;
-export const QUIET_END_HOUR = 8;
+/** Fin de la franja silenciosa (decisión del Jefe 11/11/2026: 07:00; antes 08:00). */
+export const QUIET_END_HOUR = 7;
 /** Espacio de claves (primer int4) de los advisory locks de la bandeja: no choca con los de la agenda. */
 export const EMAIL_OUTBOX_LOCK_SPACE = 7302;
 /** Límite de una pasada de un espacio (la reserva de entregas dura 30 min). */
@@ -37,7 +38,7 @@ const bump = (bag: Record<string, number>, key: string, n: number) => { if (n) b
 const hasActivity = (c: PassCounts) =>
   c.emailsSent + c.expired + c.failed + c.retried + Object.values(c.deferred).reduce((a, b) => a + b, 0) + Object.values(c.cancelled).reduce((a, b) => a + b, 0) > 0;
 
-/** Siguiente fin de la franja silenciosa (08:00 local) si `now` cae dentro de 21:00–08:00; si no, null. */
+/** Siguiente fin de la franja silenciosa (07:00 local) si `now` cae dentro de 21:00–07:00; si no, null. */
 export function quietHoursEnd(now: Date, timeZone: string): Date | null {
   const p = zonedParts(now, timeZone);
   if (p.hour >= QUIET_END_HOUR && p.hour < QUIET_START_HOUR) return null;
