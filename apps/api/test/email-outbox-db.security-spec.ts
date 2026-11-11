@@ -228,15 +228,15 @@ describeDb('Bandeja de salida de avisos por email (PostgreSQL real)', () => {
     warn.mockRestore();
   });
 
-  it('franja silenciosa: a las 23:10 (Madrid) no sale; se aplaza a las 08:00', async () => {
+  it('franja silenciosa: a las 23:10 (Madrid) no sale; se aplaza a las 07:00', async () => {
     const { ws, users } = await scenario();
     const night = new Date('2030-01-15T22:10:00.000Z');
     const d = await notice(ws.id, users.therapist, 'STAFF_APPOINTMENT_REQUEST', night);
     const { service, send } = outbox();
     await service.processWorkspace(ws.id, night);
     expect(send).not.toHaveBeenCalled();
-    expect((await delivery(d.id)).scheduledAt.toISOString()).toBe('2030-01-16T07:00:00.000Z');
-    await service.processWorkspace(ws.id, new Date('2030-01-16T07:00:00.000Z'));
+    expect((await delivery(d.id)).scheduledAt.toISOString()).toBe('2030-01-16T06:00:00.000Z');
+    await service.processWorkspace(ws.id, new Date('2030-01-16T06:00:00.000Z'));
     expect(send).toHaveBeenCalledTimes(1);
   });
 
