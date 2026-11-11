@@ -1,3 +1,4 @@
+import { bestEffortStaffEmail } from './staff-email-best-effort';
 import { enqueueStaffEmails } from './email-outbox.store';
 import { KIND_TEMPLATE, StaffEmailKind, wantsStaffEmail } from './staff-email-preferences';
 
@@ -17,14 +18,17 @@ export async function enqueueStaffEmailsForNotices(
   const { workspaceId, kind } = params;
   const userIds = [...new Set(params.notices.map((n) => n.userId).filter(Boolean))];
   if (!userIds.length) return 0;
-  const recipients = await staffEmailRecipients(tx, workspaceId, kind, userIds, params.professionalIds);
-  const keys = params.notices.filter((n) => recipients.has(n.userId)).map((n) => n.dedupeKey);
-  if (!keys.length) return 0;
-  const rows = await tx.notification.findMany({
-    where: { workspaceId, audience: 'PROFESSIONAL', dedupeKey: { in: keys }, userId: { in: [...recipients] } },
-    select: { id: true },
+  // Nunca tumba la operación que dispara el aviso (incidente 11/11/2026): savepoint + log sin datos.
+  return bestEffortStaffEmail(tx, `encolar ${kind}`, 0, async () => {
+    const recipients = await staffEmailRecipients(tx, workspaceId, kind, userIds, params.professionalIds);
+    const keys = params.notices.filter((n) => recipients.has(n.userId)).map((n) => n.dedupeKey);
+    if (!keys.length) return 0;
+    const rows = await tx.notification.findMany({
+      where: { workspaceId, audience: 'PROFESSIONAL', dedupeKey: { in: keys }, userId: { in: [...recipients] } },
+      select: { id: true },
   });
   return enqueueStaffEmails(tx, workspaceId, rows.map((r: { id: string }) => ({ notificationId: r.id, template: KIND_TEMPLATE[kind] })));
+  });
 }
 
 /** De los usuarios dados, los que son miembros activos y quieren este tipo de email. */
