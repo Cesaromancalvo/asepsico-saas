@@ -247,9 +247,8 @@ jobs:
       # Lista de espera pública: alta cifrada, deduplicación (también simultánea), Origin, tipo
       # de contenido, envío demasiado rápido y rate limit por IP. Usa IPs 203.0.113.x vía
       # X-Forwarded-For (TRUST_PROXY=loopback) y borra las filas que crea. Tarda ~10 s.
-      # Política v7 (teléfono obligatorio, sin preferencia), la v6 FUERA de plazo (la API arranca sin
-      # WAITLIST_V6_ACCEPTED_UNTIL) y la v5 retirada; la v6 en plazo se comprueba tras reiniciar la API,
-      # más abajo.
+      # Política v7 (teléfono obligatorio, sin preferencia) y la v5 y la v6 retiradas. Se repite tras
+      # reiniciar la API con WAITLIST_V6_ACCEPTED_UNTIL aún puesta (variable retirada: se ignora), más abajo.
       - name: Verify public waitlist (real PostgreSQL)
         run: node scripts/verify-waitlist.mjs
 
@@ -294,9 +293,9 @@ jobs:
             echo "La API anterior sigue respondiendo en :4000: no se puede reiniciar con las condiciones nuevas" >&2
             exit 1
           fi
-          # Transición de la política lista-espera-v6 abierta 3 días (máx. 7): la comprueba el paso
-          # «Verify public waitlist with the v6 transition open». Reiniciar también vacía el throttle.
-          # La v5 no se abre: su tope fijo en el código es el 12/11/2026.
+          # Variable de la v6 (retirada) olvidada en el entorno, a +3 días: la API debe arrancar igual,
+          # ignorarla y avisar en el log. Lo comprueba el paso «Verify public waitlist with the retired
+          # v6 variable still set». Reiniciar también vacía el throttle.
           export WAITLIST_V6_ACCEPTED_UNTIL="$(date -u -d '+3 days' '+%Y-%m-%dT%H:%M:%SZ')"
           setsid npm --workspace @asepsico/api run start >> "$RUNNER_TEMP/asepsico-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/asepsico-api.pid"
@@ -322,13 +321,13 @@ jobs:
         env:
           ASEPSICO_SMOKE_EXPECT_TERMS_428: '1'
 
-      # Política v7 con la transición de la v6 ABIERTA (la API se reinició arriba con
-      # WAITLIST_V6_ACCEPTED_UNTIL a +3 días): v6 «Solo por email» → 202 guardada como v6 y EMAIL_ONLY;
-      # v6 sin preferencia → 400; la v7 sigue exigiendo teléfono y la v5 sigue retirada.
-      - name: Verify public waitlist with the v6 transition open (real PostgreSQL)
-        run: node scripts/verify-waitlist.mjs
-        env:
-          WAITLIST_VERIFY_V6_WINDOW: open
+      # La API se reinició arriba con WAITLIST_V6_ACCEPTED_UNTIL a +3 días (variable retirada): tiene
+      # que haber avisado en el log (solo el nombre, nunca el valor) y la v6 y la v5 siguen retiradas;
+      # la v7 sigue exigiendo teléfono.
+      - name: Verify public waitlist with the retired v6 variable still set (real PostgreSQL)
+        run: |
+          grep -q 'WAITLIST_V6_ACCEPTED_UNTIL está puesta pero ya no se usa' "$RUNNER_TEMP/asepsico-api.log" || { echo "La API no avisó de la variable retirada WAITLIST_V6_ACCEPTED_UNTIL" >&2; exit 1; }
+          node scripts/verify-waitlist.mjs
 
       # Ráfaga simultánea de login/mfa contra el límite por cuenta (hallazgo de Argos).
       # scripts/verify-mfa-concurrency.mjs llega con la PR #9 (rama fix/mfa-hardening); hasta
