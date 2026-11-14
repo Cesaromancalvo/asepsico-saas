@@ -28,6 +28,8 @@ export const PORTAL_LOGIN_PATH = '/portal/login/';
 
 export const SAMPLE_DATA_NOT_PURGEABLE: SampleDataErrorCode = 'SAMPLE_DATA_NOT_PURGEABLE';
 export const SAMPLE_PORTAL_PATIENT_NOT_FOUND: SampleDataErrorCode = 'SAMPLE_PORTAL_PATIENT_NOT_FOUND';
+/** 409: el modo de acceso al portal del paciente de prueba ya no admite su propia cuenta. */
+export const SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED = 'SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED';
 
 // [LEX/CLIO] texto pendiente de validar
 export const SAMPLE_NOTICE_TITLE = 'Este es un espacio de prueba con pacientes inventados.';
@@ -58,15 +60,16 @@ export function fetchSampleDataStatus(): Promise<SampleDataStatusContract> {
 }
 
 /**
- * Estado de los datos de ejemplo para la UI. Sin llamar a la API si no es OWNER; un 403 (el rol
- * ha cambiado) se trata igual que «no hay nada que enseñar». Otros errores se lanzan.
+ * Estado de los datos de ejemplo para la UI. Sin llamar a la API si no es OWNER. Un 403 (el rol ha
+ * cambiado) o un 404 (fuera del entorno del piloto demo las rutas no existen) se tratan igual que
+ * «no hay nada que enseñar». Otros errores se lanzan.
  */
 export async function loadSampleDataStatus(role: StaffRole | null | undefined): Promise<SampleDataStatusContract | null> {
   if (!canManageSampleData(role)) return null;
   try {
     return await fetchSampleDataStatus();
   } catch (err) {
-    if (err instanceof ApiError && err.status === 403) return null;
+    if (err instanceof ApiError && (err.status === 403 || err.status === 404)) return null;
     throw err;
   }
 }
@@ -95,6 +98,9 @@ export function portalAccessErrorMessage(err: unknown): string {
   }
   if (err instanceof ApiError && err.code === SAMPLE_PORTAL_PATIENT_NOT_FOUND) {
     return 'El paciente de prueba con acceso al portal ya no existe (se borró con los datos de ejemplo).';
+  }
+  if (err instanceof ApiError && err.code === SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED) {
+    return 'El paciente de prueba ya no tiene un acceso propio al portal (se cambió su modo de acceso en su ficha), así que no se puede generar su contraseña.';
   }
   if (err instanceof ApiError && err.status === 403) return FORBIDDEN_MESSAGE;
   if (err instanceof ApiError && err.status === 429) return 'Has pedido varias contraseñas seguidas. Espera un minuto y vuelve a intentarlo.';

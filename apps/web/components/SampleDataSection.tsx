@@ -18,6 +18,7 @@ import {
   SAMPLE_NOTICE_CLINICIAN,
   SAMPLE_NOTICE_NO_REAL_DATA,
   SAMPLE_NOTICE_TITLE,
+  SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED,
   SAMPLE_PORTAL_PATIENT_NOT_FOUND,
   sampleStatusSummary,
 } from '@/lib/sample-data';
@@ -206,7 +207,7 @@ export default function SampleDataSection({ viewer }: { viewer: Viewer | null })
       setAccess(await requestSamplePortalAccess());
     } catch (err) {
       setAccessError(portalAccessErrorMessage(err));
-      if (err instanceof ApiError && err.code === SAMPLE_PORTAL_PATIENT_NOT_FOUND) {
+      if (err instanceof ApiError && (err.code === SAMPLE_PORTAL_PATIENT_NOT_FOUND || err.code === SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED)) {
         setStatus((current) => (current ? { ...current, portalPatient: null } : current));
       }
     } finally {

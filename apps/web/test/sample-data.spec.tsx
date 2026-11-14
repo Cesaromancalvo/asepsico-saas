@@ -95,9 +95,16 @@ describe('solo la persona titular (OWNER)', () => {
     expect(apiMock).toHaveBeenCalledWith('/sample-data', undefined);
   });
 
-  it('un 403 de la API (rol cambiado) se trata como «nada que enseñar»', async () => {
+  it('un 403 (rol cambiado) o un 404 (fuera del piloto demo) se tratan como «nada que enseñar»', async () => {
     apiMock.mockRejectedValue(new ApiError('Forbidden', 403));
     await expect(loadSampleDataStatus('OWNER')).resolves.toBeNull();
+    apiMock.mockRejectedValue(new ApiError('Not Found', 404));
+    await expect(loadSampleDataStatus('OWNER')).resolves.toBeNull();
+  });
+
+  it('otros errores se lanzan (la sección muestra «Intentar de nuevo»)', async () => {
+    apiMock.mockRejectedValue(new ApiError('Error', 500));
+    await expect(loadSampleDataStatus('OWNER')).rejects.toBeInstanceOf(ApiError);
   });
 
   it('la sección no se pinta para otros roles ni sin usuario', () => {
@@ -217,6 +224,7 @@ describe('«Ver el portal como paciente»: la contraseña no persiste', () => {
 
   it.each([
     [new ApiError('x', 404, 'SAMPLE_PORTAL_PATIENT_NOT_FOUND'), 'ya no existe'],
+    [new ApiError('x', 409, 'SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED'), 'ya no tiene un acceso propio'],
     [new ApiError('x', 403), 'Solo la persona titular'],
     [new ApiError('x', 429), 'Espera un minuto'],
     [new ApiError('x', 401, 'SESSION_EXPIRED'), 'no se ha generado ninguna contraseña'],
