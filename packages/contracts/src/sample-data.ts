@@ -1,6 +1,7 @@
 /**
  * E1 · Espacio de prueba listo para mirar (piloto demo). Todos los endpoints son SOLO del OWNER del
  * espacio; cualquier otro rol recibe 403. Los datos de ejemplo son pacientes inventados (isDemo).
+ * Fuera del entorno del piloto demo (DEMO_ENVIRONMENT distinto de "true") las tres rutas dan 404.
  */
 
 /** GET /sample-data — estado de los datos de ejemplo del espacio (sin contenido clínico). */
@@ -19,7 +20,8 @@ export interface SampleDataStatusContract {
  * POST /sample-data/portal-access — genera una contraseña temporal NUEVA para el paciente de prueba
  * y la devuelve UNA sola vez (Cache-Control: no-store). La anterior deja de valer. El portal pedirá
  * cambiarla al entrar. Nunca se guarda en claro ni va a logs, correos o auditoría.
- * 404 SAMPLE_PORTAL_PATIENT_NOT_FOUND si ya no hay paciente de prueba con portal.
+ * 404 SAMPLE_PORTAL_PATIENT_NOT_FOUND si ya no hay paciente de prueba con portal; 409
+ * SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED si su modo de acceso al portal ya no admite su propia cuenta.
  */
 export interface SamplePortalAccessContract {
   patientId: string;
@@ -42,4 +44,4 @@ export interface ClearSampleDataResultContract {
   deleted: { patients: number; sessions: number; processes: number };
 }
 
-export type SampleDataErrorCode = 'SAMPLE_DATA_NOT_PURGEABLE' | 'SAMPLE_PORTAL_PATIENT_NOT_FOUND';
+export type SampleDataErrorCode = 'SAMPLE_DATA_NOT_PURGEABLE' | 'SAMPLE_PORTAL_PATIENT_NOT_FOUND' | 'SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED';

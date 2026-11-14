@@ -24,8 +24,12 @@ describeDb('E1 · datos de ejemplo (PostgreSQL real)', () => {
   const run = `sample-${Date.now()}`;
   let seq = 0;
 
-  beforeAll(() => { prisma = new PrismaClient({ datasourceUrl: url }); });
-  afterAll(async () => { await prisma?.$disconnect(); });
+  let savedEnv: string | undefined;
+  beforeAll(() => { prisma = new PrismaClient({ datasourceUrl: url }); savedEnv = process.env.DEMO_ENVIRONMENT; process.env.DEMO_ENVIRONMENT = 'true'; });
+  afterAll(async () => {
+    if (savedEnv === undefined) delete process.env.DEMO_ENVIRONMENT; else process.env.DEMO_ENVIRONMENT = savedEnv;
+    await prisma?.$disconnect();
+  });
 
   async function space(isClinician = false) {
     const n = ++seq;
@@ -88,5 +92,71 @@ describeDb('E1 · datos de ejemplo (PostgreSQL real)', () => {
     expect(await prisma.patient.count({ where: { workspaceId: b.workspaceId, isDemo: true } })).toBe(SAMPLE_PATIENTS.length);
     expect(await prisma.auditLog.count({ where: { workspaceId: a.workspaceId, action: 'SAMPLE_DATA_CLEARED', actorId: a.ownerUserId } })).toBe(1);
     expect((await prisma.workspace.findUnique({ where: { id: a.workspaceId } }))?.sampleDataClearedAt).not.toBeNull();
+  });
+
+  it('Argos · borrado con tarea enlazada a sesión, nota privada archivada y adjunto: sin fallos de FK ni huérfanos', async () => {
+    const a = await space(true);
+    await loadSampleData(prisma, { workspaceId: a.workspaceId, ownerUserId: a.ownerUserId, registrationInviteId: 'inv-fk' });
+    const patients = await prisma.patient.findMany({ where: { workspaceId: a.workspaceId, isDemo: true }, select: { id: true } });
+    const patientIds = patients.map((p) => p.id);
+    const proc = await prisma.clinicalProcess.findFirstOrThrow({ where: { workspaceId: a.workspaceId, patientId: { in: patientIds } } });
+    const session = await prisma.session.findFirstOrThrow({ where: { workspaceId: a.workspaceId, patientId: proc.patientId } });
+    // Tarea enlazada a una sesión (FK SetNull) además de las que ya enlaza el escritor.
+    await prisma.therapeuticTask.create({ data: { patientId: proc.patientId, sessionId: session.id, title: 'enc:ficticio', status: 'PENDING' } as any });
+    expect(await prisma.therapeuticTask.count({ where: { patientId: { in: patientIds }, sessionId: { not: null } } })).toBeGreaterThanOrEqual(1);
+    // Nota privada archivada de un proceso de ejemplo (FK RESTRICT hacia el proceso).
+    await prisma.clinicalProcessPrivateNote.create({ data: { workspaceId: a.workspaceId, processId: proc.id, authorId: a.ownerUserId, notes: 'enc:ficticio' } });
+    // Mensaje con adjunto de un paciente de ejemplo.
+    const conversation = await prisma.conversation.findFirst({ where: { workspaceId: a.workspaceId, patientId: { in: patientIds } } })
+      ?? await prisma.conversation.create({ data: { workspaceId: a.workspaceId, patientId: proc.patientId, status: 'OPEN' } as any });
+    await prisma.message.create({ data: { conversationId: conversation.id, senderType: 'PATIENT', body: 'enc:ficticio', attachmentName: 'hoja-ficticia.png', attachmentKey: `${a.workspaceId}/adjunto-ficticio.png`, mimeType: 'image/png' } as any });
+    const conversationIds = (await prisma.conversation.findMany({ where: { patientId: { in: patientIds } }, select: { id: true } })).map((c) => c.id);
+    const processIds = (await prisma.clinicalProcess.findMany({ where: { patientId: { in: patientIds } }, select: { id: true } })).map((p) => p.id);
+
+    const result = await new SampleDataService(prisma as any).clear(a.workspaceId, a.actor, {});
+    expect(result.deleted.patients).toBe(SAMPLE_PATIENTS.length);
+
+    const leftovers = await Promise.all([
+      prisma.patient.count({ where: { id: { in: patientIds } } }),
+      prisma.session.count({ where: { patientId: { in: patientIds } } }),
+      prisma.clinicalProcess.count({ where: { id: { in: processIds } } }),
+      prisma.clinicalProcessPrivateNote.count({ where: { processId: { in: processIds } } }),
+      prisma.therapeuticTask.count({ where: { patientId: { in: patientIds } } }),
+      prisma.therapyGoal.count({ where: { patientId: { in: patientIds } } }),
+      prisma.clinicalAssessment.count({ where: { patientId: { in: patientIds } } }),
+      prisma.conversation.count({ where: { id: { in: conversationIds } } }),
+      prisma.message.count({ where: { conversationId: { in: conversationIds } } }),
+      prisma.patientPortalAccount.count({ where: { patientId: { in: patientIds } } }),
+      prisma.clinicalHistory.count({ where: { patientId: { in: patientIds } } }),
+    ]);
+    expect(leftovers).toEqual(leftovers.map(() => 0));
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { workspaceId: a.workspaceId, action: 'SAMPLE_DATA_CLEARED' } });
+    expect((audit.metadata as any).storageObjects).toBe(1);
+    expect(JSON.stringify(audit.metadata)).not.toContain('adjunto-ficticio');
+  });
+
+  it('Argos · los pacientes de ejemplo de OTRO espacio (y todo lo suyo) quedan intactos tras el borrado', async () => {
+    const a = await space(true);
+    const b = await space(true);
+    await loadSampleData(prisma, { workspaceId: a.workspaceId, ownerUserId: a.ownerUserId, registrationInviteId: 'inv-iso-a' });
+    await loadSampleData(prisma, { workspaceId: b.workspaceId, ownerUserId: b.ownerUserId, registrationInviteId: 'inv-iso-b' });
+    const snapshot = async () => {
+      const ids = (await prisma.patient.findMany({ where: { workspaceId: b.workspaceId, isDemo: true }, select: { id: true }, orderBy: { id: 'asc' } })).map((p) => p.id);
+      return {
+        ids,
+        sessions: await prisma.session.count({ where: { workspaceId: b.workspaceId } }),
+        processes: await prisma.clinicalProcess.count({ where: { workspaceId: b.workspaceId } }),
+        tasks: await prisma.therapeuticTask.count({ where: { patientId: { in: ids } } }),
+        portal: await prisma.patientPortalAccount.count({ where: { workspaceId: b.workspaceId } }),
+        messages: await prisma.message.count({ where: { conversation: { workspaceId: b.workspaceId } } }),
+        workspace: await prisma.workspace.findUniqueOrThrow({ where: { id: b.workspaceId }, select: { sampleDataLoadedAt: true, sampleDataClearedAt: true } }),
+      };
+    };
+    const before = await snapshot();
+    expect(before.ids).toHaveLength(SAMPLE_PATIENTS.length);
+    await new SampleDataService(prisma as any).clear(a.workspaceId, a.actor, {});
+    expect(await snapshot()).toEqual(before);
+    expect(before.workspace.sampleDataClearedAt).toBeNull();
+    expect(await prisma.auditLog.count({ where: { workspaceId: b.workspaceId, action: 'SAMPLE_DATA_CLEARED' } })).toBe(0);
   });
 });

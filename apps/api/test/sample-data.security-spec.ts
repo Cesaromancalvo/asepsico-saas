@@ -16,7 +16,7 @@ import { shouldLoadSampleData } from '../src/sample-data/sample-data-eligibility
 import * as loader from '../src/sample-data/sample-data-loader';
 import { DemoRefusal } from '../src/sample-data/sample-data-purge';
 import { SampleDataController } from '../src/sample-data/sample-data.controller';
-import { SAMPLE_DATA_NOT_PURGEABLE, SAMPLE_PORTAL_PATIENT_NOT_FOUND, SampleDataService } from '../src/sample-data/sample-data.service';
+import { SAMPLE_DATA_NOT_PURGEABLE, SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED, SAMPLE_PORTAL_PATIENT_NOT_FOUND, SampleDataService } from '../src/sample-data/sample-data.service';
 import { fakeRegistrationDb } from './support/fake-registration-db';
 
 /**
@@ -254,6 +254,21 @@ describe('E1 · carga (loadSampleData): idempotente, acotada al espacio y sin se
 describe('E1 · endpoints del titular: solo OWNER y solo su espacio', () => {
   const owner = { sub: 'u-owner', workspaceId: 'ws-1', role: 'OWNER', email: 'titular@example.com' } as any;
   const membership = (role: string) => ({ 'workspaceMember.findFirst': (a: any) => (a.where.workspaceId === 'ws-1' && a.where.userId === 'u-owner' && a.where.status === 'ACTIVE' ? { role } : null) });
+  let savedEnv: string | undefined;
+  beforeEach(() => { savedEnv = process.env.DEMO_ENVIRONMENT; process.env.DEMO_ENVIRONMENT = 'true'; });
+  afterEach(() => { if (savedEnv === undefined) delete process.env.DEMO_ENVIRONMENT; else process.env.DEMO_ENVIRONMENT = savedEnv; });
+
+  it.each([undefined, '', 'false', 'TRUE', ' true'])('Argos M1 · DEMO_ENVIRONMENT=%j → 404 en las tres rutas sin llamar a Prisma', async (value) => {
+    if (value === undefined) delete process.env.DEMO_ENVIRONMENT; else process.env.DEMO_ENVIRONMENT = value;
+    const db = recordingDb(membership('OWNER'));
+    const svc = new SampleDataService(db);
+    for (const call of [() => svc.status('ws-1', owner), () => svc.issuePortalAccess('ws-1', owner, {}), () => svc.clear('ws-1', owner, {})]) {
+      const error: any = await call().catch((e) => e);
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect(error.getStatus()).toBe(404);
+    }
+    expect(db.__calls).toEqual([]);
+  });
 
   it('las rutas llevan JwtAuthGuard y CsrfGuard', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, SampleDataController)).toEqual([JwtAuthGuard, CsrfGuard]);
@@ -262,10 +277,14 @@ describe('E1 · endpoints del titular: solo OWNER y solo su espacio', () => {
   it.each(['ADMIN', 'THERAPIST', 'ASSISTANT'])('%s (según la BD) → 403 en las tres operaciones y no escribe nada', async (role) => {
     const db = recordingDb(membership(role));
     const svc = new SampleDataService(db);
-    await expect(svc.status('ws-1', owner)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.issuePortalAccess('ws-1', owner, {})).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.clear('ws-1', owner, {})).rejects.toBeInstanceOf(ForbiddenException);
+    for (const call of [() => svc.status('ws-1', owner), () => svc.issuePortalAccess('ws-1', owner, {}), () => svc.clear('ws-1', owner, {})]) {
+      const error: any = await call().catch((e) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getStatus()).toBe(403);
+    }
     expect(writes(db)).toEqual([]);
+    // Ni siquiera llega a leer datos de pacientes: solo la pertenencia.
+    expect(db.__calls.every((c: any) => c.op === 'workspaceMember.findFirst')).toBe(true);
   });
 
   it('un token que no es de staff (portal) → 403 sin consultar nada', async () => {
@@ -313,13 +332,15 @@ describe('E1 · endpoints del titular: solo OWNER y solo su espacio', () => {
   });
 
   it('acceso del paciente de prueba: contraseña nueva una vez, solo su hash en la BD y nada en la auditoría', async () => {
-    const patient = { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccounts: [{ id: 'acc-1', email: 'paciente.demo.abcd@example.test' }] };
+    const patient = { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', portalAccounts: [{ id: 'acc-1', email: 'paciente.demo.abcd@example.test' }] };
     const db = recordingDb({ ...membership('OWNER'), 'patient.findFirst': (a: any) => (a.where.workspaceId === 'ws-1' && a.where.isDemo === true ? patient : null) });
     const result = await new SampleDataService(db).issuePortalAccess('ws-1', owner, {});
     expect(result).toMatchObject({ patientId: 'p-demo', email: 'paciente.demo.abcd@example.test', mustChangePassword: true });
     expect(result.temporaryPassword.length).toBeGreaterThanOrEqual(20);
     const update = db.__calls.find((c: any) => c.op === 'patientPortalAccount.updateMany').args;
     expect(update.where).toMatchObject({ id: 'acc-1', workspaceId: 'ws-1', patientId: 'p-demo', accessorType: 'PATIENT', patient: { workspaceId: 'ws-1', isDemo: true, deletedAt: null } });
+    // Argos B1: compare-and-set del modo de acceso en la misma escritura.
+    expect(update.where.patient.portalAccessMode).toEqual({ in: ['PATIENT_ONLY', 'SHARED'] });
     expect(update.data.passwordHash).not.toContain(result.temporaryPassword);
     expect(await compare(result.temporaryPassword, update.data.passwordHash)).toBe(true);
     expect(update.data.mustChangePassword).toBe(true);
@@ -327,6 +348,22 @@ describe('E1 · endpoints del titular: solo OWNER y solo su espacio', () => {
     expect(audit).toMatchObject({ action: 'SAMPLE_PORTAL_ACCESS_ISSUED', workspaceId: 'ws-1', actorId: 'u-owner', entityId: 'acc-1' });
     expect(JSON.stringify(audit)).not.toContain(result.temporaryPassword);
     expect(JSON.stringify(audit)).not.toContain('example.test');
+  });
+
+  it.each(['GUARDIAN_ONLY', null, 'DESCONOCIDO'])('Argos B1 · modo de acceso %j que no admite la cuenta del paciente → 409 sin escrituras', async (mode) => {
+    const patient = { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccessMode: mode, portalAccounts: [{ id: 'acc-1', email: 'paciente.demo.abcd@example.test' }] };
+    const db = recordingDb({ ...membership('OWNER'), 'patient.findFirst': patient });
+    const error: any = await new SampleDataService(db).issuePortalAccess('ws-1', owner, {}).catch((e) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.getResponse().code).toBe(SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED);
+    expect(writes(db)).toEqual([]);
+  });
+
+  it('Argos B1 · si el modo cambia entre la lectura y la escritura (compare-and-set sin efecto) → 409 y sin auditoría', async () => {
+    const patient = { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', portalAccounts: [{ id: 'acc-1', email: 'paciente.demo.abcd@example.test' }] };
+    const db = recordingDb({ ...membership('OWNER'), 'patient.findFirst': patient, 'patientPortalAccount.updateMany': { count: 0 } });
+    await expect(new SampleDataService(db).issuePortalAccess('ws-1', owner, {})).rejects.toBeInstanceOf(ConflictException);
+    expect(db.__calls.some((c: any) => c.op === 'auditLog.create')).toBe(false);
   });
 
   it('sin paciente de prueba (borrado o de otro espacio) → 404 y no escribe', async () => {
@@ -342,7 +379,7 @@ describe('E1 · endpoints del titular: solo OWNER y solo su espacio', () => {
       ...membership('OWNER'),
       'workspace.findUnique': { sampleDataLoadedAt: new Date('2026-11-14T10:00:00Z'), sampleDataClearedAt: null },
       'patient.count': 7,
-      'patient.findFirst': { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccounts: [{ id: 'acc-1', email: 'x@example.test' }] },
+      'patient.findFirst': { id: 'p-demo', firstName: 'Paciente', lastName: 'Demo', status: 'ACTIVE', portalAccessMode: 'PATIENT_ONLY', portalAccounts: [{ id: 'acc-1', email: 'x@example.test' }] },
     });
     const status = await new SampleDataService(db).status('ws-1', owner);
     expect(status).toEqual({ loaded: true, loadedAt: '2026-11-14T10:00:00.000Z', clearedAt: null, samplePatients: 7, portalPatient: { patientId: 'p-demo', firstName: 'Paciente', lastName: 'Demo' } });

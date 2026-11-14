@@ -4,12 +4,13 @@ import { hash } from 'bcryptjs';
 import { assertStaffRole } from '../common/auth/assert-staff-role';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
-import { isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from '../portal/portal-access-mode.util';
+import { accessModesAllowing, isAccessorAllowed, isPatientPortalOpen, PORTAL_CLOSED_PATIENT_STATUSES } from '../portal/portal-access-mode.util';
 import { randomPassword } from './demo-writer';
 import { assertPurgeable, deleteSamplePatients, DemoRefusal, samplePatientsScope } from './sample-data-purge';
 
 export const SAMPLE_DATA_NOT_PURGEABLE = 'SAMPLE_DATA_NOT_PURGEABLE';
 export const SAMPLE_PORTAL_PATIENT_NOT_FOUND = 'SAMPLE_PORTAL_PATIENT_NOT_FOUND';
+export const SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED = 'SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED';
 
 type Meta = { ip?: string; userAgent?: string };
 type Db = PrismaService | Prisma.TransactionClient;
@@ -23,6 +24,21 @@ export interface SamplePortalAccessContract { patientId: string; firstName: stri
 export interface ClearSampleDataResultContract { clearedAt: string; deleted: { patients: number; sessions: number; processes: number } }
 
 /**
+ * Argos M1: estas rutas solo existen en el entorno del piloto demo (DEMO_ENVIRONMENT=true EXACTO,
+ * igual que la carga). En cualquier otro entorno, 404 sin tocar la BD.
+ */
+function assertDemoEnvironment(env: NodeJS.ProcessEnv = process.env) {
+  if (env.DEMO_ENVIRONMENT !== 'true') throw new NotFoundException();
+}
+
+function portalModeConflict() {
+  return new ConflictException({
+    statusCode: 409, code: SAMPLE_PORTAL_ACCESS_MODE_NOT_ALLOWED,
+    message: 'El modo de acceso al portal de este paciente de prueba no admite su propia cuenta. Cámbialo en su ficha.',
+  });
+}
+
+/**
  * E1 · Datos de ejemplo del espacio de prueba. SOLO el OWNER del espacio (rol leído de la BD, no del
  * token). Todo filtra por workspaceId y solo toca pacientes con isDemo=true. Nunca devuelve
  * contenido clínico: solo nombres inventados, recuentos e ids.
@@ -32,6 +48,7 @@ export class SampleDataService {
   constructor(private readonly prisma: PrismaService) {}
 
   async status(workspaceId: string, actor: AuthUser): Promise<SampleDataStatusContract> {
+    assertDemoEnvironment();
     await this.assertOwner(this.prisma, workspaceId, actor);
     const [workspace, samplePatients, portal] = await Promise.all([
       this.prisma.workspace.findUnique({ where: { id: workspaceId }, select: { sampleDataLoadedAt: true, sampleDataClearedAt: true } }),
@@ -52,12 +69,16 @@ export class SampleDataService {
    * solo su hash. La auditoría registra quién la pidió y para qué cuenta, nunca correo ni contraseña.
    */
   async issuePortalAccess(workspaceId: string, actor: AuthUser, meta: Meta): Promise<SamplePortalAccessContract> {
+    assertDemoEnvironment();
     await this.assertOwner(this.prisma, workspaceId, actor);
     const patient = await this.findSamplePortalPatient(this.prisma, workspaceId);
     const account = patient?.portalAccounts[0];
     if (!patient || !account) {
       throw new NotFoundException({ statusCode: 404, code: SAMPLE_PORTAL_PATIENT_NOT_FOUND, message: 'Este espacio ya no tiene paciente de prueba con acceso al portal.' });
     }
+    // Argos B1: el modo de acceso al portal lo decide el profesional; si ya no admite la cuenta del
+    // propio paciente, no se reactiva (409 sin escrituras). El updateMany lo vuelve a exigir.
+    if (!isAccessorAllowed(patient.portalAccessMode, 'PATIENT')) throw portalModeConflict();
     const temporaryPassword = randomPassword();
     const passwordHash = await hash(temporaryPassword, 12);
 
@@ -66,7 +87,10 @@ export class SampleDataService {
       const { count } = await tx.patientPortalAccount.updateMany({
         where: {
           id: account.id, workspaceId, patientId: patient.id, accessorType: 'PATIENT',
-          patient: { workspaceId, isDemo: true, deletedAt: null, status: { notIn: [...PORTAL_CLOSED_PATIENT_STATUSES] } },
+          patient: {
+            workspaceId, isDemo: true, deletedAt: null, status: { notIn: [...PORTAL_CLOSED_PATIENT_STATUSES] },
+            portalAccessMode: { in: accessModesAllowing('PATIENT') },
+          },
         },
         data: { passwordHash, mustChangePassword: true, isActive: true, pendingActivation: false, failedLoginAttempts: 0, lockedUntil: null },
       });
@@ -84,6 +108,7 @@ export class SampleDataService {
 
   /** Borra SOLO los pacientes de ejemplo (isDemo) del espacio y lo que cuelga de ellos. Auditado. */
   async clear(workspaceId: string, actor: AuthUser, meta: Meta): Promise<ClearSampleDataResultContract> {
+    assertDemoEnvironment();
     const clearedAt = new Date();
     const counts = await this.prisma.$transaction(async (tx) => {
       await this.assertOwner(tx, workspaceId, actor);
@@ -120,7 +145,7 @@ export class SampleDataService {
       where: { workspaceId, isDemo: true, deletedAt: null, portalAccounts: { some: { workspaceId, accessorType: 'PATIENT' } } },
       orderBy: { createdAt: 'asc' },
       select: {
-        id: true, firstName: true, lastName: true, status: true,
+        id: true, firstName: true, lastName: true, status: true, portalAccessMode: true,
         portalAccounts: { where: { workspaceId, accessorType: 'PATIENT' }, orderBy: { createdAt: 'asc' }, take: 1, select: { id: true, email: true } },
       },
     });
