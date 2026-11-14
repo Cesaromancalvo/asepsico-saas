@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { fetchPatientClinicalAccess, isForbidden, isStaffWithProcessAccess, processLabel, therapistName, useViewer } from '../../lib/clinical';
 import Sidebar from '../../components/Sidebar';
 import { patientHref } from '@/lib/routes';
+import { formatShortDateTime } from '@/lib/date-format';
 
 type Conversation = {
   id: string;
@@ -44,10 +45,8 @@ function professionalFrom(patient: PatientSummary): string {
 
 const STATUS_LABEL: Record<Conversation['status'], string> = { OPEN: 'Abierta', CLOSED: 'Cerrada', ARCHIVED: 'Archivada' };
 
-function formatDateTime(value?: string | null) {
-  if (!value) return 'Sin actividad';
-  return new Date(value).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+// Mismo formato en la lista, en los metadatos y en cada mensaje: «25 oct 2026, 22:03».
+const formatDateTime = (value?: string | null) => formatShortDateTime(value);
 
 export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -185,7 +184,7 @@ export default function MessagesPage() {
             {conversations.map(c => <button key={c.id} type="button" aria-current={selectedId === c.id ? 'true' : undefined} className={`conversation-row ${selectedId === c.id ? 'active' : ''}`} onClick={() => setSelectedId(c.id)}>
               <strong>{c.patient.firstName} {c.patient.lastName}</strong>
               <span>{c.canReadMessages === false ? 'Contenido reservado a su terapeuta' : (c.messages[0]?.body || 'Sin mensajes todavía')}</span>
-              <small>{STATUS_LABEL[c.status]} · {formatDateTime(c.lastActivityAt ?? c.updatedAt)}{c.unreadCount ? ` · ${c.unreadCount} sin leer` : ''}</small>
+              <small>{STATUS_LABEL[c.status]} · Última actividad: {formatDateTime(c.lastActivityAt ?? c.updatedAt)}{c.unreadCount ? ` · ${c.unreadCount} sin leer` : ''}</small>
             </button>)}
             {!loadingList && !conversations.length && <div className="empty-state"><strong>No hay conversaciones</strong><p>Las conversaciones se crean desde la ficha del paciente.</p></div>}
           </aside>
@@ -207,7 +206,7 @@ export default function MessagesPage() {
               </div>}</header>
               {readOnly && <div className="e1-notice" role="note"><div><strong>Solo lectura</strong><p>Tu proceso con este paciente ya no está activo: ves los mensajes de cuando le atendías, pero no puedes escribir ni gestionar la conversación.</p></div></div>}
               <div className="urgent-boundary"><strong>Importante:</strong> este canal no sustituye la atención urgente. Ante una emergencia, utiliza los recursos asistenciales correspondientes.</div>
-              <div className="message-stream">{thread.messages.map(m => <div key={m.id} className={`message-bubble ${m.senderType === 'PROFESSIONAL' ? 'professional' : 'patient'}`}><span>{m.senderType === 'PROFESSIONAL' ? 'Profesional' : 'Paciente'}</span><p>{m.body}</p><small>{new Date(m.createdAt).toLocaleString('es-ES')}</small></div>)}{!thread.messages.length && <p className="muted">Todavía no hay mensajes.</p>}</div>
+              <div className="message-stream">{thread.messages.map(m => <div key={m.id} className={`message-bubble ${m.senderType === 'PROFESSIONAL' ? 'professional' : 'patient'}`}><span>{m.senderType === 'PROFESSIONAL' ? 'Profesional' : 'Paciente'}</span><p>{m.body}</p><small><time dateTime={m.createdAt}>{formatDateTime(m.createdAt)}</time></small></div>)}{!thread.messages.length && <p className="muted">Todavía no hay mensajes.</p>}</div>
               {!readOnly && <form className="message-composer" onSubmit={send}><label className="field">Nuevo mensaje<textarea name="body" maxLength={4000} rows={4} placeholder="Escribe una indicación breve y clara…" disabled={thread.status !== 'OPEN'} required /></label><div><small>No incluyas información innecesaria en notificaciones externas.</small><button className="button primary" disabled={busy || thread.status !== 'OPEN'}>{busy ? 'Enviando…' : 'Enviar mensaje'}</button></div></form>}
             </>}
           </article>

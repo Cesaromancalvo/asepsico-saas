@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { EmptyState } from '@/components/Icon';
+import TaskReviewRow from '@/components/TaskReviewRow';
 import { api } from '@/lib/api';
 import { useViewer } from '@/lib/clinical';
 import { patientTasksToReviewHref, taskReviewPatientId } from '@/lib/routes';
@@ -84,10 +85,7 @@ export default function TasksToReviewPage() {
               <ul className="task-list review-task-list">
                 {items.map((item) => (
                   <li key={item.id}>
-                    <Link href={patientTasksToReviewHref(taskReviewPatientId(item.href))} className="task-row">
-                      <span><strong>{item.title}</strong><small>{item.subtitle}</small></span>
-                      <span className="text-link">Revisar</span>
-                    </Link>
+                    <TaskReviewRow href={patientTasksToReviewHref(taskReviewPatientId(item.href))} title={item.title} subtitle={item.subtitle} />
                   </li>
                 ))}
               </ul>
