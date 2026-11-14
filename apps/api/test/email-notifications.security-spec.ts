@@ -1,5 +1,5 @@
 import { NotificationMailer } from '../src/notifications/email/notification-mailer';
-import { renderStaffEmail, STAFF_TEMPLATES, PATIENT_TEMPLATES, templateGroup } from '../src/notifications/email/email-templates';
+import { renderStaffEmail, STAFF_LINK_PATH, STAFF_TEMPLATES, PATIENT_TEMPLATES, templateGroup } from '../src/notifications/email/email-templates';
 import { assertNotificationEmailConfig, groupEnabledFor, readNotificationEmailConfig } from '../src/notifications/email/notification-email.config';
 import { EmailOutboxService, quietHoursEnd } from '../src/notifications/email/email-outbox.service';
 import { STAFF_EMAIL_TTL_MS } from '../src/notifications/email/email-outbox.store';
@@ -113,8 +113,10 @@ describe('Plantillas de staff (§4.2, Lex 07/11)', () => {
     for (const part of [one.text, one.html]) {
       const links = part.match(/https?:\/\/[^\s"<]+/g) ?? [];
       expect(links.length).toBeGreaterThan(0);
-      for (const l of links) expect(l).toMatch(/^https:\/\/app\.example\.test\/(settings\/email-notifications)?$/);
+      for (const l of links) expect(l).toMatch(/^https:\/\/app\.example\.test\/(agenda\/solicitudes\/|settings\/email-notifications)?$/);
     }
+    expect(one.text).toContain('Entrar en AsePsico: https://app.example.test/agenda/solicitudes/');
+    expect(one.html).toContain('href="https://app.example.test/agenda/solicitudes/"');
     expect(one.html).not.toMatch(/<img|<script|https?:\/\/(?!app\.example\.test)/i);
   });
 
@@ -122,6 +124,15 @@ describe('Plantillas de staff (§4.2, Lex 07/11)', () => {
     const many = renderStaffEmail(['STAFF_APPOINTMENT_REQUEST', 'STAFF_APPOINTMENT_REQUEST', 'STAFF_PATIENT_CANCELLATION'], 'Consulta Ficticia', 'https://app.example.test');
     expect(many.subject).toBe('Tienes novedades en AsePsico');
     expect(many.text).toContain('Tienes novedades en Consulta Ficticia: 2 solicitudes de cita nuevas, 1 cancelación. Entra en AsePsico para verlas.');
+  });
+
+  it('cada aviso lleva a su pantalla (rutas fijas, sin ids ni parámetros); los agrupados mixtos, a Mi jornada', () => {
+    const base = 'https://app.example.test';
+    expect(renderStaffEmail(['STAFF_APPOINTMENT_REQUEST', 'STAFF_APPOINTMENT_REQUEST'], 'C', base).text).toContain(`Entrar en AsePsico: ${base}/agenda/solicitudes/\n`);
+    expect(renderStaffEmail(['STAFF_TASK_SUBMITTED'], 'C', base).text).toContain(`Entrar en AsePsico: ${base}/follow-up/revisar/\n`);
+    expect(renderStaffEmail(['STAFF_PATIENT_CANCELLATION'], 'C', base).text).toContain(`Entrar en AsePsico: ${base}/\n`);
+    expect(renderStaffEmail(['STAFF_APPOINTMENT_REQUEST', 'STAFF_TASK_SUBMITTED'], 'C', base).text).toContain(`Entrar en AsePsico: ${base}/\n`);
+    for (const path of Object.values(STAFF_LINK_PATH)) expect(path).toMatch(/^\/[a-z/-]*$/);
   });
 
   it('el nombre del espacio no puede inyectar HTML ni líneas', () => {
