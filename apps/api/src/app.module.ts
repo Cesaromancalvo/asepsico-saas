@@ -24,6 +24,7 @@ import { ExceptionalAccessModule } from './exceptional-access/exceptional-access
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { PortalSignupModule } from './portal-signup/portal-signup.module';
 import { PlatformModule } from './platform/platform.module';
+import { SampleDataModule } from './sample-data/sample-data.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { PlatformModule } from './platform/platform.module';
     SchedulingModule,
     PortalSignupModule,
     PlatformModule,
+    SampleDataModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

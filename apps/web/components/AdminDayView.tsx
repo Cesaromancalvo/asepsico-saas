@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { ROLE_LABEL, Viewer } from '@/lib/clinical';
 import Icon, { EmptyState } from '@/components/Icon';
 import AppointmentChangesCard from '@/components/AppointmentChangesCard';
+import SampleDataNotice from '@/components/SampleDataNotice';
 import { sessionHref } from '@/lib/routes';
 
 /*
@@ -129,6 +130,8 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
           <Link href="/agenda?new=true" className="primary-action"><Icon name="plus" size={18} />Nueva cita</Link>
         </div>
       </header>
+
+      <SampleDataNotice viewer={viewer} />
 
       <section className="dashboard-metrics" aria-label="Resumen administrativo de hoy">
         <Link href="/agenda" className="dashboard-card metric-card metric-violet">

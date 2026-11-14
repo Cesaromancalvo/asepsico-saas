@@ -5,6 +5,9 @@ import { PrismaService } from '../database/prisma.service';
 import { getCurrentLegalDocuments } from '../legal/legal-documents';
 import { assertAcceptsCurrentTerms, assertLegalDocumentsPublishable, legalDocumentRef, recordTermsAcceptances } from '../legal/terms-acceptance';
 import { clinicianFlagForRole, INVITABLE_ROLES } from '../workspace-members/member-role.util';
+import { shouldLoadSampleData } from '../sample-data/sample-data-eligibility';
+import { loadSampleData } from '../sample-data/sample-data-loader';
+import { DemoRefusal } from '../sample-data/sample-data-purge';
 import { AuthService } from './auth.service';
 import { RegisterDto, RegisterMemberDto } from './dto/register.dto';
 import { hashInviteToken, normalizeEmail } from './invite-token.util';
@@ -77,8 +80,24 @@ export class RegistrationService {
       return { user, workspaceId: workspace.id, role: membership.role };
     }));
 
+    if (shouldLoadSampleData(invite, docs)) await this.loadSampleDataSafely(result.workspaceId, result.user.id, invite.id);
+
     const session = await this.auth.issueSession(result.user, result.workspaceId, result.role, meta);
     return { mfaRequired: false as const, ...session };
+  }
+
+  /**
+   * E1 · Piloto demo: espacio de prueba ya cargado. Justo después del alta, en su propia transacción
+   * (idempotente). Si falla, el registro NO se deshace: el espacio queda vacío como antes de E1 y el
+   * operador puede cargarlo con db:seed-demo-workspace. Al log solo va el id del espacio y un código.
+   */
+  private async loadSampleDataSafely(workspaceId: string, ownerUserId: string, registrationInviteId: string) {
+    try {
+      await loadSampleData(this.prisma, { workspaceId, ownerUserId, registrationInviteId });
+    } catch (error) {
+      const code = error instanceof DemoRefusal ? 'REFUSED' : (error as { code?: unknown })?.code;
+      this.logger.error(`Datos de ejemplo NO cargados en el espacio ${workspaceId} (${typeof code === 'string' ? code : 'error inesperado'})`);
+    }
   }
 
   /**

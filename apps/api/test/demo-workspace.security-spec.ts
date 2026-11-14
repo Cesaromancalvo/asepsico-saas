@@ -16,7 +16,14 @@ import { encryptField } from '../src/common/crypto/field-encryption';
  * claramente inventado, adulto y sin temas sensibles.
  */
 const scriptsDir = join(__dirname, '..', 'prisma', 'scripts');
-const read = (file: string) => readFileSync(join(scriptsDir, file), 'utf8');
+const sampleDataDir = join(__dirname, '..', 'src', 'sample-data');
+// E1: el escritor y el borrado de pacientes viven ahora en src/sample-data (los comparte la API);
+// las comprobaciones de texto se hacen sobre el código real, no sobre las reexportaciones.
+const MOVED: Record<string, string[]> = {
+  'demo/demo-writer.ts': [join(sampleDataDir, 'demo-writer.ts')],
+  'demo/demo-purge.ts': [join(scriptsDir, 'demo', 'demo-purge.ts'), join(sampleDataDir, 'sample-data-purge.ts')],
+};
+const read = (file: string) => (MOVED[file] ?? [join(scriptsDir, file)]).map((f) => readFileSync(f, 'utf8')).join('\n');
 
 describe('Espacio demo: barreras de seguridad del script', () => {
   it.each([undefined, '', 'false', '1', 'TRUE', 'yes', ' true'])('DEMO_ENVIRONMENT=%j → se niega', (value) => {

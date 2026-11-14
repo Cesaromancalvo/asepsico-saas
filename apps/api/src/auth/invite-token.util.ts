@@ -31,7 +31,7 @@ export function buildInviteUrl(path: '/register' | '/join', token: string, webOr
  * Crea una invitación de registro (workspace nuevo). Solo la usan el CLI de plataforma y el seed:
  * no hay ningún endpoint que la exponga. Revoca las invitaciones pendientes al mismo correo.
  */
-export async function createRegistrationInvite(prisma: PrismaClient, input: { email: string; createdBy: string; now?: Date }) {
+export async function createRegistrationInvite(prisma: PrismaClient, input: { email: string; createdBy: string; now?: Date; withSampleData?: boolean }) {
   const email = normalizeEmail(input.email);
   const now = input.now ?? new Date();
   const token = generateInviteToken();
@@ -41,8 +41,11 @@ export async function createRegistrationInvite(prisma: PrismaClient, input: { em
       data: { revokedAt: now },
     });
     return tx.registrationInvite.create({
-      data: { email, tokenHash: hashInviteToken(token), expiresAt: new Date(now.getTime() + INVITE_TTL_MS), createdBy: input.createdBy },
-      select: { id: true, email: true, expiresAt: true },
+      data: {
+        email, tokenHash: hashInviteToken(token), expiresAt: new Date(now.getTime() + INVITE_TTL_MS), createdBy: input.createdBy,
+        withSampleData: input.withSampleData === true,
+      },
+      select: { id: true, email: true, expiresAt: true, withSampleData: true },
     });
   });
   return { token, invite };
