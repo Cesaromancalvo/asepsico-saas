@@ -14,6 +14,24 @@ import { BellButton, NotificationPanel, useNotificationBell } from './Notificati
 type SidebarProps = {
   syncText?: string;
 };
+/** Tramo en que la barra lateral se pliega a iconos (design-system.css, 701–900 px). */
+export const SIDEBAR_COLLAPSED_QUERY = '(min-width: 701px) and (max-width: 900px)';
+/**
+ * true mientras la barra está plegada a iconos: entonces cada enlace lleva su nombre como tooltip
+ * nativo (title). Con la barra ancha no se pone, para no repetir lo que ya se lee.
+ */
+function useSidebarCollapsed(): boolean {
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    const media = typeof window !== 'undefined' ? window.matchMedia?.(SIDEBAR_COLLAPSED_QUERY) : undefined;
+    if (!media) return;
+    const update = () => setCollapsed(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+  return collapsed;
+}
 // adminOnly: solo OWNER/ADMIN. processAccess: roles que entran en procesos y mensajes (no ASSISTANT).
 // noAssistant: recepción no lo gestiona (el QR de alta es de cada profesional).
 const navigation: { href: string; label: string; icon: IconName; adminOnly?: boolean; processAccess?: boolean; noAssistant?: boolean; pendingBadge?: boolean }[] = [
@@ -99,6 +117,9 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const viewer = useViewer();
+  const collapsed = useSidebarCollapsed();
+  const tip = (label: string) => (collapsed ? label : undefined);
+  const workspaceName = viewer?.workspaceName || 'Tu consulta';
   // Condiciones nuevas sin aceptar: cada profesional las acepta por sí mismo y la API le bloquea
   // (428 → /terms) hasta que lo haga. Este aviso es solo un recordatorio por si llega a verse.
   const terms = useTermsStatus();
@@ -171,11 +192,11 @@ export default function Sidebar({
     <>
     <aside className="sidebar">
       <div className="sidebar-top">
-        <Link href="/" className="sidebar-brand">
+        <Link href="/" className="sidebar-brand" aria-label={`AsePsico · ${workspaceName}. Ir a Mi jornada`} title={tip(`AsePsico · ${workspaceName}`)}>
           <div className="brand-mark" aria-hidden="true">A</div>
           <div>
             <strong>AsePsico</strong>
-            <span>{viewer?.workspaceName || 'Tu consulta'}</span>
+            <span>{workspaceName}</span>
           </div>
         </Link>
         {viewer?.role && <BellButton bell={bell} placement="sidebar" controlsId={bellPanelId} />}
@@ -189,6 +210,7 @@ export default function Sidebar({
               isActive(item.href) ? 'active' : ''
             }`}
             aria-current={isActive(item.href) ? 'page' : undefined}
+            title={tip(item.label)}
           >
             <span className="sidebar-icon"><Icon name={item.icon} /></span>
             <span>{item.label}</span>
@@ -205,6 +227,7 @@ export default function Sidebar({
             href={PANEL_PATH}
             className={`sidebar-link ${pathname.startsWith(PANEL_PATH) ? 'active' : ''}`}
             aria-current={pathname.startsWith(PANEL_PATH) ? 'page' : undefined}
+            title={tip('Lista de espera')}
           >
             <span className="sidebar-icon"><Icon name="clipboard" /></span>
             <span>Lista de espera</span>
@@ -224,7 +247,7 @@ export default function Sidebar({
             <small>{syncText}</small>
           </div>
         </div>
-        <div className="sidebar-profile">
+        <div className="sidebar-profile" title={tip(`${displayName} · ${viewer?.role ? ROLE_LABEL[viewer.role] : 'Profesional'}`)}>
           <div className="profile-avatar" aria-hidden="true">{initials}</div>
           <div>
             <strong>{displayName}</strong>
@@ -235,6 +258,7 @@ export default function Sidebar({
           type="button"
           className="sidebar-link sidebar-logout"
           onClick={handleLogout}
+          title={tip('Cerrar sesión')}
         >
           <span className="sidebar-icon"><Icon name="logout" /></span>
           <span>Cerrar sesión</span>

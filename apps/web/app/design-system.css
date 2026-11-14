@@ -738,3 +738,39 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 .agenda-session-actions .agenda-reschedule-button{flex-basis:100%;border-color:#CFC8F1;background:var(--tint);color:var(--violet-ink);font-weight:600}
 .review-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .review-limit-note{margin:0 0 12px}
+
+/* Tareas por revisar (/follow-up/revisar): sin icono a la izquierda, el texto ocupa todo el ancho
+   y «Revisar» va a la derecha; en móvil, debajo. Los títulos largos hacen salto de línea. */
+.task-row.review-task-row{grid-template-columns:minmax(0,1fr) auto;gap:10px 20px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md)}
+.task-row.review-task-row:last-child{border-bottom:1px solid var(--border)}
+.task-row.review-task-row:focus-visible{outline:3px solid rgba(112,100,210,.45);outline-offset:2px}
+.review-task-copy{display:grid;gap:4px;min-width:0}
+/* «← Volver a Mi jornada» y el antetítulo iban pegados en la misma línea. */
+.patient-record-back+.eyebrow{display:block}
+.task-row.review-task-row .review-task-copy strong{overflow:visible;white-space:normal;text-overflow:clip;overflow-wrap:break-word;line-height:1.4}
+.task-row.review-task-row .review-task-copy small{overflow-wrap:break-word}
+.task-row.review-task-row>.review-task-action{justify-self:end;display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid #CFC8F1;border-radius:var(--r-sm);background:var(--tint);color:var(--violet-ink);font-size:var(--fs-sm);font-weight:600;white-space:nowrap}
+.task-row.review-task-row:hover>.review-task-action{background:var(--tint-2)}
+@media(max-width:560px){
+  .task-row.review-task-row{grid-template-columns:minmax(0,1fr)}
+  .task-row.review-task-row>.review-task-action{justify-self:start}
+}
+
+/* Ficha del paciente: los valores de las tarjetas de resumen («Ninguna programada», fechas)
+   hacen salto de línea en lugar de cortarse con elipsis. */
+.patient-summary-card>strong{overflow:visible;white-space:normal;text-overflow:clip;overflow-wrap:break-word}
+/* El texto de apoyo («Frecuencia no definida», un objetivo largo) cabe en dos líneas como mucho. */
+.patient-unified-summary .patient-summary-card small{display:-webkit-box;overflow:hidden;white-space:normal;text-overflow:clip;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+
+/* Barra lateral plegada (701–900 px): solo iconos, a propósito. Se oculta el texto de la marca
+   (antes se cortaba en «AseP…», «Consult…»); el nombre de cada enlace sigue en el DOM para los
+   lectores de pantalla y se muestra como tooltip nativo (title) desde Sidebar.tsx. */
+@media(min-width:701px) and (max-width:900px){
+  .sidebar-brand>div:last-child{display:none}
+  /* Si la ventana es baja y aparece la barra de desplazamiento vertical, no debe salir también la horizontal. */
+  .sidebar{overflow-x:hidden;scrollbar-width:thin}
+}
+/* Barra ancha: el nombre del espacio puede ocupar dos líneas en lugar de cortarse («Consulta de e…»). */
+@media(min-width:901px){
+  .sidebar-brand span{display:-webkit-box;overflow:hidden;white-space:normal;text-overflow:clip;line-height:1.3;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+}
