@@ -32,7 +32,7 @@ const URL = '/api/v1/public/waitlist';
 const NAME = 'Profesional Ficticia Prueba';
 const EMAIL = 'ficticia.prueba@example.com';
 const TOOLS = 'Agenda en papel y hoja de cálculo ficticia';
-/** Teléfono ficticio (móvil 600…): la v7 lo exige (reglas de la v7 y de las transiciones de la v6 y la v5: waitlist-v7.security-spec y waitlist-v6.security-spec). */
+/** Teléfono ficticio (móvil 600…): la v7 lo exige (reglas de la v7: waitlist-v7.security-spec; la v5 y la v6 retiradas: waitlist-retired-v5-v6.security-spec). */
 const PHONE = '+34 600 000 001';
 
 const validBody = (overrides: Record<string, unknown> = {}) => ({
@@ -196,7 +196,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     ['aceptación como texto', { privacyAccepted: 'true' }],
     ['versión de política inexistente (v8; la vigente es la v7)', { privacyPolicyVersion: 'lista-espera-v8' }],
     ['v5 sin transición configurada (retirada por defecto)', { privacyPolicyVersion: 'lista-espera-v5' }],
-    ['v6 sin transición configurada (retirada por defecto)', { privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'PHONE_AND_EMAIL' }],
+    ['v6 retirada', { privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'PHONE_AND_EMAIL' }],
     ['versión v7 con mayúsculas', { privacyPolicyVersion: 'LISTA-ESPERA-V7' }],
     ['versión v6 con mayúsculas', { privacyPolicyVersion: 'LISTA-ESPERA-V6' }],
     ['versión inventada', { privacyPolicyVersion: 'lista-espera-v99' }],
@@ -208,17 +208,16 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
 
-  it('pasan el filtro la v7 y la v6 y la v5 (estas solo en transición); v1–v4 están retiradas', () => {
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7']);
-    expect([...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4']);
+  it('pasa el filtro como aceptada solo la v7; v1–v6 están retiradas', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v7']);
+    expect([...RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5', 'lista-espera-v6']);
   });
 
-  // Sin WAITLIST_V5_ACCEPTED_UNTIL / WAITLIST_V6_ACCEPTED_UNTIL la v5 y la v6 están retiradas (las
-  // reglas de las transiciones, en waitlist-v7.security-spec y waitlist-v6.security-spec).
-  it('v5 sin transición configurada → 400 WAITLIST_POLICY_VERSION_RETIRED, con o sin teléfono, y sin create', async () => {
-    const withPhone = await post(app, validBody({ privacyPolicyVersion: 'lista-espera-v5' })).expect(400);
+  // La v5 y la v6 están retiradas (sus variables de transición se ignoran: waitlist-retired-v5-v6.security-spec).
+  it.each(['lista-espera-v5', 'lista-espera-v6'])('%s → 400 WAITLIST_POLICY_VERSION_RETIRED, con o sin teléfono, y sin create', async (version) => {
+    const withPhone = await post(app, validBody({ privacyPolicyVersion: version })).expect(400);
     expect(withPhone.body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-    const { phone: _omit, ...body } = validBody({ privacyPolicyVersion: 'lista-espera-v5' });
+    const { phone: _omit, ...body } = validBody({ privacyPolicyVersion: version });
     expect((await post(app, body).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
     expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
   });
@@ -229,7 +228,7 @@ describe('Lista de espera: alta, validación y anti-abuso', () => {
     expect(prisma.waitlistEntry.create.mock.calls[0][0].data.privacyPolicyVersion).toBe('lista-espera-v7');
   });
 
-  it.each(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4'])('versión retirada %s → 400 WAITLIST_POLICY_VERSION_RETIRED, sin create y sin datos en la respuesta', async (version) => {
+  it.each(['lista-espera-v1', 'lista-espera-v2', 'lista-espera-v3', 'lista-espera-v4', 'lista-espera-v5', 'lista-espera-v6'])('versión retirada %s → 400 WAITLIST_POLICY_VERSION_RETIRED, sin create y sin datos en la respuesta', async (version) => {
     const res = await post(app, validBody({ privacyPolicyVersion: version })).expect(400);
     expect(res.body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
     expect(JSON.stringify(res.body)).not.toContain(EMAIL);

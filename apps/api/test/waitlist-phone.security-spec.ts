@@ -25,8 +25,8 @@ import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, WAITLIST_PATH } from '../src
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 
 /**
- * Teléfono de la lista de espera cuando es obligatorio (v7 vigente; las reglas de la v6 y la v5 en
- * transición están en waitlist-v7.security-spec.ts y waitlist-v6.security-spec.ts). Datos 100 % ficticios.
+ * Teléfono de la lista de espera cuando es obligatorio (v7 vigente; la v5 y la v6, retiradas, en
+ * waitlist-retired-v5-v6.security-spec.ts). Datos 100 % ficticios.
  * Criterios 1–7 y 10 de la spec de Vega, y §G de Lex (regla por versión, nada en logs ni aviso).
  */
 
@@ -121,8 +121,8 @@ describe('Normalización del teléfono (criterios 2, 3 y 6)', () => {
     expect(normalizeWaitlistPhone(' '.repeat(17) + '612345678')).toBeNull();
   });
 
-  it('versiones que pasan el filtro: la v7 y la v6 y la v5 (estas solo en transición, ver waitlist-v7.security-spec)', () => {
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7']);
+  it('versión aceptada: solo la v7 (la v5 y la v6, retiradas: ver waitlist-retired-v5-v6.security-spec)', () => {
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v7']);
   });
 });
 

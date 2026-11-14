@@ -6,10 +6,7 @@ import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { WaitlistNotifier } from './waitlist-notifier';
 import { checkFormToken, hashWaitlistEmail, issueFormToken } from './waitlist-crypto';
 import { normalizeWaitlistPhone } from './waitlist-phone';
-import { TransitionalWaitlistPolicyVersion, WAITLIST_FORM_MIN_SECONDS, isWaitlistPolicyVersionAccepted } from './waitlist.config';
-
-/** Única versión con preferencia de contacto elegible (y por tanto con altas sin teléfono). */
-const POLICY_WITH_CONTACT_PREFERENCE: TransitionalWaitlistPolicyVersion = 'lista-espera-v6';
+import { WAITLIST_FORM_MIN_SECONDS, isWaitlistPolicyVersionAccepted } from './waitlist.config';
 
 /** Respuesta única para alta nueva, alta repetida y honeypot: no revela si el email ya estaba. */
 export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
@@ -18,10 +15,9 @@ export const WAITLIST_ACCEPTED = { status: 'accepted' } as const;
  * Lista de espera pública. Fuera de cualquier workspace (no hay workspaceId: es anterior a tener
  * cuenta). Reglas:
  *  - name, email, tools y phone se guardan cifrados (registro waitlistEntry en clinical-crypto.ts).
- *  - Se acepta la política vigente (v7) y la v6 y la v5 solo durante su transición (waitlist.config.ts);
- *    las retiradas (v1–v4, y v5/v6 fuera de plazo) → 400 WAITLIST_POLICY_VERSION_RETIRED.
- *  - contactPreference y phone según la versión (contactFor): v7 y v5 sin preferencia y con teléfono
- *    obligatorio; v6 con preferencia obligatoria y teléfono solo con PHONE_AND_EMAIL. E.164.
+ *  - Solo se acepta la política vigente (v7, waitlist.config.ts); las retiradas (v1–v6)
+ *    → 400 WAITLIST_POLICY_VERSION_RETIRED.
+ *  - contactPreference y phone (contactFor): sin preferencia y con teléfono obligatorio, en E.164.
  *  - La preferencia, como el resto de datos, no sale en logs ni en el aviso interno.
  *  - Deduplicación por emailHash (HMAC); una segunda alta no toca la fila y no lo revela.
  *  - Los logs no llevan nunca nombre, email, teléfono, herramientas, hash ni IP: solo el tipo de evento.
@@ -43,7 +39,7 @@ export class WaitlistService {
       return WAITLIST_ACCEPTED;
     }
 
-    // Solo la vigente (y la v6 y la v5 en transición). El DTO deja pasar las retiradas para darles este code
+    // Solo la vigente (v7). El DTO deja pasar las retiradas para darles este code
     // propio; se comprueba aquí también por defensa en profundidad (no depende del ValidationPipe).
     if (!isWaitlistPolicyVersionAccepted(dto.privacyPolicyVersion)) {
       this.logger.warn('Alta rechazada: versión de la política retirada o no vigente');
@@ -114,31 +110,12 @@ export class WaitlistService {
   }
 
   /**
-   * Preferencia de contacto y teléfono según la versión de la política. Los errores y los logs
-   * nombran el campo, nunca el valor.
-   *  - v6 (transición; Lex Psi, revisión 03/11/2026 §1.1 y §1.4): preferencia obligatoria.
-   *    PHONE_AND_EMAIL → teléfono obligatorio y válido. EMAIL_ONLY → el teléfono NO puede llegar (ni
-   *    vacío ni null): 400 WAITLIST_PHONE_NOT_ALLOWED.
-   *  - v7 (vigente, decisión del Jefe del 09/11/2026) y v5 (transición): sin campo de preferencia (si
-   *    llega → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED) y teléfono obligatorio; se guarda
-   *    PHONE_AND_EMAIL, coherente con el teléfono obligatorio y con el invariante de las filas activas.
+   * Preferencia de contacto y teléfono de la v7 (vigente, decisión del Jefe del 09/11/2026): sin campo
+   * de preferencia (si llega → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED) y teléfono obligatorio; se
+   * guarda PHONE_AND_EMAIL, coherente con el teléfono obligatorio y con el invariante de las filas
+   * activas. Los errores y los logs nombran el campo, nunca el valor.
    */
-  private contactFor(dto: CreateWaitlistEntryDto): { contactPreference: WaitlistContactPreference; phone: string | null } {
-    if (dto.privacyPolicyVersion === POLICY_WITH_CONTACT_PREFERENCE) {
-      if (dto.contactPreference === WaitlistContactPreference.EMAIL_ONLY) {
-        if (dto.phone !== undefined) {
-          this.logger.warn('Alta rechazada: teléfono enviado con la preferencia de contacto que no lo admite');
-          throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_PHONE_NOT_ALLOWED', message: 'Si eliges que te contactemos solo por email, no envíes el teléfono.' });
-        }
-        return { contactPreference: WaitlistContactPreference.EMAIL_ONLY, phone: null };
-      }
-      if (dto.contactPreference === WaitlistContactPreference.PHONE_AND_EMAIL) {
-        return { contactPreference: WaitlistContactPreference.PHONE_AND_EMAIL, phone: this.requiredPhone(dto) };
-      }
-      this.logger.warn('Alta rechazada: falta la preferencia de contacto');
-      throw new BadRequestException({ statusCode: 400, code: 'WAITLIST_CONTACT_PREFERENCE_REQUIRED', message: 'Elige cómo prefieres que te contactemos.' });
-    }
-    // Las otras que llegan aquí (isWaitlistPolicyVersionAccepted): la v7 vigente y la v5 en transición.
+  private contactFor(dto: CreateWaitlistEntryDto): { contactPreference: WaitlistContactPreference; phone: string } {
     // La preferencia se comprueba antes que el teléfono: un formulario v6 enviado con la versión v7
     // (landing mal desplegada) recibe un code que señala el fallo de la landing, no el de la persona.
     if (dto.contactPreference !== undefined) {

@@ -6,7 +6,7 @@ import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { describeTrustProxy, parseTrustProxy } from './config/trust-proxy';
 import { buildCorsDelegate } from './config/cors';
-import { WAITLIST_PATH, assertWaitlistConfig } from './waitlist/waitlist.config';
+import { WAITLIST_PATH, assertWaitlistConfig, retiredWaitlistEnvVarsSet } from './waitlist/waitlist.config';
 import { waitlistBodyParser } from './waitlist/waitlist-body.middleware';
 import { PORTAL_SIGNUP_PUBLIC_PATH } from './portal-signup/portal-signup.config';
 import { assertMailConfig } from './mail/mail.config';
@@ -19,6 +19,10 @@ async function bootstrap() {
   const trustProxy = parseTrustProxy(process.env.TRUST_PROXY, process.env.NODE_ENV);
   // Igual con la lista de espera pública: orígenes CORS y WAITLIST_SECRET (obligatorio en producción).
   assertWaitlistConfig();
+  // Variables de transición de la v5/v6 (retiradas): se ignoran; solo se avisa (nombre, nunca el valor).
+  for (const name of retiredWaitlistEnvVarsSet()) {
+    new Logger('Waitlist').warn(`${name} está puesta pero ya no se usa (versión retirada): se ignora. Bórrala del entorno.`);
+  }
   // Aviso por correo de la lista de espera: con WAITLIST_NOTIFY_ENABLED=true exige la configuración de correo completa.
   assertMailConfig();
   // Avisos por email (equipo/pacientes): con su interruptor en true exige su configuración completa.
