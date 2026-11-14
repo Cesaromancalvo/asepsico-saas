@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { api, ApiError, resetSessionRedirectForTests } from '../lib/api';
+import { api, ApiError, LOGIN_REDIRECT_TIMEOUT_MS, resetSessionRedirectForTests, SESSION_EXPIRED, SESSION_EXPIRED_EVENT, SESSION_EXPIRED_MESSAGE } from '../lib/api';
 import { isPublicPath, loginHref, safeNextPath, sessionEndedLoginHref, termsHref } from '../lib/login-redirect';
 
 /*
@@ -93,6 +93,17 @@ describe('safeNextPath: solo rutas internas del área profesional', () => {
     expect(safeNextPath('/agenda/../login')).toBeNull();
   });
 
+  it('codificaciones y ; raros se quedan en el mismo origen (Argos)', () => {
+    for (const raw of ['/%2e%2e%2f%2fevil.com', '/;//evil.com']) {
+      const safe = safeNextPath(raw);
+      expect(safe).not.toBeNull();
+      expect(safe!.startsWith('/')).toBe(true);
+      expect(safe!.startsWith('//')).toBe(false);
+      expect(new URL(safe!, 'https://app.example.test').origin).toBe('https://app.example.test');
+    }
+    expect(safeNextPath('/x/../admin/')).toBeNull();
+  });
+
   it('isPublicPath distingue /portal de /portal-signups', () => {
     expect(isPublicPath('/portal')).toBe(true);
     expect(isPublicPath('/portal/login/')).toBe(true);
@@ -151,6 +162,66 @@ afterEach(() => {
 });
 
 describe('api(): 401 de autenticación en el área profesional', () => {
+  it('contrato: un GET sin sesión (la renovación da 401) redirige al login con next', async () => {
+    setLocation('/agenda/solicitudes/');
+    mockFetch(() => unauthorized);
+    void api('/scheduling/requests');
+    await tick();
+    expect(assign).toHaveBeenCalledWith('/login?next=%2Fagenda%2Fsolicitudes%2F');
+  });
+
+  it('401 de negocio tras renovar bien («Contraseña incorrecta» al exportar): ApiError tal cual, sin navegar', async () => {
+    setLocation('/settings/data');
+    mockFetch((path) => (path === '/auth/refresh' ? { status: 200, body: {} } : { status: 401, body: { statusCode: 401, message: 'Contraseña incorrecta' } }));
+    await expect(api('/exports/workspace', { method: 'POST', body: '{}' })).rejects.toMatchObject({ status: 401, message: 'Contraseña incorrecta' });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('401 SESSION_REQUIRED (acceso excepcional) tras renovar bien: ApiError tal cual, sin navegar', async () => {
+    setLocation('/patients/view/');
+    mockFetch((path) => (path === '/auth/refresh' ? { status: 200, body: {} } : { status: 401, body: { statusCode: 401, code: 'SESSION_REQUIRED', message: 'Vuelve a identificarte' } }));
+    await expect(api('/exceptional-access', { method: 'POST', body: '{}' })).rejects.toMatchObject({ status: 401, code: 'SESSION_REQUIRED' });
+    await expect(api('/exceptional-access/x')).rejects.toMatchObject({ status: 401, code: 'SESSION_REQUIRED' });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('un POST sin sesión no navega (no se pierde lo escrito): SESSION_EXPIRED y aviso a la barra lateral', async () => {
+    const dispatchEvent = jest.fn();
+    (globalThis as unknown as { window: unknown }).window = { location: { pathname: '/agenda/session/', search: '?id=x', assign }, dispatchEvent };
+    mockFetch(() => unauthorized);
+    await expect(api('/sessions/x/notes', { method: 'PATCH', body: '{}' })).rejects.toMatchObject({ status: 401, code: SESSION_EXPIRED, message: SESSION_EXPIRED_MESSAGE });
+    expect(assign).not.toHaveBeenCalled();
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    expect((dispatchEvent.mock.calls[0][0] as Event).type).toBe(SESSION_EXPIRED_EVENT);
+  });
+
+  it('los refrescos de fondo (contadores) tampoco navegan aunque sean GET', async () => {
+    setLocation('/agenda/session/');
+    mockFetch(() => unauthorized);
+    await expect(api('/notifications/unread-count', {}, { background: true })).rejects.toMatchObject({ code: SESSION_EXPIRED });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('si la navegación no llega a ocurrir (beforeunload), se libera la redirección y falla con SESSION_EXPIRED', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    (globalThis as unknown as { window: unknown }).window = {
+      location: { pathname: '/', search: '', assign },
+      setTimeout: (fn: () => void, ms: number) => { timers.push({ fn, ms }); return 1; },
+    };
+    mockFetch(() => unauthorized);
+    const pending = api('/auth/me');
+    await tick();
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(timers).toHaveLength(1);
+    expect(timers[0].ms).toBe(LOGIN_REDIRECT_TIMEOUT_MS);
+    timers[0].fn();
+    await expect(pending).rejects.toMatchObject({ code: SESSION_EXPIRED });
+    // La siguiente lectura sin sesión vuelve a intentar la redirección (no se queda bloqueada).
+    void api('/auth/me');
+    await tick();
+    expect(assign).toHaveBeenCalledTimes(2);
+  });
+
   it('sin sesión (y sin poder renovarla) va al login conservando el destino, y no pinta error', async () => {
     setLocation('/agenda/solicitudes/');
     mockFetch(() => unauthorized);

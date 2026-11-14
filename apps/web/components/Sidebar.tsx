@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { logout } from '../lib/api';
+import { logout, SESSION_EXPIRED_EVENT } from '../lib/api';
+import { currentPath, loginHref } from '../lib/login-redirect';
 import { pendingLabel, PENDING_REQUESTS_EVENT } from '../lib/booking';
 import { fetchPendingCount } from '../lib/booking-client';
 import { invalidateViewer, isAdminRole, isStaffWithProcessAccess, ROLE_LABEL, useViewer } from '../lib/clinical';
@@ -121,6 +122,18 @@ export default function Sidebar({
       window.removeEventListener(PENDING_REQUESTS_EVENT, refresh);
     };
   }, [viewer?.role, pathname]);
+  // Sesión caducada al guardar (o en un refresco de fondo): no se navega para no perder lo escrito;
+  // se avisa con un enlace al login en otra pestaña. Tras entrar, se vuelve aquí y se guarda.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [loginLink, setLoginLink] = useState('/login');
+  useEffect(() => {
+    const onExpired = () => {
+      setLoginLink(loginHref(currentPath()));
+      setSessionExpired(true);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
   // Campana de avisos (cambios de cita y demás avisos propios). Mismo estado para los dos botones
   // (barra lateral y barra superior del móvil) y un solo desplegable.
   const bell = useNotificationBell(Boolean(viewer?.role), pathname);
@@ -237,6 +250,17 @@ export default function Sidebar({
       {viewer?.role && <BellButton bell={bell} placement="topbar" controlsId={bellPanelId} />}
     </div>
     <NotificationPanel bell={bell} id={bellPanelId} />
+    {sessionExpired && (
+      <div className="session-expired-banner" role="alert">
+        <p>
+          <strong>Tu sesión ha caducado.</strong> Lo que has escrito sigue en esta pantalla: inicia sesión en otra pestaña y vuelve aquí para guardar.
+        </p>
+        <div className="session-expired-actions">
+          <a className="primary-action" href={loginLink} target="_blank" rel="noopener noreferrer">Iniciar sesión<span className="sr-only"> (se abre en otra pestaña)</span></a>
+          <button type="button" className="search-action" onClick={() => setSessionExpired(false)}>Ya he entrado</button>
+        </div>
+      </div>
+    )}
     </>
   );
 }

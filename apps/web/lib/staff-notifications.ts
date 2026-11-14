@@ -31,7 +31,7 @@ export function notifyStaffNotificationsChanged() {
 }
 
 export async function fetchUnreadCount(): Promise<number> {
-  const { unread } = await api<StaffNotificationsUnreadCount>('/notifications/unread-count');
+  const { unread } = await api<StaffNotificationsUnreadCount>('/notifications/unread-count', {}, { background: true });
   return typeof unread === 'number' && unread > 0 ? unread : 0;
 }
 
