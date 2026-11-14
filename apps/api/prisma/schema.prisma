@@ -181,6 +181,12 @@ model Workspace {
   portalSignupRequests        PortalSignupRequest[]
   portalActivationTokens      PortalActivationToken[]
   clinicalProcessPrivateNotes ClinicalProcessPrivateNote[]
+  /// E1 · Espacio de prueba: cuándo se cargaron los datos de ejemplo al registrarse (piloto demo).
+  /// Compare-and-set de la carga: si no es nulo, nunca se vuelve a cargar (idempotente). Los datos
+  /// de ejemplo son los pacientes con isDemo=true y lo que cuelga de ellos.
+  sampleDataLoadedAt          DateTime?
+  /// E1 · Cuándo el titular borró los datos de ejemplo («Borrar los datos de ejemplo»).
+  sampleDataClearedAt         DateTime?
 }
 
 model User {
@@ -239,20 +245,24 @@ model User {
 /// plataforma (CLI con acceso a la BD), nunca un usuario. El token solo se guarda como hash.
 /// No tiene workspaceId al crearse: es previa a cualquier workspace (dato de plataforma).
 model RegistrationInvite {
-  id           String     @id @default(cuid())
-  tokenHash    String     @unique
+  id             String     @id @default(cuid())
+  tokenHash      String     @unique
   /// Correo destinatario, en minúsculas. El registro exige que coincida.
-  email        String
-  expiresAt    DateTime
+  email          String
+  expiresAt      DateTime
   /// Quién la emitió (etiqueta libre del operador de la plataforma, p. ej. "cli:cesar").
-  createdBy    String
-  createdAt    DateTime   @default(now())
-  usedAt       DateTime?
-  revokedAt    DateTime?
-  usedByUserId String?    @unique
-  workspaceId  String?    @unique
-  usedBy       User?      @relation("RegistrationInviteUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
-  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  createdBy      String
+  /// E1 · Invitación al piloto demo con espacio de prueba cargado. Solo la pone el CLI del operador
+  /// (invites:create) en un entorno con DEMO_ENVIRONMENT=true. Es una de las tres condiciones para
+  /// cargar datos de ejemplo al registrarse (ver src/sample-data/sample-data-eligibility.ts).
+  withSampleData Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  usedByUserId   String?    @unique
+  workspaceId    String?    @unique
+  usedBy         User?      @relation("RegistrationInviteUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+  workspace      Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([email])
 }
@@ -847,26 +857,26 @@ enum PortalAccessorType {
 }
 
 model NotificationPreference {
-  id                   String   @id @default(cuid())
-  workspaceId          String
+  id                        String   @id @default(cuid())
+  workspaceId               String
   /// Preferencias de un paciente o de un miembro del equipo, siempre DENTRO de un espacio: un mismo
   /// usuario en dos espacios tiene una fila por espacio (único por workspaceId + userId).
-  patientId            String?
-  userId               String?
-  appointmentReminders Boolean  @default(true)
-  taskReminders        Boolean  @default(true)
-  consentReminders     Boolean  @default(true)
-  invoiceReminders     Boolean  @default(true)
-  emailEnabled         Boolean  @default(false)
-  smsEnabled           Boolean  @default(false)
-  reminderHoursBefore  Int      @default(24)
+  patientId                 String?
+  userId                    String?
+  appointmentReminders      Boolean  @default(true)
+  taskReminders             Boolean  @default(true)
+  consentReminders          Boolean  @default(true)
+  invoiceReminders          Boolean  @default(true)
+  emailEnabled              Boolean  @default(false)
+  smsEnabled                Boolean  @default(false)
+  reminderHoursBefore       Int      @default(24)
   /// Avisos por email al equipo (N4). null = valor por defecto según rol y relación con la cita
   /// (ver src/notifications/email/staff-email-preferences.ts); true/false = elección expresa.
   emailAppointmentRequests  Boolean?
   emailPatientCancellations Boolean?
   emailTaskSubmitted        Boolean?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   @@unique([workspaceId, userId])
   @@unique([workspaceId, patientId])
@@ -1092,13 +1102,13 @@ enum WaitlistContactPreference {
 }
 
 model WaitlistEntry {
-  id                           String             @id @default(cuid())
+  id                           String                     @id @default(cuid())
   /// Cifrado (enc:v1/v2). Null tras la supresión.
   name                         String?
   /// Cifrado (enc:v1/v2). Null tras la supresión.
   email                        String?
   /// HMAC del email normalizado. Null tras la supresión (Postgres admite varios NULL en un UNIQUE).
-  emailHash                    String?            @unique
+  emailHash                    String?                    @unique
   situation                    WaitlistSituation?
   /// Texto libre cifrado: herramientas que usa hoy.
   tools                        String?
@@ -1116,15 +1126,15 @@ model WaitlistEntry {
   privacyAcceptedAt            DateTime
   /// El formulario solo registra que se MARCÓ la casilla comercial (y cuándo). No es un consentimiento
   /// válido: falta el doble opt-in (confirmación por email, de momento manual con waitlist:confirm-commercial).
-  commercialConsentRequested   Boolean            @default(false)
+  commercialConsentRequested   Boolean                    @default(false)
   commercialConsentRequestedAt DateTime?
   /// Consentimiento comercial VÁLIDO: solo lo activa waitlist:confirm-commercial tras la respuesta "Sí".
-  commercialConsent            Boolean            @default(false)
+  commercialConsent            Boolean                    @default(false)
   commercialConsentAt          DateTime?
   /// Retirada (waitlist:withdraw-commercial o enlace de baja futuro); nunca desde el formulario.
   commercialConsentWithdrawnAt DateTime?
-  createdAt                    DateTime           @default(now())
-  updatedAt                    DateTime           @updatedAt
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime                   @updatedAt
   deletedAt                    DateTime?
 
   @@index([deletedAt, createdAt])
