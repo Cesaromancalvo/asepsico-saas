@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
 import AppointmentChangesCard from '../components/AppointmentChangesCard';
 import Icon, { EmptyState } from '../components/Icon';
+import { currentPath, loginHref } from '../lib/login-redirect';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
 import { appHref, patientHref, patientTasksToReviewHref, sessionHref, taskReviewPatientId, tasksToReviewHref } from '@/lib/routes';
 
@@ -81,8 +82,11 @@ export default function Home() {
     return (
       <div className="app-layout"><Sidebar /><main className="dashboard"><section className="dashboard-card dashboard-error" role="alert">
         <h1>No hemos podido preparar tu jornada</h1>
-        <p>Comprueba tu conexión y vuelve a intentarlo.</p>
-        <button className="primary-action" onClick={() => { invalidateViewer(); window.location.reload(); }}>Reintentar</button>
+        <p>Comprueba tu conexión y vuelve a intentarlo. Si no has iniciado sesión, entra primero.</p>
+        <div className="dashboard-actions">
+          <button className="primary-action" onClick={() => { invalidateViewer(); window.location.reload(); }}>Reintentar</button>
+          <a className="search-action" href={loginHref(currentPath())}>Iniciar sesión</a>
+        </div>
       </section></main></div>
     );
   }

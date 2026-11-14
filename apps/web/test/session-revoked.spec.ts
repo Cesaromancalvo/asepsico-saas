@@ -47,7 +47,7 @@ describe('401 SESSION_REVOKED', () => {
     expect(calls('/auth/refresh')).toBe(1);
     expect(calls('/patients')).toBe(1);
     expect(assign).toHaveBeenCalledTimes(1);
-    expect(assign).toHaveBeenCalledWith(SESSION_REVOKED_LOGIN_URL);
+    expect(assign).toHaveBeenCalledWith(`${SESSION_REVOKED_LOGIN_URL}&next=%2Fpatients`);
   });
 
   it('si la renovación funciona, repite la petición y no redirige', async () => {
@@ -81,10 +81,12 @@ describe('401 SESSION_REVOKED', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('un 401 corriente (sin SESSION_REVOKED) no redirige', async () => {
+  it('un 401 corriente (sin SESSION_REVOKED) no muestra el aviso de sesión terminada', async () => {
     mockFetch(() => unauthorized);
-    await expect(api('/patients')).rejects.toMatchObject({ status: 401 });
-    expect(assign).not.toHaveBeenCalled();
+    void api('/patients');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(String(assign.mock.calls[0][0])).not.toContain('sesion=terminada');
   });
 
   it('el 401 del login (credenciales) nunca dispara la redirección ni la renovación', async () => {

@@ -4,6 +4,10 @@ import { useRouter } from 'next/navigation';
 import { invalidateViewer } from '@/lib/clinical';
 import { api, ApiError } from '@/lib/api';
 import { OTP_AUTOFILL_CHECKS_MS, acceptOtpInput, isUserInsertion } from '@/lib/otp';
+import { nextFromLocation } from '@/lib/login-redirect';
+
+/** Destino tras entrar si no se viene de ninguna pantalla concreta. */
+const DEFAULT_AFTER_LOGIN = '/patients';
 
 type LoginResponse =
   | { mfaRequired: true; pendingToken: string }
@@ -17,14 +21,24 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   // Aviso al llegar desde una sesión revocada (lib/api.ts → /login?sesion=terminada).
   const [sessionEnded, setSessionEnded] = useState(false);
+  // Pantalla a la que volver tras entrar (`/login?next=/ruta`, p. ej. desde el enlace de un email).
+  // Solo rutas internas del área profesional: lib/login-redirect.ts descarta cualquier otra cosa.
+  const nextPath = useRef<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    nextPath.current = nextFromLocation();
     if (params.get('sesion') !== 'terminada') return;
     setSessionEnded(true);
-    // Se limpia la URL para que el aviso no vuelva a salir al recargar.
-    window.history.replaceState(null, '', window.location.pathname);
+    // Se limpia el aviso de la URL para que no vuelva a salir al recargar (se conserva el destino).
+    const keep = nextPath.current ? `?next=${encodeURIComponent(nextPath.current)}` : '';
+    window.history.replaceState(null, '', `${window.location.pathname}${keep}`);
   }, []);
+
+  function goAfterLogin() {
+    invalidateViewer();
+    router.push(nextPath.current ?? DEFAULT_AFTER_LOGIN);
+  }
 
   // Campo del código controlado y vacío al entrar: el navegador no debe rellenarlo con el correo ni la contraseña.
   const [code, setCode] = useState('');
@@ -90,8 +104,7 @@ export default function LoginPage() {
         setCode('');
         setPendingToken(result.pendingToken);
       } else {
-        invalidateViewer();
-        router.push('/patients');
+        goAfterLogin();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión');
@@ -112,8 +125,7 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ pendingToken, code }),
       });
-      invalidateViewer();
-      router.push('/patients');
+      goAfterLogin();
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'Código no válido';
       if (err instanceof ApiError && err.status === 401 && message !== 'Código no válido') {

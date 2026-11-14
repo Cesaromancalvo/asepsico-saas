@@ -1,3 +1,5 @@
+import { currentPath, isPublicPath, loginHref, skipsLoginRedirect, sessionEndedLoginHref, termsHref } from './login-redirect';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 function readCookie(name: string): string | null {
@@ -51,12 +53,13 @@ function redirectToTermsIfRequired(status: number, code: string | undefined) {
   if (status !== 428 || code !== 'TERMS_ACCEPTANCE_REQUIRED' || typeof window === 'undefined') return;
   if (window.location.pathname === TERMS_PAGE || redirectingToTerms) return;
   redirectingToTerms = true;
-  window.location.assign(TERMS_PAGE);
+  // Tras aceptarlas se vuelve a la pantalla en la que estabas (`/terms?next=…`, validado).
+  window.location.assign(termsHref(TERMS_PAGE, currentPath()));
 }
 
 /** Código del 401 de la API cuando el token está bien firmado pero la sesión ya no vale (baja del equipo, contraseña cambiada). */
 export const SESSION_REVOKED = 'SESSION_REVOKED';
-/** Login con el aviso de sesión terminada (la pantalla de login lo lee de la URL). */
+/** Login con el aviso de sesión terminada (la pantalla de login lo lee de la URL). Se le añade `next`. */
 export const SESSION_REVOKED_LOGIN_URL = '/login?sesion=terminada';
 
 /**
@@ -69,9 +72,27 @@ let redirectingToLogin = false;
 
 function redirectToLoginIfRevoked(status: number, code: string | undefined) {
   if (status !== 401 || code !== SESSION_REVOKED || typeof window === 'undefined') return;
-  if (window.location.pathname === '/login' || redirectingToLogin) return;
+  if (isPublicPath(window.location.pathname) || redirectingToLogin) return;
   redirectingToLogin = true;
-  window.location.assign(SESSION_REVOKED_LOGIN_URL);
+  window.location.assign(sessionEndedLoginHref(currentPath()));
+}
+
+/**
+ * Interceptor global del 401 de «no hay sesión» (sin cookie, o caducada y sin poder renovarla) en el
+ * área profesional: se lleva al login con el destino en `next` para volver tras entrar (p. ej. desde
+ * el enlace de un email al equipo). Solo para el 401 de la capa de autenticación (los 401 de negocio
+ * —contraseña o código incorrectos— no pasan por aquí), nunca en pantallas públicas, en el portal
+ * del paciente (que tiene su propio login) ni en el panel oculto de plataforma (404 sin pistas) y una sola vez aunque fallen varias peticiones a la vez.
+ * Devuelve true si ha iniciado la redirección.
+ */
+function redirectToLoginIfUnauthenticated(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (skipsLoginRedirect(window.location.pathname)) return false;
+  if (!redirectingToLogin) {
+    redirectingToLogin = true;
+    window.location.assign(loginHref(currentPath()));
+  }
+  return true;
 }
 
 /** Solo para tests: vuelve a permitir la redirección. */
@@ -128,6 +149,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       response = await request<T>(path, init);
     }
   }
+  // 401 de autenticación que sigue tras intentar renovar: no hay sesión válida.
+  const sessionLost = await shouldRefresh(path, response);
   if (!response.ok) {
     const body = (await response.clone().json().catch(() => ({}))) as Record<string, unknown>;
     const { message: apiMessage, code } = await readError(response);
@@ -138,6 +161,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     redirectToTermsIfRequired(response.status, code);
     if (!NO_REFRESH_PATHS.has(path)) redirectToLoginIfRevoked(response.status, code);
+    if (sessionLost && code !== SESSION_REVOKED && redirectToLoginIfUnauthenticated()) {
+      // La página se va al login: la promesa no se resuelve para que ninguna pantalla pinte un
+      // error genérico («No hemos podido…», «Unauthorized») mientras se navega.
+      return new Promise<T>(() => {});
+    }
     const error = new ApiError(message, response.status, code);
     error.body = body && typeof body === 'object' ? body : {};
     throw error;

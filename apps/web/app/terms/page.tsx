@@ -6,9 +6,19 @@ import type { LegalDocumentType } from '@asepsico/contracts';
 import TermsChecklist, { missingTermsMessage } from '@/components/TermsChecklist';
 import { api, ApiError, logout } from '@/lib/api';
 import { invalidateViewer } from '@/lib/clinical';
+import { currentPath, loginHref, nextFromLocation } from '@/lib/login-redirect';
 import { fetchLegalTerms, fetchTermsStatus, invalidateTermsStatus, isLegalTermsDraftError, LEGAL_TERMS_DRAFT_MESSAGE, LegalDocument, TermsStatus, toAcceptedTerm } from '@/lib/legal';
 
 type State = 'loading' | 'ready' | 'error';
+
+/**
+ * A dónde ir tras aceptar: la pantalla desde la que llegó el 428 (`/terms?next=…`, validada en
+ * lib/login-redirect.ts) o Mi jornada. Nunca la propia /terms (sin bucles).
+ */
+function afterTermsPath(): string {
+  const next = nextFromLocation();
+  return next && !/^\/terms(?:[/?#]|$)/.test(next) ? next : '/';
+}
 
 /**
  * "Nuevas condiciones". Llega aquí cualquier pantalla que reciba el 428 TERMS_ACCEPTANCE_REQUIRED
@@ -68,7 +78,7 @@ export default function TermsPage() {
       await api<TermsStatus>('/legal/terms/accept', { method: 'POST', body: JSON.stringify({ acceptedTerms: current.map(toAcceptedTerm) }) });
       invalidateTermsStatus();
       invalidateViewer();
-      router.push('/');
+      router.push(afterTermsPath());
     } catch (err) {
       if (err instanceof ApiError && err.status === 400 && err.code === 'TERMS_NOT_ACCEPTED') {
         await load();
@@ -108,7 +118,7 @@ export default function TermsPage() {
             <p>No se ha podido comprobar el estado de las condiciones. Puede que tu sesión haya caducado.</p>
             <div className="e1-actions">
               <button type="button" className="button secondary" onClick={load}>Reintentar</button>
-              <a className="button secondary" href="/login">Iniciar sesión</a>
+              <a className="button secondary" href={loginHref(currentPath())}>Iniciar sesión</a>
             </div>
           </div>
         )}
@@ -116,7 +126,7 @@ export default function TermsPage() {
         {state === 'ready' && status && !status.acceptanceRequired && (
           <>
             <p>Ya tienes aceptadas las condiciones vigentes. No tienes que hacer nada.</p>
-            <button type="button" className="button" onClick={() => router.push('/')}>Ir a Mi jornada</button>
+            <button type="button" className="button" onClick={() => router.push(afterTermsPath())}>Ir a Mi jornada</button>
           </>
         )}
 
