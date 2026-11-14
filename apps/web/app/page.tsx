@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar';
 import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
 import AppointmentChangesCard from '../components/AppointmentChangesCard';
+import SampleDataNotice from '../components/SampleDataNotice';
 import Icon, { EmptyState } from '../components/Icon';
 import { currentPath, loginHref } from '../lib/login-redirect';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
@@ -163,6 +164,8 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
             <Link href="/patients?new=true" className="primary-action"><Icon name="plus" size={18} />Nuevo paciente</Link>
           </div>
         </header>
+
+        <SampleDataNotice viewer={viewer} />
 
         {!data.onboarding.completed && !data.onboarding.dismissed && (
           <section className="dashboard-card onboarding-card">

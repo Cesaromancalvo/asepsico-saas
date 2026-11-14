@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { isForbidden } from '@/lib/clinical';
+import SampleDataSection from '@/components/SampleDataSection';
+import { isForbidden, useViewer } from '@/lib/clinical';
 
 /** Etiqueta visible del estado de cada punto de la checklist (el valor de la API no cambia). */
 const CHECK_LABEL: Record<Check['status'], string> = { READY: 'Listo', PENDING: 'Pendiente', WARNING: 'Revisar', BLOCKED: 'Bloqueado', MANUAL: 'Manual' };
@@ -29,6 +30,7 @@ function askPassword(): string | null {
 }
 
 export default function DataSettingsPage() {
+  const viewer = useViewer();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState('');
   const [checks, setChecks] = useState<Check[]>([]);
@@ -79,6 +81,8 @@ export default function DataSettingsPage() {
   return <div className="app-layout"><Sidebar/><main className="patient-record-page">
     <header className="patient-record-header"><div><span className="eyebrow">Datos y continuidad</span><h1>Exportaciones y preparación del piloto</h1><p>Descarga información de forma controlada y revisa los puntos operativos antes de incorporar usuarios reales.</p></div></header>
     {error && <div className="agenda-error" role="alert">{error}</div>}
+    {/* E1 · Solo la persona titular, y solo si su espacio se creó con datos de ejemplo. */}
+    <SampleDataSection viewer={viewer} />
     <section className="patient-card"><h2>Exportar expediente de un paciente</h2><p>Incluye historia, procesos, sesiones, objetivos, tareas, escalas, consentimientos, informes, documentos, cobros y recursos compartidos.</p>
       <div className="billing-form"><label>Paciente<select value={patientId} onChange={(e)=>{ setPatientId(e.target.value); setPatientExportError(''); }}>{patients.map(p=><option value={p.id} key={p.id}>{p.firstName} {p.lastName}</option>)}</select></label><button className="button primary" disabled={busy||!patientId} onClick={exportPatient}>Descargar JSON</button></div>
       {patientExportError && <div className="e1-notice danger" role="alert" style={{ marginTop: 14 }}><div><strong>Exportación no disponible</strong><p>{patientExportError}</p></div></div>}
