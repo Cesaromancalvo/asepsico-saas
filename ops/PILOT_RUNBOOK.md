@@ -599,13 +599,13 @@ Estado de las versiones en el código (`apps/api/src/waitlist/waitlist.config.ts
 
 | Versión | Estado | Variable | Límite |
 |---|---|---|---|
-| v1–v4 | retiradas | — | — |
-| v5 | transición, **tope fijo** 12/11/2026 23:59:59 (+01:00) | `WAITLIST_V5_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
-| v6 | transición, con sus reglas (preferencia obligatoria; `EMAIL_ONLY` sin teléfono), **tope fijo** 15/11/2026 23:59:59 (+01:00) | `WAITLIST_V6_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
+| v1–v6 | retiradas (la v5 desde el 13/11/2026 y la v6 desde el 16/11/2026) | — | — |
 | v7 | vigente | — | — |
 
-Sin variable (o vacía), la versión está retirada. Una variable mal escrita o a más de 7 días del
-arranque impide arrancar la API. Una fecha ya pasada es válida (no impide arrancar).
+Desde la retirada de la v5 y la v6 en el código no hay transiciones: `WAITLIST_V5_ACCEPTED_UNTIL` y
+`WAITLIST_V6_ACCEPTED_UNTIL` se ignoran. Si siguen en Render, la API arranca igual y registra un aviso
+(`… está puesta pero ya no se usa`, solo el nombre); basta con borrarlas. El orden «borrar la variable /
+desplegar el código» es indiferente.
 
 Fechas (decisión del Jefe: la v7 se publica el **09/11/2026**): durante unos días conviven las dos
 transiciones. La v5 sigue hasta el **12/11/2026 a las 23:59** (su variable actual, sin tocarla) y la
