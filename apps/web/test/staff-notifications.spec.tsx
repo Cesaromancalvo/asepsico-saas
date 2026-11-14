@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { StaffNotification } from '@asepsico/contracts';
 
-const apiMock = jest.fn<(path: string, init?: RequestInit) => Promise<unknown>>();
-jest.mock('../lib/api', () => ({ api: (path: string, init?: RequestInit) => apiMock(path, init) }));
+const apiMock = jest.fn<(path: string, init?: RequestInit, options?: unknown) => Promise<unknown>>();
+jest.mock('../lib/api', () => ({ api: (...args: [string, RequestInit?, unknown?]) => apiMock(...args) }));
 
 import { BellButton } from '../components/NotificationBell';
 import type { BellState } from '../components/NotificationBell';
@@ -113,7 +113,8 @@ describe('contador y API', () => {
   it('lee el contador y marca todos', async () => {
     apiMock.mockResolvedValueOnce({ unread: 3 });
     await expect(fetchUnreadCount()).resolves.toBe(3);
-    expect(apiMock).toHaveBeenLastCalledWith('/notifications/unread-count', undefined);
+    // Refresco de fondo: sin sesión no navega al login (no se pierde lo escrito).
+    expect(apiMock).toHaveBeenLastCalledWith('/notifications/unread-count', {}, { background: true });
     apiMock.mockResolvedValueOnce({ ok: true, updated: 2 });
     await expect(markAllNotificationsRead()).resolves.toBe(2);
     expect(apiMock).toHaveBeenLastCalledWith('/notifications/read-all', { method: 'POST' });

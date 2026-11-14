@@ -37,6 +37,20 @@ export type RenderedEmail = { subject: string; text: string; html: string };
 /** Ruta fija de «Mi cuenta → Avisos por email» en la web (la construye Fina en N4 web). */
 export const STAFF_EMAIL_SETTINGS_PATH = '/settings/email-notifications';
 
+/**
+ * Ruta fija de la web a la que lleva el botón «Entrar en AsePsico» de cada aviso (sin ids ni
+ * parámetros). Sin sesión, la web lleva al login y, tras entrar, vuelve a esta ruta.
+ *  - Solicitud de cita → bandeja de solicitudes, donde se aceptan o rechazan.
+ *  - Tarea entregada → tareas entregadas pendientes de revisar.
+ *  - Cancelación → Mi jornada (tarjeta «Cambios en tus citas»).
+ * Un email que agrupa avisos de distinto tipo lleva a Mi jornada.
+ */
+export const STAFF_LINK_PATH: Record<StaffTemplate, string> = {
+  STAFF_APPOINTMENT_REQUEST: '/agenda/solicitudes/',
+  STAFF_PATIENT_CANCELLATION: '/',
+  STAFF_TASK_SUBMITTED: '/follow-up/revisar/',
+};
+
 const SINGLE: Record<StaffTemplate, { subject: string; line: (ws: string) => string }> = {
   STAFF_APPOINTMENT_REQUEST: {
     subject: 'Nueva solicitud de cita en AsePsico',
@@ -79,7 +93,8 @@ export function renderStaffEmail(templates: StaffTemplate[], workspaceName: stri
   if (!templates.length) throw new Error('Sin entregas que enviar');
   const ws = safeWorkspaceName(workspaceName);
   const base = appUrl.replace(/\/+$/, '');
-  const link = `${base}/`;
+  const kinds = new Set(templates);
+  const link = `${base}${kinds.size === 1 ? STAFF_LINK_PATH[templates[0]] : '/'}`;
   const settings = `${base}${STAFF_EMAIL_SETTINGS_PATH}`;
   let subject: string;
   let message: string;

@@ -1,3 +1,5 @@
+import { currentPath, loginHref, skipsLoginRedirect, sessionEndedLoginHref, termsHref } from './login-redirect';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 function readCookie(name: string): string | null {
@@ -51,12 +53,13 @@ function redirectToTermsIfRequired(status: number, code: string | undefined) {
   if (status !== 428 || code !== 'TERMS_ACCEPTANCE_REQUIRED' || typeof window === 'undefined') return;
   if (window.location.pathname === TERMS_PAGE || redirectingToTerms) return;
   redirectingToTerms = true;
-  window.location.assign(TERMS_PAGE);
+  // Tras aceptarlas se vuelve a la pantalla en la que estabas (`/terms?next=…`, validado).
+  window.location.assign(termsHref(TERMS_PAGE, currentPath()));
 }
 
 /** Código del 401 de la API cuando el token está bien firmado pero la sesión ya no vale (baja del equipo, contraseña cambiada). */
 export const SESSION_REVOKED = 'SESSION_REVOKED';
-/** Login con el aviso de sesión terminada (la pantalla de login lo lee de la URL). */
+/** Login con el aviso de sesión terminada (la pantalla de login lo lee de la URL). Se le añade `next`. */
 export const SESSION_REVOKED_LOGIN_URL = '/login?sesion=terminada';
 
 /**
@@ -69,9 +72,72 @@ let redirectingToLogin = false;
 
 function redirectToLoginIfRevoked(status: number, code: string | undefined) {
   if (status !== 401 || code !== SESSION_REVOKED || typeof window === 'undefined') return;
-  if (window.location.pathname === '/login' || redirectingToLogin) return;
+  if (skipsLoginRedirect(window.location.pathname) || redirectingToLogin) return;
   redirectingToLogin = true;
-  window.location.assign(SESSION_REVOKED_LOGIN_URL);
+  window.location.assign(sessionEndedLoginHref(currentPath()));
+}
+
+/** Código (solo de la web) del error que se lanza cuando la sesión ha caducado durante un guardado. */
+export const SESSION_EXPIRED = 'SESSION_EXPIRED';
+export const SESSION_EXPIRED_MESSAGE =
+  'Tu sesión ha caducado. Lo que has escrito sigue en pantalla: inicia sesión de nuevo y vuelve a guardar.';
+/** Evento de ventana con el que la barra lateral muestra el aviso con el enlace «Iniciar sesión». */
+export const SESSION_EXPIRED_EVENT = 'asepsico:session-expired';
+/**
+ * Si la navegación al login no llega a producirse (p. ej. la pantalla la cancela con
+ * `beforeunload`), pasado este tiempo se libera la redirección y la petición falla con
+ * SESSION_EXPIRED en lugar de quedarse colgada.
+ */
+export const LOGIN_REDIRECT_TIMEOUT_MS = 5000;
+
+function sessionExpiredError(): ApiError {
+  const error = new ApiError(SESSION_EXPIRED_MESSAGE, 401, SESSION_EXPIRED);
+  error.body = { statusCode: 401, code: SESSION_EXPIRED };
+  return error;
+}
+
+function isReadOnly(init: RequestInit): boolean {
+  const method = (init.method ?? 'GET').toUpperCase();
+  return method === 'GET' || method === 'HEAD';
+}
+
+/** `true` si en la pantalla actual un 401 sin sesión debe tratarse (área profesional, en el navegador). */
+function handlesLostSession(): boolean {
+  return typeof window !== 'undefined' && !skipsLoginRedirect(window.location.pathname);
+}
+
+/**
+ * 401 de «no hay sesión» (sin cookie, o caducada y la renovación ha fallado) en una LECTURA del
+ * área profesional: se lleva al login con el destino en `next` para volver tras entrar (p. ej.
+ * desde el enlace de un email al equipo). Una sola vez aunque fallen varias peticiones a la vez.
+ * La promesa queda pendiente para que ninguna pantalla pinte un error genérico («No hemos
+ * podido…», «Unauthorized») mientras se navega; si la navegación no llega a ocurrir, se libera la
+ * redirección y falla con SESSION_EXPIRED.
+ */
+function redirectToLoginAndWait<T>(): Promise<T> {
+  if (!redirectingToLogin) {
+    redirectingToLogin = true;
+    window.location.assign(loginHref(currentPath()));
+  }
+  return new Promise<T>((_, reject) => {
+    if (typeof window.setTimeout !== 'function') return;
+    window.setTimeout(() => {
+      redirectingToLogin = false;
+      reject(sessionExpiredError());
+    }, LOGIN_REDIRECT_TIMEOUT_MS);
+  });
+}
+
+/**
+ * 401 de «no hay sesión» en una ESCRITURA (guardar notas, aceptar una solicitud…): no se navega,
+ * para no perder lo escrito. Se avisa a la barra lateral (enlace «Iniciar sesión» en otra
+ * pestaña) y se lanza SESSION_EXPIRED con un mensaje claro para la pantalla.
+ */
+function sessionExpiredOnWrite(): ApiError {
+  if (typeof window.dispatchEvent === 'function' && typeof Event === 'function') {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+  return sessionExpiredError();
 }
 
 /** Solo para tests: vuelve a permitir la redirección. */
@@ -120,14 +186,29 @@ async function shouldRefresh(path: string, response: Response): Promise<boolean>
  * contraseña cambiada), se lleva al login con un aviso.
  * Los errores se lanzan como ApiError (con `status`).
  */
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export type ApiOptions = {
+  /**
+   * Petición de fondo (contadores que se refrescan solos cada minuto). Sin sesión NO navega al
+   * login aunque sea una lectura: la persona puede estar escribiendo (notas de sesión…) y no debe
+   * perderlo. Se comporta como una escritura: aviso en la barra lateral y SESSION_EXPIRED.
+   */
+  background?: boolean;
+};
+
+export async function api<T>(path: string, init: RequestInit = {}, options: ApiOptions = {}): Promise<T> {
   let response = await request<T>(path, init);
+  let refreshFailed = false;
   if (await shouldRefresh(path, response)) {
     const refreshed = await request('/auth/refresh', { method: 'POST' });
     if (refreshed.ok) {
       response = await request<T>(path, init);
+    } else {
+      refreshFailed = true;
     }
   }
+  // Sin sesión solo si la RENOVACIÓN ha fallado. Si renovó bien y el reintento sigue en 401, es un
+  // 401 de negocio (contraseña incorrecta al exportar, SESSION_REQUIRED…) y se lanza tal cual.
+  const sessionLost = refreshFailed && response.status === 401;
   if (!response.ok) {
     const body = (await response.clone().json().catch(() => ({}))) as Record<string, unknown>;
     const { message: apiMessage, code } = await readError(response);
@@ -138,6 +219,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     redirectToTermsIfRequired(response.status, code);
     if (!NO_REFRESH_PATHS.has(path)) redirectToLoginIfRevoked(response.status, code);
+    if (sessionLost && code !== SESSION_REVOKED && handlesLostSession()) {
+      if (isReadOnly(init) && !options.background) return redirectToLoginAndWait<T>();
+      throw sessionExpiredOnWrite();
+    }
     const error = new ApiError(message, response.status, code);
     error.body = body && typeof body === 'object' ? body : {};
     throw error;

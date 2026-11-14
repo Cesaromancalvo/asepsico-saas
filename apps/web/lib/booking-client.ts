@@ -52,7 +52,7 @@ export const rejectRequest = (id: string, reason: RejectionReason) =>
   api<StaffAppointmentRequestContract>(`/scheduling/requests/${seg(id)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
 
 export async function fetchPendingCount(): Promise<number> {
-  const { pending } = await api<{ pending: number }>('/scheduling/requests/pending-count');
+  const { pending } = await api<{ pending: number }>('/scheduling/requests/pending-count', {}, { background: true });
   return typeof pending === 'number' ? pending : 0;
 }
 
