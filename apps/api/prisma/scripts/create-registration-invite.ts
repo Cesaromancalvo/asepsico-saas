@@ -8,6 +8,10 @@
  * Entorno: DATABASE_URL (BD destino) y WEB_ORIGIN (dominio de la web para el enlace).
  * Imprime el enlace UNA vez: en la BD solo queda el hash del token. Caduca a los 14 días.
  * Crear una invitación nueva al mismo correo revoca las anteriores pendientes.
+ *
+ * E1 · Piloto demo: con DEMO_ENVIRONMENT=true la invitación sale marcada con espacio de prueba
+ * cargado (withSampleData): al registrarse, su espacio recibe los pacientes inventados. Para una
+ * invitación demo con el espacio vacío: --sin-datos-ejemplo. Fuera del entorno demo nunca se marca.
  */
 import { PrismaClient } from '@prisma/client';
 import { buildInviteUrl, createRegistrationInvite, normalizeEmail } from '../../src/auth/invite-token.util';
@@ -36,14 +40,15 @@ async function main() {
       console.error('Ya existe una cuenta con ese correo: no se crea la invitación.');
       process.exit(2);
     }
-    const { token, invite } = await createRegistrationInvite(prisma, { email, createdBy });
+    const withSampleData = process.env.DEMO_ENVIRONMENT === 'true' && !process.argv.includes('--sin-datos-ejemplo');
+    const { token, invite } = await createRegistrationInvite(prisma, { email, createdBy, withSampleData });
     console.log(`Invitación ${invite.id} para ${invite.email}, caduca el ${invite.expiresAt.toISOString()}.`);
     console.log('Enlace (se muestra solo esta vez; envíalo tú por un canal privado):');
     console.log(buildInviteUrl('/register', token));
-    if (process.env.DEMO_ENVIRONMENT === 'true') {
-      // Piloto demo: los pacientes inventados se siembran DESPUÉS de que la persona se registre
-      // (antes no existe su espacio). Mismo comando que el espacio de demostración del titular.
-      console.log('Cuando se haya registrado, carga sus pacientes inventados con:');
+    if (invite.withSampleData) {
+      // E1: los pacientes inventados se cargan solos al registrarse (antes no existe su espacio).
+      console.log('Espacio de prueba: al registrarse, su espacio se cargará con pacientes inventados (E1).');
+      console.log('Si la carga fallase (queda en el log de la API), cárgalo a mano con:');
       console.log(`  DEMO_ENVIRONMENT=true npm run db:seed-demo-workspace -- --owner-email ${invite.email}`);
     }
   } finally {

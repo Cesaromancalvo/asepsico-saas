@@ -282,3 +282,4 @@ export interface ClinicalProcessPreviousAuthorNotesFlag { hasPreviousAuthorNotes
 export * from './session-reschedule';
 export * from './staff-notifications';
 export * from './staff-email-preferences';
+export * from './sample-data';
