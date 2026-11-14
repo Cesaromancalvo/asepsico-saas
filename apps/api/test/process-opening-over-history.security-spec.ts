@@ -276,7 +276,9 @@ describe('H6 · CA6.10 no hay otra ruta de apertura', () => {
     const creates = execSync(`grep -rlE "clinicalProcess\\.(create|createMany|upsert)\\(" ${root} || true`).toString().trim().split('\n').filter(Boolean).map((f: string) => f.replace(`${root}/`, '')).sort();
     // portal-signup: el THERAPIST que crea un paciente NUEVO desde la bandeja del alta por QR abre su
     // proceso (condición de Argos 19/10/2026); sin historia previa, como la importación de nuevos.
-    expect(creates).toEqual(['clinical-processes/clinical-processes.service.ts', 'patient-import/patient-import-writes.ts', 'portal-signup/signup-requests.service.ts']);
+    // sample-data (E1): la carga de pacientes INVENTADOS (isDemo) de un espacio de prueba recién
+    // registrado, sin pacientes previos (el cargador se niega si hay alguno real).
+    expect(creates).toEqual(['clinical-processes/clinical-processes.service.ts', 'patient-import/patient-import-writes.ts', 'portal-signup/signup-requests.service.ts', 'sample-data/demo-writer.ts']);
     const activations = execSync(`grep -rnE "status: *'ACTIVE'" ${root} | grep -E "data:" || true`).toString().trim();
     expect(activations).toBe('');
   });

@@ -4,8 +4,10 @@
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { decryptFieldStrict, encryptField } from '../../../src/common/crypto/field-encryption';
+import { DemoRefusal } from '../../../src/sample-data/sample-data-purge';
 
-export class DemoRefusal extends Error {}
+// Una sola clase (la comparten la API y los scripts) para que `instanceof` funcione en ambos.
+export { DemoRefusal };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 

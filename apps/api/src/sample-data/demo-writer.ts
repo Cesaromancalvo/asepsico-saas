@@ -6,9 +6,9 @@
 import { randomBytes } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { hash } from 'bcryptjs';
-import { encryptField } from '../../../src/common/crypto/field-encryption';
-import { encryptAssessmentResult, encryptJsonField } from '../../../src/common/crypto/clinical-crypto';
-import { CLINICAL_SCALES } from '../../../src/patients/clinical-scales';
+import { encryptField } from '../common/crypto/field-encryption';
+import { encryptAssessmentResult, encryptJsonField } from '../common/crypto/clinical-crypto';
+import { CLINICAL_SCALES } from '../patients/clinical-scales';
 import { DemoPatientSpec, DemoProcessSpec, SESSION_NOTES, SESSION_SUMMARIES, T } from './demo-dataset';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -17,7 +17,7 @@ const SESSION_MINUTES = 50;
 export interface DemoCounts {
   patients: number;
   processes: { ACTIVE: number; PAUSED: number; CLOSED: number };
-  sessions: { past: number; future: number };
+  sessions: { past: number; future: number; today: number };
   sessionNotes: number;
   goals: number;
   tasks: number;
@@ -28,7 +28,7 @@ export interface DemoCounts {
 }
 
 export function emptyCounts(): DemoCounts {
-  return { patients: 0, processes: { ACTIVE: 0, PAUSED: 0, CLOSED: 0 }, sessions: { past: 0, future: 0 }, sessionNotes: 0, goals: 0, tasks: 0, assessments: 0, conversations: 0, messages: 0, portalAccounts: 0 };
+  return { patients: 0, processes: { ACTIVE: 0, PAUSED: 0, CLOSED: 0 }, sessions: { past: 0, future: 0, today: 0 }, sessionNotes: 0, goals: 0, tasks: 0, assessments: 0, conversations: 0, messages: 0, portalAccounts: 0 };
 }
 
 export interface DemoWriteContext {
@@ -147,6 +147,18 @@ export async function writeDemoPatient(tx: Prisma.TransactionClient, ctx: DemoWr
       counts.sessions.past++;
       counts.sessionNotes++;
       if (process.status === 'ACTIVE') lastPastSessionId = session.id;
+    }
+    for (let k = 0; k < (process.todaySessions ?? 0); k++) {
+      // Citas de HOY (E1): «Mi jornada» muestra algo nada más entrar. A la hora del paciente.
+      const startsAt = new Date(now);
+      startsAt.setHours(hour + k, 0, 0, 0);
+      await tx.session.create({
+        data: {
+          workspaceId, patientId: patient.id, therapistId: clinicianId, clinicalProcessId: created.id,
+          startsAt, endsAt: new Date(startsAt.getTime() + SESSION_MINUTES * 60_000), status: 'SCHEDULED', type: 'INDIVIDUAL', location,
+        },
+      });
+      counts.sessions.today++;
     }
     for (let k = 0; k < process.futureSessions; k++) {
       // Primera cita en uno de los 5 próximos días laborables; las siguientes, mismo día de la semana.

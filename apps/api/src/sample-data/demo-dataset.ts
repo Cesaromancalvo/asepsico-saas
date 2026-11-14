@@ -7,6 +7,9 @@
  *  - Todo texto narrativo empieza por "[Ejemplo ficticio]", visible en la demo.
  *  - Escalas solo GAD-7 y WHO-5 (el PHQ-9 incluye un ítem de riesgo: no se siembra).
  * Las fechas son relativas al momento de la siembra (días antes/después de "hoy").
+ *
+ * Lo usan el script del operador (db:seed-demo-workspace, DEMO_PATIENTS) y la carga automática del
+ * espacio de prueba al registrarse en el piloto demo (E1, SAMPLE_PATIENTS).
  */
 
 export const FICTION_PREFIX = '[Ejemplo ficticio] ';
@@ -27,6 +30,8 @@ export interface DemoProcessSpec {
   stoppedDaysAgo?: number;
   pastSessions: number;
   futureSessions: number;
+  /** Citas programadas HOY (E1: que «Mi jornada» muestre algo nada más entrar). */
+  todaySessions?: number;
 }
 
 export interface DemoTaskSpec {
@@ -216,6 +221,28 @@ export const DEMO_PATIENTS: DemoPatientSpec[] = [
     ],
   },
 ];
+
+/**
+ * E1 · Espacio de prueba listo para mirar. Conjunto FIJO que se carga al registrarse por invitación
+ * en el piloto demo: solo pacientes del titular (sin cuentas demo de recepción ni de terapeuta; las
+ * clínicas con varios profesionales quedan fuera de E1), UN único paciente con acceso al portal
+ * (SAMPLE_PORTAL_PATIENT), citas hoy, esta semana y la siguiente, y tareas pendientes, respondidas
+ * y revisadas. Se deriva de DEMO_PATIENTS para no mantener dos copias de los textos.
+ */
+export const SAMPLE_PORTAL_PATIENT = { firstName: 'Paciente', lastName: 'Demo' } as const;
+const SAMPLE_TODAY_SESSIONS: Record<string, number> = { 'Paciente Demo': 1, 'Marco Ejemplo': 1, 'Julia Ejemplar': 1 };
+
+export const SAMPLE_PATIENTS: DemoPatientSpec[] = DEMO_PATIENTS.filter((p) => p.clinician === 'OWNER').map((p) => {
+  const portal = p.firstName === SAMPLE_PORTAL_PATIENT.firstName && p.lastName === SAMPLE_PORTAL_PATIENT.lastName;
+  const today = SAMPLE_TODAY_SESSIONS[`${p.firstName} ${p.lastName}`] ?? 0;
+  return {
+    ...p,
+    portal,
+    // Mensajes solo con el paciente que tiene portal (sin portal no podría haberlos escrito).
+    messages: portal ? p.messages : [],
+    processes: p.processes.map((x) => (x.status === 'ACTIVE' && today ? { ...x, todaySessions: today } : x)),
+  };
+});
 
 /** Palabras que nunca deben aparecer en el contenido sembrado (lo comprueba un test). */
 export const FORBIDDEN_DEMO_TERMS = [
