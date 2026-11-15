@@ -125,9 +125,9 @@ describeDb('Avisos de cambio de cita al personal (PostgreSQL real)', () => {
 
     const listA: any[] = await notifications.listProfessional(actor('therapistA', 'THERAPIST'));
     expect(listA.map((n) => n.body)).toEqual(expect.arrayContaining([
-      expect.stringMatching(/^Se ha movido tu cita con Paciente Uno: de .+ a .+\.$/),
-      expect.stringMatching(/^Paciente Uno ha pedido cancelar la cita del .+\.$/),
-      expect.stringMatching(/^Se ha rechazado la solicitud de Paciente Uno de cancelar la cita del .+\.$/),
+      expect.stringMatching(/^Se ha movido tu cita con Paciente Uno del .+ al .+\.$/),
+      expect.stringMatching(/^Paciente Uno pide cancelar la cita del .+\.$/),
+      expect.stringMatching(/^Se ha rechazado la cancelación que pidió Paciente Uno de la cita del .+\.$/),
     ]));
     for (const n of listA) { expect(n).not.toHaveProperty('metadata'); expect(n).not.toHaveProperty('patientId'); }
 
