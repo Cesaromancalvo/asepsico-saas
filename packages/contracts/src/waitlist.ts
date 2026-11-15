@@ -27,9 +27,8 @@ export type WaitlistSource = 'INSTAGRAM' | 'COLLEAGUE' | 'PROFESSIONAL_COLLEGE' 
  * La API (apps/api/src/waitlist/waitlist.config.ts) acepta:
  *  - lista-espera-v7 (vigente desde la decisión del Jefe del 09/11/2026): teléfono OBLIGATORIO y SIN
  *    contactPreference (si llega → 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED); se guarda PHONE_AND_EMAIL.
- *  - lista-espera-v6 solo durante su transición (WAITLIST_V6_ACCEPTED_UNTIL, máx. 7 días), con sus reglas.
- *  - lista-espera-v5 solo durante su transición (WAITLIST_V5_ACCEPTED_UNTIL, nunca después del 12/11/2026).
- * v1–v4, y v5/v6 fuera de plazo: 400 WAITLIST_POLICY_VERSION_RETIRED.
+ * Retiradas v1–v6 (la v5 desde el 13/11/2026 y la v6 desde el 16/11/2026): 400
+ * WAITLIST_POLICY_VERSION_RETIRED. No hay ninguna transición abierta.
  * Al cambiarla: API → política nueva → landing.
  */
 export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v7';
@@ -37,9 +36,9 @@ export const WAITLIST_PRIVACY_POLICY_VERSION = 'lista-espera-v7';
 export const WAITLIST_CURRENT_API_POLICY_VERSION = 'lista-espera-v7';
 
 /**
- * Preferencia de contacto (v6). La landing NO marca ninguna por defecto (consentimiento previo a las
- * llamadas, art. 66.1.b LGTel): la persona elige. PHONE_AND_EMAIL = «Por teléfono y por email»;
- * EMAIL_ONLY = «Solo por email».
+ * Preferencia de contacto de cada alta. Solo la v6 (retirada) dejaba elegirla, sin valor por defecto
+ * (consentimiento previo a las llamadas, art. 66.1.b LGTel); las altas v7 se guardan PHONE_AND_EMAIL.
+ * PHONE_AND_EMAIL = «Por teléfono y por email»; EMAIL_ONLY = «Solo por email».
  */
 export type WaitlistContactPreference = 'PHONE_AND_EMAIL' | 'EMAIL_ONLY';
 
@@ -55,18 +54,16 @@ export interface WaitlistSubmitRequest {
   /** Email válido, máx. 254. */
   email: string;
   situation: WaitlistSituation;
-  /** v6: OBLIGATORIA (sin valor por defecto en el formulario). v7 y v5: no se envía (si llega, 400). */
+  /** No se envía con la v7 (si llega, 400 WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED). Solo la usaba la v6, retirada. */
   contactPreference?: WaitlistContactPreference;
   /**
    * Teléfono tal como lo teclea la persona (string, máx. 25 caracteres); la API lo valida y lo
-   * normaliza a E.164. v7 y v5: OBLIGATORIO. v6: OBLIGATORIO con PHONE_AND_EMAIL y PROHIBIDO con
-   * EMAIL_ONLY (la landing oculta, vacía y omite el campo: con EMAIL_ONLY no se manda ni vacío ni null).
-   * Se ignoran espacios, puntos, guiones y paréntesis. Se aceptan:
+   * normaliza a E.164. v7: OBLIGATORIO. Se ignoran espacios, puntos, guiones y paréntesis. Se aceptan:
    *  - España: 9 dígitos de móvil (6xx, 71x–74x) o fijo geográfico (8[1-8]x, 9[1-8]x), con o sin
    *    +34 / 0034 / 34. Se rechazan 70x, 80x y 90x (tarificación especial y servicios).
    *  - Internacional: «+» o «00», prefijo distinto de 34 y 8–15 dígitos en total.
    * Errores (400 WaitlistErrorResponse): WAITLIST_PHONE_REQUIRED (falta o vacío cuando es obligatorio),
-   * WAITLIST_PHONE_INVALID (formato), WAITLIST_PHONE_NOT_ALLOWED (enviado con EMAIL_ONLY). Un phone
+   * WAITLIST_PHONE_INVALID (formato). Un phone
    * que no sea string o con más de 25 caracteres da el 400 de validación genérico (message nombra «phone»).
    */
   phone?: string;
@@ -82,7 +79,7 @@ export interface WaitlistSubmitRequest {
   source?: WaitlistSource;
   /** Debe ser exactamente true (si no, 400). */
   privacyAccepted: true;
-  privacyPolicyVersion: typeof WAITLIST_CURRENT_API_POLICY_VERSION | 'lista-espera-v6' | 'lista-espera-v5';
+  privacyPolicyVersion: typeof WAITLIST_CURRENT_API_POLICY_VERSION;
   /**
    * La landing ya no lo envía (sin casilla de novedades); la API lo sigue aceptando y, si falta, guarda false.
    * Casilla opcional de comunicaciones comerciales. Por defecto false. Solo registra la SOLICITUD:
@@ -104,11 +101,11 @@ export interface WaitlistErrorResponse {
   /**
    * TOO_FAST: esperar minSeconds y reintentar. TOKEN_INVALID: pedir otro token y reintentar.
    * PHONE_REQUIRED / PHONE_INVALID: error junto al campo teléfono (la API no devuelve el valor).
-   * PHONE_NOT_ALLOWED: llegó teléfono con EMAIL_ONLY (fallo de la landing, no de la persona).
-   * CONTACT_PREFERENCE_REQUIRED: v6 sin preferencia: error junto al grupo de preferencia.
-   * CONTACT_PREFERENCE_NOT_OFFERED: preferencia con la v7 o la v5 (formulario y versión no casan).
-   * POLICY_VERSION_RETIRED: privacyPolicyVersion es una versión retirada (v1–v4, o la v5/v6 pasada su
-   * transición), p. ej. una página antigua en caché: pedir que recargue la página.
+   * PHONE_NOT_ALLOWED y CONTACT_PREFERENCE_REQUIRED: eran solo de la v6 (retirada); la API ya no los
+   * emite. Se mantienen en el tipo para que la landing los siga tratando como error genérico.
+   * CONTACT_PREFERENCE_NOT_OFFERED: preferencia con la v7 (formulario y versión no casan).
+   * POLICY_VERSION_RETIRED: privacyPolicyVersion es una versión retirada (v1–v6), p. ej. una página
+   * antigua en caché: pedir que recargue la página.
    * COMMERCIAL_NOT_OFFERED: casilla comercial con una política que no la ofrece.
    */
   code:

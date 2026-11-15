@@ -217,14 +217,18 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   **solo el teléfono** (panel con contraseña o `waitlist:set-phone --clear`, auditado). El CLI
   `waitlist:set-phone` lee email y teléfono por stdin, nunca por argumentos (tests
   `waitlist-phone.security-spec.ts` y `waitlist-phone-db.security-spec.ts`).
-- Preferencia de contacto (política `lista-espera-v6`, publicada el 07/11/2026, migración 40):
-  `contactPreference` obligatoria (`PHONE_AND_EMAIL` / `EMAIL_ONLY`), sin opción marcada por
-  defecto en el formulario. Con `PHONE_AND_EMAIL` el teléfono es obligatorio; con `EMAIL_ONLY`
-  cualquier teléfono → 400 `WAITLIST_PHONE_NOT_ALLOWED`. La v5 solo se acepta mientras lo permita
-  `WAITLIST_V5_ACCEPTED_UNTIL` (máximo 7 días; en producción, hasta el 12/11/2026); **pendiente:**
-  quitar la variable y retirar la v5 en el código el 13/11/2026. Borrar el teléfono deja la
+- Preferencia de contacto (política `lista-espera-v6`, publicada el 07/11/2026, migración 40;
+  retirada desde el 16/11/2026): la v6 exigía `contactPreference` (`PHONE_AND_EMAIL` /
+  `EMAIL_ONLY`), sin opción marcada por defecto en el formulario. Con `PHONE_AND_EMAIL` el teléfono
+  era obligatorio; con `EMAIL_ONLY` cualquier teléfono → 400 `WAITLIST_PHONE_NOT_ALLOWED`. Las filas
+  v6 guardadas se conservan tal cual.
+- Política vigente `lista-espera-v7`: teléfono obligatorio (E.164, cifrado); si llega
+  `contactPreference` → 400 `WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED`; se guarda `PHONE_AND_EMAIL`
+  (`waitlist-v7.security-spec.ts`). La v5 y la v6 están retiradas en el código
+  (solo se acepta la v7); `WAITLIST_V5_ACCEPTED_UNTIL` / `WAITLIST_V6_ACCEPTED_UNTIL` se ignoran con un
+  aviso en el log (`waitlist-retired-v5-v6.security-spec.ts`). Borrar el teléfono deja la
   preferencia en `EMAIL_ONLY`. La preferencia no va a logs, auditoría ni al aviso interno
-  (`waitlist-v6.security-spec.ts`).
+  (`waitlist-retired-v5-v6.security-spec.ts`).
 - `WAITLIST_SECRET` (obligatorio en producción) deriva dos subclaves: hash del email y firma del
   token. No se rota: rompe la deduplicación y `waitlist:delete` de las altas previas.
 - Gestión solo por CLI: `npm run waitlist:export -- --out <ruta fuera del repo>` (CSV descifrado,

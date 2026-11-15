@@ -599,13 +599,13 @@ Estado de las versiones en el código (`apps/api/src/waitlist/waitlist.config.ts
 
 | Versión | Estado | Variable | Límite |
 |---|---|---|---|
-| v1–v4 | retiradas | — | — |
-| v5 | transición, **tope fijo** 12/11/2026 23:59:59 (+01:00) | `WAITLIST_V5_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
-| v6 | transición, con sus reglas (preferencia obligatoria; `EMAIL_ONLY` sin teléfono), **tope fijo** 15/11/2026 23:59:59 (+01:00) | `WAITLIST_V6_ACCEPTED_UNTIL` | 7 días desde el arranque y nunca después del tope |
+| v1–v6 | retiradas (la v5 desde el 13/11/2026 y la v6 desde el 16/11/2026) | — | — |
 | v7 | vigente | — | — |
 
-Sin variable (o vacía), la versión está retirada. Una variable mal escrita o a más de 7 días del
-arranque impide arrancar la API. Una fecha ya pasada es válida (no impide arrancar).
+Desde la retirada de la v5 y la v6 en el código no hay transiciones: `WAITLIST_V5_ACCEPTED_UNTIL` y
+`WAITLIST_V6_ACCEPTED_UNTIL` se ignoran. Si siguen en Render, la API arranca igual y registra un aviso
+(`… está puesta pero ya no se usa`, solo el nombre); basta con borrarlas. El orden «borrar la variable /
+desplegar el código» es indiferente.
 
 Fechas (decisión del Jefe: la v7 se publica el **09/11/2026**): durante unos días conviven las dos
 transiciones. La v5 sigue hasta el **12/11/2026 a las 23:59** (su variable actual, sin tocarla) y la
@@ -633,10 +633,9 @@ supera los 7 días y la API no arrancaría.
 5. Repetir la comprobación del invariante de la v6 (las dos cifras deben ser `0`; ver la sección
    anterior). La v7 no la cambia: toda alta v7 tiene teléfono y `PHONE_AND_EMAIL`.
 6. 13/11 o después: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (opcional; la v5 ya no entra).
-7. Cumplido el plazo de la v6 (16/11; desde el 15/11 a las 23:59:59 el tope fijo del código la retira
-   aunque la variable diga otra fecha): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
-   quitar la v5 y la v6 de `WAITLIST_POLICY_TRANSITIONS` y pasarlas a
-   `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS` (junto con la rama v6 de `contactFor`).
+7. Cumplido el plazo de la v6 (16/11): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render. (Hecho en el
+   código en la rama `chore/retirar-waitlist-v5-v6`: v5 y v6 retiradas y sin transiciones. No desplegar
+   esa API antes del 16/11/2026 a las 00:00 (+01:00), condición de Argos.)
 
 **Filas v6 «Solo por email».** Se conservan tal cual y **no se les pide el teléfono** (Lex Psi, v7 §4).
 Si alguien lo da por escrito por iniciativa propia, `waitlist:set-phone` (ver arriba) cifra el

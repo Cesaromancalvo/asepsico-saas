@@ -8,25 +8,20 @@ import { decryptField } from '../src/common/crypto/field-encryption';
 import { applyTrustProxy } from '../src/config/trust-proxy';
 import { PrismaService } from '../src/database/prisma.service';
 import { setWaitlistPhone } from '../src/waitlist/waitlist-admin';
-import { issueFormToken } from '../src/waitlist/waitlist-crypto';
+import { hashWaitlistEmail, issueFormToken } from '../src/waitlist/waitlist-crypto';
 import { WaitlistOriginGuard } from '../src/waitlist/waitlist-origin.guard';
 import { waitlistBodyParser } from '../src/waitlist/waitlist-body.middleware';
 import { WaitlistController } from '../src/waitlist/waitlist.controller';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
-import {
-  ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, CURRENT_WAITLIST_PRIVACY_POLICY_VERSION, InvalidWaitlistConfigError, WAITLIST_PATH,
-  WAITLIST_TRANSITION_MAX_DAYS, assertWaitlistConfig, isWaitlistPolicyVersionAccepted, waitlistV6AcceptedUntil,
-} from '../src/waitlist/waitlist.config';
+import { ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS, CURRENT_WAITLIST_PRIVACY_POLICY_VERSION, WAITLIST_PATH } from '../src/waitlist/waitlist.config';
 
 /**
  * Política lista-espera-v7 (decisión del Jefe del 09/11/2026: el teléfono vuelve a ser obligatorio;
  * texto legal de Lex Psi en redacción). Datos 100 % ficticios.
  *  - v7 (vigente): teléfono obligatorio (E.164, cifrado), SIN campo de preferencia (si llega → 400
  *    WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED) y se guarda PHONE_AND_EMAIL.
- *  - v6: solo en transición (WAITLIST_V6_ACCEPTED_UNTIL, máx. 7 días), con sus reglas (preferencia
- *    obligatoria; EMAIL_ONLY sin teléfono). Fuera de plazo → WAITLIST_POLICY_VERSION_RETIRED.
- *  - Coordinación con la v5: v5 retirada tras su fecha (tope fijo 12/11/2026), v6 en transición y v7
- *    vigente, cada transición con su variable y su límite de 7 días.
+ *  - v5 y v6 retiradas desde el 16/11/2026 (sin transición; sus variables se ignoran): ver
+ *    waitlist-retired-v5-v6.security-spec.
  *  - Ni el teléfono, ni el email, ni la preferencia salen en logs ni en las respuestas.
  */
 
@@ -36,7 +31,6 @@ const URL = '/api/v1/public/waitlist';
 const EMAIL = 'v7.ficticia@example.com';
 const PHONE = '612 000 888';
 const PHONE_E164 = '+34612000888';
-const DAY = 24 * 60 * 60_000;
 
 const v7Body = (overrides: Record<string, unknown> = {}) => ({
   name: 'Profesional Ficticia V7',
@@ -48,11 +42,6 @@ const v7Body = (overrides: Record<string, unknown> = {}) => ({
   formToken: issueFormToken(Date.now() - 10_000),
   ...overrides,
 });
-
-const v6Body = (overrides: Record<string, unknown> = {}) => {
-  const { phone: _omit, ...body } = v7Body({ privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY' });
-  return { ...body, ...overrides };
-};
 
 class CapturingLogger implements LoggerService {
   lines: string[] = [];
@@ -93,33 +82,12 @@ let ip = 0;
 const post = (app: INestApplication, body: unknown) =>
   request(app.getHttpServer()).post(URL).set('Origin', LANDING).set('X-Forwarded-For', `192.0.2.${(ip++ % 250) + 1}`).send(body as object);
 
-const previous = { v5: process.env.WAITLIST_V5_ACCEPTED_UNTIL, v6: process.env.WAITLIST_V6_ACCEPTED_UNTIL };
-const setEnv = (name: 'WAITLIST_V5_ACCEPTED_UNTIL' | 'WAITLIST_V6_ACCEPTED_UNTIL', value: string | undefined) => {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
-};
-const setV6Until = (value: string | undefined) => setEnv('WAITLIST_V6_ACCEPTED_UNTIL', value);
-afterAll(() => {
-  setEnv('WAITLIST_V5_ACCEPTED_UNTIL', previous.v5);
-  setEnv('WAITLIST_V6_ACCEPTED_UNTIL', previous.v6);
-});
-
-/** Solo Date queda falso (timers, nextTick, etc. reales): supertest y Nest funcionan igual. */
-const freezeDate = (iso: string) => jest.useFakeTimers({
-  now: new Date(iso),
-  doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
-});
-/** Un día dentro de la transición de la v6 (antes de su tope fijo del 15/11/2026 23:59:59 +01:00). */
-const IN_V6_TRANSITION = '2026-11-10T10:00:00Z';
-
 describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlist)', () => {
   let app: INestApplication;
   let prisma: any;
   let logger: CapturingLogger;
 
   beforeEach(async () => {
-    setEnv('WAITLIST_V5_ACCEPTED_UNTIL', undefined);
-    setV6Until(undefined);
     prisma = mockPrisma();
     logger = new CapturingLogger();
     app = await buildApp(prisma, logger);
@@ -132,9 +100,9 @@ describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlis
     await app.close();
   });
 
-  it('la vigente es la v7 y pasan el filtro v5, v6 y v7', () => {
+  it('la vigente es la v7 y es la única que pasa el filtro como aceptada', () => {
     expect(CURRENT_WAITLIST_PRIVACY_POLICY_VERSION).toBe('lista-espera-v7');
-    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7']);
+    expect([...ACCEPTED_WAITLIST_PRIVACY_POLICY_VERSIONS]).toEqual(['lista-espera-v7']);
   });
 
   it('v7 con teléfono → 202, cifrado en E.164, se guarda lista-espera-v7 y PHONE_AND_EMAIL', async () => {
@@ -200,218 +168,13 @@ describe('Alta v7: teléfono obligatorio y sin preferencia (POST /public/waitlis
   });
 
   it('un email ya apuntado (fila v6 sin teléfono) que se reapunta con la v7 → 202 y la fila existente no cambia', async () => {
-    freezeDate(IN_V6_TRANSITION);
-    try {
-      setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
-      await post(app, v6Body()).expect(202);
-    } finally {
-      setV6Until(undefined);
-      jest.useRealTimers();
-    }
-    const stored = { ...[...prisma.rows.values()][0] };
-    expect(stored.phone).toBeNull();
+    const stored = { id: 'wl-v6', emailHash: hashWaitlistEmail(EMAIL), phone: null, contactPreference: 'EMAIL_ONLY', privacyPolicyVersion: 'lista-espera-v6' };
+    prisma.rows.set(stored.emailHash, { ...stored });
     await post(app, v7Body()).expect(202);
     expect(prisma.rows.size).toBe(1);
     expect([...prisma.rows.values()][0]).toEqual(stored);
     expect(prisma.waitlistEntry.update).not.toHaveBeenCalled();
     expect(prisma.waitlistEntry.updateMany).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['sin variable', undefined],
-    ['con la fecha ya pasada', new Date(Date.now() - 1000).toISOString()],
-    ['mal escrita', 'dentro de una semana'],
-  ])('v6 fuera de su transición (%s) → 400 WAITLIST_POLICY_VERSION_RETIRED, con cualquier preferencia', async (_label, until) => {
-    setV6Until(until);
-    expect((await post(app, v6Body()).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-    expect((await post(app, v6Body({ contactPreference: 'PHONE_AND_EMAIL', phone: PHONE })).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-  });
-});
-
-describe('Transición de la v6 (WAITLIST_V6_ACCEPTED_UNTIL) por HTTP', () => {
-  let app: INestApplication;
-  let prisma: any;
-
-  // Reloj congelado dentro de la transición: la v6 tiene tope fijo (15/11/2026 23:59:59 +01:00).
-  beforeEach(async () => {
-    freezeDate(IN_V6_TRANSITION);
-    setV6Until(new Date(Date.now() + 3 * DAY).toISOString());
-    prisma = mockPrisma();
-    app = await buildApp(prisma, new CapturingLogger());
-  });
-  afterEach(async () => {
-    setV6Until(undefined);
-    await app.close();
-    jest.useRealTimers();
-  });
-
-  it('v6 «Solo por email» dentro del plazo → 202, phone null, EMAIL_ONLY y se guarda lista-espera-v6', async () => {
-    await post(app, v6Body()).expect(202);
-    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
-    expect(data).toMatchObject({ privacyPolicyVersion: 'lista-espera-v6', contactPreference: 'EMAIL_ONLY', phone: null });
-  });
-
-  it('v6 «Por teléfono y por email» dentro del plazo → 202 con teléfono cifrado', async () => {
-    await post(app, v6Body({ contactPreference: 'PHONE_AND_EMAIL', phone: PHONE })).expect(202);
-    const { data } = prisma.waitlistEntry.create.mock.calls[0][0];
-    expect(data.contactPreference).toBe('PHONE_AND_EMAIL');
-    expect(decryptField(data.phone)).toBe(PHONE_E164);
-  });
-
-  it('dentro del plazo la v6 conserva sus reglas: sin preferencia → REQUIRED; EMAIL_ONLY con teléfono → NOT_ALLOWED', async () => {
-    const { contactPreference: _omit, ...noPref } = v6Body();
-    expect((await post(app, noPref).expect(400)).body.code).toBe('WAITLIST_CONTACT_PREFERENCE_REQUIRED');
-    expect((await post(app, v6Body({ phone: PHONE })).expect(400)).body.code).toBe('WAITLIST_PHONE_NOT_ALLOWED');
-    expect((await post(app, v6Body({ contactPreference: 'PHONE_AND_EMAIL' })).expect(400)).body.code).toBe('WAITLIST_PHONE_REQUIRED');
-    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-  });
-
-  it('durante la transición de la v6 la v7 sigue exigiendo teléfono y rechazando la preferencia', async () => {
-    expect((await post(app, v7Body({ phone: undefined })).expect(400)).body.code).toBe('WAITLIST_PHONE_REQUIRED');
-    expect((await post(app, v7Body({ contactPreference: 'EMAIL_ONLY', phone: undefined })).expect(400)).body.code).toBe('WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED');
-    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-  });
-
-  it('abrir la v6 no reabre la v5 (cada versión tiene su variable)', async () => {
-    setEnv('WAITLIST_V5_ACCEPTED_UNTIL', undefined);
-    const { contactPreference: _omit, ...v5 } = v6Body({ privacyPolicyVersion: 'lista-espera-v5', phone: PHONE });
-    expect((await post(app, v5).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-  });
-
-  it('pasada la fecha, la v6 se rechaza como retirada', async () => {
-    setV6Until(new Date(Date.now() - 1000).toISOString());
-    expect((await post(app, v6Body()).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-    expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-  });
-});
-
-describe('Configuración: v5 retirada tras su fecha, v6 en transición y v7 vigente', () => {
-  const base: NodeJS.ProcessEnv = { NODE_ENV: 'production', WAITLIST_SECRET: 'x'.repeat(40) };
-  const env = (vars: { v5?: string; v6?: string } = {}): NodeJS.ProcessEnv => ({
-    ...base,
-    ...(vars.v5 !== undefined ? { WAITLIST_V5_ACCEPTED_UNTIL: vars.v5 } : {}),
-    ...(vars.v6 !== undefined ? { WAITLIST_V6_ACCEPTED_UNTIL: vars.v6 } : {}),
-  });
-  const accepted = (version: string, at: string, e: NodeJS.ProcessEnv) => isWaitlistPolicyVersionAccepted(version, new Date(at), e);
-
-  it('el límite de las transiciones es de 7 días', () => {
-    expect(WAITLIST_TRANSITION_MAX_DAYS).toBe(7);
-  });
-
-  it('sin variables: la v6 y la v5 retiradas, la v7 aceptada y la API arranca', () => {
-    const now = new Date('2026-11-10T10:00:00Z');
-    expect(waitlistV6AcceptedUntil(env())).toBeNull();
-    expect(waitlistV6AcceptedUntil(env({ v6: '  ' }))).toBeNull();
-    expect(() => assertWaitlistConfig(env(), now)).not.toThrow();
-    expect(isWaitlistPolicyVersionAccepted('lista-espera-v7', now, env())).toBe(true);
-    expect(isWaitlistPolicyVersionAccepted('lista-espera-v6', now, env())).toBe(false);
-    expect(isWaitlistPolicyVersionAccepted('lista-espera-v5', now, env())).toBe(false);
-  });
-
-  it('WAITLIST_V6_ACCEPTED_UNTIL hasta 7 días: arranca y acepta la v6 solo antes de la fecha', () => {
-    const now = new Date('2026-11-08T10:00:00Z');
-    const e = env({ v6: '2026-11-15T10:00:00Z' });
-    expect(() => assertWaitlistConfig(e, now)).not.toThrow();
-    expect(accepted('lista-espera-v6', '2026-11-15T09:59:59Z', e)).toBe(true);
-    expect(accepted('lista-espera-v6', '2026-11-15T10:00:00Z', e)).toBe(false);
-  });
-
-  describe('tope fijo de la v6 (condición 1 de Argos): nunca después del 15/11/2026 23:59:59 (+01:00)', () => {
-    const LATE = '2026-11-20T23:59:59+01:00';
-    let previousV6: string | undefined;
-    beforeEach(() => {
-      previousV6 = process.env.WAITLIST_V6_ACCEPTED_UNTIL;
-      freezeDate('2026-11-14T12:00:00+01:00');
-      setV6Until(LATE);
-    });
-    afterEach(() => {
-      setV6Until(previousV6);
-      jest.useRealTimers();
-    });
-
-    it('reinicio el 14/11 con la variable movida al 20/11: la API arranca, pero la v6 se retira el 15/11 a las 23:59:59', () => {
-      // Valores por defecto (reloj y process.env): lo mismo que hace la API al arrancar y en cada alta.
-      expect(() => assertWaitlistConfig({ ...process.env, NODE_ENV: 'production', WAITLIST_SECRET: 'x'.repeat(40) })).not.toThrow();
-      expect(waitlistV6AcceptedUntil()).toEqual(new Date(LATE));
-      expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(true);
-      jest.setSystemTime(new Date('2026-11-15T23:59:58+01:00'));
-      expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(true);
-      for (const when of ['2026-11-15T23:59:59+01:00', '2026-11-16T00:00:00+01:00', '2026-11-18T09:00:00+01:00', '2026-11-20T23:59:58+01:00']) {
-        jest.setSystemTime(new Date(when));
-        expect(isWaitlistPolicyVersionAccepted('lista-espera-v6')).toBe(false);
-        expect(isWaitlistPolicyVersionAccepted('lista-espera-v7')).toBe(true);
-      }
-    });
-
-    it('por HTTP: con la variable al 20/11, una alta v6 el 16/11 → 400 WAITLIST_POLICY_VERSION_RETIRED y sin create', async () => {
-      jest.setSystemTime(new Date('2026-11-16T09:00:00+01:00'));
-      const prisma = mockPrisma();
-      const app = await buildApp(prisma, new CapturingLogger());
-      try {
-        expect((await post(app, v6Body()).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-        expect((await post(app, v6Body({ contactPreference: 'PHONE_AND_EMAIL', phone: PHONE })).expect(400)).body.code).toBe('WAITLIST_POLICY_VERSION_RETIRED');
-        expect(prisma.waitlistEntry.create).not.toHaveBeenCalled();
-        await post(app, v7Body()).expect(202);
-      } finally {
-        await app.close();
-      }
-    });
-  });
-
-  it('WAITLIST_V6_ACCEPTED_UNTIL a más de 7 días o mal escrita: la API no arranca (y la de la v5 sigue igual)', () => {
-    const now = new Date('2026-11-10T10:00:00Z');
-    expect(() => assertWaitlistConfig(env({ v6: '2026-11-17T10:00:01Z' }), now)).toThrow(/WAITLIST_V6_ACCEPTED_UNTIL/);
-    for (const bad of ['2026-11-15', '15/11/2026', '2026-11-15T10:00:00', 'mañana', '2026-13-40T10:00:00Z']) {
-      expect(() => assertWaitlistConfig(env({ v6: bad }), now)).toThrow(InvalidWaitlistConfigError);
-    }
-    expect(() => assertWaitlistConfig(env({ v5: '2026-11-17T10:00:01Z', v6: '2026-11-12T10:00:00Z' }), now)).toThrow(/WAITLIST_V5_ACCEPTED_UNTIL/);
-  });
-
-  it('las dos transiciones a la vez (v7 publicada el 11/11): cada una cierra en su fecha', () => {
-    const e = env({ v5: '2026-11-12T23:59:59+01:00', v6: '2026-11-18T12:00:00+01:00' });
-    expect(() => assertWaitlistConfig(e, new Date('2026-11-11T12:00:00Z'))).not.toThrow();
-    // 11/11: v5, v6 y v7.
-    expect(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, '2026-11-11T12:00:00Z', e))).toEqual([true, true, true]);
-    // 13/11: la v5 retirada (su fecha y su tope fijo); la v6 sigue en transición.
-    expect(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, '2026-11-13T08:00:00Z', e))).toEqual([false, true, true]);
-    // 19/11: solo la v7.
-    expect(['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, '2026-11-19T08:00:00Z', e))).toEqual([false, false, true]);
-    // Un reinicio el 15/11 con la variable vencida de la v5 todavía puesta arranca igual.
-    expect(() => assertWaitlistConfig(e, new Date('2026-11-15T08:00:00Z'))).not.toThrow();
-  });
-
-  it('plan del Jefe: v7 publicada el 09/11, v5 hasta el 12/11 23:59 y v6 hasta el 15/11 23:59 (+01:00)', () => {
-    const e = env({ v5: '2026-11-12T23:59:59+01:00', v6: '2026-11-15T23:59:59+01:00' });
-    // Arranca el día de la publicación, aunque sea a última hora, y en cualquier reinicio posterior.
-    for (const boot of ['2026-11-09T08:00:00+01:00', '2026-11-09T23:59:00+01:00', '2026-11-12T10:00:00+01:00', '2026-11-20T10:00:00+01:00']) {
-      expect(() => assertWaitlistConfig(e, new Date(boot))).not.toThrow();
-    }
-    const at = (when: string) => ['lista-espera-v5', 'lista-espera-v6', 'lista-espera-v7'].map((v) => accepted(v, when, e));
-    expect(at('2026-11-09T12:00:00+01:00')).toEqual([true, true, true]);
-    expect(at('2026-11-12T23:59:58+01:00')).toEqual([true, true, true]);
-    expect(at('2026-11-12T23:59:59+01:00')).toEqual([false, true, true]);
-    expect(at('2026-11-15T23:59:58+01:00')).toEqual([false, true, true]);
-    expect(at('2026-11-15T23:59:59+01:00')).toEqual([false, false, true]);
-    expect(at('2026-11-16T09:00:00+01:00')).toEqual([false, false, true]);
-  });
-
-  it('con la v7 publicada el 09/11, la v6 hasta el 16/11 23:59 no cabe en los 7 días: la API no arranca', () => {
-    const boot = new Date('2026-11-09T12:00:00+01:00');
-    expect(() => assertWaitlistConfig(env({ v6: '2026-11-16T23:59:59+01:00' }), boot)).toThrow(/WAITLIST_V6_ACCEPTED_UNTIL/);
-    // Ni una variable de la v5 alargada más allá de su tope amplía nada (y a +7 días tampoco arranca).
-    expect(accepted('lista-espera-v5', '2026-11-13T09:00:00+01:00', env({ v5: '2026-11-14T09:00:00+01:00' }))).toBe(false);
-  });
-
-  it('una variable de la v6 mal escrita, leída en caliente, nunca amplía lo aceptado', () => {
-    expect(accepted('lista-espera-v6', '2026-11-10T10:00:00Z', env({ v6: 'la semana que viene' }))).toBe(false);
-  });
-
-  it('versiones desconocidas o con otra grafía nunca, ni con las dos transiciones abiertas', () => {
-    const e = env({ v5: '2026-11-12T23:59:59+01:00', v6: '2026-11-16T10:00:00Z' });
-    for (const v of ['lista-espera-v1', 'lista-espera-v4', 'lista-espera-v8', 'LISTA-ESPERA-V7', 'LISTA-ESPERA-V6', ' lista-espera-v6', 'constructor', '__proto__', 'toString']) {
-      expect(accepted(v, '2026-11-10T10:00:00Z', e)).toBe(false);
-    }
   });
 });
 
