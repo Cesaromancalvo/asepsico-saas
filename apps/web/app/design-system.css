@@ -774,3 +774,20 @@ label.patient input[type=checkbox]{width:20px;height:20px;accent-color:var(--vio
 @media(min-width:901px){
   .sidebar-brand span{display:-webkit-box;overflow:hidden;white-space:normal;text-overflow:clip;line-height:1.3;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 }
+/* «¿Se hizo esta sesión?» (citas que ya han empezado y siguen programadas). */
+.session-outcome{display:grid;gap:8px;margin-top:12px;padding:10px 12px;border:1px solid #F2DFB0;border-radius:12px;background:var(--warning-soft)}
+.session-outcome .session-outcome-question{margin:0;color:var(--warning);font-size:var(--fs-xs);font-weight:600}
+.session-outcome-buttons{display:flex;flex-wrap:wrap;gap:6px}
+.session-outcome-buttons button{flex:1 1 auto;min-height:36px;padding:0 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface,#fff);color:var(--text);font-family:inherit;font-size:var(--fs-xs);font-weight:600;cursor:pointer}
+.session-outcome-buttons button:hover:not(:disabled){border-color:var(--violet);color:var(--violet-ink)}
+.session-outcome-buttons button:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.session-outcome-buttons button:disabled{opacity:.6;cursor:default}
+.session-outcome-buttons .session-outcome-primary,.session-outcome-buttons .session-outcome-confirm{border-color:var(--violet);background:var(--violet);color:#fff}
+.session-outcome-buttons .session-outcome-primary:hover:not(:disabled),.session-outcome-buttons .session-outcome-confirm:hover:not(:disabled){color:#fff;filter:brightness(.95)}
+.session-outcome .session-outcome-error{margin:0;color:var(--danger);font-size:var(--fs-xs)}
+.session-row .session-outcome,.patient-mini-timeline .session-outcome,.timeline-item .session-outcome{grid-column:1/-1}
+/* Tarea vencida (solo en la parte del profesional): aviso, sin alarmismo. */
+.task-status.task-status-overdue,.patient-compact-item>span.task-overdue{border:1px solid #F2DFB0;background:var(--warning-soft);color:var(--warning)}
+/* Dentro de la línea temporal de la ficha los div van en columna: la pregunta mantiene su maquetación. */
+.patient-mini-timeline .session-outcome{display:grid;gap:8px}
+.patient-mini-timeline .session-outcome-buttons{flex-direction:row;flex-wrap:wrap;gap:6px}

@@ -5,8 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { processLabel } from '@/lib/clinical';
+import { processLabel, useViewer } from '@/lib/clinical';
 import { appHref, patientHref, queryId } from '@/lib/routes';
+import SessionOutcomePrompt, { usePendingOutcomeSessions } from '@/components/SessionOutcomePrompt';
+import { isOwnSession, outcomeContext, outcomeNotice, timelineSessionId } from '@/lib/session-outcome';
 
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; achievedAt?:string|null; priority:number; createdAt:string; updatedAt:string };
@@ -33,6 +35,15 @@ export default function PatientPlanPage(){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const [filter,setFilter]=useState<'ALL'|TimelineEvent['type']>('ALL');
+  const viewer=useViewer();
+  // «¿Se hizo esta sesión?» solo cuando la línea temporal ha cargado (la API ya dejó leerla).
+  const pendingOutcomes=usePendingOutcomeSessions(patientId,viewer,Boolean(patient));
+  const [outcomeMessage,setOutcomeMessage]=useState('');
+  async function afterOutcome(message:string){
+    setOutcomeMessage(message);
+    const [timelineRes]=await Promise.allSettled([api<TimelineEvent[]>(`/patients/${patientId}/timeline`),pendingOutcomes.reload()]);
+    if(timelineRes.status==='fulfilled') setTimeline(timelineRes.value);
+  }
 
   async function load(){
     try{
@@ -116,7 +127,7 @@ export default function PatientPlanPage(){
         <article className="patient-record-card">
           <div className="patient-plan-section-heading"><div><span>02</span><div><h2>Línea temporal</h2><p>Actividad clínica ordenada cronológicamente.</p></div></div></div>
           <div className="timeline-filters"><button className={filter==='ALL'?'active':''} onClick={()=>setFilter('ALL')}>Todo</button><button className={filter==='SESSION'?'active':''} onClick={()=>setFilter('SESSION')}>Sesiones</button><button className={filter==='GOAL'?'active':''} onClick={()=>setFilter('GOAL')}>Objetivos</button><button className={filter==='HISTORY'?'active':''} onClick={()=>setFilter('HISTORY')}>Historia</button><button className={filter==='TASK'?'active':''} onClick={()=>setFilter('TASK')}>Tareas</button><button className={filter==='ASSESSMENT'?'active':''} onClick={()=>setFilter('ASSESSMENT')}>Escalas</button><button className={filter==='DOCUMENT'?'active':''} onClick={()=>setFilter('DOCUMENT')}>Documentos</button></div>
-          <div className="clinical-timeline">{filteredTimeline.map(item=><div className="timeline-item" key={item.id}><div className={`timeline-icon timeline-${item.type.toLowerCase()}`}>{TYPE_ICON[item.type]}</div><div><time>{formatDate(item.date,true)}</time><h3>{item.href?<Link href={appHref(item.href)}>{item.title}</Link>:item.title}</h3>{item.description&&<p>{item.description}</p>}{item.status&&<span>{TIMELINE_STATUS[item.status]??item.status.replaceAll('_',' ')}</span>}</div></div>)}{filteredTimeline.length===0&&<div className="therapy-empty"><p>No hay eventos para este filtro.</p></div>}</div>
+          {outcomeMessage&&<p className="patient-save-state" role="status">{outcomeMessage}</p>}<div className="clinical-timeline">{filteredTimeline.map(item=>{const pendingSession=pendingOutcomes.sessions.get(timelineSessionId(item)??'');return <div className="timeline-item" key={item.id}><div className={`timeline-icon timeline-${item.type.toLowerCase()}`}>{TYPE_ICON[item.type]}</div><div><time>{formatDate(item.date,true)}</time><h3>{item.href?<Link href={appHref(item.href)}>{item.title}</Link>:item.title}</h3>{item.description&&<p>{item.description}</p>}{item.status&&<span>{TIMELINE_STATUS[item.status]??item.status.replaceAll('_',' ')}</span>}{pendingSession&&<SessionOutcomePrompt sessionId={pendingSession.id} context={outcomeContext(`${patient.firstName} ${patient.lastName}`,pendingSession.startsAt)} onClosed={status=>afterOutcome(outcomeNotice(status,isOwnSession(pendingSession,viewer)))}/>}</div></div>})}{filteredTimeline.length===0&&<div className="therapy-empty"><p>No hay eventos para este filtro.</p></div>}</div>
         </article>
       </aside>
     </div>

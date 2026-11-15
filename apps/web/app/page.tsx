@@ -7,6 +7,8 @@ import { api } from '../lib/api';
 import AdminDayView from '../components/AdminDayView';
 import AppointmentChangesCard from '../components/AppointmentChangesCard';
 import SampleDataNotice from '../components/SampleDataNotice';
+import SessionOutcomePrompt from '../components/SessionOutcomePrompt';
+import { isOwnSession, outcomeContext, outcomeNotice, shouldAskOutcome } from '../lib/session-outcome';
 import Icon, { EmptyState } from '../components/Icon';
 import { currentPath, loginHref } from '../lib/login-redirect';
 import { invalidateViewer, modalityLabel, useViewer, Viewer } from '../lib/clinical';
@@ -30,6 +32,7 @@ type DashboardData = {
     endsAt: string;
     status: string;
     type: string;
+    therapistId?: string | null;
     patient: { id: string; firstName: string; lastName: string };
     clinicalProcess?: { modality: string } | null;
   }>;
@@ -41,6 +44,8 @@ type DashboardData = {
     checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
   };
 };
+
+const SESSION_STATUS_LABEL: Record<string, string> = { SCHEDULED: 'Programada', COMPLETED: 'Completada', CANCELLED: 'Cancelada', NO_SHOW: 'No asistió' };
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -103,6 +108,16 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [outcomeMessage, setOutcomeMessage] = useState('');
+
+  /** Tras cerrar una sesión: recarga sin pantalla de carga (la lista no parpadea ni pierde el scroll). */
+  async function refresh() {
+    try {
+      setData(await api<DashboardData>('/dashboard'));
+    } catch {
+      /* los datos anteriores siguen siendo válidos; el aviso de éxito ya se ha dado */
+    }
+  }
 
   async function load() {
     try {
@@ -217,13 +232,21 @@ function ClinicalHome({ viewer }: { viewer: Viewer }) {
         <div className="dashboard-grid">
           <section className="dashboard-card sessions-card">
             <div className="card-heading"><div><p className="eyebrow">HOY</p><h2>Sesiones</h2></div><Link href="/agenda" className="text-link">Ver agenda completa</Link></div>
+            {outcomeMessage && <p className="patient-save-state" role="status">{outcomeMessage}</p>}
             <div className="sessions-list">
               {data.sessions.length ? data.sessions.map((session) => (
                 <article key={session.id} className="session-row">
                   <div className="session-time"><strong>{formatTime(session.startsAt)}</strong><span>{Math.round((new Date(session.endsAt).getTime() - new Date(session.startsAt).getTime()) / 60000)} min</span></div>
                   <div className="session-avatar purple">{session.patient.firstName[0]}{session.patient.lastName[0]}</div>
-                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess ? `Proceso clínico · ${modalityLabel(session.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p><small className={`session-status ui-chip ${session.status === 'SCHEDULED' ? 'chip-violet' : 'chip-neutral'}`}>{session.status === 'SCHEDULED' ? 'Programada' : session.status}</small></div>
+                  <div className="session-copy"><div className="session-name"><strong>{session.patient.firstName} {session.patient.lastName}</strong><span>{session.type}</span></div><p>{session.clinicalProcess ? `Proceso clínico · ${modalityLabel(session.clinicalProcess.modality) ?? 'Modalidad no definida'}` : 'Sin proceso asociado'}</p><small className={`session-status ui-chip ${session.status === 'SCHEDULED' ? 'chip-violet' : session.status === 'COMPLETED' ? 'chip-green' : 'chip-neutral'}`}>{SESSION_STATUS_LABEL[session.status] ?? session.status}</small></div>
                   <div className="session-buttons"><Link href={patientHref(session.patient.id)} className="small-secondary">Abrir caso</Link><Link href={sessionHref(session.id)} className="small-primary">Preparar</Link></div>
+                  {shouldAskOutcome(session, viewer) && (
+                    <SessionOutcomePrompt
+                      sessionId={session.id}
+                      context={outcomeContext(`${session.patient.firstName} ${session.patient.lastName}`, session.startsAt)}
+                      onClosed={async (status) => { setOutcomeMessage(outcomeNotice(status, isOwnSession(session, viewer))); await refresh(); }}
+                    />
+                  )}
                 </article>
               )) : <EmptyState icon="calendar" title="No hay sesiones hoy">La agenda de hoy está libre. Buen momento para revisar seguimientos.</EmptyState>}
             </div>
