@@ -33,6 +33,7 @@ apps/landing/
     estado/index.html      <- estado del servicio e incidencias (marcador [[ESTADO]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
     cambios/index.html     <- cambios y avisos previos (marcador [[CAMBIOS]], lo rellena build.mjs; noindex, fuera del pie y del sitemap)
     404.html               <- página de error propia (noindex, fuera del sitemap)
+    seguimiento-entre-sesiones/index.html <- página de producto «Seguimiento entre sesiones» (en el sitemap, enlazada desde #como-funciona, dos tarjetas de «Qué incluye» y el pie de todas las páginas); sin scripts ni formulario, CTA a /#apuntate
     recursos/mapa-semana-consulta/index.html <- página del recurso "Mapa de tu semana de consulta" (en el sitemap)
     recursos/mapa-semana-consulta.pdf        <- el PDF (2 páginas A4, etiquetado, sin JavaScript, formularios ni enlaces). Descarga directa, sin pedir email: nunca poner un formulario delante
     fonts/                 <- Poppins autoalojada (woff2, subconjunto latino) + OFL.txt
