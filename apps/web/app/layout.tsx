@@ -6,8 +6,14 @@ import './platform-waitlist.css';
 import './staff-notifications.css';
 import DemoBanner from '@/components/DemoBanner';
 
-// referrer: además de la cabecera Referrer-Policy de Render (defensa en profundidad: el id va en la query).
-export const metadata = { title: 'AsePsico', description: 'Sistema operativo para la práctica psicológica', referrer: 'no-referrer' as const };
+export const metadata = {
+  title: 'AsePsico',
+  description: 'Estamos construyendo AsePsico, un software para psicólogos y consultas de psicología.',
+  // referrer: además de la cabecera Referrer-Policy de Render (defensa en profundidad: el id va en la query).
+  referrer: 'no-referrer' as const,
+  // Segunda capa además de X-Robots-Tag de Render: la app no se indexa; la web pública es asepsico.es.
+  robots: { index: false, follow: false },
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
