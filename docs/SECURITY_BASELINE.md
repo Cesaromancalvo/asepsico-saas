@@ -217,10 +217,14 @@ Endpoint público, sin sesión ni CSRF, llamado desde la landing estática (mód
   **solo el teléfono** (panel con contraseña o `waitlist:set-phone --clear`, auditado). El CLI
   `waitlist:set-phone` lee email y teléfono por stdin, nunca por argumentos (tests
   `waitlist-phone.security-spec.ts` y `waitlist-phone-db.security-spec.ts`).
-- Preferencia de contacto (política `lista-espera-v6`, publicada el 07/11/2026, migración 40):
-  `contactPreference` obligatoria (`PHONE_AND_EMAIL` / `EMAIL_ONLY`), sin opción marcada por
-  defecto en el formulario. Con `PHONE_AND_EMAIL` el teléfono es obligatorio; con `EMAIL_ONLY`
-  cualquier teléfono → 400 `WAITLIST_PHONE_NOT_ALLOWED`. La v5 y la v6 están retiradas en el código
+- Preferencia de contacto (política `lista-espera-v6`, publicada el 07/11/2026, migración 40;
+  retirada desde el 16/11/2026): la v6 exigía `contactPreference` (`PHONE_AND_EMAIL` /
+  `EMAIL_ONLY`), sin opción marcada por defecto en el formulario. Con `PHONE_AND_EMAIL` el teléfono
+  era obligatorio; con `EMAIL_ONLY` cualquier teléfono → 400 `WAITLIST_PHONE_NOT_ALLOWED`. Las filas
+  v6 guardadas se conservan tal cual.
+- Política vigente `lista-espera-v7`: teléfono obligatorio (E.164, cifrado); si llega
+  `contactPreference` → 400 `WAITLIST_CONTACT_PREFERENCE_NOT_OFFERED`; se guarda `PHONE_AND_EMAIL`
+  (`waitlist-v7.security-spec.ts`). La v5 y la v6 están retiradas en el código
   (solo se acepta la v7); `WAITLIST_V5_ACCEPTED_UNTIL` / `WAITLIST_V6_ACCEPTED_UNTIL` se ignoran con un
   aviso en el log (`waitlist-retired-v5-v6.security-spec.ts`). Borrar el teléfono deja la
   preferencia en `EMAIL_ONLY`. La preferencia no va a logs, auditoría ni al aviso interno

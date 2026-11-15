@@ -633,10 +633,9 @@ supera los 7 días y la API no arrancaría.
 5. Repetir la comprobación del invariante de la v6 (las dos cifras deben ser `0`; ver la sección
    anterior). La v7 no la cambia: toda alta v7 tiene teléfono y `PHONE_AND_EMAIL`.
 6. 13/11 o después: borrar `WAITLIST_V5_ACCEPTED_UNTIL` en Render (opcional; la v5 ya no entra).
-7. Cumplido el plazo de la v6 (16/11; desde el 15/11 a las 23:59:59 el tope fijo del código la retira
-   aunque la variable diga otra fecha): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render y, en el código,
-   quitar la v5 y la v6 de `WAITLIST_POLICY_TRANSITIONS` y pasarlas a
-   `RETIRED_WAITLIST_PRIVACY_POLICY_VERSIONS` (junto con la rama v6 de `contactFor`).
+7. Cumplido el plazo de la v6 (16/11): borrar `WAITLIST_V6_ACCEPTED_UNTIL` en Render. (Hecho en el
+   código en la rama `chore/retirar-waitlist-v5-v6`: v5 y v6 retiradas y sin transiciones. No desplegar
+   esa API antes del 16/11/2026 a las 00:00 (+01:00), condición de Argos.)
 
 **Filas v6 «Solo por email».** Se conservan tal cual y **no se les pide el teléfono** (Lex Psi, v7 §4).
 Si alguien lo da por escrito por iniciativa propia, `waitlist:set-phone` (ver arriba) cifra el
