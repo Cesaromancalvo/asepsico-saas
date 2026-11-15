@@ -15,7 +15,7 @@ import { canManageProcess, changeProcessStatus, fetchConsultationReason, isAdmin
 import { OpeningCancelled, withOpeningReason } from '@/lib/exceptional-access';
 import { appHref, patientHref, processHref, sessionHref, queryId } from '@/lib/routes';
 import SessionOutcomePrompt, { usePendingOutcomeSessions } from '@/components/SessionOutcomePrompt';
-import { isOwnSession, outcomeContext, outcomeNotice, timelineSessionId } from '@/lib/session-outcome';
+import { isOwnSession, outcomeContext, outcomeEnabledForRecord, outcomeNotice, timelineSessionId } from '@/lib/session-outcome';
 import { isTaskOverdue, OVERDUE_LABEL } from '@/lib/task-due';
 
 type PatientStatus = 'ACTIVE' | 'PAUSED' | 'DISCHARGED' | 'ARCHIVED';
@@ -92,7 +92,7 @@ export default function PatientRecordPage(){
   const [clinicalDenied,setClinicalDenied]=useState(false);
   const showClinical=access.treating&&!clinicalDenied;
   // «¿Se hizo esta sesión?» en la línea temporal: solo con la ficha clínica (no con acceso excepcional).
-  const pendingOutcomes=usePendingOutcomeSessions(patientId,viewer,showClinical);
+  const pendingOutcomes=usePendingOutcomeSessions(patientId,viewer,outcomeEnabledForRecord(access,clinicalDenied));
   const [outcomeMessage,setOutcomeMessage]=useState('');
 
   // Acceso excepcional (docs/producto/acceso-excepcional.md). Solo se pregunta a la API por

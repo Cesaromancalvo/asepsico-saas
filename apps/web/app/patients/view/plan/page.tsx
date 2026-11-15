@@ -5,10 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { api } from '@/lib/api';
-import { processLabel, useViewer } from '@/lib/clinical';
+import { isStaffWithProcessAccess, processLabel, usePatientClinicalAccess, useViewer } from '@/lib/clinical';
 import { appHref, patientHref, queryId } from '@/lib/routes';
 import SessionOutcomePrompt, { usePendingOutcomeSessions } from '@/components/SessionOutcomePrompt';
-import { isOwnSession, outcomeContext, outcomeNotice, timelineSessionId } from '@/lib/session-outcome';
+import { isOwnSession, outcomeContext, outcomeEnabledForRecord, outcomeNotice, timelineSessionId } from '@/lib/session-outcome';
 
 type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'CANCELLED';
 type Goal = { id:string; title:string; description?:string|null; status:GoalStatus; targetDate?:string|null; achievedAt?:string|null; priority:number; createdAt:string; updatedAt:string };
@@ -36,8 +36,10 @@ export default function PatientPlanPage(){
   const [error,setError]=useState('');
   const [filter,setFilter]=useState<'ALL'|TimelineEvent['type']>('ALL');
   const viewer=useViewer();
-  // «¿Se hizo esta sesión?» solo cuando la línea temporal ha cargado (la API ya dejó leerla).
-  const pendingOutcomes=usePendingOutcomeSessions(patientId,viewer,Boolean(patient));
+  // «¿Se hizo esta sesión?» solo si TRATA al paciente (mismo criterio que la ficha): con acceso
+  // excepcional la línea temporal se lee, pero no se pregunta. Un ASSISTANT no consulta el acceso.
+  const {access:clinicalAccess}=usePatientClinicalAccess(patientId,viewer!==null&&isStaffWithProcessAccess(viewer.role));
+  const pendingOutcomes=usePendingOutcomeSessions(patientId,viewer,Boolean(patient)&&outcomeEnabledForRecord(clinicalAccess));
   const [outcomeMessage,setOutcomeMessage]=useState('');
   async function afterOutcome(message:string){
     setOutcomeMessage(message);

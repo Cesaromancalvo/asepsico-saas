@@ -77,6 +77,15 @@ export function shouldAskOutcome(session: OutcomeSession, viewer: Viewer | null,
   return isAwaitingOutcome(session, now) && canCloseSession(session, viewer);
 }
 
+/**
+ * ¿Se pregunta en la línea temporal de la ficha o del plan? Solo si quien mira TRATA al paciente
+ * (proceso ACTIVO) y la parte clínica no se ha denegado. Con acceso excepcional (OWNER/ADMIN que no
+ * trata al paciente) la ficha es de solo lectura: nunca se pregunta (revisión de Argos).
+ */
+export function outcomeEnabledForRecord(access: { treating: boolean }, clinicalDenied = false): boolean {
+  return access.treating === true && !clinicalDenied;
+}
+
 /** Id de la cita de un evento SESSION de la línea temporal (GET /patients/:id/timeline usa «session-<id>»). */
 export function timelineSessionId(event: { id: string; type: string }): string | null {
   return event.type === 'SESSION' && event.id.startsWith('session-') ? event.id.slice('session-'.length) || null : null;

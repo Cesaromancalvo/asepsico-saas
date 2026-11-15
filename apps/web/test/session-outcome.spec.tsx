@@ -16,6 +16,7 @@ import {
   isAwaitingOutcome,
   isOwnSession,
   OUTCOME_OPTIONS,
+  outcomeEnabledForRecord,
   outcomeContext,
   outcomeNotice,
   shouldAskOutcome,
@@ -140,5 +141,29 @@ describe('dónde aparece', () => {
 
   it('el portal del paciente no la usa', () => {
     expect(source('app/portal/page.tsx')).not.toContain('SessionOutcome');
+  });
+});
+
+describe('acceso excepcional: ni la ficha ni el plan preguntan (revisión de Argos)', () => {
+  const source = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
+
+  it('solo se pregunta si trata al paciente y la parte clínica no se ha denegado', () => {
+    // OWNER/ADMIN con acceso excepcional: lee la ficha pero no la trata.
+    expect(outcomeEnabledForRecord({ treating: false })).toBe(false);
+    expect(outcomeEnabledForRecord({ treating: true }, true)).toBe(false);
+    expect(outcomeEnabledForRecord({ treating: true })).toBe(true);
+  });
+
+  it('el plan y la ficha condicionan la carga al criterio «trata al paciente»', () => {
+    const plan = source('app/patients/view/plan/page.tsx');
+    expect(plan).toContain('usePatientClinicalAccess(');
+    expect(plan).toMatch(/usePendingOutcomeSessions\(patientId,viewer,Boolean\(patient\)&&outcomeEnabledForRecord\(clinicalAccess\)\)/);
+    expect(plan).not.toMatch(/usePendingOutcomeSessions\(patientId,viewer,Boolean\(patient\)\)/);
+    const record = source('app/patients/view/page.tsx');
+    expect(record).toMatch(/usePendingOutcomeSessions\(patientId,viewer,outcomeEnabledForRecord\(access,clinicalDenied\)\)/);
+  });
+
+  it('la vista de solo lectura del acceso excepcional no monta la pregunta', () => {
+    expect(source('components/ExceptionalRecordView.tsx')).not.toContain('SessionOutcome');
   });
 });
