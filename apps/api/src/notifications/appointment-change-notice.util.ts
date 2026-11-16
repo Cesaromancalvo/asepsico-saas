@@ -2,6 +2,7 @@ import { routeToActiveMembers } from '../workspace-members/notification-recipien
 import { enqueueStaffEmailsForNotices } from './email/staff-email-enqueue';
 import { StaffEmailKind } from './email/staff-email-preferences';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from '../scheduling/time-zone.util';
+import { patientDateLabel } from './email/patient-email-layout';
 
 /**
  * Avisos DENTRO de la app al personal cuando cambia una cita (decisión del Jefe 30/10). Se guardan
@@ -143,39 +144,43 @@ export function readAppointmentChange(metadata: unknown): AppointmentChangeMeta 
   return raw as AppointmentChangeMeta;
 }
 
+/** «martes 17 de noviembre, 12:00» en la zona del espacio (mismo formato que los correos). */
 function label(value: string | null | undefined, timeZone: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('es-ES', {
-    timeZone, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).format(date);
+  return patientDateLabel(date, timeZone);
 }
 
-/** Texto con nombre y fechas. Solo se llama si el lector puede ver la cita. */
+/**
+ * Texto con nombre y fechas. Solo se llama si el lector puede ver la cita.
+ * Frases cortas y directas (recorrido de demo 14/11): «X ha retirado su solicitud de cita del …».
+ */
 export function renderAppointmentChange(meta: AppointmentChangeMeta, patientName: string, ownAppointment: boolean, timeZone: string): string {
   const from = label(meta.from?.startsAt, timeZone) ?? 'la hora anterior';
   const to = label(meta.to?.startsAt, timeZone) ?? 'la nueva hora';
   const cita = ownAppointment ? 'tu cita' : 'la cita';
-  const what = meta.requestType === 'CANCEL' ? 'cancelar' : meta.requestType === 'NEW' ? 'pedir' : 'cambiar';
   switch (meta.change) {
     case 'RESCHEDULED_BY_STAFF':
-      return `Se ha movido ${cita} con ${patientName}: de ${from} a ${to}.`;
+      return `Se ha movido ${cita} con ${patientName} del ${from} al ${to}.`;
     case 'CANCELLED_BY_STAFF':
       return `Se ha cancelado ${cita} con ${patientName} del ${from}.`;
     case 'PATIENT_REQUESTED_RESCHEDULE':
-      return `${patientName} ha pedido cambiar la cita del ${from} al ${to}.`;
+      return `${patientName} pide cambiar la cita del ${from} al ${to}.`;
     case 'PATIENT_REQUESTED_CANCEL':
-      return `${patientName} ha pedido cancelar la cita del ${from}.`;
+      return `${patientName} pide cancelar la cita del ${from}.`;
     case 'PATIENT_WITHDREW_REQUEST':
-      return `${patientName} ha retirado su solicitud de ${what} la cita del ${from}.`;
+      if (meta.requestType === 'NEW') return `${patientName} ha retirado su solicitud de cita del ${from}.`;
+      if (meta.requestType === 'CANCEL') return `${patientName} ha retirado su solicitud de cancelación de la cita del ${from}.`;
+      return `${patientName} ha retirado su solicitud de cambio de la cita del ${from}.`;
     case 'REQUEST_APPROVED':
       if (meta.requestType === 'NEW') return `Se ha aprobado la cita que pidió ${patientName} para el ${to}.`;
       if (meta.requestType === 'CANCEL') return `Se ha aprobado la cancelación que pidió ${patientName}: la cita del ${from} queda cancelada.`;
       return `Se ha aprobado el cambio que pidió ${patientName}: la cita del ${from} pasa al ${to}.`;
     case 'REQUEST_REJECTED':
       if (meta.requestType === 'NEW') return `Se ha rechazado la cita que pidió ${patientName} para el ${to}.`;
-      return `Se ha rechazado la solicitud de ${patientName} de ${what} la cita del ${from}.`;
+      if (meta.requestType === 'CANCEL') return `Se ha rechazado la cancelación que pidió ${patientName} de la cita del ${from}.`;
+      return `Se ha rechazado el cambio que pidió ${patientName} de la cita del ${from}.`;
   }
 }
 

@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { ClinicalProcessRow, processLabel, therapistName } from '@/lib/clinical';
 import { exceptionalAllowsExport } from '@/lib/exceptional-access';
 import { processHref } from '@/lib/routes';
+import { isTaskOverdue, OVERDUE_LABEL } from '@/lib/task-due';
 
 export type ReadOnlyHistory = Record<string, string | null | undefined>;
 type Goal = { id: string; title: string; status: string; targetDate?: string | null };
@@ -113,7 +114,7 @@ export default function ExceptionalRecordView({ patientId, reasonCode, history, 
         </section>
         <section className="patient-record-card" aria-labelledby="xa-record-tasks">
           <h2 id="xa-record-tasks" className="xa-h">Tareas</h2>
-          {tasks.length ? <ul className="xa-plain-list">{tasks.map((task) => <li key={task.id}><strong>{task.title}</strong><small>{TASK_STATUS[task.status] ?? task.status}{task.dueDate ? ` · vence ${formatDate(task.dueDate)}` : ''}</small></li>)}</ul> : <p className="xa-empty">Sin tareas.</p>}
+          {tasks.length ? <ul className="xa-plain-list">{tasks.map((task) => <li key={task.id}><strong>{task.title}</strong><small>{isTaskOverdue(task) ? OVERDUE_LABEL : TASK_STATUS[task.status] ?? task.status}{task.dueDate ? ` · ${isTaskOverdue(task) ? 'venció' : 'vence'} ${formatDate(task.dueDate)}` : ''}</small></li>)}</ul> : <p className="xa-empty">Sin tareas.</p>}
         </section>
         <section className="patient-record-card" aria-labelledby="xa-record-scales">
           <h2 id="xa-record-scales" className="xa-h">Escalas</h2>

@@ -17,6 +17,8 @@ import { queryId, sessionHref } from '@/lib/routes';
 import RescheduleSessionForm from '@/components/RescheduleSessionForm';
 import { canRescheduleSession, PENDING_REQUESTS_NOTICE, rescheduleNoticeDate } from '@/lib/reschedule';
 import { AGENDA_FOCUS_EVENT, takeAgendaFocus } from '@/lib/agenda-focus';
+import SessionOutcomePrompt from '@/components/SessionOutcomePrompt';
+import { isAwaitingOutcome, isOwnSession, outcomeContext, outcomeNotice, shouldAskOutcome } from '@/lib/session-outcome';
 
 type TherapyModality =
   | 'IN_PERSON'
@@ -1220,8 +1222,21 @@ export default function AgendaPage() {
                           </p>
                         )}
 
+                        {/* Ya empezó y sigue programada: «¿Se hizo esta sesión?» a quien la API deja cerrarla. */}
+                        {shouldAskOutcome(session, viewer) && (
+                          <SessionOutcomePrompt
+                            sessionId={session.id}
+                            context={outcomeContext(getPatientName(session), session.startsAt)}
+                            onClosed={async (status) => {
+                              setError('');
+                              setSuccessMessage(outcomeNotice(status, isOwnSession(session, viewer)));
+                              await loadAgenda();
+                            }}
+                          />
+                        )}
+
                         {session.status ===
-                          'SCHEDULED' && (
+                          'SCHEDULED' && !isAwaitingOutcome(session) && (
                           <div className="agenda-session-actions">
                             {canRescheduleSession(session, viewer) && (
                               <button

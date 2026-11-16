@@ -8,6 +8,8 @@ import Icon, { EmptyState } from '@/components/Icon';
 import AppointmentChangesCard from '@/components/AppointmentChangesCard';
 import SampleDataNotice from '@/components/SampleDataNotice';
 import { sessionHref } from '@/lib/routes';
+import SessionOutcomePrompt from '@/components/SessionOutcomePrompt';
+import { isOwnSession, outcomeContext, outcomeNotice, shouldAskOutcome } from '@/lib/session-outcome';
 
 /*
  * "Mi jornada" administrativa: recepción (ASSISTANT) y titular/administración que no atienden
@@ -28,6 +30,7 @@ type SessionRow = {
   endsAt: string;
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
   type: string;
+  therapistId?: string | null;
   patient: Person;
   therapist?: Person | null;
 };
@@ -71,6 +74,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
   const [summary, setSummary] = useState<Block<BillingSummary>>({ state: 'loading', data: null });
   const [invoices, setInvoices] = useState<Block<Invoice[]>>({ state: 'loading', data: null });
   const [notices, setNotices] = useState<Block<Notice[]>>({ state: 'loading', data: null });
+  const [outcomeMessage, setOutcomeMessage] = useState('');
 
   const load = useCallback(async () => {
     setSessions({ state: 'loading', data: null });
@@ -96,6 +100,16 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Tras cerrar una cita: recarga solo las citas, sin vaciar la lista. */
+  const refreshSessions = useCallback(async () => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const next = await settle(api<{ data: SessionRow[] }>(`/sessions?from=${start.toISOString()}&to=${end.toISOString()}&pageSize=100`).then((r) => r.data));
+    if (next.state === 'ready') setSessions(next);
+  }, []);
 
   const today = sessions.data ?? [];
   const active = today.filter((x) => x.status !== 'CANCELLED');
@@ -162,6 +176,7 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
             <div><p className="eyebrow">HOY · TODO EL EQUIPO</p><h2 id="admin-today-title">Citas</h2></div>
             <Link href="/agenda" className="text-link">Ver agenda completa</Link>
           </div>
+          {outcomeMessage && <p className="patient-save-state" role="status">{outcomeMessage}</p>}
           <div className="sessions-list">
             {sessions.state === 'loading' && <p className="muted" role="status">Cargando las citas de hoy…</p>}
             {(sessions.state === 'error' || sessions.state === 'forbidden') && (
@@ -194,6 +209,13 @@ export default function AdminDayView({ viewer }: { viewer: Viewer }) {
                     Ver cita<span className="sr-only"> de {fullName(session.patient)} a las {time(session.startsAt)}</span>
                   </Link>
                 </div>
+                {shouldAskOutcome(session, viewer) && (
+                  <SessionOutcomePrompt
+                    sessionId={session.id}
+                    context={outcomeContext(fullName(session.patient), session.startsAt)}
+                    onClosed={async (status) => { setOutcomeMessage(outcomeNotice(status, isOwnSession(session, viewer))); await refreshSessions(); }}
+                  />
+                )}
               </article>
             ))}
           </div>

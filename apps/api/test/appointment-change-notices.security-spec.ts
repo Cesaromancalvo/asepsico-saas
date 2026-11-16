@@ -160,7 +160,7 @@ describe('1–2. Mover una cita desde la agenda', () => {
     });
 
     const [notice]: any[] = await notifications(prisma).listProfessional(therapistA);
-    expect(notice.body).toMatch(/^Se ha movido tu cita con Paciente Uno: de .+ a martes, 12 de enero, 19:30\.$/);
+    expect(notice.body).toMatch(/^Se ha movido tu cita con Paciente Uno del .+ al martes 12 de enero, 19:30\.$/);
     expect(notice.appointmentChange).toMatchObject({ change: 'RESCHEDULED_BY_STAFF', patient: { id: 'p1', firstName: 'Paciente', lastName: 'Uno' } });
     // Quien lo movió no recibe nada.
     expect(await notifications(prisma).listProfessional(actor)).toHaveLength(0);
@@ -196,20 +196,20 @@ describe('3 y 5. El paciente pide desde el portal cambiar o cancelar', () => {
     for (const n of professional(prisma)) expect(n.type).toBe('APPOINTMENT_REQUEST');
 
     const [notice]: any[] = await notifications(prisma).listProfessional(therapistA);
-    expect(notice.body).toMatch(/^Paciente Uno ha pedido cambiar la cita del .+ al .+\.$/);
+    expect(notice.body).toMatch(/^Paciente Uno pide cambiar la cita del .+ al .+\.$/);
     expect(notice.appointmentChange.to.startsAt).toBe(slot.startsAt.toISOString());
     const [forAssistant]: any[] = await notifications(prisma).listProfessional(assistant);
-    expect(forAssistant.body).toContain('Paciente Uno ha pedido cambiar la cita del');
+    expect(forAssistant.body).toContain('Paciente Uno pide cambiar la cita del');
     expect(await notifications(prisma).listProfessional(therapistB)).toHaveLength(0);
     expect(await notifications(prisma).listProfessional(ownerWs2)).toHaveLength(0);
   });
 
-  it('3b: pide cancelar → «ha pedido cancelar la cita del …»', async () => {
+  it('3b: pide cancelar → «pide cancelar la cita del …»', async () => {
     const prisma = seed();
     await booking(prisma).cancelRequest(portal(), { sessionId: 'ses-1' });
     expect(recipients(prisma)).toEqual(['admin-1', 'assistant-1', 'owner-1', 't-a']);
     const [notice]: any[] = await notifications(prisma).listProfessional(therapistA);
-    expect(notice.body).toMatch(/^Paciente Uno ha pedido cancelar la cita del .+\.$/);
+    expect(notice.body).toMatch(/^Paciente Uno pide cancelar la cita del .+\.$/);
     expect(notice.appointmentChange).toMatchObject({ change: 'PATIENT_REQUESTED_CANCEL', requestType: 'CANCEL' });
   });
 
@@ -270,7 +270,7 @@ describe('3 y 5. El paciente pide desde el portal cambiar o cancelar', () => {
     expect(withdrawn.map((n) => n.userId).sort()).toEqual(['admin-1', 'assistant-1', 'owner-1', 't-a']);
     expectStoredIsGeneric(prisma);
     const list: any[] = await notifications(prisma).listProfessional(therapistA);
-    expect(list.map((n) => n.body)).toContainEqual(expect.stringMatching(/^Paciente Uno ha retirado su solicitud de cambiar la cita del .+\.$/));
+    expect(list.map((n) => n.body)).toContainEqual(expect.stringMatching(/^Paciente Uno ha retirado su solicitud de cambio de la cita del .+\.$/));
   });
 });
 
@@ -300,7 +300,7 @@ describe('4. Resolver una solicitud del portal', () => {
     await requests(prisma).reject(owner, req.id, { reason: 'CONTACT_PRACTICE' } as any);
     expect(resultsFor(prisma).map((n) => n.userId)).toEqual(['t-a']);
     const list: any[] = await notifications(prisma).listProfessional(therapistA);
-    expect(list.map((n) => n.body)).toContainEqual(expect.stringMatching(/^Se ha rechazado la solicitud de Paciente Uno de cancelar la cita del .+\.$/));
+    expect(list.map((n) => n.body)).toContainEqual(expect.stringMatching(/^Se ha rechazado la cancelación que pidió Paciente Uno de la cita del .+\.$/));
   });
 
   it('4c: si la resuelve el propio profesional, no se le avisa', async () => {
