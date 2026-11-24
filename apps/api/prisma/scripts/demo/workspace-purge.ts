@@ -82,6 +82,16 @@ export interface WorkspacePurgeScope {
   users: { id: string; keep: boolean }[];
   /** Usuarios del espacio que también son miembros de otro espacio (debe ser 0). */
   usersInOtherWorkspaces: number;
+  /** Miembros que son administradores de la plataforma (debe ser 0: «AsePsico interno» nunca se borra así). */
+  platformAdminMembers: number;
+}
+
+export interface WorkspacePurgeOptions {
+  /** Correos de los administradores de la plataforma (ya normalizados; ver src/platform/platform-admin.config.ts). */
+  platformAdminEmails?: ReadonlySet<string>;
+  /** Repetir el borrado sobre un espacio ya purgado (p. ej. tras restaurar una copia). */
+  again?: boolean;
+  now?: Date;
 }
 
 async function dataRightsRequestsTableExists(db: Db): Promise<boolean> {
@@ -90,7 +100,7 @@ async function dataRightsRequestsTableExists(db: Db): Promise<boolean> {
 }
 
 /** Qué se borraría. Solo lecturas, todas filtradas por workspaceId. */
-export async function workspacePurgeScope(db: Db, workspaceId: string): Promise<WorkspacePurgeScope> {
+export async function workspacePurgeScope(db: Db, workspaceId: string, platformAdminEmails: ReadonlySet<string> = new Set()): Promise<WorkspacePurgeScope> {
   const counts: Record<string, number> = {};
   for (const step of STEPS) counts[step.name] = await (db as any)[step.model].count({ where: { workspaceId } });
   counts.dataRightsRequests = (await dataRightsRequestsTableExists(db))
@@ -105,7 +115,8 @@ export async function workspacePurgeScope(db: Db, workspaceId: string): Promise<
     db.therapeuticResource.count({ where: { workspaceId, storageKey: { not: null } } }),
   ]);
 
-  const members = await db.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } });
+  const members = await db.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true, user: { select: { email: true } } } });
+  const platformAdminMembers = members.filter((m) => platformAdminEmails.has(m.user.email.trim().toLowerCase())).length;
   const userIds = [...new Set(members.map((m) => m.userId))];
   const usersInOtherWorkspaces = userIds.length
     ? (await db.workspaceMember.findMany({ where: { userId: { in: userIds }, workspaceId: { not: workspaceId } }, select: { userId: true }, distinct: ['userId'] })).length
@@ -119,12 +130,15 @@ export async function workspacePurgeScope(db: Db, workspaceId: string): Promise<
     ]);
     users.push({ id, keep: terms + audit > 0 });
   }
-  return { workspaceId, counts, storageReferences: documents + attachments + resources, users, usersInOtherWorkspaces };
+  return { workspaceId, counts, storageReferences: documents + attachments + resources, users, usersInOtherWorkspaces, platformAdminMembers };
 }
 
 export function assertWorkspacePurgeable(scope: WorkspacePurgeScope) {
   if (scope.usersInOtherWorkspaces > 0) {
     throw new DemoRefusal(`${scope.usersInOtherWorkspaces} usuario(s) de este espacio son también miembros de otro espacio: no se borra nada (revisarlo a mano).`);
+  }
+  if (scope.platformAdminMembers > 0) {
+    throw new DemoRefusal('Un miembro de este espacio es administrador de la plataforma: no se borra nada.');
   }
 }
 
@@ -155,11 +169,12 @@ export class WorkspacePurgeIncomplete extends DemoRefusal {
  * Borra el espacio. Debe ejecutarse dentro de UNA transacción (quien llama pasa el `tx`): si algo
  * falla, incluida la red de seguridad final, no queda nada a medias.
  */
-export async function purgeWorkspace(tx: Prisma.TransactionClient, workspaceId: string, now: Date = new Date()) {
+export async function purgeWorkspace(tx: Prisma.TransactionClient, workspaceId: string, options: WorkspacePurgeOptions = {}) {
+  const now = options.now ?? new Date();
   const workspace = await tx.workspace.findUnique({ where: { id: workspaceId }, select: { id: true, purgedAt: true } });
   if (!workspace) throw new DemoRefusal('Espacio no encontrado.');
-  if (workspace.purgedAt) throw new DemoRefusal('Este espacio ya está borrado.');
-  const scope = await workspacePurgeScope(tx, workspaceId);
+  if (workspace.purgedAt && !options.again) throw new DemoRefusal('Este espacio ya está borrado. Para volver a pasar el borrado (p. ej. tras restaurar una copia), usa --again.');
+  const scope = await workspacePurgeScope(tx, workspaceId, options.platformAdminEmails);
   assertWorkspacePurgeable(scope);
 
   const deleted: Record<string, number> = {};
@@ -200,12 +215,12 @@ export async function purgeWorkspace(tx: Prisma.TransactionClient, workspaceId: 
     }
   }
 
-  await tx.workspace.update({ where: { id: workspaceId }, data: { name: PURGED_WORKSPACE_NAME, purgedAt: now } });
+  await tx.workspace.update({ where: { id: workspaceId }, data: { name: PURGED_WORKSPACE_NAME, purgedAt: workspace.purgedAt ?? now } });
 
   const left = await remainingWorkspaceRows(tx, workspaceId);
   if (Object.keys(left).length) throw new WorkspacePurgeIncomplete(Object.keys(left));
 
-  const summary = { ...deleted, storageReferences: scope.storageReferences, usersMinimized, usersDeleted };
+  const summary = { ...deleted, storageReferences: scope.storageReferences, usersMinimized, usersDeleted, again: options.again ? 1 : 0 };
   await tx.auditLog.create({
     data: { workspaceId, actorId: null, action: 'WORKSPACE_PURGED', entityType: 'Workspace', entityId: workspaceId, metadata: { source: 'db:purge-workspace', ...summary } },
   });

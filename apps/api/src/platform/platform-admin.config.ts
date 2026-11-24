@@ -43,6 +43,18 @@ export function parsePlatformAdminEmails(raw: string | undefined): ReadonlySet<s
   return new Set(emails);
 }
 
+/** Nombre de la variable, para los mensajes de los CLI (así los scripts no la escriben literalmente). */
+export const platformAdminEmailsEnvName = 'PLATFORM_ADMIN_EMAILS';
+
+/**
+ * Para los CLI que deben NEGARSE ante un administrador de la plataforma (db:purge-workspace): la
+ * variable tiene que estar definida, aunque sea vacía («no hay ninguno»). null si falta: así un
+ * terminal sin la variable no se salta la comprobación. Nunca concede nada.
+ */
+export function platformAdminEmailsForRefusal(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> | null {
+  return env[platformAdminEmailsEnvName] === undefined ? null : parsePlatformAdminEmails(env[platformAdminEmailsEnvName]);
+}
+
 /** Se lee en cada petición: no hay estado en memoria que pueda quedarse desfasado. */
 export function platformAdminEmails(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
   return parsePlatformAdminEmails(env.PLATFORM_ADMIN_EMAILS);

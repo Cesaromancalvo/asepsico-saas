@@ -305,11 +305,28 @@ Compromiso publicado: el contenido se borra en 30 días como máximo; regla inte
 ejecutarlo **en los 7 días siguientes** a la petición o al fin de la prueba. Solo en el despliegue con
 `DEMO_ENVIRONMENT=true` (el piloto real tendrá otro procedimiento).
 
-1. Simulación (no escribe; solo id del espacio y recuentos):
-   `DEMO_ENVIRONMENT=true DATABASE_URL=… npm run db:purge-workspace -- --owner-email <correo de la titular>`
+**Cuándo:** cuando la titular ya haya pedido la baja o la prueba haya terminado, **nunca con ella dentro**
+(una petición en curso podría escribir justo antes del final). El comando lo comprueba después y avisa.
+
+Siempre con `DEMO_ENVIRONMENT=true` y con `PLATFORM_ADMIN_EMAILS` igual que en la API
+(`PLATFORM_ADMIN_EMAILS=` si no hay ninguno): sin ella no arranca, y nunca borra un espacio con un
+administrador de la plataforma (p. ej. «AsePsico interno»).
+
+1. Simulación (no escribe; imprime el **id** del espacio y recuentos):
+   `DEMO_ENVIRONMENT=true PLATFORM_ADMIN_EMAILS=… DATABASE_URL=… npm run db:purge-workspace -- --owner-email <correo de la titular>`
    (o `--workspace-id <id>`).
-2. Si cuadra: la misma orden con `--yes`. Todo va en una transacción: si algo falla, no se borra nada.
+2. Comprobar que el id y los recuentos son los de esa persona. Borrar con la misma orden más
+   `--yes --confirm-workspace-id <id que imprimió la simulación>`. Si falta o no coincide (p. ej. una
+   errata en el correo resolvió otro espacio), sale con código 2 sin escribir nada. Todo va en una
+   transacción: si algo falla, no se borra nada.
 3. Anotar en `ops/registro-piloto.md` la fecha y el **id** del espacio (sin correos ni nombres).
+4. Si termina con **código 3** («han aparecido filas del espacio»), repetir con
+   `--workspace-id <id> --again --yes --confirm-workspace-id <id>`.
+
+**Tras restaurar una copia**, antes de reabrir el servicio, para cada id de `registro-piloto.md`:
+`… npm run db:purge-workspace -- --workspace-id <id> --again` (simulación) y después con
+`--yes --confirm-workspace-id <id>`. `--again` solo acepta `--workspace-id` y vale tanto si el espacio
+vuelve a estar entero como si ya estaba marcado como borrado.
 
 Qué hace: borra todo lo del espacio (pacientes de ejemplo y propios, procesos, sesiones, notas,
 mensajes, documentos, citas, facturas, portal, invitaciones, avisos, disponibilidad...). Conserva

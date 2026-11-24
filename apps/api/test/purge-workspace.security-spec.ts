@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
+import { platformAdminEmailsEnvName, platformAdminEmailsForRefusal } from '../src/platform/platform-admin.config';
 import { KEPT_TABLES, PURGED_USER_FIRST_NAME, PURGED_WORKSPACE_NAME } from '../prisma/scripts/demo/workspace-purge';
 
 /**
@@ -18,6 +19,24 @@ describe('db:purge-workspace · reglas', () => {
     expect(body.indexOf('assertDemoEnvironment()')).toBeLessThan(body.indexOf('new PrismaClient'));
     expect(cli).toContain("const confirmed = argv.includes('--yes') && !argv.includes('--dry-run');");
     expect(body.indexOf('if (!confirmed)')).toBeLessThan(body.indexOf('$transaction'));
+  });
+
+  it('Argos (cond. 1): con --yes exige --confirm-workspace-id igual al id resuelto, antes de la transacción', () => {
+    const body = cli.slice(cli.indexOf('async function main()'));
+    const tx = body.indexOf('$transaction');
+    expect(body.indexOf("if (!confirmId) throw new DemoRefusal(")).toBeGreaterThan(0);
+    expect(body.indexOf("if (!confirmId) throw new DemoRefusal(")).toBeLessThan(tx);
+    expect(body.indexOf('if (confirmId !== workspaceId) throw new DemoRefusal(')).toBeLessThan(tx);
+    expect(body.indexOf('assertWorkspacePurgeable(scope)')).toBeLessThan(tx);
+    // PLATFORM_ADMIN_EMAILS obligatoria (vacía si no hay ninguno) y comparada como en la API.
+    expect(body.indexOf('platformAdminEmailsForRefusal()')).toBeLessThan(body.indexOf('new PrismaClient'));
+    expect(body).toContain('if (!platformAdminEmails)');
+  });
+
+  it('Argos (cond. 2): tras el COMMIT repite remainingWorkspaceRows y sale con 3 si queda algo', () => {
+    const body = cli.slice(cli.indexOf('async function main()'));
+    expect(body.indexOf('remainingWorkspaceRows(prisma, workspaceId)')).toBeGreaterThan(body.indexOf('$transaction'));
+    expect(body).toContain('process.exitCode = 3');
   });
 
   it('una sola transacción con todo el borrado', () => {
@@ -58,10 +77,37 @@ describe('db:purge-workspace · reglas', () => {
     }
   });
 
+  // Argos (adenda 24/11): la red de seguridad solo mira columnas "workspaceId". Todo modelo SIN workspaceId tiene que
+  // estar aquí a propósito: cae en cascada desde un padre que se borra, o es de plataforma. Un modelo nuevo (p. ej.
+  // colgado de Patient con SetNull) hace fallar este test hasta que se decida cómo se borra.
+  it('lista explícita de modelos SIN workspaceId (cascada desde un padre borrado o de plataforma)', () => {
+    const CASCADE_FROM_PARENT: Record<string, string> = {
+      ClinicalHistory: 'Patient', TherapyGoal: 'Patient', TherapeuticTask: 'Patient', ClinicalAssessment: 'Patient',
+      InvoiceLine: 'Invoice', Message: 'Conversation',
+    };
+    const PLATFORM = ['User', 'Workspace', 'WaitlistEntry', 'PlatformAuditLog'];
+    const without = Prisma.dmmf.datamodel.models.filter((m) => !m.fields.some((f) => f.name === 'workspaceId')).map((m) => m.name).sort();
+    expect(without).toEqual([...Object.keys(CASCADE_FROM_PARENT), ...PLATFORM].sort());
+    for (const [child, parent] of Object.entries(CASCADE_FROM_PARENT)) {
+      const model = Prisma.dmmf.datamodel.models.find((m) => m.name === child)!;
+      const rel = model.fields.find((f) => f.type === parent && f.relationFromFields?.length);
+      expect([child, rel?.relationOnDelete]).toEqual([child, 'Cascade']);
+      // Y ningún otro vínculo con SetNull hacia algo que se borra sin que el hijo caiga.
+      const parentKey = parent[0].toLowerCase() + parent.slice(1);
+      expect([parent, new Set([...core.matchAll(/model: '(\w+)'/g)].map((m) => m[1])).has(parentKey)]).toEqual([parent, true]);
+    }
+  });
+
   it('vigilancia: si la API empieza a guardar archivos (cliente S3 o similar), hay que ampliar el borrado', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
     expect(deps.filter((d) => /aws-sdk|client-s3|^minio$|google-cloud\/storage|azure\/storage/.test(d))).toEqual([]);
+  });
+
+  it('la comprobación de administradores exige la variable definida y usa la normalización de la API', () => {
+    expect(platformAdminEmailsForRefusal({})).toBeNull();
+    expect([...platformAdminEmailsForRefusal({ [platformAdminEmailsEnvName]: '' })!]).toEqual([]);
+    expect([...platformAdminEmailsForRefusal({ [platformAdminEmailsEnvName]: ' Admin@Example.test , ' })!]).toEqual(['admin@example.test']);
   });
 
   it('alias en la API y en la raíz', () => {
