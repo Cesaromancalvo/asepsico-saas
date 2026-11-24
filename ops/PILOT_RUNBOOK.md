@@ -299,6 +299,31 @@ OWNER/ADMIN solo con `isClinician`; ASSISTANT nunca). Cada intento denegado qued
 - Prueba de restauración: semanal durante el piloto.
 - Nunca guardar dumps en el repositorio Git.
 
+## Borrar un espacio entero del piloto demo (A3: baja o fin de la prueba)
+
+Compromiso publicado: el contenido se borra en 30 días como máximo; regla interna (Lex, 24/11/2026):
+ejecutarlo **en los 7 días siguientes** a la petición o al fin de la prueba. Solo en el despliegue con
+`DEMO_ENVIRONMENT=true` (el piloto real tendrá otro procedimiento).
+
+1. Simulación (no escribe; solo id del espacio y recuentos):
+   `DEMO_ENVIRONMENT=true DATABASE_URL=… npm run db:purge-workspace -- --owner-email <correo de la titular>`
+   (o `--workspace-id <id>`).
+2. Si cuadra: la misma orden con `--yes`. Todo va en una transacción: si algo falla, no se borra nada.
+3. Anotar en `ops/registro-piloto.md` la fecha y el **id** del espacio (sin correos ni nombres).
+
+Qué hace: borra todo lo del espacio (pacientes de ejemplo y propios, procesos, sesiones, notas,
+mensajes, documentos, citas, facturas, portal, invitaciones, avisos, disponibilidad...). Conserva
+bloqueados `TermsAcceptance` y `AuditLog`. Cada usuaria se queda solo con id y correo («Cuenta
+eliminada»), sin contraseña utilizable, sin MFA, sin sesiones y sin membresía; si no tiene aceptaciones
+ni auditoría, se borra. El espacio queda como «Espacio eliminado» con `purgedAt`. Registra
+`WORKSPACE_PURGED` solo con recuentos. Se niega si algún usuario es miembro de otro espacio.
+
+- **Almacenamiento:** AsePsico no guarda archivos (los documentos solo tienen una referencia de texto):
+  no hay nada que borrar fuera de la BD.
+- **Copias:** lo borrado sigue hasta 30 días en las copias de Render. Si se restaura una, antes de
+  reabrir el servicio hay que repetir este borrado con cada id de `registro-piloto.md`.
+- **La misma persona no puede volver a registrarse con ese correo** (sigue en la cuenta mínima).
+
 ## Restablecer la contraseña o el MFA de un profesional (operador)
 
 El profesional puede cambiar su contraseña desde **Seguridad → Cambiar contraseña**, pero no hay

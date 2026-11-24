@@ -187,6 +187,10 @@ model Workspace {
   sampleDataLoadedAt          DateTime?
   /// E1 · Cuándo el titular borró los datos de ejemplo («Borrar los datos de ejemplo»).
   sampleDataClearedAt         DateTime?
+  /// Borrado del espacio entero (db:purge-workspace, A3, piloto demo). La fila se conserva porque
+  /// TermsAcceptance y AuditLog (bloqueados) la referencian con Restrict; el nombre pasa a
+  /// «Espacio eliminado» y ya no queda ningún miembro, así que nadie puede entrar.
+  purgedAt                    DateTime?
 }
 
 model User {

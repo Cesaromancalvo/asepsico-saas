@@ -27,6 +27,7 @@
     "invites:purge": "tsx prisma/scripts/invites-purge.ts",
     "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
     "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts",
+    "db:purge-workspace": "tsx prisma/scripts/purge-workspace.ts",
     "db:migrate-exceptional-reasons": "tsx prisma/scripts/migrate-exceptional-access-reasons.ts",
     "users:set-password": "tsx prisma/scripts/set-user-password.ts"
   },

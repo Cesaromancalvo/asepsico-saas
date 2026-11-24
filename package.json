@@ -28,6 +28,7 @@
     "invites:purge": "npm --workspace @asepsico/api run invites:purge --",
     "db:seed-demo-workspace": "npm --workspace @asepsico/api run db:seed-demo-workspace --",
     "db:purge-demo-workspace": "npm --workspace @asepsico/api run db:purge-demo-workspace --",
+    "db:purge-workspace": "npm --workspace @asepsico/api run db:purge-workspace --",
     "db:migrate-exceptional-reasons": "npm --workspace @asepsico/api run db:migrate-exceptional-reasons --",
     "users:set-password": "npm --workspace @asepsico/api run users:set-password --",
     "test:smoke": "node scripts/smoke-live.mjs",
