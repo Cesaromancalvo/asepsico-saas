@@ -653,3 +653,16 @@ sacarla de la lista, como hasta ahora.
 La purga vacía todos los datos personales y el hash del email (queda solo `deletedAt`). El
 comando solo imprime recuentos. Anotar fecha y número de altas suprimidas en el registro del piloto.
 
+### Tarea programada: invitaciones de registro sin usar (`invites:purge`)
+
+Una invitación revocada (al reinvitar) o caducada sin usar guarda el correo de alguien que no llegó a
+registrarse. Compromiso: borrarlas como máximo en 30 días (Argos y Lex, 23/11/2026).
+
+| Cuándo | Qué |
+|---|---|
+| **Cada lunes** (o cron de Render) | `DATABASE_URL=… npm run invites:purge` (simulación: solo cuenta) y, si el recuento cuadra, `DATABASE_URL=… npm run invites:purge -- --yes` |
+
+Borra solo las que tienen `usedAt` vacío y además han caducado o se han revocado, en una transacción
+que se deshace si el borrado no coincide con el recuento. Nunca toca las usadas ni las vigentes. Solo
+imprime recuentos, nunca correos. Anotar fecha y recuento en `ops/registro-piloto.md`.
+

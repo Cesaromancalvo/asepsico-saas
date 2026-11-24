@@ -24,6 +24,7 @@
     "waitlist:withdraw-commercial": "tsx prisma/scripts/waitlist-withdraw-commercial.ts",
     "waitlist:set-phone": "tsx prisma/scripts/waitlist-set-phone.ts",
     "invites:create": "tsx prisma/scripts/create-registration-invite.ts",
+    "invites:purge": "tsx prisma/scripts/invites-purge.ts",
     "db:seed-demo-workspace": "tsx prisma/scripts/seed-demo-workspace.ts",
     "db:purge-demo-workspace": "tsx prisma/scripts/purge-demo-workspace.ts",
     "db:migrate-exceptional-reasons": "tsx prisma/scripts/migrate-exceptional-access-reasons.ts",
