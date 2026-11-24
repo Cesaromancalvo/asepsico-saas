@@ -26,7 +26,7 @@ import { fakeRegistrationDb } from './support/fake-registration-db';
  * sample-data-db.security-spec.ts).
  */
 
-const DEMO_DOCS = [{ version: 'demo-1.2' }, { version: 'demo-1.3' }];
+const DEMO_DOCS = [{ version: 'demo-1.2' }, { version: 'demo-1.4' }];
 const DEMO_ENV = { DEMO_ENVIRONMENT: 'true' } as any;
 afterEach(() => jest.restoreAllMocks());
 
@@ -80,16 +80,16 @@ describe('E1 · ¿cuándo se cargan datos de ejemplo? (nunca fuera del piloto de
   });
 
   it('Argos 23/11 (demo-1.2): exige el prefijo «demo-» exacto, en minúscula, en TODOS los documentos vigentes', () => {
-    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(true);
-    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'Demo-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
-    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: '1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
-    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'piloto-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.2' }, { version: 'demo-1.4' }], DEMO_ENV)).toBe(true);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'Demo-1.2' }, { version: 'demo-1.4' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: '1.2' }, { version: 'demo-1.4' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'piloto-1.2' }, { version: 'demo-1.4' }], DEMO_ENV)).toBe(false);
     expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.2' }, { version: '1.0' }], DEMO_ENV)).toBe(false);
   });
 
-  it('las condiciones vigentes del repo (demo-1.2 + demo-1.3) activan E1 en el entorno demo', () => {
+  it('las condiciones vigentes del repo (demo-1.2 + demo-1.4) activan E1 en el entorno demo', () => {
     const docs = legalDocs.getCurrentLegalDocuments();
-    expect(docs.map((d) => d.version)).toEqual(['demo-1.2', 'demo-1.3']);
+    expect(docs.map((d) => d.version)).toEqual(['demo-1.2', 'demo-1.4']);
     expect(shouldLoadSampleData({ withSampleData: true }, docs, DEMO_ENV)).toBe(true);
   });
 

@@ -1,5 +1,6 @@
 // Texto de Lex Psi (privacidad-profesionales-demo-v1.2.md más los cambios de la condición C1 de Lex del
-// 07/11/2026 para los avisos por email al equipo: línea de cambios, §3, §4 y §5 con Scaleway; demo-1.3).
+// 07/11/2026 para los avisos por email al equipo: §3, §4 y §5 con Scaleway; demo-1.3) y la adenda §7.1
+// de Lex del 24/11/2026: copias de seguridad en el §4 y línea de cambios (demo-1.4).
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -7,11 +8,10 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PRIVACY_PRODUCT_TEXT = `# Política de privacidad para profesionales del piloto demo de AsePsico
 
-Versión demo-1.3 · En vigor desde el 10/11/2026
+Versión demo-1.4 · En vigor desde el 30/11/2026
 
-**Qué cambia respecto a la versión demo-1.2:** AsePsico te envía avisos automáticos por email de la
-actividad de tu espacio (por ejemplo, una solicitud de cita nueva) a través de Scaleway SAS (Francia)
-(apartados 3, 4 y 5). Puedes desactivarlos en Mi cuenta. El resto no cambia.
+**Qué cambia respecto a la versión demo-1.3:** añadimos en el apartado 4 cuánto tiempo pueden seguir
+en las copias de seguridad los datos que suprimimos. El resto no cambia.
 
 Esta política explica cómo tratamos los datos de las **personas profesionales** (titulares de un
 espacio y miembros de su equipo) que participan en el **piloto demo** de AsePsico. En el piloto demo
@@ -71,6 +71,9 @@ opinión sin tu consentimiento expreso, que te pediríamos aparte.
 
 - **Cuenta y contenido del espacio:** mientras dure el piloto demo. Se suprimen en un plazo máximo
   de 30 días desde el fin de la prueba o desde tu baja.
+- **Copias de seguridad:** lo que suprimimos puede seguir hasta 30 días más en las copias de
+  seguridad, que solo sirven para recuperar el servicio si falla y se renuevan solas. Si alguna vez
+  tuviéramos que restaurar una, volveríamos a suprimirlo antes de reabrir el servicio.
 - **Prueba de la aceptación y registro de actividad:** se conservan **bloqueados** (sin uso, solo
   para atender reclamaciones o requerimientos de autoridades) durante 3 años desde el fin de la
   prueba o tu baja, y después se suprimen.

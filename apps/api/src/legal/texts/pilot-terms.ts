@@ -1,5 +1,6 @@
 // Texto de Lex Psi (condiciones-demo-v1.md, demo-1.1) con el único cambio de la demo-1.2 (vb-e1-grupo-fundador
-// de Lex, 23/11/2026, §2.4): línea de cambios y nueva fecha máxima del §7.1. SOLO el texto cargable.
+// de Lex, 23/11/2026, §2.4 y adenda §7.1 del 24/11): línea de cambios, nueva fecha máxima del §7.1 y
+// plazo de las copias de seguridad en el §7.4. SOLO el texto cargable.
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -10,7 +11,8 @@ export const PILOT_TERMS_TEXT = `# Condiciones de uso del piloto demo de AsePsic
 Versión demo-1.2 · En vigor desde el 30/11/2026
 
 **Qué cambia respecto a la versión demo-1.1:** el piloto demo termina como muy tarde el 30/06/2027 en
-lugar del 31/12/2026 (apartado 7.1). El resto no cambia.
+lugar del 31/12/2026 (apartado 7.1), y se aclara el plazo de las copias de seguridad (apartado 7.4).
+El resto no cambia.
 
 **En resumen** (lo que manda es el texto completo):
 
@@ -125,7 +127,8 @@ menos 7 días de antelación. Puede hacerlo sin preaviso si incumples estas cond
 de seguridad o por causas técnicas que no dependan de AsePsico.
 
 7.4. Al terminar (por fin del plazo, por tu baja o por decisión de AsePsico) se cierra el acceso y
-**todo el contenido de tu espacio se borra** en un plazo máximo de 30 días. Ese contenido no se
+**todo el contenido de tu espacio se borra** en un plazo máximo de 30 días (las copias de seguridad,
+en los 30 días siguientes, como se explica en la política de privacidad). Ese contenido no se
 traslada a ningún otro servicio ni a un piloto posterior, y no se devuelve. Si quien se da de baja
 es un miembro, se cierra solo su acceso: el espacio y su contenido siguen hasta que termine el piloto
 demo del titular. Qué pasa con los datos de tu cuenta se explica en la política de privacidad.
