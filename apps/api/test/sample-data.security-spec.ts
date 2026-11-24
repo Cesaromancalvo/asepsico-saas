@@ -26,7 +26,7 @@ import { fakeRegistrationDb } from './support/fake-registration-db';
  * sample-data-db.security-spec.ts).
  */
 
-const DEMO_DOCS = [{ version: 'demo-1.1' }, { version: 'demo-1.3' }];
+const DEMO_DOCS = [{ version: 'demo-1.2' }, { version: 'demo-1.3' }];
 const DEMO_ENV = { DEMO_ENVIRONMENT: 'true' } as any;
 afterEach(() => jest.restoreAllMocks());
 
@@ -77,6 +77,20 @@ describe('E1 · ¿cuándo se cargan datos de ejemplo? (nunca fuera del piloto de
   it('si alguna condición vigente no es del piloto demo (p. ej. las del piloto real) → no', () => {
     expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.1' }, { version: '1.0' }], DEMO_ENV)).toBe(false);
     expect(shouldLoadSampleData({ withSampleData: true }, [], DEMO_ENV)).toBe(false);
+  });
+
+  it('Argos 23/11 (demo-1.2): exige el prefijo «demo-» exacto, en minúscula, en TODOS los documentos vigentes', () => {
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(true);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'Demo-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: '1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'piloto-1.2' }, { version: 'demo-1.3' }], DEMO_ENV)).toBe(false);
+    expect(shouldLoadSampleData({ withSampleData: true }, [{ version: 'demo-1.2' }, { version: '1.0' }], DEMO_ENV)).toBe(false);
+  });
+
+  it('las condiciones vigentes del repo (demo-1.2 + demo-1.3) activan E1 en el entorno demo', () => {
+    const docs = legalDocs.getCurrentLegalDocuments();
+    expect(docs.map((d) => d.version)).toEqual(['demo-1.2', 'demo-1.3']);
+    expect(shouldLoadSampleData({ withSampleData: true }, docs, DEMO_ENV)).toBe(true);
   });
 
   it('las condiciones vigentes del repo son del piloto demo (si cambian, E1 se apaga solo)', () => {

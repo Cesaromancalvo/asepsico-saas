@@ -1,4 +1,5 @@
-// Texto de Lex Psi (condiciones-demo-v1.md, demo-1.1): SOLO lo que va entre INICIO/FIN TEXTO CARGABLE.
+// Texto de Lex Psi (condiciones-demo-v1.md, demo-1.1) con el único cambio de la demo-1.2 (vb-e1-grupo-fundador
+// de Lex, 23/11/2026, §2.4): línea de cambios y nueva fecha máxima del §7.1. SOLO el texto cargable.
 // BORRADOR pendiente de revisión por abogado humano. Rellenados en git: email de contacto, ciudad y
 // fechas. [NIF] y [DOMICILIO] NO se rellenan aquí (el repositorio es público): los sustituye el
 // despliegue con LEGAL_TITULAR_NIF y LEGAL_TITULAR_DOMICILIO (ver legal-documents.ts). Mientras
@@ -6,7 +7,10 @@
 // Cualquier cambio del texto cambia el hash y obliga a aceptarlo de nuevo: sube también la versión.
 export const PILOT_TERMS_TEXT = `# Condiciones de uso del piloto demo de AsePsico
 
-Versión demo-1.1 · En vigor desde el 17/10/2026
+Versión demo-1.2 · En vigor desde el 30/11/2026
+
+**Qué cambia respecto a la versión demo-1.1:** el piloto demo termina como muy tarde el 30/06/2027 en
+lugar del 31/12/2026 (apartado 7.1). El resto no cambia.
 
 **En resumen** (lo que manda es el texto completo):
 
@@ -110,7 +114,7 @@ publiques antes de que hayamos podido corregirlo.
 ## 7. Duración, baja y borrado
 
 7.1. El piloto demo empieza cuando aceptas estas condiciones y dura el periodo indicado en tu
-invitación. En todo caso termina, como muy tarde, el 31/12/2026, salvo que te propongamos
+invitación. En todo caso termina, como muy tarde, el 30/06/2027, salvo que te propongamos
 una prórroga por email y la aceptes.
 
 7.2. Puedes darte de baja **cuando quieras**, sin dar explicaciones y sin coste, escribiendo a

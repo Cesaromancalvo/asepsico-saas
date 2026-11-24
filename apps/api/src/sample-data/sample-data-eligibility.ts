@@ -5,7 +5,7 @@ import type { LegalDocument } from '../legal/legal-documents';
  *
  * Cómo se distingue hoy un espacio del piloto demo: no hay un "tipo de espacio" en la BD. El piloto
  * demo es un DESPLIEGUE entero (DEMO_ENVIRONMENT; la web pinta el aviso "Entorno de prueba") cuyos
- * profesionales aceptan las condiciones del piloto demo (versiones `demo-*`: PILOT_TERMS demo-1.1,
+ * profesionales aceptan las condiciones del piloto demo (versiones `demo-*`: PILOT_TERMS demo-1.2,
  * PRIVACY_PRODUCT demo-1.3) y que entran por invitación de registro (registro cerrado). E1 añade la
  * marca explícita en la invitación (RegistrationInvite.withSampleData), que solo pone el CLI del
  * operador en ese entorno.

@@ -358,20 +358,20 @@ describe('Condiciones versionadas: guard 428 y nueva aceptación', () => {
 
 });
 
-describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.3) y datos del titular fuera de git', () => {
+describe('Textos del piloto demo (condiciones demo-1.2, privacidad demo-1.3) y datos del titular fuera de git', () => {
   // Datos 100 % ficticios: DNI de ejemplo con letra de control válida y un domicilio inventado.
   const FAKE_NIF = '12345678Z';
   const FAKE_ADDRESS = 'Calle Ficticia 1, 00000 Ciudad Inventada';
   const filledEnv = { LEGAL_TITULAR_NIF: FAKE_NIF, LEGAL_TITULAR_DOMICILIO: FAKE_ADDRESS } as any;
 
-  it('vigentes: PILOT_TERMS demo-1.1 y PRIVACY_PRODUCT demo-1.3; DPA_ART28 fuera durante el demo', () => {
+  it('vigentes: PILOT_TERMS demo-1.2 y PRIVACY_PRODUCT demo-1.3; DPA_ART28 fuera durante el demo', () => {
     const docs = legalDocs.buildLegalDocuments({});
-    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.1'], ['PRIVACY_PRODUCT', 'demo-1.3']]);
+    expect(docs.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.2'], ['PRIVACY_PRODUCT', 'demo-1.3']]);
     expect(docs.map((d) => d.type)).not.toContain('DPA_ART28');
   });
 
   it('en git solo quedan sin rellenar [NIF] y [DOMICILIO]; el resto de datos decididos ya está', () => {
-    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.1 · En vigor desde el 17/10/2026', PRIVACY_PRODUCT: 'demo-1.3 · En vigor desde el 10/11/2026' };
+    const vigencia: Record<string, string> = { PILOT_TERMS: 'demo-1.2 · En vigor desde el 30/11/2026', PRIVACY_PRODUCT: 'demo-1.3 · En vigor desde el 10/11/2026' };
     for (const doc of legalDocs.buildLegalDocuments({})) {
       // Cualquier cosa entre corchetes (no solo lo que reconoce UNFILLED_MARKER_RE): solo [NIF] y [DOMICILIO].
       const anyBrackets = [...new Set(doc.text.match(/\[[^\]\n]*\]/g) ?? [])].sort();
@@ -385,7 +385,29 @@ describe('Textos del piloto demo (condiciones demo-1.1, privacidad demo-1.3) y d
     }
     const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
     expect(terms.text).toContain('juzgados y tribunales de Palencia');
-    expect(terms.text).toContain('31/12/2026');
+    expect(terms.text).toContain('30/06/2027');
+  });
+
+  it('condiciones demo-1.2 (Lex 23/11, §2.4): línea de cambios y fecha máxima del §7.1 el 30/06/2027', () => {
+    const terms = legalDocs.buildLegalDocuments({}).find((d) => d.type === 'PILOT_TERMS')!;
+    const flat = terms.text.replace(/\n(?!\n|- |#|\|)\s*/g, ' ');
+    expect(flat).toContain('**Qué cambia respecto a la versión demo-1.1:** el piloto demo termina como muy tarde el 30/06/2027 en lugar del 31/12/2026 (apartado 7.1). El resto no cambia.');
+    expect(flat).toContain('7.1. El piloto demo empieza cuando aceptas estas condiciones y dura el periodo indicado en tu invitación. En todo caso termina, como muy tarde, el 30/06/2027, salvo que te propongamos una prórroga por email y la aceptes.');
+    // 31/12/2026 solo aparece en la línea de cambios (la fecha antigua), nunca como fecha vigente.
+    expect(flat.split('31/12/2026').length - 1).toBe(1);
+  });
+
+  it('reaceptación demo-1.2: quien aceptó condiciones demo-1.1 y privacidad demo-1.3 solo tiene pendientes las condiciones', async () => {
+    const docs = legalDocs.buildLegalDocuments({});
+    const privacy = docs.find((d) => d.type === 'PRIVACY_PRODUCT')!;
+    const rows = [
+      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PILOT_TERMS', version: 'demo-1.1', textHash: 'hash-de-la-version-anterior' },
+      { workspaceId: 'ws-1', userId: 'u-1', documentType: 'PRIVACY_PRODUCT', version: privacy.version, textHash: privacy.textHash },
+    ];
+    const findMany = jest.fn(async ({ where }: any) => rows.filter((r) => r.workspaceId === where.workspaceId && r.userId === where.userId
+      && where.OR.some((o: any) => o.documentType === r.documentType && o.version === r.version && o.textHash === r.textHash)));
+    const pending = await pendingLegalDocuments({ termsAcceptance: { findMany } } as any, 'ws-1', 'u-1', docs);
+    expect(pending.map((d) => [d.type, d.version])).toEqual([['PILOT_TERMS', 'demo-1.2']]);
   });
 
   it('sin LEGAL_TITULAR_NIF / LEGAL_TITULAR_DOMICILIO los textos son borrador (marcadores = borrador)', () => {
